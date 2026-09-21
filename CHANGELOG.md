@@ -60,6 +60,10 @@ merges. Still not wired into `index.html` — the shell is step 3.
   edge, a grab handle, the same three header controls sized for touch. The scroll body carries
   `tabindex="0"` + `role="region"` (axe's `scrollable-region-focusable`, seeded and fixed in the
   mockups too). `src/lib/ui/sheetGeometry.ts` mirrors panelGeometry.ts's persistence shape.
+- **`src/lib/ui/Modal.svelte`**: focus trap, Esc-closes, and focus return all come from the native
+  `<dialog>` element's `showModal()`/`close()` rather than hand-rolled JS -- the platform already
+  guarantees top-layer focus containment and restoring focus to whatever had it before the dialog
+  opened.
 
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
