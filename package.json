@@ -22,6 +22,13 @@
     "check:no-session": "node scripts/check-dist-session.mjs",
     "check:relative-assets": "node scripts/check-relative-assets.mjs"
   },
+  "dependencies": {
+    "@duckdb/duckdb-wasm": "1.32.0"
+  },
+  "pinReasons": {
+    "_": "package.json is JSON and cannot carry a real comment, so these entries ARE the inline reason (atlas-refs/'calcofi explore review.md' \u00a711 lesson 10). Full evidence and the wiring each pin depends on: docs/spikes/S1.md. tests/pins.test.ts fails if a range here drifts from its verdict line.",
+    "@duckdb/duckdb-wasm": "EXACT 1.32.0, no caret (S1). npm 'latest' (1.33.1-dev57.0) creates OPFS files and never writes to them: the reopen after a reload throws 'Catalog Error: Table with name t does not exist!' on chromium AND firefox. 1.33.1-dev64.0 ('next') also passes but is a moving dist-tag on a dev build. A caret would admit a future stable 1.33.x, which is the line the write bug lives in and which nobody has tested. Bumping this means re-running spikes/1/e2e/persistence.spec.js; dev57 must stay red."
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
