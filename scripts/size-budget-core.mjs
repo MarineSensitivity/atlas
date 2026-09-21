@@ -78,24 +78,44 @@ export function gzipSize(buf) {
 // `maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url` build (backticked in Rolldown's output, e.g.
 // `` new URL(`maplibre-gl-worker-CNLXcz58.js`,import.meta.url) ``) and against
 // tests/fixtures/size-budget-worker/. Requiring the `.js`/`.mjs` extension keeps this from matching an
-// unrelated `new URL(...)` (a sourcemap comment, a non-JS asset URL, ...).
+// unrelated `new URL(...)` (a sourcemap comment, a non-JS asset URL, ...). Group 1 is the quote
+// character (used to tell a template literal from a plain string, below); group 2 is the raw text
+// between the quotes.
 export const WORKER_URL_REF =
-  /new\s+URL\(\s*[`'"]([^`'"()]+\.m?js)[`'"]\s*,\s*import\.meta\.url\s*\)/g;
+  /new\s+URL\(\s*([`'"])([^`'"()]+\.m?js)\1\s*,\s*import\.meta\.url\s*\)/g;
+
+function tryReadFile(readFile, path) {
+  try {
+    return readFile(path) || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Find every worker JS asset referenced — directly, or transitively (a worker referencing a worker of
- * its own) — from `fileContents`' text, resolved dist-relative to the file that references it and
- * CONFIRMED to exist by actually reading it with `readFile`; a reference `readFile` cannot satisfy is a
- * dead/foreign URL, not a worker asset, and is silently skipped. This does NOT consult the manifest's
- * `assets`/`imports` fields at all — see the file header (F3) for why.
+ * its own) — from `fileContents`' text. This does NOT consult the manifest's `assets`/`imports` fields
+ * at all — see the file header (F3) for why.
+ *
+ * atlas-0 review round 2, N1: a matched reference is never silently dropped. Resolution is three
+ * tiers, in order: (1) sibling-relative to the referencing file, as the compiled output normally is;
+ * (2) if that can't be read, a basename lookup among `emittedFiles` (a full listing of what the build
+ * actually produced) — covers a Vite bump that prefixes the base path or nests output differently;
+ * (3) if basename lookup finds zero or more-than-one candidate, or the reference isn't a literal
+ * string at all (a template literal with an unresolved `${...}`), that is a hard FAIL with a reason
+ * naming the reference and the file that made it — never a guess, never a silent skip.
  * @param {Map<string, string>} fileContents relPath -> utf8 text; the seed set to scan (typically the
  *   static-critical-path files already collected by `collectStaticGraph`)
  * @param {(relPath: string) => Buffer} readFile reads a dist-relative file as a Buffer; may throw or
  *   return a falsy value for a path that does not exist
- * @returns {Map<string, Buffer>} workerRelPath -> its raw bytes, deduped
+ * @param {string[]} [emittedFiles] every dist-relative file path the build actually emitted (e.g. a
+ *   recursive listing of `dist`), used only as the basename-lookup fallback above
+ * @returns {{workers: Map<string, Buffer>, reasons: string[]}} workerRelPath -> raw bytes (deduped),
+ *   plus any reasons a matched reference could not be resolved (empty means every match resolved)
  */
-export function findWorkerAssets(fileContents, readFile) {
+export function findWorkerAssets(fileContents, readFile, emittedFiles = []) {
   const workers = new Map();
+  const reasons = [];
   const scanned = new Set(fileContents.keys()); // guards the BFS below against re-scanning the same
   // file's text twice — it does NOT prevent a file already in `fileContents` from also being classified
   // as a worker (a file can be both statically imported AND worker-referenced; worker classification
@@ -105,25 +125,60 @@ export function findWorkerAssets(fileContents, readFile) {
   while (queue.length) {
     const [path, content] = queue.shift();
     for (const m of content.matchAll(WORKER_URL_REF)) {
-      const resolved = posix.normalize(posix.join(posix.dirname(path), m[1]));
-      if (!workers.has(resolved)) {
-        let buf;
-        try {
-          buf = readFile(resolved);
-        } catch {
-          buf = undefined;
-        }
-        if (!buf) continue; // referenced but not an emitted dist file — not a worker we can verify
-        workers.set(resolved, buf);
+      const quote = m[1];
+      const spec = m[2];
+
+      // a backtick literal with an unresolved `${...}` isn't a filename at all — `?worker&url`'s own
+      // output is always a fully-resolved literal, so this only happens for hand-written, non-static
+      // worker construction. Flag it distinctly rather than trying (and failing) to resolve it as text.
+      if (quote === "`" && spec.includes("${")) {
+        reasons.push(
+          `unanalysable worker reference: \`${spec}\` in "${path}" is not a literal string (template ` +
+            `interpolation) — this checker cannot resolve a non-literal worker URL; rewrite it as a ` +
+            `plain string built entirely at build time`,
+        );
+        continue;
       }
+
+      const naive = posix.normalize(posix.join(posix.dirname(path), spec));
+      let resolved = naive;
+      let buf = tryReadFile(readFile, naive);
+
+      if (!buf) {
+        // fallback: the reference's own text didn't resolve as a plain sibling of the referencing
+        // file — look its basename up among everything the build actually emitted instead of giving
+        // up (a Vite bump prefixing the base path, or nesting output differently, is exactly this).
+        const basename = posix.basename(spec);
+        const candidates = emittedFiles.filter((f) => posix.basename(f) === basename);
+        if (candidates.length === 1) {
+          resolved = candidates[0];
+          buf = tryReadFile(readFile, resolved);
+        } else if (candidates.length > 1) {
+          reasons.push(
+            `ambiguous worker reference: "${spec}" in "${path}" — ${candidates.length} emitted files ` +
+              `share the basename "${basename}" (${candidates.join(", ")}); refusing to guess which one`,
+          );
+          continue;
+        }
+      }
+
+      if (!buf) {
+        reasons.push(
+          `unresolvable worker reference: "${spec}" in "${path}" — no emitted dist file at "${naive}", ` +
+            `and no emitted file is named "${posix.basename(spec)}" either`,
+        );
+        continue;
+      }
+
+      if (!workers.has(resolved)) workers.set(resolved, buf);
       if (!scanned.has(resolved)) {
         scanned.add(resolved);
-        queue.push([resolved, workers.get(resolved).toString("utf8")]);
+        queue.push([resolved, buf.toString("utf8")]);
       }
     }
   }
 
-  return workers;
+  return { workers, reasons };
 }
 
 /**
@@ -133,6 +188,10 @@ export function findWorkerAssets(fileContents, readFile) {
  * @param {(relPath: string) => Buffer} opts.readFile reads a dist-relative file as a Buffer
  * @param {number} [opts.budgetBytes] static critical-path budget, gzip bytes
  * @param {number} [opts.workerBudgetBytes] runtime-worker budget, gzip bytes (F3)
+ * @param {string[]} [opts.emittedFiles] every dist-relative file the build emitted (N1's
+ *   basename-lookup fallback for a worker reference that doesn't resolve where its own text says it
+ *   should); defaults to empty, in which case a reference that doesn't resolve directly is a FAIL, not
+ *   a silent skip — see `findWorkerAssets`.
  */
 export function evaluateBudget({
   manifest,
@@ -140,6 +199,7 @@ export function evaluateBudget({
   readFile,
   budgetBytes = CRITICAL_BUDGET_BYTES,
   workerBudgetBytes = RUNTIME_WORKER_BUDGET_BYTES,
+  emittedFiles = [],
 }) {
   const emptyResult = (reason) => ({
     ok: false,
@@ -170,7 +230,11 @@ export function evaluateBudget({
     contents.set(f, buf.toString("utf8"));
   }
 
-  const workerRaw = findWorkerAssets(contents, readFile);
+  const { workers: workerRaw, reasons: workerReasons } = findWorkerAssets(
+    contents,
+    readFile,
+    emittedFiles,
+  );
   const workerFiles = new Set(workerRaw.keys());
 
   let totalGzipBytes = 0;
@@ -188,7 +252,9 @@ export function evaluateBudget({
   const allContents = new Map(contents);
   for (const [f, buf] of workerRaw) allContents.set(f, buf.toString("utf8"));
 
-  const reasons = [];
+  // N1: a worker reference that couldn't be resolved (or wasn't a literal at all) is a hard FAIL — it
+  // is exactly the case where a real ~144 KB download could silently leave the budget unnoticed.
+  const reasons = [...workerReasons];
   for (const hit of findForbiddenMarkers(allContents)) {
     reasons.push(
       `forbidden lazy-chunk marker "${hit.marker}" found in a file reachable by STATIC import (or referenced ` +

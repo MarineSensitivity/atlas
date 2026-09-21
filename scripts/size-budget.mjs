@@ -9,8 +9,8 @@
 //     this fixture is a deliberate, permanent regression case, not a stand-in for a missing dependency.
 //   - tests/fixtures/size-budget-worker/ (`npm run build:fixture:size-budget-worker`) statically imports
 //     a `?worker&url` worker padded past RUNTIME_WORKER_BUDGET_BYTES (atlas-0 review fix F3).
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import {
   evaluateBudget,
   CRITICAL_BUDGET_BYTES,
@@ -48,6 +48,19 @@ function loadManifest(distDir) {
   return null;
 }
 
+// N1: every file the build actually emitted, dist-relative with forward slashes (matching the
+// manifest's own path style) — the ground truth `findWorkerAssets`'s basename fallback searches when a
+// worker reference doesn't resolve where its own text naively says it should.
+function listEmittedFiles(dir, base = dir) {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...listEmittedFiles(full, base));
+    else out.push(relative(base, full).split(sep).join("/"));
+  }
+  return out;
+}
+
 const { dist, entry, budgetKb, workerBudgetKb } = parseArgs(process.argv.slice(2));
 const manifest = loadManifest(dist);
 
@@ -64,6 +77,7 @@ const result = evaluateBudget({
   readFile: (relPath) => readFileSync(join(dist, relPath)),
   budgetBytes: budgetKb * 1024,
   workerBudgetBytes: workerBudgetKb * 1024,
+  emittedFiles: listEmittedFiles(dist),
 });
 
 const kb = (n) => (n / 1024).toFixed(1);
