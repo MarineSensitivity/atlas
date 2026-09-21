@@ -94,6 +94,15 @@ merges. Still not wired into `index.html` — the shell is step 3.
   unit-tested -- unset/`"0"`/any other `VITE_SEAL` value fails closed), at `--size-seal-min` (72
   CSS px) with its clear space, `loading="lazy"`, unmodified. The seal's own source URL is NOT
   published anywhere yet (see this step's report).
+- **A new gallery Playwright spec** (`e2e/gallery.spec.ts`, its own `playwright.gallery.config.ts`,
+  port 4401): screenshots of every section in both themes at phone (390) and desktop widths,
+  committed as the baseline; axe with zero serious/critical findings across all four combinations;
+  keyboard coverage (every current tab stop reachable, the rail's roving tabindex, a modal's focus
+  trap and return, Esc collapsing a panel, every panel-size control's accessible name, the seal's
+  visibility/size rule). Found and fixed along the way: a real Chromium `<dialog>` quirk where a
+  Tab cycle briefly lands on `<body>` when the dialog has only a couple of focusable children --
+  `Modal.svelte` now traps Tab explicitly at its own first/last focusable element as a
+  belt-and-suspenders on top of the platform's own containment.
 
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired

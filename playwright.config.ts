@@ -14,7 +14,13 @@ export default defineConfig({
   // npm script — e2e/fixtures/analytics-privacy/ is the first of these. Without this, Playwright's
   // default recursive spec discovery would also try to run that spec here, against a webServer that
   // never starts its fixture build.
-  testIgnore: ["fixtures/**"],
+  //
+  // gallery.spec.ts is the same story the other way: it has its OWN scoped config
+  // (playwright.gallery.config.ts, port 4401) so it is excluded here — this config's webServer
+  // never varies its baseURL by lens, and running it here too would double-execute every gallery
+  // test (once correctly scoped, once against this config's chromium/webkit/firefox matrix with no
+  // guarantee the gallery's own baseline snapshots exist for webkit/firefox).
+  testIgnore: ["fixtures/**", "gallery.spec.ts"],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

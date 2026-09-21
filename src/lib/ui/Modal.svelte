@@ -26,9 +26,38 @@
     if (open && !dialogEl.open) dialogEl.showModal();
     if (!open && dialogEl.open) dialogEl.close();
   });
+
+  const FOCUSABLE_SELECTOR =
+    "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])";
+
+  // Belt-and-suspenders on top of the platform's own containment: measured in Chromium, a
+  // <dialog> with only a couple of focusable children can let a Tab cycle land outside it (focus
+  // falls through to <body>) for one step instead of wrapping straight back inside. Trap Tab at
+  // the dialog's own first/last focusable element explicitly, so the browser's default handling
+  // for the boundary case never runs at all.
+  function handleDialogKeydown(event: KeyboardEvent) {
+    if (event.key !== "Tab" || !dialogEl) return;
+    const focusable = [...dialogEl.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)];
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    } else if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last.focus();
+    }
+  }
 </script>
 
-<dialog bind:this={dialogEl} aria-labelledby={titleId} onclose={() => onclose?.()}>
+<dialog
+  bind:this={dialogEl}
+  aria-labelledby={titleId}
+  onclose={() => onclose?.()}
+  onkeydown={handleDialogKeydown}
+>
   <div class="modal-head">
     <h2 id={titleId}>{title}</h2>
     <button type="button" class="modal-close" aria-label="Close" onclick={() => dialogEl?.close()}>
