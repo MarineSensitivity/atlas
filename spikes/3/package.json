@@ -1,0 +1,22 @@
+{
+  "name": "atlas-spike-3",
+  "private": true,
+  "version": "0.0.0",
+  "description": "atlas-0 S3: values without the tile server -- tiled cell_metric over DuckDB-WASM vs geotiff windowed COG reads, and a deck.gl-vs-titiler display comparison. Measurement harness only; not part of the app build.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4313 --strictPort",
+    "e2e": "playwright test --config=playwright.config.ts"
+  },
+  "dependencies": {
+    "@duckdb/duckdb-wasm": "1.32.0",
+    "@duckdb/duckdb-wasm-next": "npm:@duckdb/duckdb-wasm@1.33.1-dev64.0",
+    "geotiff": "^3.0.5",
+    "deck.gl": "^9.4.0"
+  },
+  "devDependencies": {
+    "vite": "^8.3.0"
+  }
+}
