@@ -23,16 +23,29 @@ export interface CellCoverage {
   pct: number;
 }
 
-/** cells a place covers, ascending by `cell_id`. */
-export function cellsInPolygon(geom: AreaGeometry, grid: GridSpec): CellCoverage[] {
+/**
+ * The raw covered FRACTION per cell (0-1 after the multipolygon cap), before rounding.
+ *
+ * Exported because the knife-edge fixtures have to be able to state the unrounded number: the whole
+ * point of `snapNoise()` below is that this value lands a few 1e-13 either side of an exact half,
+ * and a test that could only see the rounded answer could not tell a snapped half from a lucky one.
+ */
+export function cellFractions(geom: AreaGeometry, grid: GridSpec): Map<number, number> {
   const frac = new Map<number, number>();
   for (const rings of polygonsOf(geom)) accumulate(rings, grid, frac);
+  for (const [cellId, f] of frac) if (f > 1) frac.set(cellId, 1);
+  return frac;
+}
+
+/** cells a place covers, ascending by `cell_id`. */
+export function cellsInPolygon(geom: AreaGeometry, grid: GridSpec): CellCoverage[] {
+  const frac = cellFractions(geom, grid);
 
   const out: CellCoverage[] = [];
   for (const [cellId, f] of frac) {
     // snap first, then R's round(): the shoelace sums put a 0.5 % sliver a few 1e-13 either side of
     // the half, and which side it lands on must not decide the answer (R: round(round(x, 9)))
-    const pct = roundHalfEven(snapNoise(Math.min(f, 1) * 100));
+    const pct = roundHalfEven(snapNoise(f * 100));
     if (pct > 0) out.push({ cell_id: cellId, pct });
   }
   return out.sort((a, b) => a.cell_id - b.cell_id);

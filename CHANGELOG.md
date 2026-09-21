@@ -26,7 +26,15 @@ later — under plain Node.
   holes) to the cell square, multipolygon parts summed and capped at 1, `pct` rounded R's way (half
   to **even**, after a 1e-9 snap so a 0.5 % sliver is not decided by float noise) and cells at 0
   dropped. Columns wrap modulo `nc` on `global05` and shift into the 141.10 frame on `usa05`.
-  Measured: a 74,024-cell place in 45 ms (target: 150 ms).
+  Measured: a 74,024-cell place in 45 ms (target: 150 ms). `cellFractions()` exposes the same cells
+  with their unrounded fraction.
+- **The 1e-9 snap in front of that rounding is now proven, not asserted.** A sweep over exact-half
+  rectangles across the Gulf finds that **4,522 of 8,640 on `global05` and 4,002 of 8,640 on
+  `usa05`** round the wrong way if the raw `frac * 100` is rounded as it arrives — so
+  `tests/fixtures/places/knife-edge-{0p5,2p5,3p5}-global05.json` and `knife-edge-2p5-usa05.json`
+  pin four of them (each records its raw value to 17 digits and the pct with and against the snap),
+  and removing the snap turns all four red. The error runs both ways: the 3.5 % case rounds _down_
+  to 3 unsnapped where the rule says 4.
 
 # atlas 0.1.1
 
