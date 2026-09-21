@@ -122,6 +122,65 @@ later — under plain Node.
   and removing the snap turns all four red. The error runs both ways: the 3.5 % case rounds _down_
   to 3 unsnapped where the rule says 4.
 
+Plan `atlas-2` Step 5: `raster/` and `analytics/`. Both are plain TypeScript modules under `src/lib`
+(no svelte import, Node-testable); nothing is wired into `index.html`/`report.html` yet, so the
+static graph and size budget are unchanged.
+
+- **`src/lib/raster/tiles.ts`**: `titilerTileUrl()` builds the stock titiler `/cog/tiles` URL
+  byte-for-byte (`?url=<enc>&colormap_name=<c>&rescale=<min>,<max>`), behind a `RasterSource`
+  interface for a future client-side COG renderer (plan D4, spike S3, deferred). The titiler host is
+  `TitilerConfig.host`, one named constant, never a literal repeated at call sites.
+- **`src/lib/raster/point.ts`**: a `ValueSource` interface with a `/cog/point` implementation for
+  species values ONLY — `assertSpeciesValueRequest()` throws at runtime if ever asked for a
+  `"scores"`-domain value (scores/cell/zonal numbers come from Parquet, never a tile pixel).
+- **`src/lib/raster/urlEncode.ts`**: `encodeUrlReserved()`, a byte-exact twin of R's
+  `URLencode(x, reserved = TRUE)` (escapes `! * ' ( )`, which a bare `encodeURIComponent` leaves bare).
+- **`src/lib/raster/ramps.ts`**: THE ONLY place a color ramp is defined. Reads the 11 stops per
+  palette from `boot.palettes` at runtime (never hardcoded); exposes `legendStops()`, the continuous
+  `colorForValue()` blend and the choropleth `choroplethBin()`
+  (`clamp(roundHalfEven((v-min)/max(max-min,1e-6)*10)+1, 1, 11)`, a local half-even helper with a
+  TODO to import `geo/round.ts` once merged). `tests/raster/ramps.wiring.test.ts` scans `src/` and
+  fails if a second ramp/palette array is ever planted outside this file.
+- **`src/lib/analytics/`**: port of `msens::ga_js` — GA4 `G-9HW6L751XG`, `content_group`
+  `atlas`/`atlas-preview`, a batched Sheet beacon (`logUrl`/`VITE_LOG_URL`; unset = no-op),
+  `navigator.webdriver` sessions excluded entirely from both legs. `page_location` (and the Sheet
+  log's `page` column) is REBUILT from origin + path + `state/`'s own `QUERY_KEYS` allow-list —
+  `location.hash` is never read, so a place's geometry and the report title can never reach
+  analytics. `sanitizeParams()` additionally strips any `pl`/`t` param key at the event-payload level
+  as defense in depth. Events: the union of the scores and species apps' names plus `place_draw`,
+  `place_upload`, `place_share`, `report_open`, `report_export{format}`, `opfs_fallback`. Every
+  browser global (navigator, document, window, storage, gtag) is injected with a guarded default via
+  `env.ts`'s `hasBrowserGlobals()` — gated on `window`/`document`, not `navigator`/`fetch` alone,
+  since Node itself now ships working globals for those two — so no test in this repo ever makes a
+  real network call.
+
+Fix round 1 (review, real defect): a privacy leak in `analytics/`.
+
+- **`gtag("config", ...)` alone was not enough to keep a place's geometry / the report title out of
+  GA4.** With no `send_page_view: false`, gtag.js fires its OWN automatic `page_view` whose
+  `page_location` it fills in internally from the live page location — fragment included — no
+  matter what this app's own events did. Fixed: every `config` call now sets
+  `send_page_view: false` and carries an explicit, sanitized `page_location`/`page_title`; the app
+  fires its own `page_view` event immediately after with the same sanitized fields; every
+  `track()`-driven event carries them too, so nothing ever falls back to a gtag.js default.
+  `page_title` is a fixed label (`"Atlas"` / `"Atlas (preview)"`, `pageLocation.ts`'s
+  `buildPageTitle()`) — never the live document title.
+- **New `Analytics.updateLocation(loc)`**: the state layer (owns `history.replaceState`) calls this
+  after every URL change so the sanitized fields stay current across an SPA navigation without
+  `analytics/` ever reading a live location itself.
+- **`tests/analytics/noRawLocation.wiring.test.ts`** (new): source-scans `src/lib/analytics/**` —
+  code AND comments — for the live page location's `href`/fragment fields or the document's own
+  URL/location globals; zero occurrences allowed anywhere in the directory.
+- **`docs/analytics.md`** (new) documents the one thing no code here can enforce: GA4's Enhanced
+  Measurement "page changes based on browser history events" property setting must stay OFF for
+  `G-9HW6L751XG`, plus how to verify it in the network panel.
+- **`e2e/fixtures/analytics-privacy/`** (new, own scoped Playwright config, `npm run
+e2e:analytics-privacy`, port 4382): a real browser, real DOM, real `location` (navigated with
+  `#pl=g1.test.AAAA&t=secret` already in the URL) exercising this module's guarded defaults for the
+  first time outside an injected fake — asserts no request or `gtag()` call ever carries the
+  fragment's data. Root `playwright.config.ts` gained a `testIgnore: ["fixtures/**"]` so `npm run
+e2e` doesn't also try (and fail) to run this fixture's spec against the main app's server.
+
 # atlas 0.1.1
 
 - **Restricted releases can no longer render on the public host** (plan D6). `versions.json`'s
