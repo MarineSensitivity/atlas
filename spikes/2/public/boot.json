@@ -1,0 +1,157 @@
+{
+  "_comment": "S2 spike stub (atlas-0 plan Step 4): boot.json does not exist until atlas-1's pipeline publishes it. This is a hand-built stub for the spike ONLY, assembled from the real v7/manifest.json (zones pmtiles, score cog, rescale, colormap) plus zone_metric.parquet values read locally with the duckdb CLI and pasted here as JSON. Source: https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v7/manifest.json and .../marine-atlas/v7/tables/{zone,zone_metric,metric}.parquet.",
+  "ver": "v7",
+  "zones": {
+    "zone_set_key": "programarea_2026-01",
+    "fld": "programarea_key",
+    "n": 20,
+    "pmtiles": "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/zones/programarea_2026-01/zones.pmtiles"
+  },
+  "score": {
+    "metric_key": "score_extriskspcat_primprod_ecoregionrescaled_equalweights",
+    "subregion_key": "USA",
+    "cog": "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/cog/usa05/d20874edf0c43166.tif",
+    "rescale_min": 0,
+    "rescale_max": 90,
+    "colormap": "spectral_r"
+  },
+  "programAreas": [
+    {
+      "key": "ALA",
+      "score": 28.28006259618011
+    },
+    {
+      "key": "ALB",
+      "score": 12.28111496978712
+    },
+    {
+      "key": "BFT",
+      "score": 11.28626252567258
+    },
+    {
+      "key": "BOW",
+      "score": 18.448539656598484
+    },
+    {
+      "key": "CEC",
+      "score": 21.8683615828847
+    },
+    {
+      "key": "CHU",
+      "score": 24.889048775345078
+    },
+    {
+      "key": "COK",
+      "score": 52.61913302658195
+    },
+    {
+      "key": "GAA",
+      "score": 33.093043159887856
+    },
+    {
+      "key": "GAB",
+      "score": 25.68401892647753
+    },
+    {
+      "key": "GEO",
+      "score": 33.92487991416182
+    },
+    {
+      "key": "GOA",
+      "score": 39.482909171226574
+    },
+    {
+      "key": "HAR",
+      "score": 7.520014891057138
+    },
+    {
+      "key": "HOP",
+      "score": 52.660155273261196
+    },
+    {
+      "key": "KOD",
+      "score": 32.09445346509356
+    },
+    {
+      "key": "MAT",
+      "score": 24.914356984308743
+    },
+    {
+      "key": "NAV",
+      "score": 27.319921278071497
+    },
+    {
+      "key": "NOC",
+      "score": 20.70612959218071
+    },
+    {
+      "key": "NOR",
+      "score": 29.013290164979058
+    },
+    {
+      "key": "SHU",
+      "score": 29.679280416842044
+    },
+    {
+      "key": "SOC",
+      "score": 29.67756662703202
+    }
+  ],
+  "flower": {
+    "zone_key": "GEO",
+    "components": [
+      {
+        "metric_key": "extrisk_bird_ecoregion_rescaled",
+        "label": "bird",
+        "value": 64.81594780622909
+      },
+      {
+        "metric_key": "extrisk_coral_ecoregion_rescaled",
+        "label": "coral",
+        "value": 26.550984802856032
+      },
+      {
+        "metric_key": "extrisk_fish_ecoregion_rescaled",
+        "label": "fish",
+        "value": 36.910061122951525
+      },
+      {
+        "metric_key": "extrisk_invertebrate_ecoregion_rescaled",
+        "label": "invertebrate",
+        "value": 32.04513536770822
+      },
+      {
+        "metric_key": "extrisk_mammal_ecoregion_rescaled",
+        "label": "mammal",
+        "value": 75.1387239695221
+      },
+      {
+        "metric_key": "extrisk_other_ecoregion_rescaled",
+        "label": "other",
+        "value": 30.584586370676572
+      },
+      {
+        "metric_key": "extrisk_turtle_ecoregion_rescaled",
+        "label": "turtle",
+        "value": 0.8709936644165326
+      },
+      {
+        "metric_key": "primprod_ecoregion_rescaled",
+        "label": "primprod",
+        "value": 4.482606208934521
+      }
+    ]
+  },
+  "oceanProbePoints": [
+    {
+      "lon": -88,
+      "lat": 27,
+      "label": "Gulf of Mexico"
+    },
+    {
+      "lon": -122,
+      "lat": 36,
+      "label": "off central California"
+    }
+  ]
+}

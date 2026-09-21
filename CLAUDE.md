@@ -17,8 +17,9 @@ work in _this_ repo day to day.
 - Preview the build: `npm run preview`
 - Lint / format: `npm run lint`, `npm run format` (`format:check` in CI-style, no writes)
 - e2e smoke (chromium/webkit/firefox): `npm run e2e` (needs `npx playwright install` once)
-- Size budget: `npm run size-budget` (against a real `npm run build`); the red-fixture control is
-  `npm run build:fixture:size-budget` (see `tests/fixtures/size-budget-static-duckdb/`)
+- Size budget: `npm run size-budget` (against a real `npm run build`); the red-fixture controls are
+  `npm run build:fixture:size-budget` (see `tests/fixtures/size-budget-static-duckdb/`) and
+  `npm run build:fixture:size-budget-worker` (see `tests/fixtures/size-budget-worker/`)
 - `node scripts/check-dist-session.mjs [dist]`, `node scripts/check-relative-assets.mjs [dist]` —
   the two other build-time invariants (see Rules, below)
 
@@ -49,14 +50,46 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
   (`/v9/atlas/...`, the preview host's shape) always wins; `?ver=` is next; `latest.txt` is the
   fallback. A malformed value is treated as absent, never as an error — it just falls through to
   the next tier. The label shape is exactly `^v[0-9]+[a-z]?$`, matching `msens::atlas_resolve_ver()`.
-  Source of truth: `src/lib/release/version.ts` (unit-tested). The inline early-fetch script in
-  `index.html` is a hand-kept plain-JS copy of the same logic — it has to run before any bundle
-  parses, so it cannot `import` the module — keep the two in sync by hand when either changes.
+  Source of truth: `src/lib/release/version.ts` (unit-tested). Resolution is only step one: what
+  finally renders is whatever the access gate below allows.
 - **Preview mode has exactly one door.** A same-origin `session.json` is the _only_ way into
   preview mode (plan D6): it exists only on the preview host's Caddy. A 404 is public. A network
   error is public. Only a `200` with `{"preview": true}` in the body is preview — anything else
   (missing, malformed JSON, `preview` absent or falsy) must default to public. Never fail open.
-  Source of truth: `src/lib/release/session.ts` (unit-tested).
+  Source of truth: `src/lib/release/session.ts` (unit-tested). It is also the app's **only
+  same-origin fetch**, and the public path must never _await_ it (see the gate, below).
+- **Data origins are formed in exactly one place, and they are absolute.** `latest.txt`,
+  `versions.json` and every release file live in the bucket, not on either host:
+  `src/lib/release/dataBase.ts` holds the literal `PUBLIC_DATA_BASE`
+  (`https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/`, path-style, with the
+  `marine-atlas/` prefix — the bare `…/{ver}/…` path answers 403) and is the one place a release
+  URL is built (`dataBase(ver, session)`, `dataUrl()`, `registryUrl()`). Never `fetch(ver +
+"/manifest.json")` or any other relative release URL: it resolves against the mount point, so
+  under `/v9/atlas/` it becomes `/v9/atlas/v9/manifest.json` (404 on every host) and makes the data
+  origin depend on where the app happens to be served. On a **preview** session only, a
+  `session.data` prefix (a string, or a per-version map) overrides the base — plan D6's committed
+  follow-up, an unguessable prefix revealed only to a signed-in reviewer. It is validated before
+  use (https only, no credentials, no query/hash, normalized to a trailing `/`) and ignored
+  otherwise; a public session's `data` is never honoured.
+- **The public host renders public releases only** (plan D6, `src/lib/release/access.ts`).
+  `versions.json` rows carry `access`; today v7b, v8 and v9 are `restricted`. A restricted release
+  is fetched **only** when `session.json` says `preview: true` — otherwise not one request under
+  that version is ever made. Everything fails **closed**: a row with no `access` key, an
+  unrecognized `access` value, and a version with no row at all are all treated as not-renderable;
+  an unreadable `versions.json` allows _only_ `latest.txt`'s version, and a preview session does
+  not widen that. A denied version **falls through to `latest.txt`** (the same rule a malformed
+  `?ver=` follows) with `{ver, reason}` recorded on `window.__early.denied` so the UI can say why;
+  if the fall-through target is itself denied, nothing renders. `session.json` is awaited **only**
+  when a candidate release is restricted (`requiresSession()`), so the public path never blocks on
+  a same-origin round trip.
+- **The inline early-fetch script is a second copy of four modules, and a test proves it.**
+  `index.html`'s inline script duplicates `src/lib/release/{version,session,access,dataBase}.ts`
+  because it must run before any bundle parses. `tests/release/access-cases.ts` is the single case
+  table; `tests/release/access.test.ts` drives the modules through it and
+  `tests/release/inline-early-fetch.test.ts` runs the **real** inline script (extracted from
+  `index.html`) in a `node:vm` sandbox through the same table, plus literal-equality checks on
+  `VERSION_RE` and `DATA_BASE`. Change one copy without the other and exactly one of those files
+  goes red. Add the case to the shared table, never to only one side.
 - **Numbers never come from the tile server.** Rasters are _displayed_ through the existing stock
   titiler (COG tiles) — that's fine, that's what it's for. But scores, cell ids, and zonal statistics
   always come from Parquet (DuckDB-WASM, materialize-then-query — no httpfs range reads in v1), never
@@ -67,23 +100,76 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
   `map.setStyle(composed, { diff: true })`. Never `addLayer()` piecemeal after `load` — layers added
   that way can silently vanish across a later style swap (`atlas-refs/"calcofi explore review.md"`
   §5, lesson 3).
-- **`@duckdb/duckdb-wasm` and a `maplibre-gl` version are not decided yet.** They're pinned by
-  spikes S1 and S2 (`docs/spikes/`, not written yet) with a reason in an inline `package.json`
-  comment. Don't add either dependency, and don't guess a version, ahead of that.
+- **The spike pins: `@duckdb/duckdb-wasm` at exactly `1.32.0`, `maplibre-gl` at `^6.10.0`, and the
+  three upload parsers at exactly `shpjs@6.2.0`, `@tmcw/togeojson@7.1.2`, `flatgeobuf@4.4.0`.**
+  Decided by spikes S1, S2 and S4; the evidence is in `docs/spikes/S1.md`, `S2.md`, `S4.md` (each
+  ends in a one-line `**Verdict:**`), and the short reason is in `package.json`'s `pinReasons` block
+  (JSON has no comments, so that block _is_ lesson 10's inline comment). `tests/pins.test.ts` goes
+  red if any range drifts from its verdict line — change both together, or re-run the spike and
+  rewrite the verdict. **None of these packages is imported from `src/` yet** (the parsers land in
+  atlas-6, and each must be a dynamic `import()`, never a static one). Whoever first imports one
+  follows the wiring rules the pins depend on, because the pin is worth nothing without them:
+  - **DuckDB (atlas-2):** self-host the `mvp` + `eh` bundles via `?url` and construct the worker
+    yourself — `new Worker(bundle.mainWorker)`, same-origin — never `createWorker()`, never the
+    `coi` bundle, and keep `@duckdb/duckdb-wasm` in `optimizeDeps.exclude`. Open `opfs://` only
+    inside `navigator.locks.request(name, { ifAvailable: true }, cb)` (a plain `locks.request` is a
+    measured hang), hold that lock for the handle's whole lifetime, `CHECKPOINT` before close, and
+    fall back to an in-memory database on every failure — OPFS is never required. `read_parquet()`
+    autoloads a 3 MB extension from `extensions.duckdb.org`: self-host it and
+    `SET custom_extension_repository` to a same-origin mirror before the first query (keyed by the
+    DuckDB _engine_ version — `1.32.0` → `v1.4.3` — not the npm version), because the blocked-CDN
+    failure is a `RuntimeError: function signature mismatch` WASM crash, not a catchable error.
+  - **MapLibre (atlas-2/3):** import it **named** (6.x has no default export; a default import is a
+    hard build failure), and wire the worker as
+    `import url from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url"; setWorkerUrl(url);` —
+    plain `?url` ships a worker whose 514 KB shared chunk 404s, and then rasters still paint while
+    vector layers silently never parse. So every map test asserts a _rendered vector feature_
+    (`isSourceLoaded()` **and** `queryRenderedFeatures().length > 0`), not just painted pixels. Pass
+    `canvasContextAttributes: { preserveDrawingBuffer: true }` (the bare top-level key is silently
+    ignored and `readPixels` then reads `(0,0,0,0)`) and call `map.resize()` right after
+    construction (without it raster tile requests are non-deterministic headless). Do **not** add
+    `maplibre-gl` to `optimizeDeps.exclude`.
+  - **Uploads (atlas-6):** every parser is a dynamic `import()`, and every parser's output goes
+    through one normalizer in `src/lib/geo/` that rejects projected coordinates (no parser but
+    `shpjs` reprojects, and `shpjs` returns raw metres _silently_ when a zip has no `.prj`), rewinds
+    rings to RFC 7946 (GDAL's shapefile writer disagrees with every other format's winding across
+    ±180°) and computes a dateline-aware bbox (all four parsers report a 355°-wide box for a 5°-wide
+    Aleutian polygon). A `.gpkg` goes through DuckDB `spatial`, which is **not** self-hosted: it
+    costs a one-time ~22 MB fetch from `extensions.duckdb.org`, so it is prompted, lazy, and falls
+    back to "convert to GeoJSON". See `docs/spikes/S4.md`.
 
 ## Budgets (`scripts/size-budget.mjs`)
 
-- **350 KB gzip** for the critical path: everything `index.html` loads before first interaction
-  (app chunk + eventual maplibre-gl + pmtiles + CSS + fonts).
+- **350 KB gzip** for the static critical path: everything `index.html`'s own `<script>`s load before
+  first interaction (app chunk + eventual maplibre-gl + pmtiles + CSS + fonts). Spike S2 measured
+  maplibre-gl 6.10 + pmtiles + CSS at **288,149 B gzip (281.4 KiB)** on their own — measured on the
+  pinned `^6.10.0` with the same `gzipSync(level 9)` this checker uses — so ~70 KB is left for all
+  app code; budget accordingly.
+- **150 KB gzip, separately, for runtime workers** (`RUNTIME_WORKER_BUDGET_BYTES`): a worker referenced
+  from the static graph (e.g. maplibre-gl's, wired via `?worker&url` per S2.md — 143.9 KB gzip
+  measured) downloads at construction time, before first interaction, but it is not part of the entry's
+  own `<script>` payload, so it is not folded into the 350 KB number — it gets its own budget instead.
+  The checker does NOT rely on the manifest's `assets`/`imports` fields to find it (that depends on
+  chunk-splitting specifics this repo doesn't control): it reads the compiled text of every file on the
+  static path for the `new URL("<file>.js", import.meta.url)` pattern a `?worker&url` import (or a
+  hand-written `new Worker(new URL(...))`) compiles to, resolves it dist-relative, and confirms it by
+  actually reading the file — a worker referencing a worker of its own is followed transitively. The
+  script prints both budget lines plus their sum ("before first interaction") and fails on either.
 - Anything meant to be lazy — `duckdb*`, `terra-draw*`, `docx*`, `shp*`, the treemap — must never
-  appear in the entry's _static_ import graph (it must be a dynamic `import()`). The checker reads
-  `dist/.vite/manifest.json`, walks only `imports` (never `dynamicImports`), and greps the reachable
-  files' text for those markers — so an accidentally-inlined forbidden module is still caught, not
-  just a chunk whose file name happens to say "duckdb".
+  appear in the entry's _static_ import graph, and must never appear inside a runtime worker either
+  (it must be a dynamic `import()`). The checker reads `dist/.vite/manifest.json`, walks only `imports`
+  (never `dynamicImports`), and greps the reachable files' (and any runtime workers') text for those
+  markers — so an accidentally-inlined forbidden module is still caught, not just a chunk whose file
+  name happens to say "duckdb".
+- A manifest with no entry for `index.html`, or an entry with no `"file"` (a build that silently failed
+  to emit it), is a hard `FAIL`, never a vacuous pass over zero files.
 - `npm run build:fixture:size-budget` builds `tests/fixtures/size-budget-static-duckdb/` (a stub
-  module named/worded like the real dependency, statically imported on purpose) and running the
-  checker against it must fail — the committed proof that this check can actually fail. Every gate
-  in this repo ships with a seeded fault like this one; a check that cannot fail is not a check.
+  module named/worded like the real dependency, statically imported on purpose) and
+  `npm run build:fixture:size-budget-worker` builds `tests/fixtures/size-budget-worker/` (a stub
+  worker padded past the runtime-worker budget with deterministic, gzip-incompressible bytes) —
+  running the checker against either must fail, and CI (`pages.yml`) asserts that on every run, not
+  just in a unit test: the committed proof that this check can actually fail. Every gate in this repo
+  ships with a seeded fault like this one; a check that cannot fail is not a check.
 
 ## Testing pyramid
 
@@ -95,7 +181,10 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
 2. **Build-time invariants (`node scripts/*.mjs`, wired into CI).** Things only a real `vite build`
    output can prove: the size budget, no `session.json` in `dist/`, no absolute `/assets/` URL.
 3. **Smoke e2e (Playwright, `e2e/**`, chromium + webkit + firefox).** Does the shell actually paint,
-   with zero console errors, in a real browser. `scripts/verify.mjs` is the (currently skeletal)
+   with zero console errors, in a real browser — and does the release-access gate hold in a real
+   browser (public host + `?ver=v9` makes zero requests under `/v9/`; `/v9/atlas/` renders v9 only
+   with a `preview` session). **Hermetic**: every bucket URL is `page.route`d to a fixture, so no
+   spec ever touches the live network; the preview server runs on port 4331. `scripts/verify.mjs` is the (currently skeletal)
    state-matrix runner: every view state × {desktop 1280×800, phone 390×844}, asserting
    `assertLayout()` (no horizontal overflow, every `[data-control]` fully on screen).
 4. **Parity (later, `scripts/parity/`).** Cross-checked against `msens` at `max|Δ| ≥ 1e-9` — a gate

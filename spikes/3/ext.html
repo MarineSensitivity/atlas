@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>atlas S3 spike: duckdb-wasm extension autoload</title>
+  </head>
+  <body>
+    <!-- measurement harness only, driven by Playwright via window.__ext (src/ext-check.ts) -->
+    <h1>S3 extension harness</h1>
+    <div id="status">loading...</div>
+    <script type="module" src="/src/ext-check.ts"></script>
+    <script type="module">
+      window.addEventListener("DOMContentLoaded", () => {
+        document.getElementById("status").textContent = "ready";
+      });
+    </script>
+  </body>
+</html>

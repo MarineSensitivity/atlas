@@ -43,9 +43,20 @@ jobs:
 
       - run: npx vite build
 
-      # atlas-0 Deliverable 4: fails on a >350 KB gzip critical path, or a lazy-only chunk
-      # (duckdb*/terra-draw*/docx*/shp*/treemap) reachable by static import.
+      # atlas-0 Deliverable 4 (F3 extended): fails on a >350 KB gzip static critical path, a >150 KB
+      # gzip runtime worker referenced from it (e.g. maplibre-gl's, S2.md), or a lazy-only chunk
+      # (duckdb*/terra-draw*/docx*/shp*/treemap) reachable by static import or by a runtime worker.
       - run: node scripts/size-budget.mjs
+
+      # atlas-0 review fix round 1, F4: the two lines above prove size-budget.mjs is green against a
+      # real build; these two prove it can actually go RED — against dist alone, not a unit test's
+      # synthetic manifest, so a real Vite manifest-shape drift that made the checker walk nothing
+      # would be caught here even if every vitest case stayed green. `!` inverts the exit code: each
+      # of these STEPS fails if its fixture ever stops being red (e.g. someone deletes the static
+      # import/worker reference that makes it red in the first place).
+      - run: npm run build:fixture:size-budget && ! node scripts/size-budget.mjs --dist tests/fixtures/size-budget-static-duckdb/dist
+
+      - run: npm run build:fixture:size-budget-worker && ! node scripts/size-budget.mjs --dist tests/fixtures/size-budget-worker/dist
 
       # atlas-0 Deliverable 3 / plan D6: dist/ must never contain session.json — that file only
       # ever exists on the preview host, and its presence is the sole switch into preview mode.

@@ -1,0 +1,16 @@
+{
+  "name": "atlas-spike-1-opfs",
+  "private": true,
+  "version": "0.0.0",
+  "description": "atlas-0 Step 4, S1: OPFS persistence pin harness. Spike-only deps; installs several @duckdb/duckdb-wasm versions side by side via npm aliases so the same page can be pointed at any of them with ?pkg=. Reuses the root repo's @playwright/test (resolved via node_modules walk-up) instead of installing a second copy.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 4311 --strictPort",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "duckdb-wasm-132": "npm:@duckdb/duckdb-wasm@1.32.0",
+    "duckdb-wasm-latest-dev57": "npm:@duckdb/duckdb-wasm@1.33.1-dev57.0",
+    "duckdb-wasm-next-dev64": "npm:@duckdb/duckdb-wasm@1.33.1-dev64.0"
+  }
+}

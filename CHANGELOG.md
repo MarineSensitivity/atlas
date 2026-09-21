@@ -1,3 +1,21 @@
+# atlas 0.1.1
+
+- **Restricted releases can no longer render on the public host** (plan D6). `versions.json`'s
+  `access` column is now enforced: v7b, v8 and v9 are restricted, and
+  `marinesensitivity.org/atlas/?ver=v9` makes **zero** requests for that release — it shows
+  `latest.txt`'s public release instead and records why on `window.__early.denied`. A restricted
+  release renders only where the same-origin `session.json` says `preview: true` (the preview host).
+  Unknown versions, a row with no `access`, and an unreadable `versions.json` all fail closed.
+- **The registry and release files are read from the bucket, absolutely**, not from the page's own
+  origin: `latest.txt`, `versions.json` and `{ver}/manifest.json` now come from
+  `https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/`. This fixes the
+  doubled-path 404 (`/v9/atlas/v9/manifest.json`) that made the preview host's version path fetch
+  nothing at all. `session.json` remains the only same-origin request, and the public path no longer
+  waits on it.
+- New `src/lib/release/dataBase.ts` (the one place a data origin is formed; honours a validated,
+  https-only `session.data` prefix on a preview session) and `src/lib/release/access.ts` (the gate),
+  both unit-tested through the same case table as `index.html`'s inline early-fetch copy.
+
 # atlas 0.1.0
 
 Initial scaffold (plan phase `atlas-0`, Deliverables 1-5; the four de-risking spikes are a separate,

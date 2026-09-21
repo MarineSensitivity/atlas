@@ -1,0 +1,21 @@
+{
+  // spike-local tsconfig, deliberately outside the root tsconfig's `include` list (root CI's
+  // `tsc --noEmit` does not walk into spikes/** — see the root tsconfig's comment) so this never
+  // becomes a root CI gate. Used manually here to sanity-check the harness/spec code.
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": ["vite/client", "node", "@playwright/test"],
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "e2e/**/*.ts", "*.config.ts", "scripts/**/*.mjs"]
+}

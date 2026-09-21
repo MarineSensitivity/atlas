@@ -1,0 +1,13 @@
+# root .gitignore already covers node_modules/ and dist/ anywhere in the repo, but its
+# playwright-report/test-results/blob-report entries are anchored to the repo root (leading "/"),
+# which does not reach spikes/4/ — repeated here so this spike's own Playwright run artifacts
+# never get committed.
+/playwright-report/
+/test-results/
+/blob-report/
+/playwright/.cache/
+
+# fix round 2, item 1: a local same-origin copy of the real spatial extension binaries
+# (~22-23 MB each), fetched on demand by scripts/fetch-extension-cache.mjs for the
+# custom_extension_repository experiment — never committed (real, large, third-party binaries).
+/fixtures/.ext-cache/

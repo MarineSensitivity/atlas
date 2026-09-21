@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>atlas S3 spike: deck.gl BitmapLayer vs titiler tiles</title>
+  </head>
+  <body>
+    <!-- measurement harness only, driven by Playwright via window.__spike3Display (src/display-main.ts) -->
+    <h1>S3 display harness</h1>
+    <div id="status">loading...</div>
+    <script type="module" src="/src/display-main.ts"></script>
+    <script type="module">
+      window.addEventListener("DOMContentLoaded", () => {
+        document.getElementById("status").textContent = "ready";
+      });
+    </script>
+  </body>
+</html>
