@@ -1,0 +1,62 @@
+{
+  "gulf_rectangle": {
+    "description": "simple rectangle, open Gulf of Mexico water, EPSG:4326, no antimeridian issue",
+    "geometry_type": "Polygon",
+    "crs": "EPSG:4326",
+    "formats": ["zip", "kml", "fgb", "gpkg", "wkt"],
+    "vertex_count": 6,
+    "bbox": [-93.5, 26.5, -78.5, 29.5],
+    "first_ring_signed_area": -15,
+    "first_ring_orientation": "CW"
+  },
+  "aleutian_dateline": {
+    "description": "rectangle over the Aleutians crossing the antimeridian, wrapped WGS84 coords (178 -> -177)",
+    "geometry_type": "Polygon",
+    "crs": "EPSG:4326",
+    "formats": ["zip", "kml", "fgb", "gpkg", "wkt"],
+    "vertex_count": 5,
+    "naive_bbox_raw_coords": [-177, 51, 178, 53],
+    "naive_bbox_width_deg": 355,
+    "true_bbox_width_deg": 5,
+    "first_ring_signed_area": 710,
+    "first_ring_orientation": "CCW"
+  },
+  "multipolygon": {
+    "description": "two disjoint rectangles as one MultiPolygon feature, EPSG:4326",
+    "geometry_type": "MultiPolygon",
+    "crs": "EPSG:4326",
+    "formats": ["zip", "kml", "fgb", "gpkg", "wkt"],
+    "vertex_count": 10,
+    "bbox": [-122, 34, -119, 37],
+    "part_count": 2,
+    "first_ring_signed_area": -1,
+    "first_ring_orientation": "CW"
+  },
+  "utm_zone": {
+    "description": "rectangle defined directly in projected metres, EPSG:32610 (UTM zone 10N)",
+    "geometry_type": "Polygon",
+    "crs": "EPSG:32610",
+    "formats": ["zip", "fgb", "gpkg", "wkt"],
+    "vertex_count": 5,
+    "bbox_utm_metres": [500000, 4300000, 520000, 4320000],
+    "first_ring_signed_area_utm": -400000000,
+    "first_ring_orientation_utm": "CW",
+    "wgs84_ground_truth_ring": [
+      [-123, 38.84881825179],
+      [-123, 39.029047287731],
+      [-122.768937494255, 39.028818444738],
+      [-122.769521656264, 38.848590867207],
+      [-123, 38.84881825179]
+    ],
+    "wgs84_ground_truth_bbox": [500000, 4300000, 520000, 4320000]
+  },
+  "coastline_40k": {
+    "description": "synthetic wiggly LineString, exactly 40000 vertices, deterministic formula (not real coastline data)",
+    "geometry_type": "LineString",
+    "crs": "EPSG:4326",
+    "formats": ["zip", "kml", "fgb", "gpkg", "wkt"],
+    "vertex_count": 40000,
+    "bbox": [-124, 39.45000051291, -104.0005, 40.549999992168],
+    "first_ring_orientation": "N/A"
+  }
+}

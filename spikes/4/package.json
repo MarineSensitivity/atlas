@@ -1,0 +1,25 @@
+{
+  "name": "atlas-spike-4",
+  "private": true,
+  "version": "0.0.0",
+  "description": "S4 spatial-uploads spike harness (measurements only, no verdict). Vite/Playwright/TypeScript are reused from the repo root via npx (node's resolver walks up to the root node_modules) — only spike-only runtime deps live here.",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "preview": "vite preview --port 4314 --strictPort",
+    "e2e": "playwright test",
+    "e2e:correctness": "playwright test e2e/correctness.spec.ts",
+    "e2e:correctness:seeded-fault": "SPIKE4_MANIFEST=fixtures_manifest.faulty.json playwright test e2e/correctness.spec.ts",
+    "e2e:duckdb": "playwright test e2e/duckdb-spatial.spec.ts",
+    "lazy-bytes": "node scripts/lazy-bytes.mjs dist",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "fixtures": "Rscript fixtures/generate_fixtures.R"
+  },
+  "dependencies": {
+    "shpjs": "6.2.0",
+    "@tmcw/togeojson": "7.1.2",
+    "flatgeobuf": "4.4.0",
+    "@duckdb/duckdb-wasm-1-32-0": "npm:@duckdb/duckdb-wasm@1.32.0",
+    "@duckdb/duckdb-wasm-next": "npm:@duckdb/duckdb-wasm@next"
+  }
+}
