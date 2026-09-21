@@ -56,15 +56,9 @@ test("Web Locks: once tab1 releases gracefully, a fresh tab acquires the lock an
   context,
   browserName,
 }) => {
-  // WebKit here has a pre-existing, real OPFS failure (navigator.storage.getDirectory() rejects
-  // with UnknownError inside the duckdb worker -- confirmed independent of duckdb-wasm/pin, see
-  // RESULTS.md), so tab1 never actually persists a real file and this tab's later real-file read
-  // fails too. Expected here, not attributed to the pin.
-  test.fail(
-    browserName === "webkit",
-    "WebKit: OPFS itself is unavailable in this environment (see RESULTS.md); tab1 can hold the lock but never persists a real file for this step to read back.",
-  );
-
+  // fix round 2 (reviewer finding N2): no blanket test.fail() -- WebKit's branch below asserts the
+  // SPECIFIC recorded OPFS error text (not "any failure"), so a network/404 fault would surface as
+  // its own distinct failure instead of being absorbed as "WebKit's known gap".
   const dbName = "atlas-spike-weblocks-release.duckdb";
 
   await page.goto(`/?pkg=${PKG}`);
@@ -75,6 +69,21 @@ test("Web Locks: once tab1 releases gracefully, a fresh tab acquires the lock an
   );
   console.log("[web-locks release] tab1 acquireLockCreateAndHold =", JSON.stringify(r1));
   expect(r1.acquired).toBe(true);
+
+  if (browserName === "webkit") {
+    // WebKit here has a pre-existing, real OPFS failure (navigator.storage.getDirectory() rejects
+    // with this exact UnknownError inside the duckdb worker -- confirmed independent of
+    // duckdb-wasm/pin, see RESULTS.md): the lock IS acquired, but the nested OPFS create must fail
+    // with this specific text. tab1 never actually persists a real file, so this step's premise (a
+    // fresh tab reading a real persisted file) cannot be exercised here -- stop after asserting the
+    // specific cause.
+    expect(
+      r1.opfsError,
+      "WebKit's tab1 OPFS create must fail with the recorded, pre-existing error",
+    ).toMatch(/operation failed for an unknown transient reason/);
+    return;
+  }
+
   expect(r1.opfsError, "tab1's OPFS create must not have failed").toBeUndefined();
   expect(r1.n).toBe(37067);
 
@@ -99,11 +108,8 @@ test("Web Locks: an abruptly-closed tab (page.close(), no graceful release) stil
   context,
   browserName,
 }) => {
-  test.fail(
-    browserName === "webkit",
-    "WebKit: OPFS itself is unavailable in this environment (see RESULTS.md); tab1 can hold the lock but never persists a real file for this step to read back.",
-  );
-
+  // fix round 2 (reviewer finding N2): no blanket test.fail() -- see the "release" test above for
+  // why.
   const dbName = "atlas-spike-weblocks-abrupt.duckdb";
 
   await page.goto(`/?pkg=${PKG}`);
@@ -114,6 +120,16 @@ test("Web Locks: an abruptly-closed tab (page.close(), no graceful release) stil
   );
   console.log("[web-locks abrupt] tab1 acquireLockCreateAndHold =", JSON.stringify(r1));
   expect(r1.acquired).toBe(true);
+
+  if (browserName === "webkit") {
+    expect(
+      r1.opfsError,
+      "WebKit's tab1 OPFS create must fail with the recorded, pre-existing error",
+    ).toMatch(/operation failed for an unknown transient reason/);
+    await page.close();
+    return;
+  }
+
   expect(r1.opfsError).toBeUndefined();
 
   await page.close(); // abrupt: no releaseHeldLock() call, no graceful teardown

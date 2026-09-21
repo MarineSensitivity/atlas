@@ -6,7 +6,15 @@ checklist). This file records exact commands, exact versions, exact numbers, and
 **Fix round 1** added: the actual Web Locks `ifAvailable` mechanism from master plan D3
 (`e2e/web-locks*.spec.js`, new `window.spike.{acquireLockCreateAndHold,releaseHeldLock,
 probeLockAndAnswer,probeLockNoIfAvailable}` in `src/main.js`), and `test.fail()` annotations on every
-intentionally-red case so the suite's exit code is a usable gate (see "Exit codes" below).
+intentionally-red case so the suite's exit code is a usable gate.
+
+**Fix round 2** (reviewer finding N2) removed every one of those `test.fail()` annotations: they were
+a *blanket* expectation ("this test may fail, for any reason") which would have silently counted green
+even if the failure came from an unrelated fault (e.g. the parquet URL 404ing) instead of the specific,
+intended bug. See "Fix round 2" near the end of this file for the fix and two verbatim seeded-fault
+proofs. The measured facts below (dev57's bug, WebKit's OPFS gap, the two hangs) are unchanged --
+only how the specs assert them changed. The "Exit codes" subsection under Gate 1 and its `test.fail()`
+sanity check are round-1 history, superseded by "Fix round 2" below.
 
 ## Environment
 
@@ -365,6 +373,129 @@ Two independent measurements, both required by the subplan text:
   tab 1 holds the file. Marked `test.fail(true, ...)`.
 
 No cell in either gate exceeded its own timeout or needed to be killed externally.
+
+## Fix round 2 (reviewer finding N2) — blanket `test.fail()` replaced with per-cause assertions
+
+**Finding, verbatim:** "Blanket `test.fail()` still elsewhere under spikes/. ... Scenario: SOURCE_URL
+404s -> `expect(n1).toBeGreaterThan(0)` (persistence.spec.js:50) fails -> counted green, so 'dev57
+loses OPFS writes' is unproven." Every `test.fail(condition, ...)` in round 1 (`persistence.spec.js`
+×2, `web-locks.spec.js` ×2, `web-locks-hang-fault.spec.js`, `second-tab-hang-fault.spec.js`, and
+`second-tab.spec.js` ×1 which had the same shape though not explicitly named) marked the ENTIRE test
+as "may fail" without checking WHY -- any unrelated fault (a network 404, a typo, tab1 never actually
+acquiring anything) would have failed the test and been counted as the expected, known red.
+
+**Fix:** removed every `test.fail()` call under `spikes/1/`. Each case is now an ordinary test that
+asserts its specific cause positively:
+- `persistence.spec.js`: `n1` must be the exact row count (`37067`, not just `>0`) before the known-bad
+  path is touched, so a load failure surfaces as its own distinct failure; dev57's reopen must reject
+  with a message matching `/Catalog Error: Table with name t does not exist/` (`.rejects.toThrow(...)`,
+  not "any rejection").
+- `second-tab.spec.js` / `web-locks.spec.js`: WebKit's branches assert
+  `/operation failed for an unknown transient reason/` specifically on the OPFS error text, not "any
+  failure"; the non-WebKit branches assert exact success values as before.
+- `web-locks-hang-fault.spec.js` / `second-tab-hang-fault.spec.js`: assert the outcome is exactly
+  `"timeout"` / `"outer-hang-guard"` respectively, AND that the elapsed/in-page time is
+  `>= ` the guard duration (nothing resolved early) -- a positive, specific claim about what a real
+  hang looks like, not the old "must not equal the good outcome" inversion.
+
+`grep -rn "test.fail(" spikes/1/e2e/` after the fix: zero matches (checked before running any of the
+below).
+
+### All three projects, verbatim, with the fixed specs
+
+```
+$ npx playwright test --project=chromium
+Running 14 tests using 4 workers
+...
+  14 passed (17.4s)
+$ echo $?
+0
+
+$ npx playwright test --project=firefox
+Running 14 tests using 4 workers
+...
+  14 passed (25.2s)
+$ echo $?
+0
+
+$ npx playwright test --project=webkit
+Running 14 tests using 4 workers
+...
+  14 passed (20.2s)
+$ echo $?
+0
+```
+
+Every one of the 42 test runs (14 × 3 projects) is now a genuine, unconditional pass -- **zero** `✘`
+marks anywhere in any of the three outputs (compare to round 1's runs above, which showed 4-7 red `✘`
+lines per project, all annotated `test.fail()`). Same measured facts as round 0/1 (dev57 fails
+persistence with the Catalog Error; WebKit fails all real-OPFS paths with the UnknownError; both hangs
+happen exactly as seeded), now asserted directly rather than merely "expected".
+
+### Seeded-fault proof #1 — block the parquet URL: must turn the dev57 test RED (it did NOT, under round 1)
+
+Temporarily added, inside `persistence.spec.js`'s test body (reverted immediately after, not part of
+the committed diff):
+```js
+if (process.env.S1_FAULT_BLOCK_PARQUET === "1") {
+  await page.route(SOURCE_URL, (route) => route.abort());
+}
+```
+`S1_FAULT_BLOCK_PARQUET=1 npx playwright test --project=chromium e2e/persistence.spec.js -g "pkg=latest"`:
+
+```
+  1) [chromium] › e2e/persistence.spec.js:25:3 › persists opfs table across reload with S3 blocked [pkg=latest]
+
+    Error: page.evaluate: Error: HTTP Error: HTTP GET error on 'https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v9/tables/taxon.parquet' (HTTP 404 Not Found)
+
+      54 |     }
+      55 |
+    > 56 |     const n1 = await page.evaluate(
+         |                           ^
+      57 |       async ({ dbName, sourceUrl }) => window.spike.createAndCount(dbName, sourceUrl),
+      58 |       { dbName, sourceUrl: SOURCE_URL },
+      59 |     );
+        at f.onMessage (http://localhost:4311/node_modules/duckdb-wasm-latest-dev57/dist/duckdb-browser.mjs?v=41be5508:1:11938)
+        at /Users/bbest/Github/MarineSensitivity/atlas/.claude/worktrees/agent-ad0e36bab80099108/spikes/1/e2e/persistence.spec.js:56:27
+
+  1 failed
+    [chromium] › e2e/persistence.spec.js:25:3 › persists opfs table across reload with S3 blocked [pkg=latest]
+```
+`echo $?`: **`1`** -- RED, as it must be, with a plain HTTP 404 message, clearly NOT the Catalog Error
+dev57's bug produces. Under round 1's code (`test.fail(pkg === "latest", ...)`), this exact scenario
+would have failed at the same line for the same 404 reason and been counted GREEN -- N2's finding,
+reproduced and now fixed. Both temp files (`persistence.spec.js`, and none other) were reverted
+(`diff` against the pre-edit copy confirmed clean) before the next proof.
+
+### Seeded-fault proof #2 — alias dev57 to the 1.32.0 bundle: must turn the dev57 test RED with "the expected Catalog Error did not occur"
+
+Temporarily edited `src/bundles.js`'s `REGISTRY.latest` entry to point at the 132 bundle/module
+instead of dev57's (simulating "dev57 got fixed upstream" -- i.e. `pkg=latest` now actually persists),
+reverted immediately after (not part of the committed diff). Same command:
+
+```
+[persistence pkg=latest] first run count = 37067
+  ✘  1 [chromium] › e2e/persistence.spec.js:25:3 › persists opfs table across reload with S3 blocked [pkg=latest] (3.0s)
+
+  1) [chromium] › e2e/persistence.spec.js:25:3 › persists opfs table across reload with S3 blocked [pkg=latest]
+
+    Error: dev57's reopen must raise the specific 'table t does not exist' Catalog Error
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: 37067
+
+      74 |         page.evaluate(async ({ dbName }) => window.spike.reopenAndCount(dbName), { dbName }),
+      75 |         "dev57's reopen must raise the specific 'table t does not exist' Catalog Error",
+    > 76 |       ).rejects.toThrow(/Catalog Error: Table with name t does not exist/);
+
+  1 failed
+```
+`echo $?`: **`1`** -- RED, with exactly the message N2 asked for: the reopen resolved (to `37067`)
+instead of rejecting, i.e. the expected Catalog Error did not occur. `diff` against the pre-edit copy
+of `src/bundles.js` confirmed a clean revert before the final three-project confirmation run above (the
+"14 passed" outputs were captured AFTER this revert, on the real, unmodified dev57 bundle).
 
 ## Not covered
 
