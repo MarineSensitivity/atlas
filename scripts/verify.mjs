@@ -5,7 +5,7 @@
 // `assertLayout()` rule ("no horizontal overflow and every control on screen").
 //
 // Usage once there is something to check: `node scripts/verify.mjs` (expects `vite preview` already
-// serving `dist/`, e.g. via `npm run build && npm run preview -- --port 4173 --strictPort`).
+// serving `dist/`, e.g. via `npm run build && npm run preview -- --port 4331 --strictPort`).
 import { chromium } from "@playwright/test";
 
 export const VIEWPORTS = {
@@ -54,7 +54,7 @@ export async function assertLayout(page) {
 }
 
 async function main() {
-  const baseURL = process.env.VERIFY_BASE_URL ?? "http://localhost:4173";
+  const baseURL = process.env.VERIFY_BASE_URL ?? "http://localhost:4331";
   const browser = await chromium.launch();
   let failed = false;
 

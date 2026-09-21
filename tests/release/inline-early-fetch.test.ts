@@ -1,15 +1,27 @@
 // Drift guard: index.html's inline early-fetch script is a hand-kept plain-JS copy of
-// src/lib/release/{version,session}.ts (it has to run before any bundle parses, so it cannot
-// `import` them). Nothing stops the two from silently diverging — so this test extracts the
-// ACTUAL script text from the built source file, runs it for real in a node:vm sandbox with a
-// stubbed location/fetch, and drives it through the same cases as version.test.ts and
-// session.test.ts. A change to either copy that isn't mirrored in the other must fail here.
+// src/lib/release/{version,session,access,dataBase}.ts (it has to run before any bundle parses, so
+// it cannot `import` them). Nothing stops the two from silently diverging — so this test extracts
+// the ACTUAL script text from the source file, runs it for real in a node:vm sandbox with a
+// stubbed location/fetch, and drives it through the SAME case table the modules are driven
+// through (tests/release/access-cases.ts), plus the version/session cases. A rule changed in one
+// copy and not the other fails here.
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createContext, runInContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { VERSION_RE } from "../../src/lib/release/version";
+import { PUBLIC_DATA_BASE } from "../../src/lib/release/dataBase";
+import type { VersionRow } from "../../src/lib/release/access";
+import {
+  ACCESS_CASES,
+  LATEST_URL,
+  SESSION_URL,
+  VERSIONS_URL,
+  makeFetch,
+  type MockRoute,
+  type Routes,
+} from "./access-cases";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -27,49 +39,35 @@ function extractInlineVersionRe(script: string): RegExp {
   return eval(m[1]);
 }
 
-interface MockRoute {
-  reject?: boolean;
-  ok?: boolean;
-  status?: number;
-  textBody?: string;
-  jsonBody?: unknown;
-  jsonThrows?: boolean;
-}
-
-function makeFetch(routes: Record<string, MockRoute>) {
-  return async (url: string) => {
-    const r = routes[url] ?? { ok: false, status: 404 };
-    if (r.reject) throw new Error("network error");
-    return {
-      ok: r.ok ?? true,
-      status: r.status ?? (r.ok ? 200 : 404),
-      text: async () => r.textBody ?? "",
-      json: async () => {
-        if (r.jsonThrows) throw new Error("bad json");
-        return r.jsonBody;
-      },
-    };
-  };
+function extractInlineDataBase(script: string): string {
+  const m = /var DATA_BASE\s*=\s*"([^"]+)"\s*;/.exec(script);
+  if (!m) throw new Error("DATA_BASE literal not found in inline script");
+  return m[1];
 }
 
 interface Early {
   version: Promise<string | null>;
+  denied: Promise<{ ver: string; reason: string } | null>;
+  base: Promise<string>;
   versions: Promise<unknown>;
-  session: Promise<{ preview: boolean }>;
+  session: Promise<{ preview: boolean; raw: unknown }>;
   manifest: Promise<unknown>;
   boot: Promise<unknown>;
 }
 
-function runEarlyFetch(
-  script: string,
-  opts: { pathname: string; search: string; routes?: Record<string, MockRoute> },
-): Early {
-  const sandbox: { window?: unknown; location: unknown; fetch: unknown; URLSearchParams: unknown } =
-    {
-      location: { pathname: opts.pathname, search: opts.search },
-      fetch: makeFetch(opts.routes ?? {}),
-      URLSearchParams,
-    };
+function runEarlyFetch(opts: {
+  pathname: string;
+  search: string;
+  routes?: Routes;
+  requested?: string[];
+  fetchImpl?: (url: string) => Promise<unknown>;
+}): Early {
+  const sandbox: Record<string, unknown> = {
+    location: { pathname: opts.pathname, search: opts.search },
+    fetch: opts.fetchImpl ?? makeFetch(opts.routes ?? {}, opts.requested),
+    URLSearchParams,
+    URL,
+  };
   sandbox.window = sandbox;
   const ctx = createContext(sandbox);
   runInContext(script, ctx);
@@ -79,9 +77,24 @@ function runEarlyFetch(
 const html = readFileSync(resolve(ROOT, "index.html"), "utf8");
 const script = extractEarlyFetchScript(html);
 
-describe("index.html's inline VERSION_RE literal", () => {
-  it("equals src/lib/release/version.ts's VERSION_RE.source exactly", () => {
+/** a registry where everything is public, so version-resolution cases aren't gated by access. */
+function allPublic(...vers: string[]): VersionRow[] {
+  return vers.map((ver) => ({ ver, status: "release", access: "public" }));
+}
+const OPEN_REGISTRY: VersionRow[] = allPublic("v3", "v6", "v7", "v9");
+const openRoutes = (latest: MockRoute): Routes => ({
+  [LATEST_URL]: latest,
+  [VERSIONS_URL]: { ok: true, jsonBody: OPEN_REGISTRY },
+  [SESSION_URL]: { ok: false, status: 404 },
+});
+
+describe("index.html's inline literals", () => {
+  it("VERSION_RE equals src/lib/release/version.ts's VERSION_RE.source exactly", () => {
     expect(extractInlineVersionRe(script).source).toBe(VERSION_RE.source);
+  });
+
+  it("DATA_BASE equals src/lib/release/dataBase.ts's PUBLIC_DATA_BASE exactly", () => {
+    expect(extractInlineDataBase(script)).toBe(PUBLIC_DATA_BASE);
   });
 });
 
@@ -94,103 +107,235 @@ describe("report.html has no early-fetch script to drift", () => {
 
 describe("inline early-fetch script: version resolution (mirrors tests/release/version.test.ts)", () => {
   it("path beats query beats latest.txt", async () => {
-    const early = runEarlyFetch(script, {
+    const early = runEarlyFetch({
       pathname: "/v9/atlas/",
       search: "?ver=v3",
-      routes: { "latest.txt": { ok: true, textBody: "v6" } },
+      routes: openRoutes({ ok: true, textBody: "v6" }),
     });
     await expect(early.version).resolves.toBe("v9");
   });
 
   it("query beats latest.txt when the path has no version", async () => {
-    const early = runEarlyFetch(script, {
+    const early = runEarlyFetch({
       pathname: "/atlas/",
       search: "?ver=v3",
-      routes: { "latest.txt": { ok: true, textBody: "v6" } },
+      routes: openRoutes({ ok: true, textBody: "v6" }),
     });
     await expect(early.version).resolves.toBe("v3");
   });
 
   it("falls back to latest.txt when neither path nor query name a version", async () => {
-    const early = runEarlyFetch(script, {
+    const early = runEarlyFetch({
       pathname: "/atlas/",
       search: "",
-      routes: { "latest.txt": { ok: true, textBody: "v7" } },
+      routes: openRoutes({ ok: true, textBody: "v7" }),
     });
     await expect(early.version).resolves.toBe("v7");
   });
 
   it("a malformed path/query value falls through rather than being accepted (v9ab: the [a-z]? vs [a-z]* case)", async () => {
-    const early = runEarlyFetch(script, {
+    const early = runEarlyFetch({
       pathname: "/v9ab/atlas/",
       search: "?ver=v9ab",
-      routes: { "latest.txt": { ok: true, textBody: "v7" } },
+      routes: openRoutes({ ok: true, textBody: "v7" }),
     });
     await expect(early.version).resolves.toBe("v7");
   });
 
   it("a malformed latest.txt body resolves to null, never propagated as a version", async () => {
-    const early = runEarlyFetch(script, {
+    const early = runEarlyFetch({
       pathname: "/atlas/",
       search: "",
-      routes: { "latest.txt": { ok: true, textBody: "not-a-version" } },
+      routes: openRoutes({ ok: true, textBody: "not-a-version" }),
     });
     await expect(early.version).resolves.toBeNull();
   });
 
   it("latest.txt unreachable (network error) resolves to null, not a throw", async () => {
-    const early = runEarlyFetch(script, {
+    const early = runEarlyFetch({
       pathname: "/atlas/",
       search: "",
-      routes: { "latest.txt": { reject: true } },
+      routes: openRoutes({ reject: true }),
     });
     await expect(early.version).resolves.toBeNull();
+  });
+
+  it("reads latest.txt and versions.json from the bucket, not same-origin", async () => {
+    const requested: string[] = [];
+    const early = runEarlyFetch({
+      pathname: "/v9/atlas/",
+      search: "",
+      routes: openRoutes({ ok: true, textBody: "v7" }),
+      requested,
+    });
+    await early.version;
+    expect(requested).toContain(LATEST_URL);
+    expect(requested).toContain(VERSIONS_URL);
+    expect(requested.filter((u) => u === "latest.txt" || u === "versions.json")).toEqual([]);
   });
 });
 
 describe("inline early-fetch script: session/preview mode (mirrors tests/release/session.test.ts)", () => {
+  const sessionRoutes = (session: MockRoute): Routes => ({
+    ...openRoutes({ ok: true, textBody: "v7" }),
+    [SESSION_URL]: session,
+  });
+
   it("a 404 is public", async () => {
-    const early = runEarlyFetch(script, {
+    const early = runEarlyFetch({
       pathname: "/atlas/",
       search: "",
-      routes: { "session.json": { ok: false, status: 404 } },
+      routes: sessionRoutes({ ok: false, status: 404 }),
     });
-    await expect(early.session).resolves.toEqual({ preview: false });
+    await expect(early.session).resolves.toEqual({ preview: false, raw: null });
   });
 
   it("a network error is public", async () => {
-    const early = runEarlyFetch(script, {
+    const early = runEarlyFetch({
       pathname: "/atlas/",
       search: "",
-      routes: { "session.json": { reject: true } },
+      routes: sessionRoutes({ reject: true }),
     });
-    await expect(early.session).resolves.toEqual({ preview: false });
+    await expect(early.session).resolves.toEqual({ preview: false, raw: null });
+  });
+
+  it("a 200 with an unparsable body is public", async () => {
+    const early = runEarlyFetch({
+      pathname: "/atlas/",
+      search: "",
+      routes: sessionRoutes({ ok: true, jsonThrows: true }),
+    });
+    await expect(early.session).resolves.toEqual({ preview: false, raw: null });
   });
 
   it("a 200 without preview:true is public", async () => {
-    const early = runEarlyFetch(script, {
+    const early = runEarlyFetch({
       pathname: "/atlas/",
       search: "",
-      routes: { "session.json": { ok: true, jsonBody: { preview: false } } },
+      routes: sessionRoutes({ ok: true, jsonBody: { preview: false } }),
     });
-    await expect(early.session).resolves.toEqual({ preview: false });
+    await expect(early.session.then((s) => s.preview)).resolves.toBe(false);
   });
 
   it("a 200 with an empty body is public", async () => {
-    const early = runEarlyFetch(script, {
+    const early = runEarlyFetch({
       pathname: "/atlas/",
       search: "",
-      routes: { "session.json": { ok: true, jsonBody: {} } },
+      routes: sessionRoutes({ ok: true, jsonBody: {} }),
     });
-    await expect(early.session).resolves.toEqual({ preview: false });
+    await expect(early.session.then((s) => s.preview)).resolves.toBe(false);
   });
 
   it("only a 200 with preview:true is preview", async () => {
-    const early = runEarlyFetch(script, {
+    const early = runEarlyFetch({
       pathname: "/atlas/",
       search: "",
-      routes: { "session.json": { ok: true, jsonBody: { preview: true } } },
+      routes: sessionRoutes({ ok: true, jsonBody: { preview: true } }),
     });
-    await expect(early.session).resolves.toEqual({ preview: true });
+    await expect(early.session.then((s) => s.preview)).resolves.toBe(true);
+  });
+});
+
+describe("inline early-fetch script: session.json is never awaited on the public path", () => {
+  // the one property a request list cannot show: a session.json that never answers (a hung
+  // same-origin request) must not hold up a PUBLIC release's manifest, and must absolutely hold
+  // up a restricted one's.
+
+  it("a public release's manifest resolves while session.json is still pending", async () => {
+    const routes = {
+      [LATEST_URL]: { ok: true, textBody: "v7" },
+      [VERSIONS_URL]: { ok: true, jsonBody: allPublic("v7") },
+      [`${PUBLIC_DATA_BASE}v7/manifest.json`]: { ok: true, jsonBody: { ver: "v7" } },
+    } satisfies Routes;
+    const inner = makeFetch(routes);
+    const early = runEarlyFetch({
+      pathname: "/atlas/",
+      search: "",
+      fetchImpl: (url) => (url === SESSION_URL ? new Promise(() => {}) : inner(url)),
+    });
+    await expect(early.manifest).resolves.toEqual({ ver: "v7" });
+  });
+
+  it("a restricted release requests nothing while session.json is still pending", async () => {
+    const requested: string[] = [];
+    const routes = {
+      [LATEST_URL]: { ok: true, textBody: "v7" },
+      [VERSIONS_URL]: {
+        ok: true,
+        jsonBody: [
+          { ver: "v7", access: "public" },
+          { ver: "v9", access: "restricted" },
+        ],
+      },
+      [`${PUBLIC_DATA_BASE}v9/manifest.json`]: { ok: true, jsonBody: { ver: "v9" } },
+      [`${PUBLIC_DATA_BASE}v7/manifest.json`]: { ok: true, jsonBody: { ver: "v7" } },
+    } satisfies Routes;
+    const inner = makeFetch(routes, requested);
+    const early = runEarlyFetch({
+      pathname: "/v9/atlas/",
+      search: "",
+      fetchImpl: (url) => {
+        if (url === SESSION_URL) {
+          requested.push(url);
+          return new Promise(() => {});
+        }
+        return inner(url);
+      },
+    });
+    // let every settled promise drain; the gate is still waiting on session.json
+    const drained = await Promise.race([
+      early.version.then(() => "resolved"),
+      new Promise((r) => setTimeout(() => r("pending"), 20)),
+    ]);
+    expect(drained).toBe("pending");
+    expect(requested.filter((u) => u.includes("/v9/") || u.includes("/v7/"))).toEqual([]);
+  });
+});
+
+describe("the shared access case table, run against index.html's REAL inline script", () => {
+  for (const c of ACCESS_CASES) {
+    it(c.name, async () => {
+      const requested: string[] = [];
+      const early = runEarlyFetch({
+        pathname: c.pathname,
+        search: c.search,
+        routes: c.routes,
+        requested,
+      });
+
+      await expect(early.version).resolves.toBe(c.expect.ver);
+      await expect(early.denied).resolves.toEqual(c.expect.denied);
+      await early.manifest;
+      await early.boot;
+      await early.session;
+
+      const manifests = requested.filter((u) => u.endsWith("/manifest.json"));
+      expect(manifests).toEqual(c.expect.manifestUrl ? [c.expect.manifestUrl] : []);
+
+      for (const forbidden of c.expect.forbidden ?? []) {
+        expect(requested.filter((u) => u.includes(forbidden))).toEqual([]);
+      }
+
+      // session.json is the ONLY same-origin (relative) request; everything else is absolute.
+      for (const url of requested) {
+        if (url === SESSION_URL) continue;
+        expect(url.startsWith("https://")).toBe(true);
+      }
+    });
+  }
+
+  it("boot.json's absence (it does not exist until atlas-1) is a quiet null, not a throw", async () => {
+    const early = runEarlyFetch({
+      pathname: "/atlas/",
+      search: "",
+      routes: {
+        [LATEST_URL]: { ok: true, textBody: "v7" },
+        [VERSIONS_URL]: { ok: true, jsonBody: allPublic("v7") },
+        [`${PUBLIC_DATA_BASE}v7/manifest.json`]: { ok: true, jsonBody: { ver: "v7" } },
+        [`${PUBLIC_DATA_BASE}v7/app/boot.json`]: { ok: false, status: 404 },
+      },
+    });
+    await expect(early.boot).resolves.toBeNull();
+    await expect(early.manifest).resolves.toEqual({ ver: "v7" });
   });
 });

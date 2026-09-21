@@ -49,14 +49,46 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
   (`/v9/atlas/...`, the preview host's shape) always wins; `?ver=` is next; `latest.txt` is the
   fallback. A malformed value is treated as absent, never as an error — it just falls through to
   the next tier. The label shape is exactly `^v[0-9]+[a-z]?$`, matching `msens::atlas_resolve_ver()`.
-  Source of truth: `src/lib/release/version.ts` (unit-tested). The inline early-fetch script in
-  `index.html` is a hand-kept plain-JS copy of the same logic — it has to run before any bundle
-  parses, so it cannot `import` the module — keep the two in sync by hand when either changes.
+  Source of truth: `src/lib/release/version.ts` (unit-tested). Resolution is only step one: what
+  finally renders is whatever the access gate below allows.
 - **Preview mode has exactly one door.** A same-origin `session.json` is the _only_ way into
   preview mode (plan D6): it exists only on the preview host's Caddy. A 404 is public. A network
   error is public. Only a `200` with `{"preview": true}` in the body is preview — anything else
   (missing, malformed JSON, `preview` absent or falsy) must default to public. Never fail open.
-  Source of truth: `src/lib/release/session.ts` (unit-tested).
+  Source of truth: `src/lib/release/session.ts` (unit-tested). It is also the app's **only
+  same-origin fetch**, and the public path must never _await_ it (see the gate, below).
+- **Data origins are formed in exactly one place, and they are absolute.** `latest.txt`,
+  `versions.json` and every release file live in the bucket, not on either host:
+  `src/lib/release/dataBase.ts` holds the literal `PUBLIC_DATA_BASE`
+  (`https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/`, path-style, with the
+  `marine-atlas/` prefix — the bare `…/{ver}/…` path answers 403) and is the one place a release
+  URL is built (`dataBase(ver, session)`, `dataUrl()`, `registryUrl()`). Never `fetch(ver +
+"/manifest.json")` or any other relative release URL: it resolves against the mount point, so
+  under `/v9/atlas/` it becomes `/v9/atlas/v9/manifest.json` (404 on every host) and makes the data
+  origin depend on where the app happens to be served. On a **preview** session only, a
+  `session.data` prefix (a string, or a per-version map) overrides the base — plan D6's committed
+  follow-up, an unguessable prefix revealed only to a signed-in reviewer. It is validated before
+  use (https only, no credentials, no query/hash, normalized to a trailing `/`) and ignored
+  otherwise; a public session's `data` is never honoured.
+- **The public host renders public releases only** (plan D6, `src/lib/release/access.ts`).
+  `versions.json` rows carry `access`; today v7b, v8 and v9 are `restricted`. A restricted release
+  is fetched **only** when `session.json` says `preview: true` — otherwise not one request under
+  that version is ever made. Everything fails **closed**: a row with no `access` key, an
+  unrecognized `access` value, and a version with no row at all are all treated as not-renderable;
+  an unreadable `versions.json` allows _only_ `latest.txt`'s version, and a preview session does
+  not widen that. A denied version **falls through to `latest.txt`** (the same rule a malformed
+  `?ver=` follows) with `{ver, reason}` recorded on `window.__early.denied` so the UI can say why;
+  if the fall-through target is itself denied, nothing renders. `session.json` is awaited **only**
+  when a candidate release is restricted (`requiresSession()`), so the public path never blocks on
+  a same-origin round trip.
+- **The inline early-fetch script is a second copy of four modules, and a test proves it.**
+  `index.html`'s inline script duplicates `src/lib/release/{version,session,access,dataBase}.ts`
+  because it must run before any bundle parses. `tests/release/access-cases.ts` is the single case
+  table; `tests/release/access.test.ts` drives the modules through it and
+  `tests/release/inline-early-fetch.test.ts` runs the **real** inline script (extracted from
+  `index.html`) in a `node:vm` sandbox through the same table, plus literal-equality checks on
+  `VERSION_RE` and `DATA_BASE`. Change one copy without the other and exactly one of those files
+  goes red. Add the case to the shared table, never to only one side.
 - **Numbers never come from the tile server.** Rasters are _displayed_ through the existing stock
   titiler (COG tiles) — that's fine, that's what it's for. But scores, cell ids, and zonal statistics
   always come from Parquet (DuckDB-WASM, materialize-then-query — no httpfs range reads in v1), never
@@ -133,7 +165,10 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
 2. **Build-time invariants (`node scripts/*.mjs`, wired into CI).** Things only a real `vite build`
    output can prove: the size budget, no `session.json` in `dist/`, no absolute `/assets/` URL.
 3. **Smoke e2e (Playwright, `e2e/**`, chromium + webkit + firefox).** Does the shell actually paint,
-   with zero console errors, in a real browser. `scripts/verify.mjs` is the (currently skeletal)
+   with zero console errors, in a real browser — and does the release-access gate hold in a real
+   browser (public host + `?ver=v9` makes zero requests under `/v9/`; `/v9/atlas/` renders v9 only
+   with a `preview` session). **Hermetic**: every bucket URL is `page.route`d to a fixture, so no
+   spec ever touches the live network; the preview server runs on port 4331. `scripts/verify.mjs` is the (currently skeletal)
    state-matrix runner: every view state × {desktop 1280×800, phone 390×844}, asserting
    `assertLayout()` (no horizontal overflow, every `[data-control]` fully on screen).
 4. **Parity (later, `scripts/parity/`).** Cross-checked against `msens` at `max|Δ| ≥ 1e-9` — a gate
