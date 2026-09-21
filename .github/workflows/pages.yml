@@ -49,7 +49,14 @@ jobs:
       # scripts/duckdb-extensions.manifest.json; a mismatch fails this step, not silently continues.
       - run: node scripts/fetch-duckdb-extensions.mjs
 
+      # atlas-3 plan D10: the seal and agency name are build flags, approved by the owner
+      # (docs/design/spec.md §9) -- VITE_SEAL=1/VITE_AGENCY=MMA here is what actually ships it;
+      # everywhere else (a local `npm run build` with no .env) defaults to unset, which fails
+      # closed (src/lib/ui/sealVisibility.ts) and shows no seal at all.
       - run: npx vite build
+        env:
+          VITE_SEAL: "1"
+          VITE_AGENCY: MMA
 
       # atlas-0 Deliverable 4 (F3 extended): fails on a >350 KB gzip static critical path, a >150 KB
       # gzip runtime worker referenced from it (e.g. maplibre-gl's, S2.md), or a lazy-only chunk
@@ -77,6 +84,12 @@ jobs:
       # atlas-2 Step 3a fix round 1: re-verifies dist/duckdb-ext/ against the same pinned manifest,
       # against what actually ended up on disk after the build (not just what was downloaded).
       - run: node scripts/check-duckdb-ext.mjs dist
+
+      # atlas-3 step 3: index.html's inlined critical CSS copies its token VALUES from
+      # src/lib/brand/tokens.css via a real build step (an `@import` chain Vite's CSS pipeline
+      # resolves), never by hand -- this re-parses the built dist/index.html and proves every
+      # token still matches.
+      - run: node scripts/check-inlined-tokens.mjs dist
 
       - uses: actions/upload-artifact@v4
         with:

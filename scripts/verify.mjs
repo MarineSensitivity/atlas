@@ -14,8 +14,16 @@ export const VIEWPORTS = {
 };
 
 // filled in by atlas-2+ as view states exist (release picker, lens, places, ...). Each entry is a
-// path+query+hash fragment appended to the base URL. Empty today: the shell has no view state yet.
-export const STATE_MATRIX = [{ name: "shell (no state)", path: "/" }];
+// path+query+hash fragment appended to the base URL. atlas-3 step 3 adds the shell itself: the
+// default view, and the two explicit theme overrides (?theme= wins over prefers-color-scheme, so
+// these are reachable regardless of the runner's own OS theme) -- every other view state (release,
+// places, ...) still has no UI in this phase.
+export const STATE_MATRIX = [
+  { name: "shell (default)", path: "/" },
+  { name: "shell (theme=paper)", path: "/?theme=paper" },
+  { name: "shell (theme=dark)", path: "/?theme=dark" },
+  { name: "shell (species lens)", path: "/?lens=species" },
+];
 
 /**
  * No horizontal overflow, and every interactive control (`[data-control]`) fully inside the
@@ -34,8 +42,12 @@ export async function assertLayout(page) {
   const controls = page.locator("[data-control]");
   const count = await controls.count();
   for (let i = 0; i < count; i++) {
-    const box = await controls.nth(i).boundingBox();
     const name = await controls.nth(i).getAttribute("data-control");
+    // a control legitimately absent at this viewport (e.g. the phone top bar drops Share/Report/
+    // Help/search -- spec.md §10) is `display: none`, not a layout bug: skip it rather than
+    // failing "not rendered". A control that IS shown but positioned off-screen still fails below.
+    if (!(await controls.nth(i).isVisible())) continue;
+    const box = await controls.nth(i).boundingBox();
     if (!box) {
       problems.push(`control "${name}" has no bounding box (not rendered)`);
       continue;

@@ -1,0 +1,522 @@
+/*
+ * atlas-3 step 3: the app shell's own layout CSS -- one file, imported BOTH by index.html's inline
+ * critical `<style>` (via `@import`, which Vite resolves and inlines at dev/build time -- see the
+ * head comment in index.html) and by src/shell/Shell.svelte (a normal bundled import). Because both
+ * the pre-JS static skeleton and the post-hydration real shell read the SAME rules from the SAME
+ * file, there is no second, hand-typed copy of any geometry value to drift (CLAUDE.md's "keep core
+ * logic in one exported place" applied to CSS, not just TS).
+ *
+ * Two kinds of rule live here:
+ *   1. STRUCTURAL / positioning rules for the real components (topbar row, the stage, the map, and
+ *      where the floating rail/panel/about regions sit) -- these apply to both the skeleton's plain
+ *      HTML and the hydrated Svelte components, since src/lib/ui/* components position only
+ *      THEMSELVES (Panel.svelte, for example, sets only `width`, never `position`/`top`/`right` --
+ *      the composing shell owns placement, by design).
+ *   2. SKELETON-ONLY rules (prefixed `sk-`) that reproduce the exact box model of a handful of
+ *      src/lib/ui/* components (HexButton, Rail, Panel, Segmented, About) so the static, pre-JS
+ *      skeleton in index.html paints at the SAME size as the hydrated frame that replaces it (CLS
+ *      gate: tests/e2e/shell.cls.spec.ts). Those components are Svelte-scoped, so their own
+ *      `<style>` blocks never reach plain HTML -- these rules are a deliberate, narrow, geometry-only
+ *      duplication of values already reviewed in the component build (atlas-3 step 2a/2b); they are
+ *      NOT restyled here, only reproduced, and this repo's rule against touching those components is
+ *      respected -- nothing under src/lib/ui is edited to make this file work.
+ *
+ * No hex literal: every color is `var(--token)` (scripts/check-hex-literals.mjs scans this file).
+ */
+@import "../lib/brand/tokens.css";
+/* the @font-face rules (local() first, then the self-hosted metric-compatible fallback) must be
+   part of the CRITICAL path, not a later async stylesheet -- registering them only after the
+   skeleton's first paint would let the browser lay text out in a generic fallback first and swap
+   fonts once fonts.css finally loaded, which is exactly the metric-override machinery in that file
+   is there to prevent. index.html preloads the one display weight this frame needs (see its own
+   head comment); this import is what makes that preload matter at all. */
+@import "../lib/brand/fonts.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  color: var(--text-primary);
+  background: var(--surface-map);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--text-link);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-control);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--space-2);
+  top: calc(var(--space-2) * -6);
+  z-index: 60;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+.skip-link:focus {
+  top: var(--space-2);
+}
+
+/* --- app frame: the map is the page; everything else floats over it (spec.md §1) -------------- */
+.app {
+  display: grid;
+  grid-template-rows: var(--size-topbar) 1fr;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.stage {
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+  background: var(--surface-map);
+}
+
+/* --- top bar, 48 px, wave lower edge (guide p. 10) --------------------------------------------- */
+.topbar {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  height: var(--size-topbar);
+  background: color-mix(in srgb, var(--surface-panel) var(--glass-opacity), transparent);
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--elev-1);
+}
+
+.topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--motif-wave-height) * -1);
+  height: var(--motif-wave-height);
+  background: var(--motif-color);
+  opacity: var(--motif-wave-opacity);
+  -webkit-mask: url("../lib/brand/motifs/wave.svg") repeat-x center / auto 100%;
+  mask: url("../lib/brand/motifs/wave.svg") repeat-x center / auto 100%;
+  pointer-events: none;
+}
+
+.mark {
+  display: block;
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+:root:not([data-theme="paper"]) .mark--paper {
+  display: none;
+}
+:root[data-theme="paper"] .mark--navy {
+  display: none;
+}
+
+.brand-title {
+  flex: none;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: var(--tracking-display);
+  white-space: nowrap;
+  margin: 0;
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* --- hand-built top-bar controls (version chip, search, Share/Report/Help/theme) --------------- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 28px;
+  /* reserves room for the version chip's icon + a realistic label ("v7", "v12b", ...) so the
+     async VersionBadge text (empty at first paint, per src/lib/ui/VersionBadge.svelte) never
+     grows the button past this width once it resolves -- a measured CLS regression this exact
+     number fixed (a chip narrower than its own eventual content shifted everything after it by
+     the difference; e2e/shell.cls.spec.ts is what caught it). */
+  min-width: 84px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-pill);
+  background: var(--fill-control);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  flex: none;
+  cursor: pointer;
+}
+.chip:hover {
+  border-color: var(--text-secondary);
+}
+
+.search-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 240px;
+  height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  flex: none;
+}
+.search-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+.search-field input::placeholder {
+  color: var(--text-secondary);
+}
+.search-field input:focus-visible {
+  outline: none; /* the field itself carries the ring, so the caret isn't double-ringed */
+}
+.search-field:focus-within {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.search-field .kbd {
+  flex: none;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 40px;
+  min-width: 40px;
+  padding: 0 var(--space-3);
+  flex: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.tool:hover {
+  background: var(--fill-control);
+}
+@media (pointer: coarse) {
+  .tool {
+    height: var(--size-touch);
+    min-width: var(--size-touch);
+  }
+}
+
+.icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+/* --- floating regions: rail, panel/sheet, about. Each src/lib/ui component sizes only itself; --- */
+/* --- this shell owns WHERE it floats (Panel.svelte/Sheet.svelte/Rail.svelte/About.svelte never --- */
+/* --- set position/top/right/bottom -- see each component's own header comment). ----------------- */
+.rail-region {
+  position: absolute;
+  left: var(--space-3);
+  top: var(--space-3);
+  z-index: 15;
+}
+
+.panel-region {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 16;
+}
+
+.about-region {
+  position: absolute;
+  left: calc(var(--size-rail) + var(--space-4));
+  bottom: var(--space-3);
+  z-index: 14;
+}
+
+@media (max-width: 899px) {
+  .rail-region {
+    left: 50%;
+    top: auto;
+    bottom: var(--space-3);
+    transform: translateX(-50%);
+  }
+
+  /* the sheet (Sheet.svelte's root, a plain block <section> with no width of its own -- see its
+     header comment) stretches to fill this region the same way a block element always does when
+     both `left` and `right` give its absolutely-positioned ancestor a definite width. */
+  .panel-region {
+    top: auto;
+    right: 0;
+    left: 0;
+    bottom: 0;
+  }
+
+  /* the on-map About card is a desktop-only affordance at this step: the phone viewport has no
+     room for a 372 px opaque card alongside the sheet and the bottom rail (open item, not blocking:
+     docs/design/spec.md §14). */
+  .about-region {
+    display: none;
+  }
+
+  /* the phone top bar drops search/Share/Report/Help (the reviewed phone mockup,
+     docs/design/mockups/phone-sheet-half.html): the lens switch, the version chip and the theme
+     toggle are what is left, and the title collapses to the mark alone (spec.md §10) -- the
+     accessible name stays on the <h1>, only visually hidden. */
+  .brand-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .topbar-desktop-only {
+    display: none;
+  }
+}
+
+/* ================================================================================================ */
+/* SKELETON ONLY: geometry duplicated (not restyled) from src/lib/ui/{HexButton,Rail,Panel,Segmented, */
+/* About}.svelte so index.html's pre-JS static markup paints at the same size as the hydrated frame. */
+/* Every rule below is read ONLY by plain elements carrying an `sk-` class; real components never    */
+/* carry that class, so this never touches their own rendering.                                      */
+/* ================================================================================================ */
+
+.sk-seg {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.sk-seg span {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.sk-seg span.is-pressed {
+  background: var(--fill-accent);
+  color: var(--text-on-accent);
+  font-weight: 700;
+}
+
+.sk-rail {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-1);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface-panel) var(--glass-opacity), transparent);
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--elev-2);
+}
+@media (max-width: 899px) {
+  .sk-rail {
+    flex-direction: row;
+  }
+}
+.sk-hexbtn {
+  position: relative;
+  width: var(--size-touch);
+  height: var(--size-touch);
+  flex: none;
+}
+.sk-hexbtn::before,
+.sk-hexbtn::after {
+  content: "";
+  position: absolute;
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+}
+.sk-hexbtn::before {
+  inset: 0;
+  background: var(--border-control);
+}
+.sk-hexbtn::after {
+  inset: 2px;
+  background: var(--fill-control);
+}
+.sk-hexbtn.is-pressed::after {
+  background: var(--fill-accent);
+}
+
+.sk-panel {
+  width: var(--size-panel);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--surface-panel) var(--glass-opacity), transparent);
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--elev-3);
+  overflow: hidden;
+}
+@media (max-width: 899px) {
+  .sk-panel {
+    width: 100%;
+    border-radius: var(--radius-card) var(--radius-card) 0 0;
+    height: var(--size-sheet-half);
+  }
+  .sk-panel .sk-panel-grab {
+    display: block;
+    width: 44px;
+    height: 4px;
+    margin: var(--space-3) auto var(--space-2);
+    border-radius: var(--radius-pill);
+    background: var(--border-control);
+    flex: none;
+  }
+}
+.sk-panel-grab {
+  display: none;
+}
+.sk-panel-head {
+  position: relative;
+  padding: var(--space-3) 116px var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--divider);
+  flex: none;
+}
+@media (max-width: 899px) {
+  .sk-panel-head {
+    border-bottom: 0;
+    padding: 0 116px var(--space-2) var(--space-4);
+  }
+}
+.sk-panel-title {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-display);
+  margin: 0;
+  line-height: var(--leading-tight);
+}
+.sk-panel-controls {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+}
+@media (max-width: 899px) {
+  .sk-panel-controls {
+    position: static;
+    margin-left: auto;
+  }
+  .sk-panel-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+}
+.sk-panel-ctrl {
+  width: 32px;
+  height: 32px;
+  flex: none;
+}
+@media (pointer: coarse), (max-width: 899px) {
+  .sk-panel-ctrl {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
+}
+.sk-panel-body {
+  flex: 1;
+  overflow: hidden;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  max-height: 60vh;
+  color: var(--text-secondary);
+  font-size: var(--text-md);
+}
+@media (max-width: 899px) {
+  .sk-panel-body {
+    max-height: none;
+    padding: 0 var(--space-4) var(--space-4);
+  }
+}
+
+.sk-about {
+  width: 372px;
+  padding: var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+  box-shadow: var(--elev-2);
+}
+.sk-about-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.sk-about-head span.icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.sk-about-head h2 {
+  flex: 1;
+  font-size: var(--text-sm);
+  margin: 0;
+}
+.sk-about-tool {
+  width: var(--size-touch);
+  height: var(--size-touch);
+  flex: none;
+}
