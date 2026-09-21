@@ -41,42 +41,38 @@ describe("findForbiddenMarkers", () => {
   });
 });
 
-describe("findWorkerAssets (atlas-0 review fix F3)", () => {
+describe("findWorkerAssets (atlas-0 review fix F3, extended N1)", () => {
   it("finds a `?worker&url`-compiled reference and confirms it against readFile", () => {
     const seed = new Map([["assets/index.js", "new URL(`worker-ABC123.js`,import.meta.url)"]]);
     const files: Record<string, string> = { "assets/worker-ABC123.js": "self.onmessage=()=>{}" };
-    const workers = findWorkerAssets(seed, (f) => buf(files[f]));
+    const { workers, reasons } = findWorkerAssets(seed, (f) => buf(files[f]));
     expect([...workers.keys()]).toEqual(["assets/worker-ABC123.js"]);
+    expect(reasons).toEqual([]);
   });
 
   it("matches single- and double-quoted forms too, not just backticks", () => {
     const files: Record<string, string> = { "assets/w.js": "self.onmessage=()=>{}" };
     for (const q of ['"', "'"]) {
       const seed = new Map([["assets/index.js", `new URL(${q}w.js${q}, import.meta.url)`]]);
-      const workers = findWorkerAssets(seed, (f) => buf(files[f]));
+      const { workers, reasons } = findWorkerAssets(seed, (f) => buf(files[f]));
       expect([...workers.keys()]).toEqual(["assets/w.js"]);
+      expect(reasons).toEqual([]);
     }
   });
 
   it("resolves the reference relative to the referencing file's own directory", () => {
     const seed = new Map([["assets/nested/index.js", 'new URL("w.js", import.meta.url)']]);
     const files: Record<string, string> = { "assets/nested/w.js": "self.onmessage=()=>{}" };
-    const workers = findWorkerAssets(seed, (f) => buf(files[f]));
+    const { workers, reasons } = findWorkerAssets(seed, (f) => buf(files[f]));
     expect([...workers.keys()]).toEqual(["assets/nested/w.js"]);
-  });
-
-  it("ignores a reference to a file readFile cannot produce (not an emitted dist file)", () => {
-    const seed = new Map([["assets/index.js", 'new URL("ghost.js", import.meta.url)']]);
-    const workers = findWorkerAssets(seed, () => {
-      throw new Error("ENOENT");
-    });
-    expect(workers.size).toBe(0);
+    expect(reasons).toEqual([]);
   });
 
   it("ignores a `new URL(...)` that does not end in .js/.mjs (not a worker reference)", () => {
     const seed = new Map([["assets/index.js", 'new URL("data.json", import.meta.url)']]);
-    const workers = findWorkerAssets(seed, () => buf("{}"));
+    const { workers, reasons } = findWorkerAssets(seed, () => buf("{}"));
     expect(workers.size).toBe(0);
+    expect(reasons).toEqual([]);
   });
 
   it("follows a worker that itself references another worker (transitive)", () => {
@@ -85,8 +81,9 @@ describe("findWorkerAssets (atlas-0 review fix F3)", () => {
       "assets/w1.js": 'new URL("w2.js", import.meta.url)',
       "assets/w2.js": "self.onmessage=()=>{}",
     };
-    const workers = findWorkerAssets(seed, (f) => buf(files[f]));
+    const { workers, reasons } = findWorkerAssets(seed, (f) => buf(files[f]));
     expect(new Set(workers.keys())).toEqual(new Set(["assets/w1.js", "assets/w2.js"]));
+    expect(reasons).toEqual([]);
   });
 
   it("dedupes when the same worker is referenced from two different static files", () => {
@@ -95,8 +92,99 @@ describe("findWorkerAssets (atlas-0 review fix F3)", () => {
       ["assets/b.js", 'new URL("w.js", import.meta.url)'],
     ]);
     const files: Record<string, string> = { "assets/w.js": "self.onmessage=()=>{}" };
-    const workers = findWorkerAssets(seed, (f) => buf(files[f]));
+    const { workers, reasons } = findWorkerAssets(seed, (f) => buf(files[f]));
     expect([...workers.keys()]).toEqual(["assets/w.js"]);
+    expect(reasons).toEqual([]);
+  });
+
+  // --- N1: a matched reference is never silently dropped -----------------------------------------
+
+  describe("N1: resolution branches", () => {
+    it("branch 1 — resolves directly (sibling of the referencing file)", () => {
+      const seed = new Map([["assets/index.js", 'new URL("w.js", import.meta.url)']]);
+      const files: Record<string, string> = { "assets/w.js": "self.onmessage=()=>{}" };
+      const { workers, reasons } = findWorkerAssets(seed, (f) => buf(files[f]), [
+        "assets/index.js",
+        "assets/w.js",
+      ]);
+      expect([...workers.keys()]).toEqual(["assets/w.js"]);
+      expect(reasons).toEqual([]);
+    });
+
+    it("branch 2 — falls back to a basename lookup among emittedFiles when direct resolution fails (the reviewer's seeded scenario)", () => {
+      // exactly the reviewer's example: a reference `./assets/w.js` written inside `assets/app.js`
+      // naively joins to `assets/assets/w.js` (wrong — doubles the "assets/" segment), which does not
+      // exist; the real file is at `assets/w.js`.
+      const seed = new Map([["assets/app.js", 'new URL("./assets/w.js", import.meta.url)']]);
+      const emitted = ["assets/app.js", "assets/w.js"];
+      const readFile = (f: string): Buffer => {
+        if (f === "assets/w.js") return buf("self.onmessage=()=>{}");
+        throw new Error(`ENOENT: ${f}`);
+      };
+      const { workers, reasons } = findWorkerAssets(seed, readFile, emitted);
+      expect([...workers.keys()]).toEqual(["assets/w.js"]);
+      expect(reasons).toEqual([]);
+    });
+
+    it("branch 3 — unresolvable (no direct file, no basename match anywhere) => FAILS with a named reason", () => {
+      const seed = new Map([["assets/index.js", 'new URL("ghost.js", import.meta.url)']]);
+      const { workers, reasons } = findWorkerAssets(seed, () => {
+        throw new Error("ENOENT");
+      }, ["assets/index.js", "assets/unrelated.js"]);
+      expect(workers.size).toBe(0);
+      expect(reasons).toHaveLength(1);
+      expect(reasons[0]).toContain("unresolvable worker reference");
+      expect(reasons[0]).toContain("ghost.js");
+      expect(reasons[0]).toContain("assets/index.js");
+    });
+
+    it("branch 4 — two emitted files share the basename => FAILS as ambiguous rather than guessing", () => {
+      const seed = new Map([["assets/app.js", 'new URL("./assets/w.js", import.meta.url)']]);
+      const emitted = ["assets/app.js", "assets/w.js", "assets/chunk/w.js"];
+      const readFile = (f: string): Buffer => {
+        if (f === "assets/w.js" || f === "assets/chunk/w.js") return buf("self.onmessage=()=>{}");
+        throw new Error(`ENOENT: ${f}`);
+      };
+      const { workers, reasons } = findWorkerAssets(seed, readFile, emitted);
+      expect(workers.size).toBe(0); // never guesses which candidate is the real one
+      expect(reasons).toHaveLength(1);
+      expect(reasons[0]).toContain("ambiguous worker reference");
+      expect(reasons[0]).toContain("assets/w.js");
+      expect(reasons[0]).toContain("assets/chunk/w.js");
+    });
+
+    it("branch 5 — a template-interpolated (non-literal) reference FAILS as unanalysable, not silently ignored", () => {
+      const seed = new Map([["assets/index.js", "new URL(`template${x}.js`,import.meta.url)"]]);
+      const { workers, reasons } = findWorkerAssets(seed, () => buf("irrelevant"));
+      expect(workers.size).toBe(0);
+      expect(reasons).toHaveLength(1);
+      expect(reasons[0]).toContain("unanalysable worker reference");
+      expect(reasons[0]).toContain("template${x}.js");
+    });
+
+    it("a plain (non-backtick) string containing literal `${` text is NOT treated as a template — just an unresolvable literal", () => {
+      // `${` has no special meaning inside single/double quotes; this is a (weird but real) literal
+      // filename that simply doesn't exist anywhere emitted.
+      const seed = new Map([["assets/index.js", "new URL('${x}.js', import.meta.url)"]]);
+      const { workers, reasons } = findWorkerAssets(seed, () => {
+        throw new Error("ENOENT");
+      }, ["assets/index.js"]);
+      expect(workers.size).toBe(0);
+      expect(reasons).toHaveLength(1);
+      expect(reasons[0]).toContain("unresolvable worker reference");
+    });
+
+    it("without an emittedFiles argument at all, a reference that fails direct resolution is unresolvable (not silently skipped)", () => {
+      // default emittedFiles = [] — the pre-N1 behaviour of silently dropping the match is gone: this
+      // is now a hard fail even with no fallback list supplied.
+      const seed = new Map([["assets/index.js", 'new URL("ghost.js", import.meta.url)']]);
+      const { workers, reasons } = findWorkerAssets(seed, () => {
+        throw new Error("ENOENT");
+      });
+      expect(workers.size).toBe(0);
+      expect(reasons).toHaveLength(1);
+      expect(reasons[0]).toContain("unresolvable worker reference");
+    });
   });
 });
 
@@ -266,6 +354,49 @@ describe("evaluateBudget", () => {
         readFile: (f) => buf(files[f]),
       });
       expect(r.workerFiles).toEqual([]);
+    });
+  });
+
+  describe("N1: a worker reference that resolves indirectly is still found, and a dead one still fails", () => {
+    // the reviewer's exact scenario: the entry chunk is "assets/app.js" and its compiled text says
+    // `new URL("./assets/w.js", import.meta.url)` — a Vite emission style where the reference is NOT a
+    // plain sibling of the referencing file (it repeats the "assets/" segment the naive
+    // dirname+join already supplies). Before N1 this silently dropped the worker and PASSED; now it
+    // must be found via the emittedFiles basename fallback and budgeted.
+    const manifest = {
+      "index.html": { file: "assets/app.js", isEntry: true, imports: [] },
+    };
+
+    it("finds the worker via the basename fallback and budgets it (does not pass vacuously)", () => {
+      const files: Record<string, string> = {
+        "assets/app.js": 'new URL("./assets/w.js", import.meta.url)',
+        "assets/w.js": "self.onmessage=()=>{}",
+      };
+      const r = evaluateBudget({
+        manifest,
+        entryKey: "index.html",
+        readFile: (f) => buf(files[f]),
+        emittedFiles: ["assets/app.js", "assets/w.js"],
+      });
+      expect(r.ok).toBe(true);
+      expect(r.workerFiles).toEqual(["assets/w.js"]);
+      expect(r.workerGzipBytes).toBeGreaterThan(0);
+    });
+
+    it("FAILS (never silently passes) when no emittedFiles listing is given to resolve the same reference", () => {
+      const files: Record<string, string> = {
+        "assets/app.js": 'new URL("./assets/w.js", import.meta.url)',
+      };
+      const r = evaluateBudget({
+        manifest,
+        entryKey: "index.html",
+        readFile: (f) => {
+          if (files[f] === undefined) throw new Error(`ENOENT: ${f}`);
+          return buf(files[f]);
+        },
+      });
+      expect(r.ok).toBe(false);
+      expect(r.reasons.some((x) => x.includes("unresolvable worker reference"))).toBe(true);
     });
   });
 });
