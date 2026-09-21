@@ -1,0 +1,277 @@
+// atlas-2 Step 3 (Sonnet half): the engine wrapper. DuckDB-WASM booted lazily (after first frame, or
+// on first need -- never in the entry's static import graph), one connection, and EVERY `load()`/
+// `exec()` serialized on one promise chain (`atlas-refs/"calcofi explore review.md"` §11 lesson 2:
+// "a real shipped bug came from issuing a query before an asynchronously-registered buffer it
+// depended on had finished" -- `this.q = this.q.then(...)` is the fix, adopted verbatim below).
+//
+// Dependency-injectable on purpose: `createDb`/`fetchImpl`/`store`/`marksSink` all default to the
+// real self-hosted DuckDB boot (`bundles.ts`) and a real `fetch`, but a test supplies stubs so the
+// chain-ordering, the 25 MB materialize guard and the extension-repository wiring are all provable
+// under plain Node/Vitest without a browser. The real, no-stub path is exercised only by
+// `tests/fixtures/engine-e2e`'s Playwright specs (a real worker + wasm module needs a real browser).
+import { createRealDuckDB, DUCKDB_ENGINE_VERSION } from "./bundles";
+import { lit } from "./sql";
+import { MemoryTableStore, type DuckDBFileHandle } from "./store/memoryStore";
+import type { TableStore } from "./store/TableStore";
+
+/** whole-object fetch + registerFileBuffer for anything at or under this size (plan `engine/`): "no
+ * object the app needs is both large and prunable, so no httpfs range reads in v1." Anything larger
+ * is refused, loudly, rather than silently falling back to a range read this app never wires up. */
+export const MATERIALIZE_MAX_BYTES = 25 * 1024 * 1024;
+
+/** the minimal query surface `engine.ts` needs from a connection -- structural, not imported from
+ * `@duckdb/duckdb-wasm`, so a test double can satisfy it without any real Arrow/WASM machinery. A
+ * real `AsyncDuckDBConnection.query()` already returns an `arrow.Table`, which has `.toArray()`. */
+export interface DuckDBConnLike {
+  query<T = Record<string, unknown>>(sql: string): Promise<{ toArray(): T[] }>;
+  close(): Promise<void>;
+}
+
+export interface DuckDBHandleLike extends DuckDBFileHandle {
+  connect(): Promise<DuckDBConnLike>;
+  terminate(): Promise<void>;
+}
+
+export interface EngineMark {
+  name: string;
+  startMs: number;
+  durationMs: number;
+  detail?: Record<string, unknown>;
+}
+
+export interface EngineOptions {
+  /** creates the underlying DuckDB handle (+ its worker, for disposal); defaults to the real
+   * self-hosted boot (`createRealDuckDB`). Overridden by tests. */
+  createDb?: () => Promise<{ db: DuckDBHandleLike; worker?: { terminate(): void } }>;
+  fetchImpl?: typeof fetch;
+  /** defaults to a fresh `MemoryTableStore` bound to the booted db. Pass an OPFS-backed store
+   * (atlas-2 Step 4) to swap tiers without touching this class. */
+  store?: (db: DuckDBHandleLike) => TableStore;
+  /** same-origin path DuckDB's extension autoloader is pointed at before the first query
+   * (`docs/spikes/S3.md`/`S4.md`). `undefined` (the default) computes it from `document.baseURI`, so
+   * it stays base-relative under both hosts; `null` disables the `SET` entirely (used only by the
+   * seeded-fault test proving what happens without it). */
+  extensionRepository?: string | null;
+  maxMaterializeBytes?: number;
+  marksSink?: (mark: EngineMark) => void;
+}
+
+/** every failure this class raises is normalized to this: a query-layer `CatalogError` and an
+ * extension-autoload WASM `RuntimeError: function signature mismatch` (docs/spikes/S3.md: "not a
+ * catchable error" at the SQL layer, but it IS a rejected promise a `try`/`catch` around `exec()`
+ * catches) both surface identically to a caller -- "data engine unavailable", never a raw crash a
+ * click handler has to know DuckDB-WASM internals to interpret. */
+export class EngineUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super(`data engine unavailable: ${cause instanceof Error ? cause.message : String(cause)}`);
+    this.name = "EngineUnavailableError";
+    if (cause instanceof Error && cause.stack)
+      this.stack = `${this.stack}\ncaused by: ${cause.stack}`;
+  }
+}
+
+function nowMs(): number {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+/** `window.__marks` is intentionally NOT declared as a global ambient type here (this module doesn't
+ * own that namespace) -- pushed defensively behind a cast, a no-op outside a browser (Vitest's `node`
+ * environment, a worker with no `window`). */
+function defaultMarksSink(mark: EngineMark): void {
+  if (typeof window === "undefined") return;
+  const w = window as unknown as { __marks?: EngineMark[] };
+  (w.__marks ??= []).push(mark);
+}
+
+/** relative to the current document, never absolute (`base: "./"`, the same rule every other module
+ * in this app follows for asset/data URLs) -- so the same `dist/` keeps working under `/atlas/` and
+ * `/{ver}/atlas/` alike. `null` outside a browser (no `document`), which callers must handle by
+ * passing `extensionRepository` explicitly. */
+export function defaultExtensionRepository(): string | null {
+  if (typeof document === "undefined") return null;
+  return new URL("duckdb-ext", document.baseURI).href;
+}
+
+export class Engine {
+  #db: DuckDBHandleLike | null = null;
+  #worker: { terminate(): void } | undefined;
+  #conn: DuckDBConnLike | null = null;
+  #chain: Promise<unknown> = Promise.resolve();
+  #bootPromise: Promise<void> | null = null;
+  #store: TableStore | null = null;
+  #makeStore: (db: DuckDBHandleLike) => TableStore;
+  #createDb: NonNullable<EngineOptions["createDb"]>;
+  #fetchImpl: typeof fetch;
+  #extensionRepository: string | null;
+  #maxMaterializeBytes: number;
+  #marksSink: (mark: EngineMark) => void;
+
+  constructor(opts: EngineOptions = {}) {
+    this.#createDb =
+      opts.createDb ??
+      (async () => {
+        const { db, worker } = await createRealDuckDB();
+        return { db, worker };
+      });
+    this.#fetchImpl = opts.fetchImpl ?? fetch.bind(globalThis);
+    this.#makeStore = opts.store ?? ((db) => new MemoryTableStore(db));
+    this.#extensionRepository =
+      opts.extensionRepository === undefined
+        ? defaultExtensionRepository()
+        : opts.extensionRepository;
+    this.#maxMaterializeBytes = opts.maxMaterializeBytes ?? MATERIALIZE_MAX_BYTES;
+    this.#marksSink = opts.marksSink ?? defaultMarksSink;
+  }
+
+  /** `null` until {@link boot} has resolved at least once. */
+  get store(): TableStore | null {
+    return this.#store;
+  }
+
+  get engineVersion(): string {
+    return DUCKDB_ENGINE_VERSION;
+  }
+
+  /**
+   * Schedule a lazy boot after first frame: `requestIdleCallback` when available, a macrotask
+   * (`setTimeout(…, 0)`) fallback otherwise (older Safari, a non-browser test host). Never boots
+   * synchronously and never runs at import time -- importing this module must stay free even when
+   * the import itself is dynamic. A boot failure here is swallowed (logged via the same mark path a
+   * caller can inspect on `window.__marks`); it resurfaces to whichever caller's `load()`/`exec()`
+   * actually needs the engine next.
+   */
+  scheduleIdleBoot(): void {
+    const ric = (globalThis as { requestIdleCallback?: (cb: () => void) => void })
+      .requestIdleCallback;
+    const schedule = typeof ric === "function" ? ric : (cb: () => void) => setTimeout(cb, 0);
+    schedule(() => {
+      this.boot().catch(() => {});
+    });
+  }
+
+  /** Idempotent: concurrent/subsequent calls all resolve from the same in-flight (or settled)
+   * promise -- never a second `createDb()`/`connect()`. A failed boot clears the cached promise so
+   * the NEXT call gets a fresh attempt rather than a permanently-cached rejection. */
+  boot(): Promise<void> {
+    if (!this.#bootPromise) this.#bootPromise = this.#bootOnce();
+    return this.#bootPromise;
+  }
+
+  async #bootOnce(): Promise<void> {
+    const endMark = this.#startMark("engine:boot");
+    try {
+      const { db, worker } = await this.#createDb();
+      this.#db = db;
+      this.#worker = worker;
+      this.#conn = await db.connect();
+      this.#store = this.#makeStore(db);
+      if (this.#extensionRepository) {
+        // MUST happen before the first read_parquet()/LOAD: unset, a blocked/unreachable
+        // extensions.duckdb.org turns into an uncatchable-feeling WASM `RuntimeError: function
+        // signature mismatch` deep inside the query path, not a normal query error
+        // (docs/spikes/S3.md, S4.md).
+        await this.#conn.query(
+          `SET custom_extension_repository = ${lit(this.#extensionRepository)};`,
+        );
+      }
+      endMark({ ok: true, extensionRepository: this.#extensionRepository });
+    } catch (err) {
+      endMark({ ok: false, error: String(err) });
+      this.#bootPromise = null;
+      throw new EngineUnavailableError(err);
+    }
+  }
+
+  /**
+   * Whole-object `fetch` + `registerFileBuffer` (materialize-then-query, plan `engine/`). Idempotent
+   * via the store's own name+digest bookkeeping: a `name` already registered under this exact
+   * `digest` is neither re-fetched nor re-registered. Refuses (throws, never silently truncates or
+   * range-reads) anything over {@link MATERIALIZE_MAX_BYTES}. Serialized on the SAME chain as every
+   * `exec()` -- see {@link enqueue}.
+   */
+  load(name: string, url: string, digest: string): Promise<void> {
+    return this.#enqueue(async () => {
+      await this.boot();
+      const store = this.#store!;
+      if (store.has(name, digest)) return;
+
+      const endMark = this.#startMark("engine:load", { name, url });
+      try {
+        const resp = await this.#fetchImpl(url);
+        if (!resp.ok) throw new Error(`fetch ${url}: HTTP ${resp.status}`);
+        const buf = new Uint8Array(await resp.arrayBuffer());
+        if (buf.byteLength > this.#maxMaterializeBytes) {
+          throw new Error(
+            `refusing to materialize "${name}" (${buf.byteLength} B): exceeds the ` +
+              `${this.#maxMaterializeBytes} B whole-object guard -- httpfs range reads are not used ` +
+              `in v1 (plan engine/ contract)`,
+          );
+        }
+        await store.register(name, digest, buf);
+        endMark({ ok: true, bytes: buf.byteLength });
+      } catch (err) {
+        endMark({ ok: false, error: String(err) });
+        throw err instanceof EngineUnavailableError ? err : new EngineUnavailableError(err);
+      }
+    });
+  }
+
+  /** Run one query on the single connection, serialized on the same chain as every `load()`. */
+  exec<T = Record<string, unknown>>(sql: string): Promise<T[]> {
+    return this.#enqueue(async () => {
+      await this.boot();
+      const endMark = this.#startMark("engine:exec", {
+        sql: sql.length > 200 ? `${sql.slice(0, 200)}…` : sql,
+      });
+      try {
+        const result = await this.#conn!.query<T>(sql);
+        const rows = result.toArray();
+        endMark({ ok: true, rows: rows.length });
+        return rows;
+      } catch (err) {
+        endMark({ ok: false, error: String(err) });
+        throw err instanceof EngineUnavailableError ? err : new EngineUnavailableError(err);
+      }
+    });
+  }
+
+  /**
+   * EVERY `load()`/`exec()` runs through here: `fn` starts only after the previous operation's
+   * promise has SETTLED (resolved OR rejected), so two calls issued back-to-back -- with no
+   * `await` between them -- always execute strictly in call order against the one connection
+   * (`atlas-refs/"calcofi explore review.md"` lesson 2). A rejection is delivered to ITS caller
+   * (the promise `enqueue` returns) but never poisons the chain for the NEXT caller: `#chain` itself
+   * is re-armed with a settled (never-rejecting) continuation.
+   */
+  #enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.#chain.then(fn, fn);
+    this.#chain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  async dispose(): Promise<void> {
+    await this.#chain.catch(() => {});
+    await this.#conn?.close().catch(() => {});
+    await this.#db?.terminate().catch(() => {});
+    this.#worker?.terminate?.();
+    this.#conn = null;
+    this.#db = null;
+    this.#store = null;
+    this.#bootPromise = null;
+  }
+
+  #startMark(name: string, detail?: Record<string, unknown>) {
+    const startMs = nowMs();
+    return (extra?: Record<string, unknown>) => {
+      this.#marksSink({
+        name,
+        startMs,
+        durationMs: nowMs() - startMs,
+        detail: { ...detail, ...extra },
+      });
+    };
+  }
+}
