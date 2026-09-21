@@ -1,0 +1,9 @@
+# spikes/3: the 4 locally-built cell_metric tiles (scripts/make_tiles.sql makes them; never commit
+# release data, even a locally-cut subset of it)
+tiles/app/
+
+# build/test output (root .gitignore already covers most of this repo-wide, but its
+# /playwright-report/ and /test-results/ entries are anchored to the repo root, not here)
+dist/
+playwright-report/
+test-results/
