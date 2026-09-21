@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { assertColorContrastIncompletePinned } from "./hermetic";
 
 // atlas-3 step 2, Deliverable 3/4: the gallery is the review surface and the Playwright screenshot
 // baseline for every src/lib/ui component. This spec covers what tests/**/*.test.ts (vitest,
@@ -14,6 +15,11 @@ const THEMES = ["navy", "paper"] as const;
 const VIEWPORTS = [
   { name: "phone", width: 390, height: 844 },
   { name: "desktop", width: 1280, height: 900 },
+  // atlas-3 closing review, item 4a: the narrowest viewport the shell itself is gated at
+  // (scripts/verify.mjs's VIEWPORTS, e2e/shell.a11y.spec.ts's layout suite) -- the gallery had no
+  // equivalent, so a defect only visible/overlapping this narrow was never screenshotted or
+  // axe-scanned here.
+  { name: "phoneNarrow", width: 320, height: 800 },
 ] as const;
 
 const SEAL_FIXTURE_SVG =
@@ -53,18 +59,23 @@ test.describe("screenshots: every section, both themes, phone and desktop widths
 // showing up untriaged fails the gate, the same as a real violation would. Fixing items 1
 // (per-instance ids) and 4 (role="img" instead of role-less aria-label) makes
 // aria-prohibited-attr and duplicate-id-aria disappear outright.
-const INCOMPLETE_ALLOWLIST: Record<string, string> = {
-  "color-contrast":
-    "axe cannot statically resolve two kinds of composited color here: (1) color-mix()/" +
-    "backdrop-filter glass surfaces (every panel/rail's translucent background), and (2) the " +
-    'Treemap cell labels, plain SVG <text> painted over a <rect> it reports as "overlapped" ' +
-    "even though the label and its background share one element and one fixed contrast (label " +
-    "color: --text-on-accent; fill: a --cat-* token -- both already gated). " +
-    "scripts/contrast.mjs verifies every brand-chrome token pair against --surface-panel-basis " +
-    "(the measured worst-case OPAQUE composite of that glass over the map); the eight --cat-*" +
-    " tokens are measured against that same surface too (see tokens.css's @contrast block) -- " +
-    "this IS the real gate for both cases axe cannot resolve on its own.",
+//
+// atlas-3 closing review, item 4b: the ORIGINAL fix above allowlisted `color-contrast` by rule id
+// alone, which would just as silently swallow a brand-new, unrelated color-contrast defect. Pinned
+// instead (see e2e/hermetic.ts's assertColorContrastIncompletePinned doc comment for the full
+// rationale and how to re-triage): a node-count ceiling per viewport, and a closed set of the axe
+// "cannot determine" reasons -- measured today (both themes report the SAME numbers/reasons):
+//   phone (390x844):       16 nodes, {bgOverlap, pseudoContent}
+//   desktop (1280x900):    16 nodes, {bgOverlap, pseudoContent}
+//   phoneNarrow (320x800): 20 nodes, {bgOverlap, pseudoContent, elmPartiallyObscured} -- the
+//     narrower width creates more genuinely-overlapping layouts (Treemap cells, DataTable), which
+//     is exactly the NEW reason key at this width.
+const COLOR_CONTRAST_INCOMPLETE_CEILING: Record<string, number> = {
+  phone: 16,
+  desktop: 16,
+  phoneNarrow: 20,
 };
+const COLOR_CONTRAST_INCOMPLETE_REASONS = ["bgOverlap", "pseudoContent", "elmPartiallyObscured"];
 
 test.describe("axe: zero serious/critical findings, and every `incomplete` finding triaged, both themes, both widths", () => {
   for (const theme of THEMES) {
@@ -78,8 +89,11 @@ test.describe("axe: zero serious/critical findings, and every `incomplete` findi
         const bad = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
         expect(bad, JSON.stringify(bad, null, 2)).toEqual([]);
 
-        const untriaged = incomplete.filter((v) => !(v.id in INCOMPLETE_ALLOWLIST));
-        expect(untriaged, JSON.stringify(untriaged, null, 2)).toEqual([]);
+        assertColorContrastIncompletePinned(
+          incomplete,
+          COLOR_CONTRAST_INCOMPLETE_CEILING[viewport.name],
+          COLOR_CONTRAST_INCOMPLETE_REASONS,
+        );
       });
     }
   }

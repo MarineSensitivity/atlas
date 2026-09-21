@@ -95,23 +95,6 @@
     selStore.set({ lens, out: defaultOut(lens) });
   }
 
-  let searchInputRef: HTMLInputElement | undefined;
-  onMount(() => {
-    function onKeydown(e: KeyboardEvent) {
-      if (e.key !== "/" || !searchInputRef) return;
-      const active = document.activeElement;
-      const isTyping =
-        active instanceof HTMLInputElement ||
-        active instanceof HTMLTextAreaElement ||
-        (active instanceof HTMLElement && active.isContentEditable);
-      if (isTyping) return;
-      e.preventDefault();
-      searchInputRef.focus();
-    }
-    window.addEventListener("keydown", onKeydown);
-    return () => window.removeEventListener("keydown", onKeydown);
-  });
-
   async function onShare() {
     try {
       await navigator.clipboard.writeText(location.href);
@@ -163,7 +146,6 @@
     class="chip"
     data-tour="version-chip"
     data-control="version-chip"
-    aria-haspopup="dialog"
     onclick={onVersionClick}
   >
     <Icon name="version" size={14} />
@@ -187,11 +169,9 @@
     <Icon name="search" size={16} />
     <input
       type="search"
-      bind:this={searchInputRef}
       aria-label="Search species and places"
       placeholder="Search species and places"
     />
-    <span class="kbd" aria-hidden="true">/</span>
   </label>
 
   <span class="spacer"></span>

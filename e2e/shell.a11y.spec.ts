@@ -1,6 +1,11 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
-import { routeBucket, routeSealFixture, routeSession } from "./hermetic";
+import {
+  assertColorContrastIncompletePinned,
+  routeBucket,
+  routeSealFixture,
+  routeSession,
+} from "./hermetic";
 import { assertLayout, VIEWPORTS as VERIFY_VIEWPORTS } from "../scripts/verify.mjs";
 
 // atlas-3 step 3 accessibility contract (spec.md §11, docs/design/spec.md §13's "accessibility"
@@ -23,17 +28,38 @@ async function gotoShell(page: import("@playwright/test").Page, theme: string, p
   await page.goto(url.pathname + url.search, { waitUntil: "networkidle" });
 }
 
+// atlas-3 closing review, item 4 ("do the same for e2e/shell.a11y.spec.ts if it shares the
+// allow-list"): this test destructured only `violations`, silently ignoring `incomplete`
+// entirely -- the same hole e2e/gallery.spec.ts had before being pinned, just with no allow-list
+// object at all. The shell's own glass surfaces (topbar/rail/panel, the same color-mix()/
+// backdrop-filter approach) produce the identical unresolvable `color-contrast` incomplete axe
+// cannot resolve; pinned the same way (see e2e/hermetic.ts's assertColorContrastIncompletePinned).
+// Measured today, both themes report the SAME numbers/reasons:
+//   phone (390x844):    5 nodes, {pseudoContent}
+//   desktop (1280x900): 8 nodes, {pseudoContent}
+const COLOR_CONTRAST_INCOMPLETE_CEILING: Record<string, number> = {
+  phone: 5,
+  desktop: 8,
+};
+const COLOR_CONTRAST_INCOMPLETE_REASONS = ["pseudoContent"];
+
 test.describe("axe: zero serious/critical findings, both themes, both widths", () => {
   for (const theme of THEMES) {
     for (const viewport of VIEWPORTS) {
       test(`${theme} @ ${viewport.name}`, async ({ page }) => {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await gotoShell(page, theme);
-        const { violations } = await new AxeBuilder({ page })
+        const { violations, incomplete } = await new AxeBuilder({ page })
           .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
           .analyze();
         const bad = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
         expect(bad, JSON.stringify(bad, null, 2)).toEqual([]);
+
+        assertColorContrastIncompletePinned(
+          incomplete,
+          COLOR_CONTRAST_INCOMPLETE_CEILING[viewport.name],
+          COLOR_CONTRAST_INCOMPLETE_REASONS,
+        );
       });
     }
   }
@@ -55,6 +81,65 @@ test.describe("layout: no horizontal overflow, every control on screen (verify.m
   }
 });
 
+test.describe("aria semantics", () => {
+  // atlas-3 closing review, item 3: the version chip advertised a popup dialog it does not open
+  // yet (the picker itself arrives in atlas-4) -- a false affordance for assistive tech. Removed
+  // until the picker exists; the announcement on click (onVersionClick) stays.
+  test("the version chip carries no aria-haspopup (the picker doesn't exist yet)", async ({
+    page,
+  }) => {
+    await gotoShell(page, "navy");
+    await expect(page.locator('[data-control="version-chip"]')).not.toHaveAttribute(
+      "aria-haspopup",
+    );
+  });
+});
+
+// atlas-3 closing review, item 1 (SC 1.4.1): `.panel-controls button[aria-pressed="true"],
+// .panel-controls button[aria-expanded="true"]` (Panel.svelte, Sheet.svelte) painted the collapse
+// disclosure as "pressed" too, because it always carries aria-expanded="true" (Panel) or
+// aria-expanded={detent !== "peek"} (Sheet, true at both half and full) -- a static/near-static
+// attribute with NO relation to which detent is actually active. Fixed by dropping the
+// aria-expanded selector from both files' CSS; this proves it with real computed styles, at both
+// the desktop (Panel.svelte) and phone (Sheet.svelte) breakpoints.
+test.describe("panel/sheet size controls: visual state matches the actual detent (SC 1.4.1)", () => {
+  const CASES = [
+    { name: "desktop", width: 1280, height: 900 },
+    { name: "phone", width: 390, height: 844 },
+  ] as const;
+
+  for (const viewport of CASES) {
+    test(`at ${viewport.name}, only "Half" is painted pressed -- not the collapse control too`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      await gotoShell(page, "navy");
+      const panel = page.locator("#panel-region");
+      await panel.getByRole("button", { name: "Half height" }).click();
+
+      async function style(locator: import("@playwright/test").Locator) {
+        return locator.evaluate((el) => {
+          const cs = getComputedStyle(el);
+          return { background: cs.backgroundColor, border: cs.borderColor };
+        });
+      }
+      // Panel's collapse button is labelled "Collapse to a pill", Sheet's "Collapse to a peek" --
+      // the prefix match (same convention as e2e/shell.cls.spec.ts's KEYS) is what lets this one
+      // test cover both components.
+      const collapse = await style(panel.locator('[aria-label^="Collapse to a"]'));
+      const half = await style(panel.getByRole("button", { name: "Half height" }));
+      const full = await style(panel.getByRole("button", { name: "Full height" }));
+
+      expect(
+        collapse,
+        "collapse vs full should be the SAME (neither is the active detent)",
+      ).toEqual(full);
+      expect(half, "half (the active detent) should DIFFER from collapse").not.toEqual(collapse);
+      expect(half, "half (the active detent) should DIFFER from full").not.toEqual(full);
+    });
+  }
+});
+
 test.describe("keyboard", () => {
   test("Tab reaches every current tab stop on the page, in DOM order", async ({
     page,
@@ -65,8 +150,7 @@ test.describe("keyboard", () => {
     // unaffected, since VoiceOver's own navigation does not go through this). Playwright's bundled
     // WebKit reproduces that default, so a literal Tab-key walk only visits the page's links/inputs
     // there, not its many buttons -- a platform default, not a bug in this shell. The OTHER keyboard
-    // tests below (roving tabindex, Esc, the / shortcut) do not depend on native Tab and pass on
-    // webkit already.
+    // tests below (roving tabindex, Esc) do not depend on native Tab and pass on webkit already.
     test.skip(browserName === "webkit", "WebKit only tabs to buttons with Full Keyboard Access on");
     await gotoShell(page, "navy");
     await page.evaluate(() => {
@@ -156,11 +240,24 @@ test.describe("keyboard", () => {
     expect(names).toEqual(["Collapse to a pill", "Half height", "Full height"]);
   });
 
-  test("the search field is reachable and the / shortcut focuses it", async ({ page }) => {
+  // atlas-3 closing review, item 2 (SC 2.1.4, Level A): there was a global `/` keydown that stole
+  // focus to the search field from anywhere on the page -- not in spec.md or the plan, and a
+  // single-character shortcut with no modifier is exactly what SC 2.1.4 requires be removable,
+  // remappable, or active-on-focus-only. Removed entirely rather than fixed; this asserts it stays
+  // gone.
+  test("'/' does not move focus, from a topbar control or from a rail tool", async ({ page }) => {
     await gotoShell(page, "navy");
-    await page.locator("body").click({ position: { x: 5, y: 5 } }); // ensure nothing is focused
+    const themeBtn = page.locator('[data-control="theme"]');
+    await themeBtn.focus();
     await page.keyboard.press("/");
-    await expect(page.getByLabel("Search species and places")).toBeFocused();
+    await expect(themeBtn).toBeFocused();
+
+    const layersBtn = page
+      .locator("#rail-region [role='toolbar']")
+      .locator('button[aria-label="Layers"]');
+    await layersBtn.focus();
+    await page.keyboard.press("/");
+    await expect(layersBtn).toBeFocused();
   });
 
   // atlas-3 step 3 fix round 2 / SC 4.1.3: exactly ONE live region, for real -- src/lib/ui's

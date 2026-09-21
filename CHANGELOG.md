@@ -1,3 +1,38 @@
+# atlas 0.7.4
+
+`atlas-3` closing review, fix round 1 (of 2): four small fixes on `src/lib/ui/{Panel,Sheet}.svelte`
+and `src/shell/Shell.svelte`, each with a test and a seeded fault.
+
+- **SC 1.4.1** (`Panel.svelte`, `Sheet.svelte`): `.panel-controls button[aria-pressed="true"],
+.panel-controls button[aria-expanded="true"]` painted the collapse disclosure as the selected
+  detent permanently -- Panel's collapse button always carries `aria-expanded="true"`, and Sheet's
+  is true at both `half` and `full` (only false at `peek`), so it lit up alongside whichever detent
+  was actually active. Dropped the `aria-expanded="true"]` selector from both files.
+  `e2e/shell.a11y.spec.ts` ("panel/sheet size controls: visual state matches the actual detent")
+  asserts, at both 1280 and 390, that with the panel at Half the collapse control and "Full" share
+  the same computed background/border-color and "Half" differs from both.
+- **SC 2.1.4, Level A** (`src/shell/Shell.svelte`): removed the global, no-modifier `/` keydown
+  that stole focus to search from anywhere on the page -- not in spec.md or the plan, and exactly
+  the kind of single-character shortcut SC 2.1.4 requires be removable/remappable/focus-scoped.
+  Removed the listener, `searchInputRef`, the `aria-keyshortcuts`-free `/` hint span in both
+  `Shell.svelte` and `index.html`'s skeleton, and its now-orphaned `.kbd` CSS rule.
+  `e2e/shell.a11y.spec.ts` asserts pressing `/` moves focus neither from a topbar control nor from
+  a rail tool; `e2e/shell.url-state.spec.ts`'s interaction walk now clicks the search field instead
+  of relying on the removed shortcut.
+- **`src/shell/Shell.svelte`**: the version chip carried `aria-haspopup="dialog"` but opens no
+  dialog (the picker ships in atlas-4) -- a false affordance. Removed the attribute; the
+  click announcement is unchanged. Asserted by a new `aria-haspopup`-absence test.
+- **Gate hole, `e2e/gallery.spec.ts` (+ `e2e/shell.a11y.spec.ts`)**: added a 320x800 `phoneNarrow`
+  viewport to the gallery's screenshot/axe matrix (new baseline screenshots). More importantly,
+  `INCOMPLETE_ALLOWLIST` exempted axe's `color-contrast` "incomplete" findings by rule id alone, so
+  any FUTURE unrelated color-contrast defect would inherit the exemption silently. Replaced with
+  `e2e/hermetic.ts`'s new `assertColorContrastIncompletePinned()`: a node-count ceiling per
+  viewport (measured today: gallery phone/desktop 16, phoneNarrow 20; shell phone 5, desktop 8) and
+  a closed set of the axe "cannot determine" reason keys actually observed (`bgOverlap`,
+  `pseudoContent`, and -- new at 320px -- `elmPartiallyObscured`; the shell only ever cites
+  `pseudoContent`). `shell.a11y.spec.ts`'s own axe test previously destructured only `violations`,
+  ignoring `incomplete` outright; it now uses the same pinned check.
+
 # atlas 0.7.3
 
 `atlas-2` step 4: the **OPFS `TableStore`** (plan D3 tier 2), behind the interface `memoryStore.ts`

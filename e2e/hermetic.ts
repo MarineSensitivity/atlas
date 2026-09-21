@@ -3,6 +3,7 @@
 // of each spec re-inventing its own fixture registry. Not a `*.spec.ts` file, so playwright.config.ts
 // never tries to run it as a test on its own.
 import type { Page } from "@playwright/test";
+import type { IncompleteResult } from "axe-core";
 
 export const BUCKET = "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/";
 
@@ -139,4 +140,61 @@ export function hexToRgb(hex: string): string {
   if (!m) throw new Error(`not a #rrggbb color: "${hex}"`);
   const [r, g, b] = m.slice(1).map((h) => parseInt(h, 16));
   return `rgb(${r}, ${g}, ${b})`;
+}
+
+/**
+ * atlas-3 closing review, item 4: axe's own `color-contrast` rule cannot statically resolve two
+ * kinds of composited color this app uses on purpose (color-mix()/backdrop-filter glass surfaces,
+ * and SVG <text> painted over a <rect> it reports as "overlapped" even though the label and its
+ * background share one element and one fixed, separately-gated contrast) -- so both
+ * e2e/gallery.spec.ts and e2e/shell.a11y.spec.ts exempt `color-contrast` from their "every
+ * incomplete finding is triaged" gate. A rule-id-keyed exemption alone is a silent hole: it would
+ * also cover a FUTURE unrelated color-contrast defect, however many nodes or for whatever reason
+ * axe cites, forever. This pins it instead: a node-count ceiling (the number actually measured
+ * for this page/viewport, recorded by the caller) and a closed set of the axe "cannot determine"
+ * message keys actually observed here -- a new incomplete node, or an existing one axe now cites
+ * for a NEW reason, still fails even though the rule id is still `color-contrast`.
+ *
+ * To re-triage after a real content change: run the failing spec, read the new count/reason from
+ * the failure, and only raise the ceiling (or add a reason key) once you've confirmed the new case
+ * is actually gated elsewhere (e.g. scripts/contrast.mjs) -- never just to make the number match.
+ */
+export function extractColorContrastReasonKeys(nodes: IncompleteResult["nodes"]): string[] {
+  return nodes.flatMap((node) => {
+    const checks = [...node.any, ...node.all, ...node.none];
+    return checks
+      .map((c) => (c.data as { messageKey?: string } | null)?.messageKey)
+      .filter((k): k is string => typeof k === "string");
+  });
+}
+
+/**
+ * Asserts axe's `incomplete` results contain nothing EXCEPT `color-contrast`, and that
+ * `color-contrast`'s own node count/reasons stay within the pinned ceiling/allow-list above.
+ */
+export function assertColorContrastIncompletePinned(
+  incomplete: IncompleteResult[],
+  ceiling: number,
+  allowedReasonKeys: readonly string[],
+) {
+  const untriaged = incomplete.filter((v) => v.id !== "color-contrast");
+  if (untriaged.length) {
+    throw new Error(
+      `axe reported an untriaged incomplete finding (not color-contrast): ${JSON.stringify(untriaged, null, 2)}`,
+    );
+  }
+  const colorContrast = incomplete.find((v) => v.id === "color-contrast");
+  const nodeCount = colorContrast?.nodes.length ?? 0;
+  if (nodeCount > ceiling) {
+    throw new Error(
+      `color-contrast incomplete node count ${nodeCount} exceeds the pinned ceiling of ${ceiling}`,
+    );
+  }
+  const reasons = colorContrast ? extractColorContrastReasonKeys(colorContrast.nodes) : [];
+  const unexpected = reasons.filter((k) => !allowedReasonKeys.includes(k));
+  if (unexpected.length) {
+    throw new Error(
+      `color-contrast incomplete cited an unexpected reason: ${JSON.stringify(unexpected)} (allowed: ${JSON.stringify(allowedReasonKeys)})`,
+    );
+  }
 }
