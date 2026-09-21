@@ -1,0 +1,10 @@
+<!-- atlas-3 bespoke glyph: the FLOWER PLOT of component scores (Ben, 2026-09-21: "a simplified icon
+     with a circle and radiating petals of different lengths"). It is not a decorative flower and it
+     is not `mdiFlower`: the centre circle is the composite mean and the eight petals are the
+     component scores, so their lengths differ on purpose. One `currentColor`, one path, 24x24 — the
+     same `d` string is quoted in docs/design/spec.md and tests/glyphs.test.ts asserts the two are
+     identical and that the path parses. Legible at 20 px inside a 44 px hexagon button. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"
+     aria-hidden="true" focusable="false">
+  <path fill="currentColor" d="M8.9 12a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0ZM11.37 9.48Q9.41 6.19 12 1.4Q14.59 6.19 12.63 9.48ZM13.34 9.77Q13.29 8.64 16.24 7.76Q15.36 10.71 14.23 10.66ZM14.52 11.37Q16.93 9.8 21 12Q16.93 14.2 14.52 12.63ZM14.23 13.34Q15.92 13.51 16.95 16.95Q13.51 15.92 13.34 14.23ZM12.63 14.52Q14.39 17.37 12 21.8Q9.61 17.37 11.37 14.52ZM10.66 14.23Q10.84 15.02 8.18 15.82Q8.98 13.16 9.77 13.34ZM9.48 12.63Q7.51 14 3.8 12Q7.51 10 9.48 11.37ZM9.77 10.66Q8.3 10.58 7.33 7.33Q10.58 8.3 10.66 9.77Z"/>
+</svg>

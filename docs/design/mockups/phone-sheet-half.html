@@ -30,9 +30,6 @@
           d="M12 2a7 7 0 0 0-7 7c0 5.3 7 13 7 13s7-7.7 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"
         />
       </symbol>
-      <symbol id="i-plot" viewBox="0 0 24 24">
-        <path d="M4 20h16v2H2V2h2v18Zm3-4h3v-6H7v6Zm5 0h3V6h-3v10Zm5 0h3v-3h-3v3Z" />
-      </symbol>
       <symbol id="i-table" viewBox="0 0 24 24">
         <path
           d="M3 3h18v18H3V3Zm2 4v3h5V7H5Zm7 0v3h7V7h-7ZM5 12v3h5v-3H5Zm7 0v3h7v-3h-7ZM5 17v2h5v-2H5Zm7 0v2h7v-2h-7Z"
@@ -41,9 +38,22 @@
       <symbol id="i-report" viewBox="0 0 24 24">
         <path d="M6 2h8l4 4v16H6V2Zm8 1.5V7h3.5L14 3.5ZM8 12h8v2H8v-2Zm0 4h8v2H8v-2Z" />
       </symbol>
-      <symbol id="i-help" viewBox="0 0 24 24">
+      <symbol id="i-flower" viewBox="0 0 24 24">
         <path
-          d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 15h-2v-2h2v2Zm1.8-6.2-.9.9c-.6.6-.9 1.1-.9 2.3h-2v-.5c0-.9.4-1.7 1-2.3l1.2-1.2c.4-.4.6-.9.6-1.5a2 2 0 1 0-4 0H8a4 4 0 1 1 8 0c0 .8-.3 1.5-.9 2.1Z"
+          d="M8.9 12a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0ZM11.37 9.48Q9.41 6.19 12 1.4Q14.59 6.19 12.63 9.48ZM13.34 9.77Q13.29 8.64 16.24 7.76Q15.36 10.71 14.23 10.66ZM14.52 11.37Q16.93 9.8 21 12Q16.93 14.2 14.52 12.63ZM14.23 13.34Q15.92 13.51 16.95 16.95Q13.51 15.92 13.34 14.23ZM12.63 14.52Q14.39 17.37 12 21.8Q9.61 17.37 11.37 14.52ZM10.66 14.23Q10.84 15.02 8.18 15.82Q8.98 13.16 9.77 13.34ZM9.48 12.63Q7.51 14 3.8 12Q7.51 10 9.48 11.37ZM9.77 10.66Q8.3 10.58 7.33 7.33Q10.58 8.3 10.66 9.77Z"
+        />
+      </symbol>
+      <symbol id="i-collapse-down" viewBox="0 0 24 24">
+        <path
+          d="M5 6.4 12 12.9 19 6.4 17.6 5 12 10.1 6.4 5 5 6.4Zm0 6L12 18.9 19 12.4 17.6 11 12 16.1 6.4 11 5 12.4Z"
+        />
+      </symbol>
+      <symbol id="i-half-bottom" viewBox="0 0 24 24">
+        <path d="M3 4h18v16H3V4Zm2 2v8h14V6H5Z" />
+      </symbol>
+      <symbol id="i-full" viewBox="0 0 24 24">
+        <path
+          d="M10 21H3v-7h2v3.6L9.6 13 11 14.4 6.4 19H10v2Zm4-18h7v7h-2V6.4L14.4 11 13 9.6 17.6 5H14V3Z"
         />
       </symbol>
       <symbol id="i-theme" viewBox="0 0 24 24">
@@ -93,13 +103,13 @@
             aria-label="Map of Alaska Program Areas. St. George Basin is selected."
           >
             <rect class="map-sea" x="0" y="0" width="400" height="700" />
-            <path class="map-land" d="M0 0 L400 0 L400 60 L250 90 L120 50 L0 85 Z" />
-            <polygon class="zone zone-1" points="20,110 190,98 205,248 38,262" />
-            <polygon class="zone zone-0" points="205,248 190,98 372,88 390,238" />
-            <polygon class="zone zone-3 zone--selected" points="38,262 205,248 222,400 55,415" />
-            <polygon class="zone zone-2" points="222,400 205,248 390,238 400,390" />
-            <text class="map-label" x="120" y="300" text-anchor="middle">St. George Basin</text>
-            <text class="map-label" x="295" y="175" text-anchor="middle">Norton Basin</text>
+            <path class="map-land" d="M0 0 L400 0 L400 30 L250 50 L120 20 L0 45 Z" />
+            <polygon class="zone zone-1" points="20,55 190,43 205,193 38,207" />
+            <polygon class="zone zone-0" points="205,193 190,43 372,33 390,183" />
+            <polygon class="zone zone-3 zone--selected" points="38,207 205,193 222,345 55,360" />
+            <polygon class="zone zone-2" points="222,345 205,193 390,183 400,335" />
+            <text class="map-label" x="118" y="250" text-anchor="middle">St. George Basin</text>
+            <text class="map-label" x="295" y="120" text-anchor="middle">Norton Basin</text>
           </svg>
           <div class="motif-hex"></div>
         </div>
@@ -109,15 +119,27 @@
           <div class="sheet-grab" role="separator" aria-label="Drag to resize the sheet"></div>
           <div class="sheet-head">
             <h2 class="panel-title" id="sheet-title">St. George Basin</h2>
-            <span class="detents" role="img" aria-label="Sheet at half height">
-              <span class="detent"></span>
-              <span class="detent" aria-current="true"></span>
-              <span class="detent"></span>
-            </span>
+            <div class="panel-controls" role="group" aria-label="Sheet size">
+              <button
+                type="button"
+                aria-pressed="false"
+                aria-expanded="true"
+                aria-controls="sheet-body"
+                aria-label="Collapse to a peek"
+              >
+                <svg class="icon" aria-hidden="true"><use href="#i-collapse-down" /></svg>
+              </button>
+              <button type="button" aria-pressed="true" aria-label="Half height">
+                <svg class="icon" aria-hidden="true"><use href="#i-half-bottom" /></svg>
+              </button>
+              <button type="button" aria-pressed="false" aria-label="Full height">
+                <svg class="icon" aria-hidden="true"><use href="#i-full" /></svg>
+              </button>
+            </div>
           </div>
           <!-- tabindex="0": a scrollable region with no focusable child of its own must still be
                reachable by keyboard (axe `scrollable-region-focusable`) -->
-          <div class="sheet-body" tabindex="0">
+          <div class="sheet-body" id="sheet-body" tabindex="0">
             <p class="panel-kicker">
               <span class="chip">Program Area · GEO</span>
               <span>v7</span>
@@ -202,6 +224,8 @@
           </div>
         </section>
 
+        <!-- the bottom bar is the rail: the same FIVE tools in the same order as desktop
+             (Ben, 2026-09-21). Help stays in the top bar on every viewport. -->
         <nav class="bottombar" aria-label="Tools">
           <button class="hexbtn" type="button" aria-pressed="true" aria-label="Layers">
             <svg class="icon" aria-hidden="true"><use href="#i-layers" /></svg>
@@ -209,8 +233,8 @@
           <button class="hexbtn" type="button" aria-pressed="false" aria-label="Places">
             <svg class="icon" aria-hidden="true"><use href="#i-places" /></svg>
           </button>
-          <button class="hexbtn" type="button" aria-pressed="false" aria-label="Plot">
-            <svg class="icon" aria-hidden="true"><use href="#i-plot" /></svg>
+          <button class="hexbtn" type="button" aria-pressed="false" aria-label="Flower plot">
+            <svg class="icon" aria-hidden="true"><use href="#i-flower" /></svg>
           </button>
           <button class="hexbtn" type="button" aria-pressed="false" aria-label="Table">
             <svg class="icon" aria-hidden="true"><use href="#i-table" /></svg>

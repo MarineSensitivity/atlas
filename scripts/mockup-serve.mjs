@@ -14,6 +14,14 @@ const TYPES = {
   ".js": "text/javascript; charset=utf-8",
 };
 
+// The MMA seal is READ-ONLY brand material in another repo and 897 KB with embedded rasters: it is
+// never copied into this repo, never bundled, and never in the critical path (D10 + guide p. 4). The
+// About-card mockup borrows it through this one review-only alias, so the screenshots show the real
+// seal at its real proportions. If the file is not present the <img> falls back to its alt text.
+export const SEAL_ALIAS = "/seal/mma-seal.svg";
+const SEAL_SOURCE =
+  "/Users/bbest/Github/MarineSensitivity/MarineSensitivity.github.io/branding/MMA logo.svg";
+
 /**
  * @param {number} port
  * @param {string} rootDir
@@ -26,6 +34,16 @@ export function serveStatic(port = 4371, rootDir = ".") {
       /^(\.\.[/\\])+/,
       "",
     );
+    if (`/${rel.replace(/^[/\\]+/, "")}` === SEAL_ALIAS) {
+      try {
+        await stat(SEAL_SOURCE);
+        res.writeHead(200, { "content-type": "image/svg+xml" });
+        createReadStream(SEAL_SOURCE).pipe(res);
+      } catch {
+        res.writeHead(404).end("the seal source is not available on this machine");
+      }
+      return;
+    }
     const file = join(root, rel);
     if (!file.startsWith(root)) {
       res.writeHead(403).end("forbidden");
