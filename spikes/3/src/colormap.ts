@@ -1,10 +1,11 @@
-// atlas-0 S3 spike (display question): a hand-rolled approximation of the "spectral_r" ramp the
-// manifest's COGs are styled with (titiler's `colormap_name=spectral_r`, presumably a matplotlib
-// registered colormap under rio-tiler). Reproduced from ColorBrewer's 11-class "Spectral" scheme
-// (the same 11-stop convention CLAUDE.md/atlas-refs call out for this org's ramps), reversed for
-// the "_r" suffix. This is an APPROXIMATION -- see spikes/3/RESULTS.md's methodology note: any
-// pixel delta between our own render and titiler's may include colormap-implementation
-// differences, not just geometric/resampling differences.
+// atlas-0 S3 spike (display question). `spectralR` below is the ORIGINAL, superseded approach: a
+// hand-rolled approximation of titiler's `colormap_name=spectral_r`, which conflated
+// colormap-implementation differences with real geometry/resampling differences in the pixel
+// comparison (fix round 1, task 1). `linearGray` is what src/display.ts uses now: matplotlib's
+// "gray" colormap (titiler `colormap_name=gray`, NOT ColorBrewer's non-linear ColorBrewer "greys"
+// -- verified empirically, see RESULTS.md) is a plain linear ramp, value 0 -> black, 1 -> white,
+// so it can be reproduced exactly (not approximated) with `Math.floor(255 * t)`. Kept `spectralR`
+// only because nothing else in this repo needs it removed.
 const SPECTRAL_11: [number, number, number][] = [
   [158, 1, 66],
   [213, 62, 79],
@@ -40,4 +41,13 @@ export function spectralR(t: number): [number, number, number] {
 
 export function rescale(val: number, min: number, max: number): number {
   return (val - min) / (max - min);
+}
+
+// matplotlib "gray": t in [0,1] -> a single grey level in [0,255], black at 0, white at 1. Verified
+// against titiler `colormap_name=gray` at three known raw values (67.10 -> pixel 171, 66.45 ->
+// pixel 169, 0.32 -> pixel 0, all against rescale=0,100): `floor`, not `round`, matches exactly --
+// titiler/rio-tiler's colormap is a 256-entry LUT indexed by `floor(t*255)`, not rounded.
+export function linearGray(t: number): number {
+  const clamped = Math.min(1, Math.max(0, t));
+  return Math.floor(255 * clamped);
 }

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "1.32.0",
+    "@duckdb/duckdb-wasm-next": "npm:@duckdb/duckdb-wasm@1.33.1-dev64.0",
     "geotiff": "^3.0.5",
     "deck.gl": "^9.4.0"
   },

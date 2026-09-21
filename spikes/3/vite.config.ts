@@ -12,7 +12,7 @@ export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
   publicDir: fileURLToPath(new URL("./tiles", import.meta.url)),
   optimizeDeps: {
-    exclude: ["@duckdb/duckdb-wasm"],
+    exclude: ["@duckdb/duckdb-wasm", "@duckdb/duckdb-wasm-next"],
   },
   build: {
     target: "es2022",
@@ -21,6 +21,7 @@ export default defineConfig({
       input: {
         index: fileURLToPath(new URL("./index.html", import.meta.url)),
         display: fileURLToPath(new URL("./display.html", import.meta.url)),
+        ext: fileURLToPath(new URL("./ext.html", import.meta.url)),
       },
     },
   },
