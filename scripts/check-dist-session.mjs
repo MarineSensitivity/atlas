@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 // Usage: node scripts/check-dist-session.mjs [distDir=dist]
-import { distHasSessionJson } from "./check-dist-session-core.mjs";
+import { findSessionJsonFiles } from "./check-dist-session-core.mjs";
 
 const distDir = process.argv[2] ?? "dist";
+const hits = findSessionJsonFiles(distDir);
 
-if (distHasSessionJson(distDir)) {
+if (hits.length) {
   process.stderr.write(
-    `check-dist-session: FAIL — "${distDir}/session.json" exists. That file must only ever be answered ` +
-      `by the preview host's Caddy (plan D6); its presence in the public build would switch the app into ` +
-      `preview mode for everyone.\n`,
+    `check-dist-session: FAIL — session.json found under "${distDir}" (recursively). That file must ` +
+      `only ever be answered by the preview host's Caddy (plan D6); its presence anywhere in the public ` +
+      `build would switch the app into preview mode for everyone:\n`,
   );
+  for (const h of hits) process.stderr.write(`  ✗ ${h}\n`);
   process.exit(1);
 }
 
-process.stdout.write(`check-dist-session: PASS — no session.json in "${distDir}"\n`);
+process.stdout.write(`check-dist-session: PASS — no session.json anywhere under "${distDir}"\n`);
