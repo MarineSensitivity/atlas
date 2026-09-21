@@ -1,4 +1,108 @@
-# atlas 0.4.0
+# atlas 0.5.0
+
+`atlas-3` step 2a: the design-system component foundation (Svelte 5 runes, `src/lib/ui/`), the icon
+map generator folded in from the stopped Haiku attempt, self-hosted fallback fonts, and
+`gallery.html` as a third Vite entry. `DataTable`, `Flower` and `Treemap` are step 2b, after this
+merges. Still not wired into `index.html` — the shell is step 3.
+
+- **The icon map is generated, not typed by hand** (`scripts/build-icon-paths.mjs` ->
+  `src/lib/ui/icon-paths.ts`): every MDI-backed name in `docs/design/spec.md` §6 comes from
+  `@mdi/js` by export name (a wrong name throws instead of drawing a wrong picture), and the
+  bespoke `flower` glyph is read from `src/lib/brand/glyphs/flower.svg`, never retyped. The
+  generator is a pure function (`generateIconPathsSource`) that formats its own output with
+  prettier's API, so `tests/icon-paths.test.ts` compares it to the committed file in memory —
+  no shell-out, so the test can never rewrite the tracked file the way the stopped attempt's did.
+  `@mdi/js` is an exact-pinned devDependency and never enters the app bundle.
+- **`src/lib/brand/tokens.json`**, a deterministic export of `tokens.css`
+  (`scripts/export-tokens.mjs`), resolved per theme with every `var()` reference expanded. Same
+  pure-function/no-shell-out shape as the icon generator; `check-hex-literals` gets a narrow,
+  named exemption for exactly this one generated file, and now also scans `src/lib/ui` and
+  `src/gallery`.
+- **Fonts** (`src/lib/brand/fonts.css`): Century Gothic and Calibri are `local()`-only — no font
+  file for either is redistributed. Self-hosted open fallbacks: Jost for display (TeX Gyre
+  Adventor's GUST renaming clause was ambiguous enough to skip; Jost's OFL reserves no name) and
+  Carlito for body, both Latin-basic subset WOFF2 via fonttools/pyftsubset, `font-display: swap`
+  with `size-adjust`/`ascent-override`/`descent-override`/`line-gap-override` so the swap does
+  not reflow. Carlito's OFL reserves that name, so the subset file's own name table was renamed to
+  "Carlito MMA Subset" (the CSS still declares `font-family: "Carlito"`). Each license kept beside
+  its font. Not wired into `index.html`'s critical path yet.
+- **`gallery.html`**, a third page, added as its OWN independent Vite build
+  (`vite.gallery.config.ts`) rather than a third entry in `vite.config.ts` -- doing the latter first
+  made Rollup share the Svelte runtime chunk between `index.html` and the gallery, growing
+  `index.html`'s static graph from the committed ~11.5 KB gzip baseline to ~14.9 KB even though
+  nothing in `index.html` changed. `src/gallery/App.svelte` discovers one section per component
+  under `src/gallery/sections/*.svelte` with `import.meta.glob`, so later commits never edit a
+  shared file to add one.
+- **`src/lib/ui/Icon.svelte`**: the one component that renders `ICON_PATHS[name]`. An unknown name
+  renders nothing rather than throwing (a caller typo cannot blank the page); an optional `title`
+  gives the icon its own accessible name, otherwise it stays `aria-hidden` for a control that
+  already has one.
+- **`src/lib/ui/HexButton.svelte`**: the rail's hexagon button, all of spec.md §5.1/§5.2/§5.4's
+  states -- idle, `aria-pressed` active (Gold fill on `navy`, Steel on `paper`, via
+  `--fill-accent`), and inactive (`aria-disabled="true"`, NOT the `disabled` attribute, so it
+  stays focusable; glyph fades to `--icon-inactive`; a tooltip explains why; clicking it
+  re-announces that reason through an `onAnnounce` callback instead of doing anything else).
+- **`src/lib/ui/Rail.svelte`**: hosts the tool rail's five controls with roving tabindex
+  (`src/lib/ui/roving.ts`, unit-tested), `role="toolbar"` + `aria-orientation` so the SAME
+  component serves the desktop vertical rail and the phone horizontal bottom bar (spec.md §5.1).
+- **`src/lib/ui/Pill.svelte`**: one small control for three shapes spec.md §5.3/§5.4 both need --
+  a selectable toggle (`pressed`), a disclosure (`expanded` + `controls`, what a collapsed Panel
+  becomes), or disabled-with-a-reason (dashed border, strike-through, a tooltip).
+- **`src/lib/ui/Panel.svelte`**: the floating panel with collapse · half · full in its upper right
+  (spec.md §5.3). Collapsing swaps the panel for a `Pill` disclosure and moves focus to it;
+  restoring moves focus back to control 1; `Esc` anywhere inside collapses (wired imperatively,
+  not a template handler on a non-interactive element). Geometry persists per viewport size in
+  `localStorage` via `src/lib/ui/panelGeometry.ts` (pure, unit-tested, storage-injectable). Its
+  collapse control also carries a static `aria-pressed="false"` (matching the mockups exactly --
+  it is a disclosure, not a detent, but the group's three buttons render the attribute uniformly).
+- **`src/lib/ui/Sheet.svelte`**: the phone bottom sheet, three real detents (peek / half / full --
+  unlike Panel, peek keeps the sheet's own header visible, so it never swaps to a Pill), a wave top
+  edge, a grab handle, the same three header controls sized for touch. The scroll body carries
+  `tabindex="0"` + `role="region"` (axe's `scrollable-region-focusable`, seeded and fixed in the
+  mockups too). `src/lib/ui/sheetGeometry.ts` mirrors panelGeometry.ts's persistence shape.
+- **`src/lib/ui/Modal.svelte`**: focus trap, Esc-closes, and focus return all come from the native
+  `<dialog>` element's `showModal()`/`close()` rather than hand-rolled JS -- the platform already
+  guarantees top-layer focus containment and restoring focus to whatever had it before the dialog
+  opened.
+- **`src/lib/ui/Accordion.svelte`**: `aria-expanded` disclosure, one chevron icon that rotates
+  180deg (never swapped for a second icon).
+- **`src/lib/ui/Popover.svelte`**: the `ⓘ` trigger + floating content spec.md's "Panels" section
+  describes ("a two-sentence popover whose 'More' opens a modal") -- dismiss on outside click or
+  Esc, focus returns to the trigger. Composing its content with a "More" button that opens a
+  `Modal` is the caller's job.
+- **`src/lib/ui/Segmented.svelte`**: the top bar's lens switch (`Scores | Species`), plain Tab
+  order rather than roving tabindex -- spec.md §5.3 makes the same call for the panel-size group:
+  two or three targets do not justify it.
+- **`src/lib/ui/Select.svelte`**: a native `<select>` (full keyboard/AT support for free) with a
+  decorative chevron overlay -- spec.md §6's `version` icon, named for the `v7 ▾` chip but shared
+  by every select-like control.
+- **`src/lib/ui/Switch.svelte`**: a generic on/off control, `role="switch"`.
+- **`src/lib/ui/Chip.svelte`**: plain or interactive (a `version` chip like `v7 ▾`), optionally
+  dismissible. The protection chips (spec.md §5.5) are plain instances of it --
+  `src/lib/ui/protectionChip.ts` already computes the exact "MMPA · floor 20" / "MMPA · not
+  applicable" text (unit-tested per statute/category, including the Leatherback regression case).
+- **`src/lib/ui/Toast.svelte`**: the ONE polite live region (`role="status" aria-live="polite"`),
+  queued (`src/lib/ui/toastQueue.ts`, pure, unit-tested), auto-dismissing, individually dismissible.
+- **`src/lib/ui/Honeycomb.svelte`**: the loader, seven hexagons pulsing in sequence; the keyframe
+  animation turns off under `prefers-reduced-motion` and the status text is always present either
+  way.
+- **`src/lib/ui/Legend.svelte`**: takes `LegendStop[]` (from `raster/ramps.ts`, type-only import)
+  as props and renders a gradient bar + tick VALUES -- it defines no ramp of its own; a continuous
+  ramp cannot meet 3:1 stop-to-stop (spec.md §8), which is why the ticks label values, not color.
+- **`src/lib/ui/About.svelte`**: the collapsible, opaque on-map card (spec.md §9): the seal renders
+  only when `shouldShowSeal(VITE_SEAL, VITE_AGENCY)` is true (`src/lib/ui/sealVisibility.ts`,
+  unit-tested -- unset/`"0"`/any other `VITE_SEAL` value fails closed), at `--size-seal-min` (72
+  CSS px) with its clear space, `loading="lazy"`, unmodified. The seal's own source URL is NOT
+  published anywhere yet (see this step's report).
+- **A new gallery Playwright spec** (`e2e/gallery.spec.ts`, its own `playwright.gallery.config.ts`,
+  port 4401): screenshots of every section in both themes at phone (390) and desktop widths,
+  committed as the baseline; axe with zero serious/critical findings across all four combinations;
+  keyboard coverage (every current tab stop reachable, the rail's roving tabindex, a modal's focus
+  trap and return, Esc collapsing a panel, every panel-size control's accessible name, the seal's
+  visibility/size rule). Found and fixed along the way: a real Chromium `<dialog>` quirk where a
+  Tab cycle briefly lands on `<body>` when the dialog has only a couple of focusable children --
+  `Modal.svelte` now traps Tab explicitly at its own first/last focusable element as a
+  belt-and-suspenders on top of the platform's own containment.
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
 into the app, `index.html` is untouched and `dist/` is unchanged.

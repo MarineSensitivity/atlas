@@ -7,8 +7,19 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 // Access scopes its reviewer policy by PATH, never by query — so every asset URL has to be relative
 // (base: "./") and every piece of view state has to live in the query string or the hash, never a
 // client router. Two HTML entries stand in for "routes": index.html (the map) and report.html (the
-// print-first report document). `gallery.html` is in the repo layout but not wired in yet (no gallery
-// lens before atlas-4+).
+// print-first report document).
+//
+// gallery.html (atlas-3 step 2's component review surface) is deliberately built by a SEPARATE
+// config (vite.gallery.config.ts), not added to this one's rollupOptions.input. Rollup shares a
+// chunk for any module reachable from two or more entry points in the SAME build — adding gallery
+// here made it fold the whole Svelte runtime (which index.html's VersionBadge already pulls in)
+// into one chunk shared with gallery's much larger component tree, which grew index.html's own
+// static graph from the committed ~11.5 KB gzip baseline to ~14.9 KB. A second, independent Rollup
+// build for gallery.html (own manifest file, `emptyOutDir: false` so it does not clobber this
+// build's dist/ output) cannot share a chunk with this one no matter what gallery imports.
+// tests/size-budget-gallery-isolation.test.ts is the mechanical guard against this regression
+// mode specifically (gallery re-added to rollupOptions.input above); `node scripts/size-budget.mjs`
+// against a real build is the gate that proves the actual byte count.
 export default defineConfig({
   base: "./",
   // D2: no client router, so there is no "route" for the dev/preview server to fall back to
