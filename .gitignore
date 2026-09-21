@@ -28,3 +28,8 @@ coverage
 # extensions.duckdb.org, not committed — a real build must run the script before `vite build` (see
 # docs/engine.md)
 /public/duckdb-ext/
+
+# the parity harness's local stand-in for the release bucket (scripts/parity/mirror.mjs, atlas-2
+# Step 3b): symlinks into the atlas-contract dry-run bundles and ~/_big, plus one fetched
+# tables/model.parquet — rebuilt on demand, never committed
+/.parity-mirror/
