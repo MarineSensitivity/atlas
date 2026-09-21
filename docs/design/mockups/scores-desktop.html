@@ -23,6 +23,10 @@
   <body>
     <a class="skip-link" href="#place-panel">Skip to the place panel</a>
 
+    <!-- Hand-drawn stand-ins so the mockups need no dependency. The app's real icon map is the table
+         in docs/design/spec.md §6: @mdi/js export names imported BY NAME (never transcribed) plus
+         the bespoke glyphs under src/lib/brand/glyphs/. `i-flower` below IS the bespoke glyph,
+         byte-identical to src/lib/brand/glyphs/flower.svg (tests/glyphs.test.ts). -->
     <svg xmlns="http://www.w3.org/2000/svg" style="display: none" aria-hidden="true">
       <symbol id="i-layers" viewBox="0 0 24 24">
         <path d="M12 3 2 9l10 6 10-6-10-6Zm0 13.2L4.5 11.5 2 13l10 6 10-6-2.5-1.5L12 16.2Z" />
@@ -32,17 +36,14 @@
           d="M12 2a7 7 0 0 0-7 7c0 5.3 7 13 7 13s7-7.7 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"
         />
       </symbol>
-      <symbol id="i-plot" viewBox="0 0 24 24">
-        <path d="M4 20h16v2H2V2h2v18Zm3-4h3v-6H7v6Zm5 0h3V6h-3v10Zm5 0h3v-3h-3v3Z" />
+      <symbol id="i-flower" viewBox="0 0 24 24">
+        <path
+          d="M8.9 12a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0ZM11.37 9.48Q9.41 6.19 12 1.4Q14.59 6.19 12.63 9.48ZM13.34 9.77Q13.29 8.64 16.24 7.76Q15.36 10.71 14.23 10.66ZM14.52 11.37Q16.93 9.8 21 12Q16.93 14.2 14.52 12.63ZM14.23 13.34Q15.92 13.51 16.95 16.95Q13.51 15.92 13.34 14.23ZM12.63 14.52Q14.39 17.37 12 21.8Q9.61 17.37 11.37 14.52ZM10.66 14.23Q10.84 15.02 8.18 15.82Q8.98 13.16 9.77 13.34ZM9.48 12.63Q7.51 14 3.8 12Q7.51 10 9.48 11.37ZM9.77 10.66Q8.3 10.58 7.33 7.33Q10.58 8.3 10.66 9.77Z"
+        />
       </symbol>
       <symbol id="i-table" viewBox="0 0 24 24">
         <path
           d="M3 3h18v18H3V3Zm2 4v3h5V7H5Zm7 0v3h7V7h-7ZM5 12v3h5v-3H5Zm7 0v3h7v-3h-7ZM5 17v2h5v-2H5Zm7 0v2h7v-2h-7Z"
-        />
-      </symbol>
-      <symbol id="i-species" viewBox="0 0 24 24">
-        <path
-          d="M2 12c3-5 8-7 12-7 3 0 5 1 6 2l2-2v14l-2-2c-1 1-3 2-6 2-4 0-9-2-12-7Zm14-2a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z"
         />
       </symbol>
       <symbol id="i-report" viewBox="0 0 24 24">
@@ -52,6 +53,9 @@
         <path
           d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 15h-2v-2h2v2Zm1.8-6.2-.9.9c-.6.6-.9 1.1-.9 2.3h-2v-.5c0-.9.4-1.7 1-2.3l1.2-1.2c.4-.4.6-.9.6-1.5a2 2 0 1 0-4 0H8a4 4 0 1 1 8 0c0 .8-.3 1.5-.9 2.1Z"
         />
+      </symbol>
+      <symbol id="i-info" viewBox="0 0 24 24">
+        <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 15h-2v-6h2v6Zm0-8h-2V7h2v2Z" />
       </symbol>
       <symbol id="i-search" viewBox="0 0 24 24">
         <path
@@ -69,11 +73,25 @@
       <symbol id="i-chevron" viewBox="0 0 24 24">
         <path d="m7 10 5 5 5-5Z" />
       </symbol>
+      <symbol id="i-collapse" viewBox="0 0 24 24">
+        <path
+          d="M6.4 5 12.9 12 6.4 19 5 17.6 10.1 12 5 6.4 6.4 5Zm6 0L18.9 12 12.4 19 11 17.6 16.1 12 11 6.4 12.4 5Z"
+        />
+      </symbol>
+      <symbol id="i-half" viewBox="0 0 24 24">
+        <path d="M3 4h18v16H3V4Zm2 2v12h8V6H5Z" />
+      </symbol>
+      <symbol id="i-full" viewBox="0 0 24 24">
+        <path
+          d="M10 21H3v-7h2v3.6L9.6 13 11 14.4 6.4 19H10v2Zm4-18h7v7h-2V6.4L14.4 11 13 9.6 17.6 5H14V3Z"
+        />
+      </symbol>
     </svg>
 
     <div class="app">
       <!-- top bar, 48 px. The MST mark, never the MMA seal: 28 px would break the seal's 0.75 in
-           minimum (guide p. 4). Its lower edge is the wave motif at 10 %. -->
+           minimum (guide p. 4). Its lower edge is the wave motif at 10 %. Help lives HERE and only
+           here — it is not a rail tool (Ben, 2026-09-21). -->
       <header class="topbar">
         <img class="mark mark--navy" src="../../../src/lib/brand/vendor/mst-mark.svg" alt="" />
         <img
@@ -110,7 +128,7 @@
         <button class="tool" type="button">
           <svg class="icon" aria-hidden="true"><use href="#i-report" /></svg> Report
         </button>
-        <button class="tool" type="button" aria-label="Help and guided tour">
+        <button class="tool" type="button" aria-label="Help, guided tour and About">
           <svg class="icon" aria-hidden="true"><use href="#i-help" /></svg>
         </button>
         <button class="tool" type="button" aria-label="Switch to the paper theme">
@@ -152,7 +170,8 @@
           <div class="motif-hex"></div>
         </div>
 
-        <!-- tool rail: hexagonal 44 px targets, no words (the tooltip carries them) -->
+        <!-- tool rail: FIVE hexagonal 44 px targets, the same five in the same order on every
+             viewport (Ben, 2026-09-21). No words: the tooltip carries them. -->
         <nav class="rail" aria-label="Tools">
           <button class="hexbtn" type="button" aria-pressed="true" aria-label="Layers">
             <svg class="icon" aria-hidden="true"><use href="#i-layers" /></svg>
@@ -166,20 +185,14 @@
             <svg class="icon" aria-hidden="true"><use href="#i-places" /></svg>
             <span class="tooltip" role="tooltip">Places — select · draw · upload</span>
           </button>
-          <button class="hexbtn" type="button" aria-pressed="false" aria-label="Plot">
-            <svg class="icon" aria-hidden="true"><use href="#i-plot" /></svg>
+          <button class="hexbtn" type="button" aria-pressed="false" aria-label="Flower plot">
+            <svg class="icon" aria-hidden="true"><use href="#i-flower" /></svg>
           </button>
           <button class="hexbtn" type="button" aria-pressed="false" aria-label="Table">
             <svg class="icon" aria-hidden="true"><use href="#i-table" /></svg>
           </button>
-          <button class="hexbtn" type="button" aria-pressed="false" aria-label="Species info">
-            <svg class="icon" aria-hidden="true"><use href="#i-species" /></svg>
-          </button>
           <button class="hexbtn" type="button" aria-pressed="false" aria-label="Report">
             <svg class="icon" aria-hidden="true"><use href="#i-report" /></svg>
-          </button>
-          <button class="hexbtn" type="button" aria-pressed="false" aria-label="Help">
-            <svg class="icon" aria-hidden="true"><use href="#i-help" /></svg>
           </button>
         </nav>
 
@@ -193,20 +206,73 @@
           <div class="ramp-ticks"><span>0</span><span>30</span><span>60</span><span>90</span></div>
           <p class="note">
             Scores are comparable within an ecoregion, not across. The zone table is the non-visual
-            equivalent of this map.
+            equivalent of the map.
           </p>
+        </section>
+
+        <!-- The ONE on-map place the seal may legitimately appear (D10 + guide pp. 3-4): an opaque
+             About card, seal at 72 px with clear space, unmodified, lazily loaded, behind VITE_SEAL.
+             It is collapsed to its header by default; shown expanded here for the review. The src is
+             a review-server alias for the read-only branding file (scripts/mockup-serve.mjs); the app
+             loads its own copy lazily and never puts it in the critical path. -->
+        <section class="about" aria-labelledby="about-title">
+          <div class="about-head">
+            <svg class="icon" aria-hidden="true"><use href="#i-info" /></svg>
+            <h2 id="about-title">About this release</h2>
+            <button
+              class="tool"
+              type="button"
+              aria-expanded="true"
+              aria-controls="about-body"
+              aria-label="Collapse the About card"
+            >
+              <svg class="icon" aria-hidden="true"><use href="#i-chevron" /></svg>
+            </button>
+          </div>
+          <div class="about-body" id="about-body">
+            <img
+              class="seal"
+              src="/seal/mma-seal.svg"
+              alt="Seal of the Marine Minerals Administration"
+              width="72"
+              height="72"
+              loading="lazy"
+            />
+            <p>
+              <strong>Marine Minerals Administration</strong>
+              Marine Sensitivity Atlas · release v7 · scores and species from the published
+              marine-atlas release. Basemap © OpenStreetMap contributors.
+            </p>
+          </div>
         </section>
 
         <aside class="panel" id="place-panel" aria-labelledby="place-title">
           <div class="panel-head">
-            <p class="panel-kicker">
-              <span class="chip">Program Area · GEO</span>
-              <span>v7 · programarea_2026-01</span>
-            </p>
+            <p class="panel-kicker"><span class="chip">Program Area · GEO</span></p>
             <h2 class="panel-title" id="place-title">St. George Basin</h2>
+            <p class="panel-meta">v7 · programarea_2026-01</p>
+
+            <!-- expand/collapse controls, upper right: collapse to a pill · half · full -->
+            <div class="panel-controls" role="group" aria-label="Panel size">
+              <button
+                type="button"
+                aria-pressed="false"
+                aria-expanded="true"
+                aria-controls="place-panel-body"
+                aria-label="Collapse to a pill"
+              >
+                <svg class="icon" aria-hidden="true"><use href="#i-collapse" /></svg>
+              </button>
+              <button type="button" aria-pressed="false" aria-label="Half height">
+                <svg class="icon" aria-hidden="true"><use href="#i-half" /></svg>
+              </button>
+              <button type="button" aria-pressed="true" aria-label="Full height">
+                <svg class="icon" aria-hidden="true"><use href="#i-full" /></svg>
+              </button>
+            </div>
           </div>
 
-          <div class="panel-body">
+          <div class="panel-body" id="place-panel-body">
             <p class="summary">
               <strong>33.9</strong> composite
               <span class="muted">· 8 components · 16,850 cells · 145,380 km²</span>

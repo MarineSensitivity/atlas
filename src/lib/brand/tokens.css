@@ -33,6 +33,7 @@
  * nontext --border-control  : --surface-panel-basis, --surface-raised, --surface-map
  * nontext --focus-ring      : --surface-panel-basis, --surface-raised, --surface-map
  * nontext --icon-muted      : --surface-panel-basis, --surface-raised
+ * nontext --icon-inactive   : --fill-control, --surface-panel-basis
  * nontext --cat-bird        : --surface-panel-basis
  * nontext --cat-coral       : --surface-panel-basis
  * nontext --cat-fish        : --surface-panel-basis
@@ -53,6 +54,9 @@
  * exempt  --fill-track      : adjacent fill inside a control; the control's boundary is paired
  * exempt  --divider         : decorative rule between rows inside one surface (WCAG 1.4.11 exempts it)
  * exempt  --motif-color     : decorative texture, capped at 10 % opacity, never behind body text
+ * exempt  --surface-seal-plate : the plain white plate the unmodified seal sits on in BOTH themes
+ *                            (guide p. 3: the full-colour seal is placed carefully against what is
+ *                            around it). It carries the seal only, never text.
  * exempt  --scrim           : translucent modal overlay, not a boundary anything is identified by
  * exempt  --shadow-color    : shadow, never a boundary on its own
  * exempt  --ramp-score-0    : data ramp (Spectral, atlas-2 `ramps.ts`); a continuous ramp cannot meet
@@ -146,6 +150,7 @@
   --surface-panel-basis: #303e55; /* that glass over the ramp's LIGHTEST stop (#ffffbf): the worst
                                      case a label on a panel can land on. The checker uses this. */
   --surface-raised: #1c2f57; /* modal, popover, active row */
+  --surface-seal-plate: #ffffff; /* the seal's plate; white in both themes (see the @contrast note) */
   --surface-sunken: #0a1533; /* input, table stripe */
 
   --text-primary: #ffffff;
@@ -165,6 +170,10 @@
   --divider: #2a3d68;
   --focus-ring: var(--mma-gold);
   --icon-muted: #aab8d8;
+  /* an INACTIVE control's glyph: the rail's Flower button in the Species lens fades to this instead
+     of disappearing (Ben, 2026-09-21: removal is "jerky"). Still >= 3:1 on the control's own face,
+     because an inactive-but-focusable control must stay identifiable. */
+  --icon-inactive: #98a3bd;
   /* the guide specifies the motifs in Steel Blue or Gold at 10 %; Steel at 10 % over a navy
      surface is invisible, so the dark theme takes the Gold option and the light theme Steel. */
   --motif-color: var(--mma-gold);
@@ -202,6 +211,7 @@
   --surface-panel: #ffffff;
   --surface-panel-basis: #e6f1f7; /* white glass over the ramp's DARKEST stop (#3288bd) */
   --surface-raised: #ffffff;
+  --surface-seal-plate: #ffffff;
   --surface-sunken: #f2f5f9;
 
   --text-primary: var(--mma-navy);
@@ -218,6 +228,7 @@
   --divider: #d7dfec;
   --focus-ring: var(--mma-steel);
   --icon-muted: #56658a;
+  --icon-inactive: #6b7793;
   --motif-color: var(--mma-steel);
   --scrim: #223252;
   --shadow-color: #8595b4;

@@ -379,6 +379,17 @@ a {
   color: var(--text-on-accent);
 }
 
+/* inactive, not removed: the Flower control has no meaning in the Species lens, so it fades to grey
+   in place (Ben, 2026-09-21) and stays focusable so its tooltip can say why. */
+.hexbtn[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.hexbtn[aria-disabled="true"] .icon {
+  color: var(--icon-inactive);
+  transition: color var(--motion-panel) var(--ease-out);
+}
+
 /* the rail carries no words; the tooltip does */
 .tooltip {
   position: absolute;
@@ -414,7 +425,8 @@ a {
 
 .panel-head {
   position: relative;
-  padding: var(--space-3) var(--space-4) var(--space-3);
+  /* room for the three header controls in the upper right */
+  padding: var(--space-3) 116px var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--divider);
 }
 
@@ -435,7 +447,47 @@ a {
 }
 
 .panel-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--text-xl);
+}
+
+/* --- panel header controls, upper right: collapse to pill · half · full (Ben, 2026-09-21) ------ */
+.panel-controls {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+}
+
+.panel-controls button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--icon-muted);
+}
+
+.panel-controls button:hover {
+  color: var(--text-primary);
+  background: var(--fill-control);
+}
+
+.panel-controls button[aria-pressed="true"] {
+  color: var(--text-primary);
+  border-color: var(--border-control);
+  background: var(--fill-control);
+}
+
+@media (pointer: coarse) {
+  .panel-controls button {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
 }
 
 .panel-kicker > span:not(.chip) {
@@ -452,6 +504,12 @@ a {
   font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.panel-meta {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
 }
 
 .panel-body {
@@ -713,6 +771,62 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
+/* --- About card: opaque (never glass), because the seal needs a plain background -------------- */
+.about {
+  position: absolute;
+  left: 332px;
+  bottom: var(--space-3);
+  width: 372px;
+  padding: var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+  box-shadow: var(--elev-2);
+}
+
+.about-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.about-head h2 {
+  font-size: var(--text-sm);
+}
+
+.about-body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* the seal at >= 72 px, unmodified and lazily loaded, on a plain plate whose padding IS the clear
+   space (a quarter of the seal's height: the platform's height, guide p. 4) */
+.seal {
+  flex: none;
+  display: block;
+  box-sizing: content-box;
+  width: var(--size-seal-min);
+  height: var(--size-seal-min);
+  padding: 18px;
+  background: var(--surface-seal-plate);
+  border-radius: var(--radius-card);
+}
+
+.about-body p {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.about-body strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
 /* --- species layer bar ----------------------------------------------------------------------- */
 .layerbar > .muted {
   white-space: nowrap;
@@ -877,21 +991,9 @@ a {
   padding: 0 var(--space-4) var(--space-2);
 }
 
-.detents {
-  display: flex;
-  gap: var(--space-1);
+.sheet-head .panel-controls {
+  position: static;
   margin-left: auto;
-}
-
-.detent {
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-pill);
-  background: var(--fill-track);
-}
-
-.detent[aria-current="true"] {
-  background: var(--fill-accent);
 }
 
 .phone .flower {

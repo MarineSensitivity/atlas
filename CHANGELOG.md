@@ -1,3 +1,29 @@
+# atlas 0.4.0
+
+`atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
+into the app, `index.html` is untouched and `dist/` is unchanged.
+
+- **The tool rail is five controls on every viewport** — Layers · Places · Flower · Table · Report,
+  same order on the desktop rail and the phone bottom bar. Help moved out of the rail (top bar only)
+  and the fish/species button is gone: the lens switch and search choose a species.
+- **Layers opens the layers control**, and the flower plot has its **own bespoke glyph**
+  (`src/lib/brand/glyphs/flower.svg`: a centre circle with eight petals of clearly different
+  lengths). Its path is quoted in `docs/design/spec.md` for the icon-map generator, and
+  `tests/glyphs.test.ts` proves the SVG, the spec and the mockups' sprites cannot drift and that the
+  path is real path data.
+- **Every floating panel and the phone sheet has collapse · half · full controls in its upper right**,
+  with the collapse button as the `aria-expanded`/`aria-controls` disclosure, 44 px targets on touch,
+  and specified focus behaviour on collapse and restore.
+- **An inactive control fades in place instead of disappearing**: in the Species lens the Flower
+  button greys to the new `--icon-inactive` token (≥ 3:1, gated), keeps focus, and says "Scores only".
+- **The species card's protection chips** now show both statutes with "not applicable" where one does
+  not apply (MMPA is for marine mammals, MBTA for birds) — a Leatherback no longer reads "MMPA · floor 20".
+- **The seal is on screen**: About, the report header, and one on-map placement — a collapsible,
+  opaque About/attribution card — at ≥ 72 px with clear space on a plain plate, unmodified, lazy and
+  behind `VITE_SEAL`. New `--surface-seal-plate` token.
+- `docs/design/spec.md` gains the exact icon map (app name → `@mdi/js` export name) the component
+  build is generated from, and `tests/mockup-shell.test.ts` holds the shell's shape.
+
 # atlas 0.3.1
 
 Plan `atlas-2` Step 1 close-out: the master plan's **D8 addendum** (orchestrator ruling,

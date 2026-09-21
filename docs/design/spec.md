@@ -65,6 +65,8 @@ script (`?theme=navy|paper` wins), which is also how the screenshots are taken.
 | `--border-control`      | `#8494BD` | `#5D6D92` | every control's boundary; ≥ 3:1 on every surface it touches                                                          |
 | `--focus-ring`          | Gold      | Steel     | 2 px, `outline-offset: 2px`                                                                                          |
 | `--icon-muted`          | `#AAB8D8` | `#56658A` |                                                                                                                      |
+| `--icon-inactive`       | `#98A3BD` | `#6B7793` | an inactive control's glyph; >= 3:1 on the control's own face (see section 5)                                        |
+| `--surface-seal-plate`  | `#FFFFFF` | `#FFFFFF` | the plain plate the seal sits on, white in BOTH themes (see section 9)                                               |
 | `--motif-color`         | Gold      | Steel     | see §6                                                                                                               |
 
 ## 4. Type, spacing, elevation, motion
@@ -95,109 +97,268 @@ status text.
 
 ## 5. Components and their states
 
-| component                   | idle                                                                           | hover                     | active / selected                                                                                                                    | focus                                                                                       | disabled                                                                                                                                   |
-| --------------------------- | ------------------------------------------------------------------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Hex rail button** (44 px) | `--fill-control` face, `--border-control` edge, `--text-primary` glyph         | face lightens one step    | `--fill-accent` face, `--text-on-accent` glyph, `aria-pressed="true"`                                                                | 2 px `--focus-ring`, offset 2 (the outline is on the button box, never on the clipped face) | `--icon-muted` glyph, `aria-disabled`, no fill change alone                                                                                |
-| **Segmented (lens)**        | `--text-secondary` label                                                       | label to `--text-primary` | `--fill-accent` + bold label + `aria-pressed`                                                                                        | same ring                                                                                   | —                                                                                                                                          |
-| **Chip / version chip**     | `--fill-control` + border                                                      | border brightens          | `.chip--accent` = accent fill                                                                                                        | same ring                                                                                   | —                                                                                                                                          |
-| **Layer pill**              | border + `--text-primary`                                                      | —                         | accent fill + bold                                                                                                                   | same ring                                                                                   | dashed border, strike-through, `aria-disabled="true"`, tooltip says _why_ ("… feeds the merged model, but v7 publishes no surface for it") |
-| **Panel**                   | glass, 1 px `--border-control`, `--elev-3`; header carries the hexagon texture | —                         | collapses to a labelled pill on the nearest edge; geometry remembered per viewport in `localStorage` (chrome only, never view state) | ring on the header controls                                                                 | —                                                                                                                                          |
-| **Bottom sheet**            | peek / **half** / full detents, wave top edge, grab handle                     | —                         | detent dots show which                                                                                                               | the scroll region is itself focusable                                                       | —                                                                                                                                          |
-| **Button**                  | `--fill-control`                                                               | —                         | `.btn--primary` = accent fill, bold                                                                                                  | ring                                                                                        | —                                                                                                                                          |
-| **Accordion**               | `aria-expanded="false"`, chevron                                               | —                         | `aria-expanded="true"`, chevron rotates                                                                                              | ring                                                                                        | —                                                                                                                                          |
+Everything below is a requirement for the component build, not a suggestion;
+`tests/mockup-shell.test.ts` asserts the ones a mockup can prove.
 
-The rail carries **no words**; the tooltip does (shown in the desktop Scores mockup). Every state
-that means something is also in the accessibility tree (`aria-pressed`, `aria-expanded`,
-`aria-disabled`) — never color alone.
+### 5.1 The tool rail is FIVE controls, the same five, in the same order, on every viewport
 
-## 6. Motifs: the 10 % rule
+`Layers · Places · Flower · Table · Report` (Ben, 2026-09-21). Desktop: a floating honeycomb column
+on the left. Phone: the identical five as a bottom bar. 44 px targets everywhere, no words on the
+control itself (the tooltip carries them), roving `tabindex` inside the group.
+
+| control    | opens                                                                                                                                                          | icon                      |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| **Layers** | the LAYERS panel: score layer (or species surface), palette, zone outlines, bathymetry, OBIS occurrences, other related layers. It is **not** the flower plot. | `mdiLayers`               |
+| **Places** | select · draw · upload                                                                                                                                         | `mdiMapMarker`            |
+| **Flower** | the flower plot of component scores for the current place                                                                                                      | **bespoke `flower`** (§6) |
+| **Table**  | the data table (species or zones, per lens)                                                                                                                    | `mdiTable`                |
+| **Report** | the report builder                                                                                                                                             | `mdiFileDocumentOutline`  |
+
+Two controls that used to be in the rail are **gone**:
+
+- **Help** lives in the **top bar only** ("redundant in desktop with its upper right"). The top-bar
+  Help button opens help, the guided tour and **About**.
+- The **species/fish** button is gone: the **lens switch** (`Scores | Species`) and the **search**
+  field are how a species is chosen, and the species card is what the Species lens' panel shows. In
+  the Scores lens a species is reached from the species table's row link, which switches the lens.
+
+### 5.2 An inactive control fades in place; it is never removed
+
+The Flower has no meaning in the Species lens. It **stays in its third position** and becomes
+visibly inactive (removal is "jerky" — Ben, 2026-09-21):
+
+- the glyph transitions to `--icon-inactive` over `--motif`-free `var(--motion-panel)` (200 ms,
+  `--ease-out`); under `prefers-reduced-motion` the token is `0ms`, so it simply is grey;
+- `aria-disabled="true"` — **not** the `disabled` attribute, so it stays focusable and can explain
+  itself; no `tabindex="-1"`;
+- its tooltip and accessible description say why: **"Flower plot — Scores only"**;
+- activation is a no-op that re-announces the tooltip text in the live region;
+- `--icon-inactive` is ≥ 3:1 against both `--fill-control` and `--surface-panel-basis` (gated), so an
+  inactive control is still identifiable — "greyed out" never means "invisible".
+
+### 5.3 Panel header controls: collapse · half · full, upper right
+
+Every floating panel **and** the phone sheet carries the same three-button group in its upper right,
+in this order, `role="group"` with `aria-label="Panel size"` (sheet: `"Sheet size"`):
+
+| order | action                                        | desktop icon            | phone icon             | aria                                                                                                            |
+| ----- | --------------------------------------------- | ----------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 1     | **Collapse** to a labelled pill (sheet: peek) | `mdiChevronDoubleRight` | `mdiChevronDoubleDown` | `aria-expanded` + `aria-controls="<panel-body id>"`; `aria-label="Collapse to a pill"` / `"Collapse to a peek"` |
+| 2     | **Half**                                      | `mdiDockRight`          | `mdiDockBottom`        | `aria-pressed`; `aria-label="Half height"`                                                                      |
+| 3     | **Full**                                      | `mdiArrowExpand`        | `mdiArrowExpand`       | `aria-pressed`; `aria-label="Full height"`                                                                      |
+
+- **Exactly one** of Half / Full is `aria-pressed="true"` at a time; the collapse button is a
+  disclosure, not a detent, so it carries `aria-expanded`/`aria-controls` instead.
+- **Size**: 32 × 32 on a fine pointer, **44 × 44 under `@media (pointer: coarse)`** (so every phone
+  target meets the contract). Spacing `--space-1`; the header reserves 116 px of right padding so a
+  long title never runs under the group.
+- **Keyboard**: each button is a real `<button>` in the tab order, `Enter`/`Space` activates. `Esc`
+  inside a panel collapses it (the same as pressing control 1). The group is not a roving-tabindex
+  toolbar — three targets do not justify it, and Tab must reach each one.
+- **Focus on collapse**: focus moves to the pill the panel collapsed into (which carries the panel's
+  label and `aria-expanded="false"` + `aria-controls`), so focus is never left on a removed node.
+- **Focus on restore**: expanding from the pill returns focus to control 1 of the restored header —
+  the element the user would have been on had the panel never collapsed.
+- Collapsing and restoring are chrome, not view state: remembered per viewport size in
+  `localStorage`, never in the URL.
+
+### 5.4 Everything else
+
+| component               | idle                                                                           | hover                     | active / selected                                                     | focus                                                                                       | disabled / inactive                                                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------ | ------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Hex rail button**     | `--fill-control` face, `--border-control` edge, `--text-primary` glyph         | face lightens one step    | `--fill-accent` face, `--text-on-accent` glyph, `aria-pressed="true"` | 2 px `--focus-ring`, offset 2 (the outline is on the button box, never on the clipped face) | `--icon-inactive` glyph + `aria-disabled` + a tooltip that says why (§5.2)                                                                 |
+| **Segmented (lens)**    | `--text-secondary` label                                                       | label to `--text-primary` | `--fill-accent` + bold label + `aria-pressed`                         | same ring                                                                                   | —                                                                                                                                          |
+| **Chip / version chip** | `--fill-control` + border                                                      | border brightens          | `.chip--accent` = accent fill                                         | same ring                                                                                   | —                                                                                                                                          |
+| **Layer pill**          | border + `--text-primary`                                                      | —                         | accent fill + bold                                                    | same ring                                                                                   | dashed border, strike-through, `aria-disabled="true"`, tooltip says _why_ ("… feeds the merged model, but v7 publishes no surface for it") |
+| **Panel**               | glass, 1 px `--border-control`, `--elev-3`; header carries the hexagon texture | —                         | detents per §5.3                                                      | ring on the header controls                                                                 | —                                                                                                                                          |
+| **Bottom sheet**        | peek / **half** / full, wave top edge, grab handle                             | —                         | the pressed header control shows which detent                         | the scroll region is itself focusable                                                       | —                                                                                                                                          |
+| **Button**              | `--fill-control`                                                               | —                         | `.btn--primary` = accent fill, bold                                   | ring                                                                                        | —                                                                                                                                          |
+| **Accordion**           | `aria-expanded="false"`, chevron                                               | —                         | `aria-expanded="true"`, chevron rotates                               | ring                                                                                        | —                                                                                                                                          |
+
+Every state that means something is also in the accessibility tree (`aria-pressed`,
+`aria-expanded`, `aria-disabled`) — never color alone.
+
+### 5.5 Content rule: the protection chips
+
+The species card shows **one chip per statute, always both**, so absence is never ambiguous
+(Ben, 2026-09-21: "Showing 'MMPA' does not make sense for a Leatherback Turtle card, unless it says
+'not applicable' like the MBTA"):
+
+- **MMPA** applies to **marine mammals** (`sp_cat == "mammal"`): the chip reads `MMPA · floor 20`.
+- **MBTA** applies to **birds** (`sp_cat == "bird"`): the chip reads `MBTA · floor 10`.
+- For any other category — the Leatherback Turtle included — the chip reads **`· not applicable`**.
+- The floors are the extinction-risk floors `msens::compute_er_score()` applies (MMPA 20, MBTA 10);
+  a chip never invents a floor for a taxon its statute does not cover.
+
+## 6. Icons: the exact map the components are built from
+
+One canonical name → path map (`src/lib/ui/icon-paths.ts`), rendered by a single `<Icon>` component
+as `<svg viewBox="0 0 24 24"><path d={ICON[name]} fill="currentColor"/></svg>`. Two rules the Step 2
+generator must follow:
+
+1. **Import `@mdi/js` by export name; never transcribe path data by hand.** A first attempt typed 16
+   "MDI" paths from memory and 0 of 16 matched. The generator imports the named export and fails
+   loudly if `@mdi/js` has no such export, so a wrong name is a build error, not a wrong picture.
+2. **Bespoke glyphs live in `src/lib/brand/glyphs/*.svg`** and are read from those files, not retyped.
+
+| app name       | source                   | used by                                        |
+| -------------- | ------------------------ | ---------------------------------------------- |
+| `layers`       | `mdiLayers`              | rail 1                                         |
+| `places`       | `mdiMapMarker`           | rail 2                                         |
+| `flower`       | **bespoke `flower.svg`** | rail 3, the flower panel's header, the report  |
+| `table`        | `mdiTable`               | rail 4, "Open table"                           |
+| `report`       | `mdiFileDocumentOutline` | rail 5, top bar Report, "Add to report"        |
+| `help`         | `mdiHelpCircleOutline`   | top bar Help / tour / About                    |
+| `search`       | `mdiMagnify`             | top bar search                                 |
+| `share`        | `mdiShareVariant`        | top bar Share                                  |
+| `theme`        | `mdiThemeLightDark`      | top bar theme toggle                           |
+| `version`      | `mdiChevronDown`         | the `v7 ▾` chip, every `<select>`-like control |
+| `chevronDown`  | `mdiChevronDown`         | accordion closed                               |
+| `chevronUp`    | `mdiChevronUp`           | accordion open                                 |
+| `collapseSide` | `mdiChevronDoubleRight`  | panel header control 1 (desktop)               |
+| `collapseDown` | `mdiChevronDoubleDown`   | sheet header control 1 (phone)                 |
+| `dockRight`    | `mdiDockRight`           | panel header control 2 (desktop "half")        |
+| `dockBottom`   | `mdiDockBottom`          | sheet header control 2 (phone "half")          |
+| `expand`       | `mdiArrowExpand`         | header control 3 ("full")                      |
+| `collapseAll`  | `mdiArrowCollapse`       | "full" toggled back, panel restore from a pill |
+| `close`        | `mdiClose`               | modal close, chip dismiss                      |
+| `info`         | `mdiInformationOutline`  | the `ⓘ` popover trigger, the About card        |
+| `copy`         | `mdiContentCopy`         | copy the scientific / common name              |
+| `check`        | `mdiCheck`               | merged-model pill, selected row                |
+| `alert`        | `mdiAlertCircleOutline`  | a denied release, a failed upload              |
+| `download`     | `mdiDownload`            | CSV export, report download                    |
+| `upload`       | `mdiUpload`              | Places → upload                                |
+| `draw`         | `mdiVectorPolygon`       | Places → draw                                  |
+| `filter`       | `mdiFilterVariant`       | table column filter                            |
+| `sortAsc`      | `mdiArrowUp`             | table sort ascending                           |
+| `sortDesc`     | `mdiArrowDown`           | table sort descending                          |
+| `preview`      | `mdiEye`                 | the PREVIEW chip on the preview host           |
+
+### The bespoke `flower` glyph
+
+A circle with eight radiating petals of clearly different lengths — the centre is the composite mean
+and each petal is one component score, which is exactly what the flower plot draws (Ben, 2026-09-21:
+"a simplified icon with a circle and radiating petals of different lengths"). It is **not**
+`mdiFlower` (a decorative flower) and it is not the Layers icon. 24 × 24, one `currentColor` path,
+legible at 20 px inside a 44 px hexagon button. `src/lib/brand/glyphs/flower.svg` is the source;
+`tests/glyphs.test.ts` proves this quoted copy is byte-identical to it, that it parses as path data,
+and that the mockups' sprites carry the same string.
+
+<!-- glyph:flower -->
+
+```
+M8.9 12a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0ZM11.37 9.48Q9.41 6.19 12 1.4Q14.59 6.19 12.63 9.48ZM13.34 9.77Q13.29 8.64 16.24 7.76Q15.36 10.71 14.23 10.66ZM14.52 11.37Q16.93 9.8 21 12Q16.93 14.2 14.52 12.63ZM14.23 13.34Q15.92 13.51 16.95 16.95Q13.51 15.92 13.34 14.23ZM12.63 14.52Q14.39 17.37 12 21.8Q9.61 17.37 11.37 14.52ZM10.66 14.23Q10.84 15.02 8.18 15.82Q8.98 13.16 9.77 13.34ZM9.48 12.63Q7.51 14 3.8 12Q7.51 10 9.48 11.37ZM9.77 10.66Q8.3 10.58 7.33 7.33Q10.58 8.3 10.66 9.77Z
+```
+
+## 7. Motifs: the 10 % rule
 
 The guide makes the hexagon pattern and the wave **secondary** elements at **10 % opacity** (pp. 9-10).
 In this app they are CSS masks over a token tint, so they can never carry a literal color:
 
-- `src/lib/brand/motifs/hex.svg` — tileable pointy-top honeycomb, one `currentColor`. Used as panel-header
+- `src/lib/brand/motifs/hex.svg` — tileable pointy-top honeycomb, one `currentColor`. Panel-header
   texture, empty states, the loading honeycomb, the report cover band; and as _shape_ for the rail
   buttons and category swatches.
-- `src/lib/brand/motifs/wave.svg` — tileable edge, one `currentColor`. Used for the top bar's lower edge,
-  the sheet's upper edge, modal dividers, report header and footer.
+- `src/lib/brand/motifs/wave.svg` — tileable edge, one `currentColor`. The top bar's lower edge, the
+  sheet's upper edge, modal dividers, report header and footer.
 - `--motif-hex-opacity` and `--motif-wave-opacity` are **0.10 and capped**: `tests/brand-tokens.test.ts`
-  fails if either is raised, and the same test proves it by raising one.
+  fails if either is raised, and proves it by raising one.
 - A motif never sits behind a block of body text longer than a line.
-- **Deviation to confirm:** the guide gives the hexagon "Steel Blue or Gold" and the wave "Steel and
-  Navy". Steel at 10 % over a navy surface is invisible, so the dark theme takes the Gold option for
-  both motifs and the light theme takes Steel.
+- The dark theme tints both motifs **Gold** and the light theme **Steel** (the guide allows either for
+  the hexagon; Steel at 10 % over navy is invisible). Reviewed 2026-09-21, no objection.
 
-## 7. The contrast contract
+## 8. The contrast contract
 
 `node scripts/contrast.mjs` reads the `@contrast` block **inside `tokens.css`** — the pairs live next
 to the tokens they constrain — resolves every token in both themes and fails if:
 
 - a **text** pair is under **4.5:1**, or a **non-text** pair (borders, focus rings, icons, category
-  swatches, accent fills) is under **3:1**;
+  swatches, accent fills, **an inactive control's glyph**) is under **3:1**;
 - a paired token does not resolve to an **opaque** color (glass is measured through its
   `--surface-panel-basis`, the worst case of that glass over the map — never guessed at);
 - **any color token is unclassified**: every color must appear as a pair subject, as a surface, or in
   the exemption list with a reason. A new token cannot skip the gate.
 
-66 pairs pass today. Exemptions and why: raw `--mma-*` palette (never used directly); `--fill-control`
+70 pairs pass today. Exemptions and why: raw `--mma-*` palette (never used directly); `--fill-control`
 and `--fill-track` (adjacent fills of controls whose boundary, `--border-control`, is paired);
-`--divider` (decorative rule inside one surface); `--motif-color` (≤ 10 % texture); `--scrim` and
-`--shadow-color`; and `--ramp-score-*` (a continuous ramp cannot meet 3:1 stop-to-stop, so it is
-labelled with tick values and mirrored by a table).
+`--divider` (decorative rule inside one surface); `--motif-color` (≤ 10 % texture);
+`--surface-seal-plate` (carries the seal, never text); `--scrim` and `--shadow-color`; and
+`--ramp-score-*` (a continuous ramp cannot meet 3:1 stop-to-stop, so it is labelled with tick values
+and mirrored by a table).
 
 **Data color.** Eight CVD-safe category hues (Okabe-Ito), one table shared by the flower, the treemap,
 table chips, the legend and the report — including `primary producer` / `primprod`, which fall
 outside `hue_pal()(8)` today and render grey. **The hue is the identity; the lightness follows the
-theme**, because no single lightness clears 3:1 against both `#303E55` and white. Score ramps stay
-Spectral, matching the published COGs' `spectral_r`; `--ramp-score-0…4` are the legend's stops and
-atlas-2's `ramps.ts` remains the source of truth.
+theme**, because no single lightness clears 3:1 against both `#303E55` and white (reviewed
+2026-09-21, no objection). Score ramps stay Spectral, matching the published COGs' `spectral_r`;
+`--ramp-score-0…4` are the legend's stops and atlas-2's `ramps.ts` remains the source of truth.
 
-## 8. The seal (D10) and the agency string
+## 9. The seal (D10), where it appears, and the agency string
 
 D10 (2026-09-20) approves the seal and the agency name, spelled **"Marine Minerals Administration"**
-(the seal's spelling) everywhere. The guide's rules still bind:
+(the seal's spelling) everywhere. Ben, 2026-09-21: "Would be good to have the seal somewhere… just go
+for it." The guide's rules still bind, so the seal appears in exactly **three** places:
 
-- **Never in the top bar.** 28 px would break the 0.75 in minimum (p. 4). The top bar uses the
+| surface                                 | why it is legitimate                                                                                                            |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **About** (top bar Help → About)        | a document-like surface with room for the full lockup and the agency line                                                       |
+| **Report header**                       | the printed artifact; the seal at the top of page 1, clear space intact                                                         |
+| **The on-map About / attribution card** | the one on-map placement: an **opaque** card (never glass), so the seal sits on a plain background as the guide requires (p. 3) |
+
+The attribution card is anchored at the bottom of the map, **collapsed to its header by default**
+(`ⓘ About this release`, `aria-expanded="false"`); expanding it reveals the seal, the agency line and
+the release/basemap attribution. The desktop Scores mockup shows it **expanded**, which is how the
+seal treatment is reviewed. No other on-map placement is allowed: a glass panel is not a plain
+background, and the 48 px top bar cannot hold a 72 px seal.
+
+Rules, everywhere it appears:
+
+- **Never in the top bar** — 28 px would break the 0.75 in minimum (p. 4). The top bar uses the
   project's own MST mark (`src/lib/brand/vendor/mst-mark*.svg`, vendored from `server/branding/`).
-- The seal appears in **exactly two places**: the About modal and the report header.
-- **≥ 72 CSS px** (`--size-seal-min`), with clear space equal to the platform's height on all sides,
-  unmodified — no stretch, shadow, gradient, greyscale, crop, crowding or down-res.
-- Loaded **lazily** from `MMA logo.svg` (897 KB with embedded rasters): never copied into the app's
-  critical path, never a build asset of `index.html`.
-- **Flags.** `VITE_AGENCY` mirrors `server/branding/make_branding.py`'s `AGENCY`
-  (`MMA` | `BOEM` | `""`) and `VITE_SEAL` (`1` | `0`) gates the seal. **Defaults after D10:
-  `VITE_AGENCY=MMA`, `VITE_SEAL=1`.** `VITE_AGENCY=""` implies `VITE_SEAL=0` — a seal without the
-  agency line is not a lockup the guide recognizes.
+- **≥ 72 CSS px** (`--size-seal-min`), with **clear space** of a quarter of its height (the platform's
+  height, p. 4) on all four sides, on a plain `--surface-seal-plate` (white in both themes).
+- **Unmodified**: no stretch, skew, shadow, gradient, greyscale, crop, crowding or down-res, and the
+  aspect ratio is fixed by giving the `<img>` both `width` and `height`.
+- **Lazy**: `loading="lazy"`, from the app's own asset URL; the 897 KB `MMA logo.svg` is never copied
+  into this repo, never bundled and never in the critical path. The mockups borrow the read-only
+  source through one review-server alias (`scripts/mockup-serve.mjs`), which ships nothing.
+- **Flags**: `VITE_AGENCY` mirrors `server/branding/make_branding.py`'s `AGENCY` (`MMA` | `BOEM` | `""`)
+  and `VITE_SEAL` (`1` | `0`) gates the seal. **Defaults after D10: `VITE_AGENCY=MMA`, `VITE_SEAL=1`.**
+  `VITE_AGENCY=""` implies `VITE_SEAL=0` — a seal without the agency line is not a lockup the guide
+  recognizes. With `VITE_SEAL=0` the About card keeps its text and simply has no seal.
 - `branding/offshore_hub.png` is **not used and not linked anywhere** (D10: internal only).
 
-## 9. Phone (< 900 px)
+## 10. Phone (< 900 px)
 
 One `matchMedia("(max-width: 899px)")` switch, no separate route or bundle:
 
 - the title collapses to the mark (the accessible name stays in an `h1`);
-- the rail becomes a **bottom bar of five hexagons**, still 44 px, still labelled by `aria-label`;
-- panels become **one bottom sheet** with peek / half / full detents, a wave top edge, a grab handle
-  and velocity-aware snapping; the detent is shown by dots, not by color alone;
+- the rail becomes a **bottom bar of the same five hexagons in the same order** (§5.1), still 44 px,
+  still labelled by `aria-label`;
+- panels become **one bottom sheet** with peek / half / full, a wave top edge and a grab handle, and
+  the **same three header controls** as a desktop panel (§5.3), at 44 px;
 - the sheet's scroll region is focusable (a scrollable region with no focusable child must still be
   reachable by keyboard — axe `scrollable-region-focusable`, caught and fixed in this step);
 - the flower shrinks to 150 px and the component list stays a list, not a second chart.
 
-## 10. Accessibility contract (re-checked in atlas-8)
+## 11. Accessibility contract (re-checked in atlas-8)
 
-Keyboard reaches and operates everything (roving `tabindex` in the rail, focus trap and return in
-modals, `Esc` closes the top layer); visible focus everywhere (2 px `--focus-ring`, offset 2);
-`aria-expanded`/`aria-controls` on every disclosure; one polite live region announces async results
-("Species table loaded, 1,234 rows"); every chart has a table equivalent and a text summary (the
-flower's `aria-label` carries the mean and points at the component table); the zone table is the
-non-visual equivalent of the map; **no information by color alone** (the low-coverage turtle
-component carries a labelled chip, not a pale petal); 200 % zoom reflows without horizontal scroll;
-targets ≥ 44 px on touch (`@media (pointer: coarse)` raises the 40 px desktop chrome buttons);
-`lang`, a skip link, and a page title that tracks the view.
+Keyboard reaches and operates everything (roving `tabindex` in the rail, Tab through the three panel
+header controls, focus trap and return in modals, `Esc` closes the top layer — inside a panel `Esc`
+collapses it and moves focus to its pill); visible focus everywhere (2 px `--focus-ring`, offset 2);
+`aria-expanded`/`aria-controls` on every disclosure, including each panel's collapse control and the
+pill it collapses into; one polite live region announces async results ("Species table loaded, 1,234
+rows") and an inactive control's reason when it is activated; every chart has a table equivalent and
+a text summary (the flower's `aria-label` carries the mean and points at the component table); the
+zone table is the non-visual equivalent of the map; **no information by color alone** (an inactive
+control also carries `aria-disabled` and a tooltip; the low-coverage turtle component carries a
+labelled chip, not a pale petal); 200 % zoom reflows without horizontal scroll; targets ≥ 44 px on
+touch (`@media (pointer: coarse)` raises the 32-40 px desktop chrome buttons); `lang`, a skip link,
+and a page title that tracks the view.
 
 **Measured now:** axe (WCAG 2.0/2.1 A + AA) over the three mockups in both themes —
 **0 critical, 0 serious, 0 moderate, 0 minor**.
 
-## 11. What the size budget leaves for fonts and CSS (D13)
+## 12. What the size budget leaves for fonts and CSS (D13)
 
 The static critical path is **350 KB gzip** and runtime workers get **150 KB gzip** separately
 (`scripts/size-budget.mjs`; D13's working rule until Ben answers). Spike S2 measured maplibre-gl 6.10
@@ -207,35 +368,50 @@ The static critical path is **350 KB gzip** and runtime workers get **150 KB gzi
 
 Working allocation for atlas-3:
 
-| item                             | budget (gzip)                 | note                                                                                                                                        |
-| -------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Svelte 5 runtime + shell + state | ~38 KB                        | atlas-2/3 own this                                                                                                                          |
-| `tokens.css` + component CSS     | **≤ 10 KB**                   | tokens.css is ~2 KB gzip today; the whole design system's CSS must stay inside 10                                                           |
-| display face, 2 weights, subset  | **≤ 20 KB**                   | TeX Gyre Adventor / Jost, Latin-basic subset, WOFF2, `font-display: swap`                                                                   |
-| body face                        | **0 KB in the critical path** | `local()` Calibri, then `system-ui`; Carlito is fetched **after** first paint, and being metric-compatible it swaps without shifting layout |
+| item                              | budget (gzip)                 | note                                                                                                                                        |
+| --------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Svelte 5 runtime + shell + state  | ~38 KB                        | atlas-2/3 own this                                                                                                                          |
+| `tokens.css` + component CSS      | **≤ 10 KB**                   | tokens.css is ~2 KB gzip today; the whole design system's CSS must stay inside 10                                                           |
+| icons (inline paths, tree-shaken) | **≤ 3 KB**                    | ~30 names × ~100 B; only imported names reach the bundle, which is why the map is a table of names                                          |
+| display face, 2 weights, subset   | **≤ 20 KB**                   | TeX Gyre Adventor / Jost, Latin-basic subset, WOFF2, `font-display: swap`                                                                   |
+| body face                         | **0 KB in the critical path** | `local()` Calibri, then `system-ui`; Carlito is fetched **after** first paint, and being metric-compatible it swaps without shifting layout |
 
 Note what the checker does and does not see: it counts the entry's JS and CSS from the Vite manifest,
 so a **font binary is not in that number** — but a font referenced by critical CSS still downloads
 before first text paint. That is why the table budgets fonts explicitly instead of leaning on the
-gate. The mockups, their screenshots and this document live under `docs/` and are not part of any
-build entry, so they cost the budget nothing (`npm run size-budget` confirms it after this change).
+gate. The mockups, their screenshots, the glyph SVGs and this document live under `docs/` and
+`src/lib/brand/`, are not imported by any build entry, and cost the budget nothing (`npm run
+size-budget` confirms it after this change).
 
-## 12. Gates in this step
+## 13. Gates in this step
 
-| gate                  | command                               | seeded fault                                                                       |
-| --------------------- | ------------------------------------- | ---------------------------------------------------------------------------------- |
-| contrast, both themes | `node scripts/contrast.mjs`           | assign Gold to `--text-accent` on `paper` → 1.71:1, red (`tests/contrast.test.ts`) |
-| tokens-only color     | `node scripts/check-hex-literals.mjs` | plant a literal in mockup CSS → red (`tests/brand-tokens.test.ts`)                 |
-| motif ≤ 10 %          | `npm test`                            | raise `--motif-hex-opacity` to 0.18 → red                                          |
-| accessibility         | `node scripts/axe-mockups.mjs`        | a scrollable sheet with no keyboard access → serious (found and fixed here)        |
-| screenshots           | `node scripts/mockup-shots.mjs`       | — (regenerates the six committed PNGs)                                             |
+| gate                  | command                                   | seeded fault                                                                                |
+| --------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------- |
+| contrast, both themes | `node scripts/contrast.mjs`               | assign Gold to `--text-accent` on `paper` → 1.49:1 / 1.71:1, red (`tests/contrast.test.ts`) |
+| tokens-only color     | `node scripts/check-hex-literals.mjs`     | plant a literal in mockup CSS → red (`tests/brand-tokens.test.ts`)                          |
+| motif ≤ 10 %          | `npm test`                                | raise `--motif-hex-opacity` above 0.10 → red                                                |
+| the bespoke glyph     | `npm test` (`tests/glyphs.test.ts`)       | a `d` that is not path data, or a spec copy that drifts from the SVG → red                  |
+| the shell's shape     | `npm test` (`tests/mockup-shell.test.ts`) | a sixth rail button, a missing panel-size control, `MMPA · floor` on a turtle → red         |
+| accessibility         | `node scripts/axe-mockups.mjs`            | a scrollable sheet with no keyboard access → serious (found and fixed here)                 |
+| screenshots           | `node scripts/mockup-shots.mjs`           | — (regenerates the six committed PNGs)                                                      |
 
-## 13. Open for the owner at this checkpoint
+## 14. Decisions, after Ben's review of 2026-09-21
 
-1. **Gold on light.** Gold cannot carry an active state on a white panel (1.71:1 against white, and
-   the fill-to-fill difference is under 3:1), so `paper`'s active fill is **Steel** with white
-   glyphs — the guide's own "reversed white on Steel Blue" lockup — and Gold stays a dark-surface
-   accent. Confirm, or accept a Gold fill that is always wrapped in a Steel boundary.
-2. **Motif tint on dark** — Gold rather than Steel (§6), because Steel at 10 % over navy is invisible.
-3. **Per-theme category hues** — the eight CVD-safe hues keep their hue but change lightness between
-   themes so each clears 3:1 (§7). The alternative is one fixed set that fails the gate on one theme.
+Settled — the component build takes these as given:
+
+1. **Steel, not Gold, is the active fill on `paper`** ("Steel feel is fine for paper theme").
+2. Motif tint Gold on dark / Steel on light (§7) — no objection.
+3. Category hues keep their hue and change lightness per theme (§8) — no objection.
+4. The rail is five controls on every viewport; Help is top-bar only; there is no fish/species rail
+   button (§5.1).
+5. The Flower control fades in place in the Species lens rather than being removed (§5.2).
+6. Panels and the sheet carry collapse · half · full in the upper right (§5.3).
+7. The flower plot has its own bespoke glyph; Layers opens the layers control (§6).
+8. Protection chips always show both statutes, "not applicable" where one does not apply (§5.5).
+9. The seal appears in About, the report header and the collapsible on-map About card (§9).
+
+Still open, and not blocking:
+
+- Whether the on-map About card should default to **expanded** on a wide desktop (it defaults to
+  collapsed here, so the map keeps the space).
+- D13 itself: 350 + 150 KB is a working rule until the budget question is answered.
