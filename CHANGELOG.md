@@ -42,6 +42,9 @@ merges. Still not wired into `index.html` — the shell is step 3.
   `--fill-accent`), and inactive (`aria-disabled="true"`, NOT the `disabled` attribute, so it
   stays focusable; glyph fades to `--icon-inactive`; a tooltip explains why; clicking it
   re-announces that reason through an `onAnnounce` callback instead of doing anything else).
+- **`src/lib/ui/Rail.svelte`**: hosts the tool rail's five controls with roving tabindex
+  (`src/lib/ui/roving.ts`, unit-tested), `role="toolbar"` + `aria-orientation` so the SAME
+  component serves the desktop vertical rail and the phone horizontal bottom bar (spec.md §5.1).
 
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
