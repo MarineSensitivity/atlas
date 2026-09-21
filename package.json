@@ -23,11 +23,13 @@
     "check:relative-assets": "node scripts/check-relative-assets.mjs"
   },
   "dependencies": {
-    "@duckdb/duckdb-wasm": "1.32.0"
+    "@duckdb/duckdb-wasm": "1.32.0",
+    "maplibre-gl": "^6.10.0"
   },
   "pinReasons": {
-    "_": "package.json is JSON and cannot carry a real comment, so these entries ARE the inline reason (atlas-refs/'calcofi explore review.md' \u00a711 lesson 10). Full evidence and the wiring each pin depends on: docs/spikes/S1.md. tests/pins.test.ts fails if a range here drifts from its verdict line.",
-    "@duckdb/duckdb-wasm": "EXACT 1.32.0, no caret (S1). npm 'latest' (1.33.1-dev57.0) creates OPFS files and never writes to them: the reopen after a reload throws 'Catalog Error: Table with name t does not exist!' on chromium AND firefox. 1.33.1-dev64.0 ('next') also passes but is a moving dist-tag on a dev build. A caret would admit a future stable 1.33.x, which is the line the write bug lives in and which nobody has tested. Bumping this means re-running spikes/1/e2e/persistence.spec.js; dev57 must stay red."
+    "_": "package.json is JSON and cannot carry a real comment, so these entries ARE the inline reason (atlas-refs/'calcofi explore review.md' §11 lesson 10). Full evidence and the wiring each pin depends on: docs/spikes/S1.md, docs/spikes/S2.md. tests/pins.test.ts fails if a range here drifts from its verdict line.",
+    "@duckdb/duckdb-wasm": "EXACT 1.32.0, no caret (S1). npm 'latest' (1.33.1-dev57.0) creates OPFS files and never writes to them: the reopen after a reload throws 'Catalog Error: Table with name t does not exist!' on chromium AND firefox. 1.33.1-dev64.0 ('next') also passes but is a moving dist-tag on a dev build. A caret would admit a future stable 1.33.x, which is the line the write bug lives in and which nobody has tested. Bumping this means re-running spikes/1/e2e/persistence.spec.js; dev57 must stay red.",
+    "maplibre-gl": "^6.10.0 (S2). NOT the subplan's '^5.24' fallback: GHSA-jrc7-96c5-q579 is critical (CVSS 10.0, XSS sanitizer bypass), vulnerable range <=6.4.0, first patched 6.4.1 — all 35 published 5.x releases are inside it and none is or will be patched. 6.10.0 starts and paints under Vite 8 in all four dev/build x optimizeDeps.exclude cells, but ONLY with named imports (6.x has no default export: a default import is a hard Rolldown [MISSING_EXPORT] build failure) and the worker wired as `maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url` + setWorkerUrl(). Plain '?url' emits the worker without its 514 KB shared chunk, which then 404s: rasters still paint, vector tiles silently never parse."
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

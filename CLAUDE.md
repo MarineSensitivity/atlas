@@ -67,14 +67,42 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
   `map.setStyle(composed, { diff: true })`. Never `addLayer()` piecemeal after `load` — layers added
   that way can silently vanish across a later style swap (`atlas-refs/"calcofi explore review.md"`
   §5, lesson 3).
-- **`@duckdb/duckdb-wasm` and a `maplibre-gl` version are not decided yet.** They're pinned by
-  spikes S1 and S2 (`docs/spikes/`, not written yet) with a reason in an inline `package.json`
-  comment. Don't add either dependency, and don't guess a version, ahead of that.
+- **The two spike pins: `@duckdb/duckdb-wasm` at exactly `1.32.0`, `maplibre-gl` at `^6.10.0`.**
+  Decided by spikes S1 and S2; the evidence is in `docs/spikes/S1.md` and `S2.md` (each ends in a
+  one-line `**Verdict:**`), and the short reason is in `package.json`'s `pinReasons` block (JSON has
+  no comments, so that block _is_ lesson 10's inline comment). `tests/pins.test.ts` goes red if
+  either range drifts from its verdict line — change both together, or re-run the spike and rewrite
+  the verdict. Neither package is imported from `src/` yet; whoever first imports one follows the
+  wiring rules the pins depend on, because the pin is worth nothing without them:
+  - **DuckDB (atlas-2):** self-host the `mvp` + `eh` bundles via `?url` and construct the worker
+    yourself — `new Worker(bundle.mainWorker)`, same-origin — never `createWorker()`, never the
+    `coi` bundle, and keep `@duckdb/duckdb-wasm` in `optimizeDeps.exclude`. Open `opfs://` only
+    inside `navigator.locks.request(name, { ifAvailable: true }, cb)` (a plain `locks.request` is a
+    measured hang), hold that lock for the handle's whole lifetime, `CHECKPOINT` before close, and
+    fall back to an in-memory database on every failure — OPFS is never required. `read_parquet()`
+    autoloads a 3 MB extension from `extensions.duckdb.org`: self-host it and
+    `SET custom_extension_repository` to a same-origin mirror before the first query (keyed by the
+    DuckDB _engine_ version — `1.32.0` → `v1.4.3` — not the npm version), because the blocked-CDN
+    failure is a `RuntimeError: function signature mismatch` WASM crash, not a catchable error.
+  - **MapLibre (atlas-2/3):** import it **named** (6.x has no default export; a default import is a
+    hard build failure), and wire the worker as
+    `import url from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url"; setWorkerUrl(url);` —
+    plain `?url` ships a worker whose 514 KB shared chunk 404s, and then rasters still paint while
+    vector layers silently never parse. So every map test asserts a _rendered vector feature_
+    (`isSourceLoaded()` **and** `queryRenderedFeatures().length > 0`), not just painted pixels. Pass
+    `canvasContextAttributes: { preserveDrawingBuffer: true }` (the bare top-level key is silently
+    ignored and `readPixels` then reads `(0,0,0,0)`) and call `map.resize()` right after
+    construction (without it raster tile requests are non-deterministic headless). Do **not** add
+    `maplibre-gl` to `optimizeDeps.exclude`.
 
 ## Budgets (`scripts/size-budget.mjs`)
 
 - **350 KB gzip** for the critical path: everything `index.html` loads before first interaction
-  (app chunk + eventual maplibre-gl + pmtiles + CSS + fonts).
+  (app chunk + eventual maplibre-gl + pmtiles + CSS + fonts). Spike S2 measured maplibre-gl 6.10 +
+  pmtiles + CSS at **292.86 KB gzip** on their own, so ~57 KB is left for all app code — budget
+  accordingly. Note the MapLibre worker (143.9 KB gzip via `?worker&url`) is emitted as an _asset_,
+  not a static import, so the checker below does not currently see it even though the browser does
+  download it at map construction; atlas-2 should extend the checker to count the entry's `assets`.
 - Anything meant to be lazy — `duckdb*`, `terra-draw*`, `docx*`, `shp*`, the treemap — must never
   appear in the entry's _static_ import graph (it must be a dynamic `import()`). The checker reads
   `dist/.vite/manifest.json`, walks only `imports` (never `dynamicImports`), and greps the reachable
