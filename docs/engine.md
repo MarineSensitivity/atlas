@@ -24,12 +24,37 @@ npm version — `src/lib/engine/bundles.ts`'s `DUCKDB_ENGINE_VERSION`):
 | `wasm_mvp` | `https://extensions.duckdb.org/v1.4.3/wasm_mvp/parquet.duckdb_extension.wasm` | 2,867,304 (**new**: never fetched or measured before this step)      |
 
 Written into `public/duckdb-ext/v1.4.3/{wasm_eh,wasm_mvp}/parquet.duckdb_extension.wasm`
-(gitignored — a real deploy must run the fetch script before `vite build`, the "documented build
-step": CI/deploy tooling is not wired up here to avoid touching the shared `pages.yml` mid-parallel-
-build; verified by hand that `npm run duckdb:fetch-ext && npx vite build` copies both files through
-Vite's `publicDir` into `dist/duckdb-ext/v1.4.3/{wasm_eh,wasm_mvp}/parquet.duckdb_extension.wasm`
-unchanged). `spatial`/`json` are deliberately not mirrored (`docs/spikes/S4.md` "Where DuckDB
-extensions are hosted" — unchanged by this step).
+(gitignored — re-fetched, not committed). `.github/workflows/pages.yml`'s `checks` job runs
+`node scripts/fetch-duckdb-extensions.mjs` before `npx vite build`, so the mirror ships in every
+published `dist/`; `npx vite build` copies both files through Vite's `publicDir` into
+`dist/duckdb-ext/v1.4.3/{wasm_eh,wasm_mvp}/parquet.duckdb_extension.wasm` unchanged (verified by
+hand). `spatial`/`json` are deliberately not mirrored (`docs/spikes/S4.md` "Where DuckDB extensions
+are hosted" — unchanged by this step).
+
+**The mirror is a supply-chain input, pinned.** `scripts/duckdb-extensions.manifest.json` commits
+the exact byte size and sha256 of every mirrored file (re-measured 2026-09-21; a fresh re-download
+hashed identically, confirming `extensions.duckdb.org` serves byte-identical content):
+
+| platform   | bytes     | sha256                                                             |
+| ---------- | --------- | ------------------------------------------------------------------ |
+| `wasm_eh`  | 3,045,039 | `22765c8f7dc741cda2b571a66ac7bb355295d7d69a6c37e5315b265672984f55` |
+| `wasm_mvp` | 2,867,304 | `0785c6c95d003eff4faa7b3b4b660f02c9c92f6d68d135ddf330d42e3a650600` |
+
+`scripts/fetch-duckdb-extensions.mjs` verifies every download against this manifest and fails
+(non-zero exit, nothing written) on a size or hash mismatch — an unexpectedly different file from a
+third party is refused, not silently shipped. `scripts/check-duckdb-ext.mjs` (`npm run
+check:duckdb-ext`, wired into `pages.yml` after `vite build`) re-verifies the same manifest against
+whatever actually ended up in `dist/duckdb-ext/`, AND confirms neither pinned file is reachable from
+`index.html`'s STATIC import graph (`assertMirrorNotInStaticGraph`, reusing
+`size-budget-core.mjs`'s own static-graph walk) — the mirror must only ever be fetched at runtime by
+DuckDB's own extension-autoload, never bundled. Both checks (missing file, tampered
+byte/hash) are covered by named, seeded-fault tests in `tests/check-duckdb-ext.test.ts`.
+
+**Published size added: 5,912,343 B (5.64 MiB)** for both platforms together (3,045,039 + 2,867,304),
+entirely OUTSIDE the size budget: `size-budget.mjs`'s static-graph walk never visits `duckdb-ext/`
+(publicDir copies have no entry in `dist/.vite/manifest.json` at all — there is nothing for the
+walk to follow), confirmed by a real `npm run build && node scripts/size-budget.mjs` (11.5 KB gzip
+static, unaffected by the mirror's presence) and by `assertMirrorNotInStaticGraph`'s own test suite.
 
 ## eh vs mvp — both work, forced explicitly
 
@@ -95,6 +120,29 @@ message differs by engine — every one of these was copied verbatim from a real
 engine unavailable: <raw message>` — the one user-visible shape a caller (a future click handler)
 has to know about, regardless of engine or browser.
 
+## The 25 MB materialize guard now refuses BEFORE downloading (fix round 1)
+
+The original guard (`Engine#load`) fetched the whole body, THEN checked `byteLength` — a 374 MB
+`cell.parquet` would download in full on a phone and only then be refused, exactly backwards.
+`src/lib/engine/materialize.ts`'s `fetchWithSizeGuard()` now checks twice, in order: (1) a
+`Content-Length` response header over the guard aborts the request (`AbortController`) and throws
+WITHOUT ever calling `resp.body.getReader()`; (2) the body is otherwise read as a stream and capped —
+aborted the moment the running total crosses the guard, never buffering more than the guard plus one
+chunk — which also catches a LYING `Content-Length` (a small header, a larger real body), not just a
+missing one. Both layers, and both of their seeded-fault removals, are covered in
+`tests/engine/materialize.test.ts`.
+
+**What the real bucket sends, verified in a real browser (not just `curl`).** A cross-origin
+`fetch()` from a real Chromium page (Playwright, a `data:` origin — the strictest, opaque-origin
+case) to `marine-atlas/v9/tables/taxon.parquet` came back `type: "cors"` (not `"opaque"`) with
+`content-length: "1033168"` readable from JS. `curl -I` against the same URL (with an `Origin`
+header) shows why: `Access-Control-Allow-Origin: *` and, explicitly,
+`Access-Control-Expose-Headers: Content-Range, Content-Length, Accept-Ranges, ETag` — S3 exposes
+`Content-Length` on every object this app reads, so the pre-check above works against the real
+bucket, not just same-origin test fixtures. (`Content-Length` is also a CORS-safelisted response
+header by spec regardless, so this would likely work even without the explicit expose-headers line —
+S3 sends it anyway.)
+
 ## What this note does NOT claim
 
 - No real Safari, no real mobile browser — Playwright's WebKit build only (same caveat
@@ -104,3 +152,6 @@ has to know about, regardless of engine or browser.
   CORS policy already covers a `duckdb-ext/` prefix is unverified and would need a real (writable)
   test against it before relying on this in production.
 - One machine, one session, `parquet` only (matches S3/S4's own scope; `spatial`/`json` untouched).
+- The materialize-guard streaming path was measured against test doubles (a hand-rolled reader), not
+  a real multi-hundred-MB fetch — the mechanism (abort on running total) is generic Streams API
+  behaviour, but the exact chunk sizes a real S3 response delivers were not measured here.

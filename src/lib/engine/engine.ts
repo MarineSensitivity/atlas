@@ -10,14 +10,12 @@
 // under plain Node/Vitest without a browser. The real, no-stub path is exercised only by
 // `tests/fixtures/engine-e2e`'s Playwright specs (a real worker + wasm module needs a real browser).
 import { createRealDuckDB, DUCKDB_ENGINE_VERSION } from "./bundles";
+import { fetchWithSizeGuard, MATERIALIZE_MAX_BYTES, MaterializeTooLargeError } from "./materialize";
 import { lit } from "./sql";
 import { MemoryTableStore, type DuckDBFileHandle } from "./store/memoryStore";
 import type { TableStore } from "./store/TableStore";
 
-/** whole-object fetch + registerFileBuffer for anything at or under this size (plan `engine/`): "no
- * object the app needs is both large and prunable, so no httpfs range reads in v1." Anything larger
- * is refused, loudly, rather than silently falling back to a range read this app never wires up. */
-export const MATERIALIZE_MAX_BYTES = 25 * 1024 * 1024;
+export { MATERIALIZE_MAX_BYTES } from "./materialize";
 
 /** the minimal query surface `engine.ts` needs from a connection -- structural, not imported from
  * `@duckdb/duckdb-wasm`, so a test double can satisfy it without any real Arrow/WASM machinery. A
@@ -197,21 +195,24 @@ export class Engine {
 
       const endMark = this.#startMark("engine:load", { name, url });
       try {
-        const resp = await this.#fetchImpl(url);
-        if (!resp.ok) throw new Error(`fetch ${url}: HTTP ${resp.status}`);
-        const buf = new Uint8Array(await resp.arrayBuffer());
-        if (buf.byteLength > this.#maxMaterializeBytes) {
-          throw new Error(
-            `refusing to materialize "${name}" (${buf.byteLength} B): exceeds the ` +
-              `${this.#maxMaterializeBytes} B whole-object guard -- httpfs range reads are not used ` +
-              `in v1 (plan engine/ contract)`,
-          );
-        }
+        // fetchWithSizeGuard refuses BEFORE the download completes: a Content-Length over the
+        // guard aborts without ever reading the body, and a stream (missing or lying
+        // Content-Length) is capped and aborted mid-flight -- see materialize.ts's header.
+        const buf = await fetchWithSizeGuard(url, {
+          fetchImpl: this.#fetchImpl,
+          maxBytes: this.#maxMaterializeBytes,
+        });
         await store.register(name, digest, buf);
         endMark({ ok: true, bytes: buf.byteLength });
       } catch (err) {
         endMark({ ok: false, error: String(err) });
-        throw err instanceof EngineUnavailableError ? err : new EngineUnavailableError(err);
+        // MaterializeTooLargeError itself doesn't know which table it was loading (materialize.ts
+        // is a generic fetch helper) -- add that context here, at the one call site that does.
+        const named =
+          err instanceof MaterializeTooLargeError
+            ? new Error(`loading "${name}": ${err.message}`)
+            : err;
+        throw named instanceof EngineUnavailableError ? named : new EngineUnavailableError(named);
       }
     });
   }

@@ -22,6 +22,7 @@
     "build:fixture:size-budget-worker": "vite build --config tests/fixtures/size-budget-worker/vite.config.ts",
     "check:no-session": "node scripts/check-dist-session.mjs",
     "check:relative-assets": "node scripts/check-relative-assets.mjs",
+    "check:duckdb-ext": "node scripts/check-duckdb-ext.mjs",
     "contrast": "node scripts/contrast.mjs",
     "check:hex-literals": "node scripts/check-hex-literals.mjs",
     "mockups:shots": "node scripts/mockup-shots.mjs",

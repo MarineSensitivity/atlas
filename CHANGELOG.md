@@ -46,6 +46,25 @@ this half ships, to prove the templating wiring end to end.
   (both platforms × three engines, 37,067-row public parquet, CDN blocked) plus the seeded-fault specs
   (chain ordering, injection round-trip, unset mirror, cross-origin).
 
+Fix round 1 (review):
+
+- **The 25 MB materialize guard now refuses BEFORE the download, not after.** New
+  `src/lib/engine/materialize.ts`'s `fetchWithSizeGuard()`: an over-guard `Content-Length` aborts
+  the request without ever reading the body; otherwise the body is streamed and capped, aborted the
+  moment the running total crosses the guard (never more than the guard plus one chunk) — catching a
+  LYING `Content-Length` too, not just a missing one. Verified against a real cross-origin `fetch()`
+  in a real browser that the bucket exposes `Content-Length` under CORS (`docs/engine.md`).
+- **The DuckDB-WASM extension mirror is now pinned and CI-verified**, not just downloaded and
+  trusted. New `scripts/duckdb-extensions.manifest.json` commits the exact byte size and sha256 of
+  every mirrored file; `scripts/fetch-duckdb-extensions.mjs` verifies each download against it and
+  refuses to write a mismatch; new `scripts/check-duckdb-ext.mjs` (`npm run check:duckdb-ext`)
+  re-verifies the same manifest against a real `dist/duckdb-ext/` and confirms neither file is
+  reachable from `index.html`'s static import graph. `.github/workflows/pages.yml`'s `checks` job
+  now fetches the mirror before `vite build` and re-checks it after — a published site no longer
+  ships with no mirror at all (previously an omission: CI never ran the fetch step).
+- `docs/engine.md`: the published size the mirror adds (5,912,343 B, both platforms), confirmed
+  outside the size budget by construction (no manifest entry for a `publicDir` copy) and by test.
+
 # atlas 0.2.0
 
 Plan `atlas-2` Step 2: `release/`'s production resolution pipeline and `state/`, the `Sel` object

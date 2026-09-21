@@ -12,53 +12,74 @@
 // on demand from extensions.duckdb.org behind user consent instead). `json` is skipped too -- nothing
 // in the app loads it yet (same doc: "json only if something actually loads it").
 //
+// atlas-2 Step 3a fix round 1: this is a supply-chain input (a third-party download, not something
+// built from source in this repo), so every fetched file is verified against the pinned byte size
+// and sha256 in `duckdb-extensions.manifest.json` (the single source of truth for engine version,
+// platforms and extension names too -- nothing here is hard-coded a second time). A mismatch or a
+// download failure is a hard FAIL, not a warning: a silently-wrong mirror is worse than none, because
+// `scripts/check-duckdb-ext.mjs`'s later build-time check would be comparing dist/ against a
+// manifest that no longer describes what's actually on disk.
+//
 // Usage: node scripts/fetch-duckdb-extensions.mjs [outDir=public/duckdb-ext]
 // Writes into a path under `public/` so Vite's publicDir copies it into `dist/` on `npm run build`
-// (the "documented build step": CI/a real deploy must run this BEFORE `vite build`, or the shipped
-// app has no same-origin mirror and falls back to extensions.duckdb.org -- see docs/engine.md). The
-// output directory is gitignored (dev-only artifact, re-fetched, not committed).
+// (the documented build step, wired into `.github/workflows/pages.yml`'s `checks` job before
+// `vite build`). The output directory is gitignored (dev-only artifact, re-fetched, not committed).
+import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { loadManifest, manifestEntryRelPath } from "./check-duckdb-ext-core.mjs";
 
-const ENGINE_VERSION = "v1.4.3"; // @duckdb/duckdb-wasm 1.32.0 -- must match src/lib/engine/bundles.ts
-const PLATFORMS = ["wasm_mvp", "wasm_eh"];
-const EXTENSIONS = ["parquet"];
 const REPOSITORY = "https://extensions.duckdb.org";
-
+const manifest = loadManifest();
 const outDir = process.argv[2] ?? path.join("public", "duckdb-ext");
 
-async function fetchOne(platform, name) {
-  const url = `${REPOSITORY}/${ENGINE_VERSION}/${platform}/${name}.duckdb_extension.wasm`;
-  const dir = path.join(outDir, ENGINE_VERSION, platform);
-  const dest = path.join(dir, `${name}.duckdb_extension.wasm`);
+async function fetchOne(file) {
+  const rel = manifestEntryRelPath(manifest, file);
+  const url = `${REPOSITORY}/${manifest.engineVersion}/${file.platform}/${file.name}.duckdb_extension.wasm`;
+  const dest = path.join(outDir, rel);
 
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`fetch ${url}: HTTP ${resp.status}`);
   const buf = new Uint8Array(await resp.arrayBuffer());
 
-  await mkdir(dir, { recursive: true });
+  if (buf.byteLength !== file.bytes) {
+    throw new Error(
+      `size mismatch for ${url}: manifest pins ${file.bytes} B, downloaded ${buf.byteLength} B -- ` +
+        `refusing to write it (extensions.duckdb.org served something other than what was pinned; ` +
+        `re-verify and update duckdb-extensions.manifest.json deliberately if this is expected)`,
+    );
+  }
+  const sha256 = createHash("sha256").update(buf).digest("hex");
+  if (sha256 !== file.sha256) {
+    throw new Error(
+      `sha256 mismatch for ${url}: manifest pins ${file.sha256}, downloaded ${sha256} -- refusing to ` +
+        `write it`,
+    );
+  }
+
+  await mkdir(path.dirname(dest), { recursive: true });
   await writeFile(dest, buf);
   return { url, dest, bytes: buf.byteLength };
 }
 
 let failed = false;
-for (const platform of PLATFORMS) {
-  for (const name of EXTENSIONS) {
-    try {
-      const { url, dest, bytes } = await fetchOne(platform, name);
-      process.stdout.write(`fetch-duckdb-extensions: ${url} -> ${dest} (${bytes} B)\n`);
-    } catch (err) {
-      failed = true;
-      process.stderr.write(`fetch-duckdb-extensions: FAILED ${platform}/${name}: ${err}\n`);
-    }
+for (const file of manifest.files) {
+  try {
+    const { url, dest, bytes } = await fetchOne(file);
+    process.stdout.write(
+      `fetch-duckdb-extensions: ${url} -> ${dest} (${bytes} B, sha256 verified)\n`,
+    );
+  } catch (err) {
+    failed = true;
+    process.stderr.write(`fetch-duckdb-extensions: FAILED ${file.platform}/${file.name}: ${err}\n`);
   }
 }
 
 if (failed) {
   process.stderr.write(
-    "fetch-duckdb-extensions: one or more extension files failed to download -- the app will fall " +
-      "back to extensions.duckdb.org at runtime for the missing file(s), which crashes if that host " +
-      "is unreachable (docs/spikes/S3.md).\n",
+    "fetch-duckdb-extensions: one or more extension files failed to download or verify -- the app " +
+      "will fall back to extensions.duckdb.org at runtime for the missing file(s), which crashes if " +
+      "that host is unreachable (docs/spikes/S3.md).\n",
   );
   process.exit(1);
 }

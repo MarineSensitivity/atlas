@@ -163,7 +163,9 @@ describe("Engine#load — materialize-then-query", () => {
     const engine = new Engine({ createDb: h.createDb, extensionRepository: null, fetchImpl });
 
     await engine.load("taxon", "https://example.test/taxon.parquet", "digest-1");
-    expect(fetchImpl).toHaveBeenCalledExactlyOnceWith("https://example.test/taxon.parquet");
+    expect(fetchImpl).toHaveBeenCalledExactlyOnceWith("https://example.test/taxon.parquet", {
+      signal: expect.any(AbortSignal),
+    });
     expect(h.registerFileBuffer).toHaveBeenCalledExactlyOnceWith("taxon", expect.any(Uint8Array));
     expect(engine.store?.has("taxon", "digest-1")).toBe(true);
   });
@@ -188,7 +190,7 @@ describe("Engine#load — materialize-then-query", () => {
 
     await expect(
       engine.load("huge", "https://example.test/huge.parquet", "digest-1"),
-    ).rejects.toThrow(/refusing to materialize "huge".*exceeds the 26214400 B whole-object guard/s);
+    ).rejects.toThrow(/loading "huge":.*exceeds the 26214400 B whole-object guard/s);
     expect(h.registerFileBuffer).not.toHaveBeenCalled();
   });
 
