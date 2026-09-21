@@ -21,7 +21,11 @@
     "build:fixture:size-budget": "vite build --config tests/fixtures/size-budget-static-duckdb/vite.config.ts",
     "build:fixture:size-budget-worker": "vite build --config tests/fixtures/size-budget-worker/vite.config.ts",
     "check:no-session": "node scripts/check-dist-session.mjs",
-    "check:relative-assets": "node scripts/check-relative-assets.mjs"
+    "check:relative-assets": "node scripts/check-relative-assets.mjs",
+    "contrast": "node scripts/contrast.mjs",
+    "check:hex-literals": "node scripts/check-hex-literals.mjs",
+    "mockups:shots": "node scripts/mockup-shots.mjs",
+    "mockups:axe": "node scripts/axe-mockups.mjs"
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "1.32.0",
@@ -39,6 +43,7 @@
     "flatgeobuf": "EXACT 4.4.0 (S4), the version measured. Fastest parser here (2.3 ms for 40k vertices, 11.4 KB gzip) and it reports the source CRS in the header but does NOT reproject: atlas-6's normalizer must, and that division of labour is version-specific behaviour worth pinning."
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

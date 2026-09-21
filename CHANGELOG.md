@@ -52,6 +52,32 @@ Fix round 1 (review):
   `src/lib/release/resolveVer.ts`'s `candidateVer()` does — harmless today (the preview host's path
   always carries the same version), deliberately not wired up yet.
 
+Design system, step 1 of phase `atlas-3` (the MMA visual language). Nothing is wired into the app
+yet — `index.html` is untouched, so `dist/` and the size budget are unchanged; this is the review
+surface for Ben's mockup checkpoint.
+
+- **`src/lib/brand/tokens.css`**: the brand tokens and the only file in the repo allowed to contain a
+  color literal. MMA palette (Gold, Steel Blue, Navy Blue, Crimson Red), a semantic layer for both
+  themes — **`navy`** (dark, the default) and **`paper`** (light) — the 12/13/14/16/20/28 type scale,
+  4 px spacing, radius, elevation, motion (zeroed under `prefers-reduced-motion`), and the data
+  colors: eight CVD-safe category hues and the Spectral legend stops.
+- **Contrast is a gate, not a review note.** `node scripts/contrast.mjs` reads the pairs from an
+  `@contrast` block inside `tokens.css` and fails if a text pair is under 4.5:1, a non-text pair is
+  under 3:1, a paired token is not opaque, or **any color token is unclassified**. 66 pairs pass in
+  both themes. Gold assigned to text on `paper` turns it red (1.71:1) — asserted in
+  `tests/contrast.test.ts`.
+- **`node scripts/check-hex-literals.mjs`**: no hex literal outside `tokens.css` across
+  `src/lib/brand` and the mockups; vendored brand marks are allowed only while they carry a
+  provenance line. Motif opacity is capped at the guide's 10 %. Both have planted-fault tests.
+- **Motifs** `src/lib/brand/motifs/{hex,wave}.svg` (tileable, one `currentColor` each, used as CSS
+  masks so the tint is always a token) and the vendored MST mark for the top bar — the MMA seal is
+  never in the top bar (it may not be shown below 0.75 in).
+- **`docs/design/spec.md`** and three token-only mockups under `docs/design/mockups/`
+  (desktop Scores with a Program Area selected, desktop Species with a drawn place, phone with the
+  sheet at half), screenshotted in both themes into `docs/design/mockups/screenshots/`.
+- **axe (WCAG 2.0/2.1 A + AA) over all six screens: 0 critical, 0 serious, 0 moderate, 0 minor.**
+  New dev dependency `@axe-core/playwright` pinned at exactly `4.13.0`.
+
 # atlas 0.1.1
 
 - **Restricted releases can no longer render on the public host** (plan D6). `versions.json`'s

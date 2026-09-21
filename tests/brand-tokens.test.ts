@@ -1,0 +1,126 @@
+// atlas-3 review checklist, rules 1 and 2: no hex literal outside tokens.css, and the motifs stay
+// at or under the guide's 10 % opacity. Each rule has its planted-fault twin here, so neither gate
+// can quietly stop being able to fail.
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { findHexLiterals, SCAN_ROOTS } from "../scripts/check-hex-literals-core.mjs";
+
+const TOKENS = readFileSync("src/lib/brand/tokens.css", "utf8");
+const MOTIF_CAP = 0.1; // MMA Branding Guide 2026, pp. 9-10
+
+let dir: string | null = null;
+
+afterEach(() => {
+  if (dir) rmSync(dir, { recursive: true, force: true });
+  dir = null;
+});
+
+function makeRepo(files: Record<string, string>): string {
+  dir = mkdtempSync(join(tmpdir(), "atlas-brand-"));
+  for (const [rel, content] of Object.entries(files)) {
+    const p = join(dir, rel);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, content);
+  }
+  return dir;
+}
+
+describe("no hex literal outside tokens.css", () => {
+  it("is true of everything atlas-3 wrote", () => {
+    expect(findHexLiterals(".")).toEqual([]);
+  });
+
+  it("scans the mockups and the brand directory", () => {
+    expect(SCAN_ROOTS).toContain("docs/design/mockups");
+    expect(SCAN_ROOTS).toContain("src/lib/brand");
+  });
+
+  it("flags a planted literal in mockup CSS (the seeded fault)", () => {
+    const d = makeRepo({
+      "src/lib/brand/tokens.css": ":root { --mma-gold: #e8c24a; }",
+      "docs/design/mockups/mockup.css": ".chip { color: #e8c24a; }",
+    });
+    const hits = findHexLiterals(d);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({
+      path: join("docs", "design", "mockups", "mockup.css"),
+      match: "#e8c24a",
+    });
+  });
+
+  it("flags a planted literal in a mockup's inline style too", () => {
+    const d = makeRepo({
+      "docs/design/mockups/x.html": '<div style="background: #fff"></div>',
+    });
+    expect(findHexLiterals(d)).toHaveLength(1);
+  });
+
+  it("allows literals inside tokens.css itself", () => {
+    const d = makeRepo({ "src/lib/brand/tokens.css": ":root { --mma-navy: #001a57; }" });
+    expect(findHexLiterals(d)).toEqual([]);
+  });
+
+  it("does not mistake a fragment link or an svg id reference for a color", () => {
+    const d = makeRepo({
+      "docs/design/mockups/x.html": '<a href="#place-panel">x</a><use href="#i-layers" />',
+    });
+    expect(findHexLiterals(d)).toEqual([]);
+  });
+
+  it("allows a vendored brand mark only while it says where it came from", () => {
+    const withProvenance = makeRepo({
+      "src/lib/brand/vendor/mark.svg":
+        '<!-- vendored verbatim from elsewhere --><svg fill="#FFFFFF"/>',
+    });
+    expect(findHexLiterals(withProvenance)).toEqual([]);
+    rmSync(withProvenance, { recursive: true, force: true });
+
+    const without = makeRepo({ "src/lib/brand/vendor/mark.svg": '<svg fill="#FFFFFF"/>' });
+    expect(findHexLiterals(without)[0].reason).toMatch(/provenance/);
+  });
+
+  it("holds for the committed vendored marks", () => {
+    for (const f of ["mst-mark.svg", "mst-mark-dark.svg"]) {
+      expect(readFileSync(`src/lib/brand/vendor/${f}`, "utf8")).toMatch(/vendored verbatim from/);
+    }
+  });
+});
+
+describe("motif opacity is capped at 10 % (guide pp. 9-10)", () => {
+  const opacities = () =>
+    [...TOKENS.matchAll(/(--motif-[\w-]*opacity)\s*:\s*([\d.]+)\s*;/g)].map(([, name, v]) => ({
+      name,
+      value: Number(v),
+    }));
+
+  it("declares an opacity token for both motifs", () => {
+    expect(
+      opacities()
+        .map((o) => o.name)
+        .sort(),
+    ).toEqual(["--motif-hex-opacity", "--motif-wave-opacity"]);
+  });
+
+  it("keeps every motif opacity at or under the cap", () => {
+    for (const o of opacities()) expect(o.value).toBeLessThanOrEqual(MOTIF_CAP);
+  });
+
+  it("goes red when one is raised above the cap (the seeded fault)", () => {
+    const raised = TOKENS.replace("--motif-hex-opacity: 0.1;", "--motif-hex-opacity: 0.18;");
+    expect(raised).not.toEqual(TOKENS);
+    const values = [...raised.matchAll(/--motif-[\w-]*opacity\s*:\s*([\d.]+)\s*;/g)].map((m) =>
+      Number(m[1]),
+    );
+    expect(values.some((v) => v > MOTIF_CAP)).toBe(true);
+  });
+
+  it("uses `currentColor` and no literal in the motif assets, so the tint comes from a token", () => {
+    for (const f of ["hex.svg", "wave.svg"]) {
+      const svg = readFileSync(`src/lib/brand/motifs/${f}`, "utf8");
+      expect(svg).toMatch(/currentColor/);
+      expect(svg).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    }
+  });
+});
