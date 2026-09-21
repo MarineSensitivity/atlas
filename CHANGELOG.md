@@ -26,6 +26,13 @@ merges. Still not wired into `index.html` — the shell is step 3.
   not reflow. Carlito's OFL reserves that name, so the subset file's own name table was renamed to
   "Carlito MMA Subset" (the CSS still declares `font-family: "Carlito"`). Each license kept beside
   its font. Not wired into `index.html`'s critical path yet.
+- **`gallery.html`**, a third page, added as its OWN independent Vite build
+  (`vite.gallery.config.ts`) rather than a third entry in `vite.config.ts` -- doing the latter first
+  made Rollup share the Svelte runtime chunk between `index.html` and the gallery, growing
+  `index.html`'s static graph from the committed ~11.5 KB gzip baseline to ~14.9 KB even though
+  nothing in `index.html` changed. `src/gallery/App.svelte` discovers one section per component
+  under `src/gallery/sections/*.svelte` with `import.meta.glob`, so later commits never edit a
+  shared file to add one.
 
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
