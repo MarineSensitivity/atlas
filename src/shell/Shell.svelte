@@ -9,8 +9,8 @@
   // This file owns NO scoped CSS for the shell's own layout/topbar chrome -- it imports shell.css
   // as a plain global stylesheet (the SAME file index.html's inline critical CSS `@import`s), so
   // there is exactly one source for every geometry value the CLS gate depends on. The real
-  // src/lib/ui/* components below (Rail, Panel, Sheet, Segmented, About, Toast) bring their own
-  // scoped styles and are used only by import, per this step's instructions.
+  // src/lib/ui/* components below (Rail, Panel, Sheet, Segmented, About, VersionBadge, Announcer)
+  // bring their own scoped styles and are used only by import, per this step's instructions.
   import { onMount } from "svelte";
   import "./shell.css";
   import { buildRailItems, TOOL_BODY, TOOL_LABEL, type ToolName } from "./tools";
@@ -28,6 +28,8 @@
   import Segmented from "../lib/ui/Segmented.svelte";
   import About from "../lib/ui/About.svelte";
   import VersionBadge from "../lib/ui/VersionBadge.svelte";
+  import Announcer from "../lib/ui/Announcer.svelte";
+  import { announce } from "../lib/ui/announcer";
   import { createSelStore } from "../lib/state/sel.svelte";
   import { defaultOut, resolveTheme } from "../lib/state/types";
 
@@ -80,20 +82,6 @@
 
   function selectTool(name: string) {
     activeTool = name as ToolName;
-  }
-
-  // --- the shell's one polite live region (spec.md §11: "one polite live region announces async
-  // results ... and an inactive control's reason when it is activated") -----------------------
-  // TEMPORARY SHIM: the parallel accessibility-review agent is consolidating every component's
-  // own ad-hoc live region into ONE `src/lib/ui/Announcer.svelte` + `announce()` in
-  // `src/lib/ui/announcer.ts`, which does not exist on this branch yet. This is a local
-  // stand-in with the SAME call signature (`announce(message: string): void`) and exactly one
-  // `role="status" aria-live="polite"` region, mounted once at the end of the template below --
-  // at merge time, swap this block for an import of the real module (same call sites, same
-  // signature, no other change needed here).
-  let announcement = $state("");
-  function announce(message: string) {
-    announcement = message;
   }
 
   // --- top bar: version chip, lens switch, search, Share / Report / Help / theme ---------------
@@ -284,5 +272,8 @@
   </div>
 </main>
 
-<!-- TEMPORARY SHIM -- see the `announce()` comment above: the shell's one live region. -->
-<div class="visually-hidden" role="status" aria-live="polite">{announcement}</div>
+<!-- spec.md §11: the shell's ONE polite live region (SC 4.1.3) -- every component (Rail's
+     onAnnounce below, this file's own onShare/onHelp/onVersionClick) calls the shared
+     `announce()` from src/lib/ui/announcer.ts; nothing else in the shell renders a region of
+     its own. -->
+<Announcer />

@@ -11,6 +11,11 @@ import { chromium } from "@playwright/test";
 export const VIEWPORTS = {
   desktop: { width: 1280, height: 800 },
   phone: { width: 390, height: 844 },
+  // the smallest viewport the shell must never overflow at (atlas-3 step 3 fix round 2, item 4):
+  // catches the "grid blowout" class of bug where an ancestor's `overflow: hidden` clips a control
+  // off-screen without ever tripping `scrollWidth > clientWidth` on <html> -- only the per
+  // `[data-control]` bounding-box check below actually sees it.
+  phoneNarrow: { width: 320, height: 800 },
 };
 
 // filled in by atlas-2+ as view states exist (release picker, lens, places, ...). Each entry is a

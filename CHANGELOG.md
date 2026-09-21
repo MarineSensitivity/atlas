@@ -4,6 +4,39 @@
 `atlas-2` step 3b and `atlas-3` step 4's accessibility round (both below, at 0.7.0/0.7.1) had
 already landed independently.
 
+`atlas-3` step 3, fix round 2 (integration, after the merge above): the accessibility round changed
+components under this step without either side knowing about the other, so three things needed
+reconciling once both landed on the same branch.
+
+- **`src/shell/Shell.svelte`**: the round-1 "TEMPORARY SHIM" (a local `announce()` + its own live
+  region, added because `src/lib/ui/announcer.ts` didn't exist yet on this branch) is gone. The
+  shell now mounts the real `<Announcer />` once and calls the real `announce()` from
+  `src/lib/ui/announcer.ts`; `src/lib/ui/touch-targets.css` is imported once at the app root
+  alongside `tokens.css`/`fonts.css`. `e2e/shell.a11y.spec.ts` asserts exactly one
+  `[aria-live]`/`role="status"` node exists, before and after a full interaction walk (seeded
+  fault: leaving the old shim's `<div>` in place alongside `<Announcer />` turns this red).
+- **`src/shell/shell.css`**: the accessibility round's own component changes reopened the
+  geometry-equality gate. `touch-targets.css`'s `button.chip{min-width:24px}` ties the version
+  chip's own `.chip{min-width:84px}` on specificity and was winning on source order, collapsing the
+  chip back to content width — requalified to `button.chip`. `Panel`/`About`'s new
+  `width:100%;max-width:...` (for 320 px reflow) need a definite width from their absolutely
+  positioned wrapper to resolve against; without one the shrink-to-fit algorithm was bottoming out
+  on the panel/about body text's intrinsic width instead. Gave `.panel-region`/`.about-region` an
+  explicit `width`.
+- **320 px overflow** (the a11y round's known gap): two real bugs, both now fixed in `shell.css`
+  only (no `src/lib/ui` component touched). `.app`'s single implicit grid column had no minimum
+  size cap, so at 320 px its "auto-minimum" fell back to the topbar's max-content width and the
+  track (and `.topbar` stretched to it) silently grew past the viewport; `.app`'s own
+  `overflow: hidden` then clipped the excess without ever tripping `scrollWidth > clientWidth`, so
+  a plain overflow check missed it even though the theme toggle was genuinely clipped off-screen.
+  Fixed with `grid-template-columns: minmax(0, 1fr)`. Separately, even with that fixed, the
+  topbar's own default gap and padding left the mark, version chip, lens switch and theme toggle
+  (nothing else is hidden at this width; every one is load-bearing) no room to fit in 320 px; a new
+  `@media (max-width: 380px)` rule tightens `.topbar`'s own gap/padding (never a control's content)
+  to reclaim it. `scripts/verify.mjs`'s `VIEWPORTS` gains a 320×800 entry, and a new
+  `e2e/shell.a11y.spec.ts` layout suite imports `assertLayout`/`VIEWPORTS` straight from
+  `verify.mjs` (both themes × all three viewports) so the two can never drift.
+
 `atlas-3` step 3, fix round 1: the CLS and "no theme flash" gates from the initial shell could not
 actually fail (confirmed: an 8 px skeleton offset and the theme-setting line replaced with
 `void theme;` both left every existing shell spec green). Replaced/added the real gates, which then

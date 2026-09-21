@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession } from "./hermetic";
+import { assertLayout, VIEWPORTS as VERIFY_VIEWPORTS } from "../scripts/verify.mjs";
 
 // atlas-3 step 3 accessibility contract (spec.md §11, docs/design/spec.md §13's "accessibility"
 // gate): axe zero serious/critical on the real shell, both themes, both widths; keyboard reaches
@@ -33,6 +34,22 @@ test.describe("axe: zero serious/critical findings, both themes, both widths", (
           .analyze();
         const bad = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
         expect(bad, JSON.stringify(bad, null, 2)).toEqual([]);
+      });
+    }
+  }
+});
+
+test.describe("layout: no horizontal overflow, every control on screen (verify.mjs's assertLayout)", () => {
+  // reuses scripts/verify.mjs's own VIEWPORTS/assertLayout rather than a second copy, so this and
+  // `node scripts/verify.mjs` can never drift. Includes the 320x800 "phoneNarrow" viewport (fix
+  // round 2, item 4): "Categories demo aside, nothing in the shell may overflow at 320px."
+  for (const theme of THEMES) {
+    for (const [name, viewport] of Object.entries(VERIFY_VIEWPORTS)) {
+      test(`${theme} @ ${name} (${viewport.width}x${viewport.height})`, async ({ page }) => {
+        await page.setViewportSize(viewport);
+        await gotoShell(page, theme);
+        const problems = await assertLayout(page);
+        expect(problems, problems.join("\n")).toEqual([]);
       });
     }
   }
@@ -144,5 +161,32 @@ test.describe("keyboard", () => {
     await page.locator("body").click({ position: { x: 5, y: 5 } }); // ensure nothing is focused
     await page.keyboard.press("/");
     await expect(page.getByLabel("Search species and places")).toBeFocused();
+  });
+
+  // atlas-3 step 3 fix round 2 / SC 4.1.3: exactly ONE live region, for real -- src/lib/ui's
+  // Announcer.svelte is the ONLY thing that may render one; this shell must mount it exactly once
+  // and never keep its OWN temporary shim alongside it. A full interaction walk (every control
+  // that calls `announce()`) is what a stray SECOND region would most plausibly reveal, since some
+  // components only render their live region lazily/on first use.
+  test("exactly one live region exists, before and after a full interaction walk", async ({
+    page,
+  }) => {
+    await gotoShell(page, "navy");
+    const liveRegions = () => page.locator('[aria-live], [role="status"]');
+    await expect(liveRegions()).toHaveCount(1);
+
+    await page.locator(".topbar").getByRole("button", { name: "Species" }).click();
+    await page.locator(".topbar").getByRole("button", { name: "Scores" }).click();
+    await page.locator('[data-control="theme"]').click();
+    await page.locator('[data-control="help"]').click();
+    const rail = page.locator("#rail-region [role='toolbar']");
+    for (const label of ["Layers", "Places", "Flower plot", "Table", "Report"]) {
+      await rail.locator(`button[aria-label="${label}"]`).click();
+    }
+    const panel = page.locator("#panel-region");
+    await panel.locator('[data-panel-control="collapse"]').click();
+    await panel.locator("button.panel-pill").click();
+
+    await expect(liveRegions()).toHaveCount(1);
   });
 });

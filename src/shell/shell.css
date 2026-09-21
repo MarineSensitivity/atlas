@@ -31,6 +31,12 @@
    is there to prevent. index.html preloads the one display weight this frame needs (see its own
    head comment); this import is what makes that preload matter at all. */
 @import "../lib/brand/fonts.css";
+/* atlas-3 step 4 fix round 1 (SC 2.5.8): the shared coarse-pointer touch-target floor, imported
+   once at the app root as that step's own report asks -- it targets several src/lib/ui/*
+   selectors (`.seg button`, `button.chip`, ...) that the shell's own hand-built version chip and
+   the real Segmented component both carry, so both the skeleton and the hydrated frame pick up
+   the SAME floor symmetrically (never a skeleton/hydrated mismatch). */
+@import "../lib/ui/touch-targets.css";
 
 *,
 *::before,
@@ -96,8 +102,16 @@ a {
 }
 
 /* --- app frame: the map is the page; everything else floats over it (spec.md §1) -------------- */
+/* `minmax(0, 1fr)`, not a bare implicit column: without it the single column's automatic minimum
+   size falls back to the topbar's own max-content width (grid's "auto-minimum" rule), so at very
+   narrow viewports (320 px) the grid track -- and `.topbar` stretched to it -- silently grows past
+   the viewport instead of shrinking to it. `overflow: hidden` above then clips the excess without
+   ever registering on `document.documentElement.scrollWidth`, so a plain scrollWidth check misses
+   it entirely even though controls are genuinely clipped off-screen (caught by verify.mjs's per
+   `[data-control]` bounding-box check at the 320x800 viewport instead). */
 .app {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: var(--size-topbar) 1fr;
   height: 100vh;
   height: 100dvh;
@@ -173,7 +187,12 @@ a {
 }
 
 /* --- hand-built top-bar controls (version chip, search, Share/Report/Help/theme) --------------- */
-.chip {
+/* `button.chip`, not bare `.chip`: src/lib/ui/touch-targets.css's own `button.chip{min-width:24px}`
+   (imported above) has the SAME element+class specificity, and without this qualifier here it
+   otherwise WINS on specificity regardless of import order (0,1,1 beats 0,1,0), silently
+   overriding the 84px reservation below back down to content size -- the fix round 2 regression
+   the geometry-equality gate caught the moment touch-targets.css was wired in. */
+button.chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -304,6 +323,15 @@ a {
   top: var(--space-3);
   right: var(--space-3);
   z-index: 16;
+  /* atlas-3 step 4 fix round 1 changed Panel.svelte's `.panel` to `width:100%;max-width:380px`
+     (so it can reflow narrower at 320px) instead of a fixed `width:380px` -- but `width:100%`
+     needs a CONCRETE basis to resolve against. Without an explicit width here, this element (
+     absolutely positioned, `left:auto`, `width:auto`, only `right` given) falls back to the
+     shrink-to-fit algorithm, which (with a 100%-width child) bottoms out on the PANEL BODY TEXT's
+     own intrinsic content width -- 314.5 px for this step's placeholder text, not 380 -- an
+     unpredictable width the geometry-equality gate caught. Supplying it explicitly here removes
+     the ambiguity and matches what the component's own `max-width` clearly intends. */
+  width: min(var(--size-panel), calc(100vw - var(--space-3) * 2));
 }
 
 .about-region {
@@ -311,6 +339,12 @@ a {
   left: calc(var(--size-rail) + var(--space-4));
   bottom: var(--space-3);
   z-index: 14;
+  /* same shrink-to-fit ambiguity, and the same fix, as .panel-region above: atlas-3 step 4 fix
+     round 1 changed About.svelte's `.about` to `width:100%;max-width:372px` (its own hardcoded
+     value -- no shared token exists for it), which otherwise resolves against the release-note
+     paragraph's intrinsic content width instead of 372px. This card is `display:none` below the
+     900px breakpoint (see below), so 372px is always reachable here -- no min() needed. */
+  width: 372px;
 }
 
 @media (max-width: 899px) {
@@ -329,6 +363,10 @@ a {
     right: 0;
     left: 0;
     bottom: 0;
+    /* `left`, `right` AND an explicit `width` together over-constrain an absolutely positioned
+       box (CSS 2.1 10.3.7) -- the desktop rule's `width` above would otherwise win and `right`
+       get silently recomputed from it, undoing the full-width stretch this media query wants. */
+    width: auto;
   }
 
   /* the on-map About card is a desktop-only affordance at this step: the phone viewport has no
@@ -352,6 +390,18 @@ a {
   }
   .topbar-desktop-only {
     display: none;
+  }
+}
+
+/* very narrow phones (320 px, the smallest viewport verify.mjs covers): even with search/Share/
+   Report/Help and the title already dropped above, the mark + version chip + lens switch + theme
+   toggle's own min-content widths plus the default gap/padding still add up to ~356 px -- wider
+   than the viewport. Nothing here is hidden (every remaining control is load-bearing), so the fix
+   is to reclaim space from the topbar's own gap and padding rather than any control's content. */
+@media (max-width: 380px) {
+  .topbar {
+    gap: var(--space-1);
+    padding: 0 var(--space-1);
   }
 }
 
