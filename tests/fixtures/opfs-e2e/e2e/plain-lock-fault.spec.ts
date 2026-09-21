@@ -10,6 +10,16 @@
 // the proof that `opfs.spec.ts`'s second-tab case would be red without the option -- a check that
 // cannot fail is not a check. The assertion is specific: `outcome === "timeout"`, never "it threw
 // somehow", so an unrelated failure cannot masquerade as the fault being reproduced.
+//
+// **chromium + firefox only** (fix round 2, defect 3). A demonstration has to be deterministic or
+// it is noise: on a loaded machine WebKit tears the whole browser context down while a page sits in
+// a deliberately never-resolving `evaluate`, and the spec dies with "Target page, context or
+// browser has been closed" -- twice, in two different places, surviving one attempted cure.
+// Counting that as "the hang" would be unsound, because a context closing is also exactly what a
+// CRASH looks like, and this spec's entire value is that its red means one specific thing. Nothing
+// is lost by restricting it: the rule under test is `navigator.locks`, a browser API this app does
+// not implement, and `docs/spikes/S1.md` already measured the same hang on all three engines
+// (6001-6024 ms). The REAL OPFS specs in `opfs.spec.ts` still run on all three, unchanged.
 import { blockExtensionCdn, expect, test } from "./persistent";
 
 const HANG_MS = 6_000;
@@ -19,6 +29,10 @@ test("(seeded fault) a plain locks.request without ifAvailable hangs the second 
   context,
   browserName,
 }) => {
+  test.skip(
+    browserName === "webkit",
+    "WebKit tears the context down around a never-resolving evaluate under load; a seeded-fault demo must be deterministic (see this file's header)",
+  );
   await blockExtensionCdn(context);
   await page.goto("/");
   await page.waitForFunction(() => !!window.__opfsTest);

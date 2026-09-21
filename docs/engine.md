@@ -241,6 +241,11 @@ ruling 5), and `policy.ts`'s `planEviction` implements exactly this:
 Non-tile tables (`taxon`, `zone_taxon`, `taxonomy`, `model`) are never evicted: they are the reason
 the tier exists and together are ~10–25 MB per release against a 300 MB budget.
 
+> **For whoever wires the store into the app** (nothing calls `openTableStoreBackend` yet): pass
+> `restrictedVersions` — the labels `versions.json` marks `access: "restricted"`, which the release
+> layer has already parsed — or step 1 above silently never fires and restricted releases are
+> evicted in plain LRU order like any other.
+
 The ruling opens with a fourth step, "cold tiles of OTHER releases". Steps 1–2 above are that step
 and "whole stale versions" **collapsed**, necessarily: another release's tiles live inside a db file
 this tab has not opened and must not open (one handle per file, `S1.md` rule 6), so the whole file

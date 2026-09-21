@@ -31,7 +31,7 @@ import { roundHalfEven, snapNoise } from "../../src/lib/geo/round";
 import { normalizeForAnalysis, unwrapPolygon } from "../../src/lib/geo/unwrap";
 import { gridFromBoot } from "../../src/lib/grid/grid";
 import type { AreaGeometry } from "../../src/lib/geo/types";
-import { bestOfN, describeMeasurement, ratioOf } from "../perf";
+import { PERF_TIMEOUT_MS, bestOfN, describeMeasurement, ratioOf } from "../perf";
 
 const dir = fileURLToPath(new URL("../fixtures/places/", import.meta.url));
 
@@ -248,52 +248,72 @@ describe("performance (a Program-Area-sized place)", () => {
     return { type: "Polygon", coordinates: [ring] };
   }
 
-  it("covers a ~70k-cell polygon well inside the 150 ms target", () => {
-    const grid = gridFromBoot(GLOBAL05);
-    const geom = blob(600);
-    const cells = cellsInPolygon(geom, grid);
-    const m = bestOfN(5, () => cellsInPolygon(geom, grid));
-    console.log(describeMeasurement(`coverage perf (${cells.length} cells, 600 vertices)`, m));
-    expect(cells.length).toBeGreaterThan(65_000);
-    expect(m.ms).toBeLessThan(1500); // generous slack over the ~37 ms measured here
-  });
+  // Every test here carries PERF_TIMEOUT_MS. Sampling N times needs N times the headroom, and
+  // vitest's default 5,000 ms is not it: fix round 2's defect 1 was the GAA case below timing out
+  // at 5 s on a loaded machine while its own measurement sat comfortably inside its 2 s budget.
+  // The timeout must never be the thing that fails — only the assertion may be.
+  it(
+    "covers a ~70k-cell polygon well inside the 150 ms target",
+    () => {
+      const grid = gridFromBoot(GLOBAL05);
+      const geom = blob(600);
+      const cells = cellsInPolygon(geom, grid);
+      const m = bestOfN(5, () => cellsInPolygon(geom, grid), 1500);
+      console.log(describeMeasurement(`coverage perf (${cells.length} cells, 600 vertices)`, m));
+      expect(cells.length).toBeGreaterThan(65_000);
+      expect(m.ms).toBeLessThan(1500); // generous slack over the ~37 ms measured here
+    },
+    PERF_TIMEOUT_MS,
+  );
 
-  it("cost scales with the VERTEX count, not quadratically (the load-proof assertion)", () => {
-    // 4x the vertices on the identical shape. The scanline walks every segment once per row, so
-    // linear cost means ~4x; an O(n^2) edge scan (every segment against every other) would be
-    // ~16x, and the seeded fault for this gate is exactly that. A busy machine slows BOTH
-    // measurements, so the ratio survives load in a way no absolute budget can.
-    const grid = gridFromBoot(GLOBAL05);
-    const small = blob(600);
-    const big = blob(2400);
-    const cellsSmall = cellsInPolygon(small, grid);
-    const cellsBig = cellsInPolygon(big, grid);
-    // the same shape, so the same answer: this is what makes the two timings comparable at all
-    expect(cellsBig.length).toBeGreaterThan(65_000);
-    expect(Math.abs(cellsBig.length - cellsSmall.length) / cellsSmall.length).toBeLessThan(0.02);
+  it(
+    "cost scales with the VERTEX count, not quadratically (the load-proof assertion)",
+    () => {
+      // 4x the vertices on the identical shape. The scanline walks every segment once per row, so
+      // linear cost means ~4x; an O(n^2) edge scan (every segment against every other) would be
+      // ~16x, and the seeded fault for this gate is exactly that. A busy machine slows BOTH
+      // measurements, so the ratio survives load in a way no absolute budget can.
+      const grid = gridFromBoot(GLOBAL05);
+      const small = blob(600);
+      const big = blob(2400);
+      const cellsSmall = cellsInPolygon(small, grid);
+      const cellsBig = cellsInPolygon(big, grid);
+      // the same shape, so the same answer: this is what makes the two timings comparable at all
+      expect(cellsBig.length).toBeGreaterThan(65_000);
+      expect(Math.abs(cellsBig.length - cellsSmall.length) / cellsSmall.length).toBeLessThan(0.02);
 
-    const mSmall = bestOfN(5, () => cellsInPolygon(small, grid));
-    const mBig = bestOfN(5, () => cellsInPolygon(big, grid));
-    const ratio = ratioOf(mBig, mSmall);
-    console.log(describeMeasurement("coverage perf (600 vertices)", mSmall));
-    console.log(describeMeasurement("coverage perf (2400 vertices)", mBig));
-    console.log(`coverage perf: 4x vertices cost ${ratio.toFixed(2)}x (linear ~4, quadratic ~16)`);
-    expect(ratio).toBeLessThan(8);
-  });
+      const mSmall = bestOfN(5, () => cellsInPolygon(small, grid));
+      const mBig = bestOfN(5, () => cellsInPolygon(big, grid));
+      const ratio = ratioOf(mBig, mSmall);
+      console.log(describeMeasurement("coverage perf (600 vertices)", mSmall));
+      console.log(describeMeasurement("coverage perf (2400 vertices)", mBig));
+      console.log(
+        `coverage perf: 4x vertices cost ${ratio.toFixed(2)}x (linear ~4, quadratic ~16)`,
+      );
+      expect(ratio).toBeLessThan(8);
+      // no `budgetMs` on either call above, on purpose: a ratio needs BOTH sides measured the same
+      // way, so neither may stop early.
+    },
+    PERF_TIMEOUT_MS,
+  );
 
-  it("covers the traced GAA Program Area (many cells is cheap; many VERTICES is not)", () => {
-    // the R-made fixture: 14,238 cells from a 63,417-vertex outline. Cost here is dominated by the
-    // vertex count, not the cell count — the scanline walks every segment once per row — so this
-    // gets its own budget line: measured best ~125 ms against the subplan's 150 ms, where the
-    // 70k-CELL blob above (600 vertices) takes ~37 ms. See the report: bucketing segments by row
-    // would cut it, and is deliberately NOT done in this close-out round.
-    const fx: PlaceFixture = JSON.parse(readFileSync(dir + "programarea_gaa.json", "utf8"));
-    const grid = gridFromBoot(fx.grid);
-    const geom = (fx.geometry ?? fx.polygon) as AreaGeometry;
-    const cells = cellsInPolygon(geom, grid);
-    const m = bestOfN(5, () => cellsInPolygon(geom, grid));
-    console.log(describeMeasurement("coverage perf (GAA, 63,417 vertices)", m));
-    expect(cells.length).toBe(14_238); // the hard assertion: load-proof, and the one that matters
-    expect(m.ms).toBeLessThan(2000); // generous CI slack over the ~125 ms measured here
-  });
+  it(
+    "covers the traced GAA Program Area (many cells is cheap; many VERTICES is not)",
+    () => {
+      // the R-made fixture: 14,238 cells from a 63,417-vertex outline. Cost here is dominated by the
+      // vertex count, not the cell count — the scanline walks every segment once per row — so this
+      // gets its own budget line: measured best ~125 ms against the subplan's 150 ms, where the
+      // 70k-CELL blob above (600 vertices) takes ~37 ms. See the report: bucketing segments by row
+      // would cut it, and is deliberately NOT done in this close-out round.
+      const fx: PlaceFixture = JSON.parse(readFileSync(dir + "programarea_gaa.json", "utf8"));
+      const grid = gridFromBoot(fx.grid);
+      const geom = (fx.geometry ?? fx.polygon) as AreaGeometry;
+      const cells = cellsInPolygon(geom, grid);
+      const m = bestOfN(5, () => cellsInPolygon(geom, grid), 2000);
+      console.log(describeMeasurement("coverage perf (GAA, 63,417 vertices)", m));
+      expect(cells.length).toBe(14_238); // the hard assertion: load-proof, and the one that matters
+      expect(m.ms).toBeLessThan(2000); // generous CI slack over the ~125 ms measured here
+    },
+    PERF_TIMEOUT_MS,
+  );
 });
