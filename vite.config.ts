@@ -1,0 +1,38 @@
+import { fileURLToPath, URL } from "node:url";
+import { defineConfig } from "vite";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
+
+// atlas-0 scaffold (plan D2, D3): the same dist/ must run under both
+// https://marinesensitivity.org/atlas/ and https://preview.marinesensitivity.org/v9/atlas/, and Cloudflare
+// Access scopes its reviewer policy by PATH, never by query — so every asset URL has to be relative
+// (base: "./") and every piece of view state has to live in the query string or the hash, never a
+// client router. Two HTML entries stand in for "routes": index.html (the map) and report.html (the
+// print-first report document). `gallery.html` is in the repo layout but not wired in yet (no gallery
+// lens before atlas-4+).
+export default defineConfig({
+  base: "./",
+  // D2: no client router, so there is no "route" for the dev/preview server to fall back to
+  // index.html for. `appType: "mpa"` turns that SPA fallback OFF — without it, a missing sibling
+  // file (latest.txt, session.json, ...) 200s with index.html's own markup in dev/preview instead
+  // of the real 404 that GitHub Pages and the preview host's Caddy actually return, which the
+  // early-fetch script and its tests rely on (a caught bug: see tests/release/version.test.ts and
+  // e2e/shell.smoke.spec.ts).
+  appType: "mpa",
+  plugins: [svelte()],
+  optimizeDeps: {
+    // @duckdb/duckdb-wasm ships its own worker + wasm and the optimizer breaks it (same story that made
+    // CalCOFI Explorer exclude it, atlas-refs/"calcofi explore review.md" §1) — excluded pre-emptively
+    // here even though the dependency itself is NOT added yet (S1 has not pinned a version).
+    exclude: ["@duckdb/duckdb-wasm"],
+  },
+  build: {
+    target: "es2022",
+    manifest: true, // scripts/size-budget.mjs reads dist/.vite/manifest.json
+    rollupOptions: {
+      input: {
+        index: fileURLToPath(new URL("./index.html", import.meta.url)),
+        report: fileURLToPath(new URL("./report.html", import.meta.url)),
+      },
+    },
+  },
+});

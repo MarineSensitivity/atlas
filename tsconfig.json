@@ -1,0 +1,37 @@
+{
+  // one flat config for the whole repo (app code, config files, tests, e2e) so that a bare
+  // `tsc --noEmit` — the CI gate — actually type-checks everything instead of doing nothing, which
+  // is what a project-references "solution" tsconfig (files: [], references: [...]) does unless run
+  // with `-b`. src/ needs DOM; vite.config.ts/playwright.config.ts/scripts/tests need Node — both
+  // lib sets are included together since this is a small single app, not a multi-package repo.
+  "extends": "@tsconfig/svelte/tsconfig.json",
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": ["svelte", "vite/client", "node", "@playwright/test"],
+    "allowArbitraryExtensions": true,
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "tests/**/*.ts",
+    "e2e/**/*.ts",
+    "scripts/**/*.d.ts",
+    "*.config.ts"
+  ]
+}
