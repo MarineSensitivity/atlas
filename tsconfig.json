@@ -33,5 +33,10 @@
     "e2e/**/*.ts",
     "scripts/**/*.d.ts",
     "*.config.ts"
-  ]
+  ],
+  // belt-and-suspenders on top of "include" already being a strict allowlist: the four S1-S4
+  // spike worktrees (each with its own package.json/tsconfig/Playwright specs, landing via
+  // parallel merges) and the worktrees themselves must never be pulled into the root `tsc
+  // --noEmit` gate.
+  "exclude": ["spikes", ".claude", "node_modules", "dist"]
 }

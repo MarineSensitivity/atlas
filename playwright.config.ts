@@ -5,6 +5,8 @@ import { defineConfig, devices } from "@playwright/test";
 // thing size-budget.mjs and check-relative-assets.mjs run against — not the dev server, which
 // would exercise a different code path (unbundled, absolute /src/ URLs).
 export default defineConfig({
+  // scoped to this directory only — the S1-S4 spike harnesses each run their own Playwright
+  // config out of spikes/<n>/ on their own ports (4311-4314); this one never crawls spikes/**.
   testDir: "./e2e",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,

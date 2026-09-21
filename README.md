@@ -21,16 +21,16 @@ npm ci
 npm run dev        # http://localhost:5173
 ```
 
-| command | what it does |
-|---|---|
-| `npm run dev` | Vite dev server |
-| `npm run build` | production build → `dist/` |
-| `npm run preview` | serve `dist/` locally |
-| `npm run check` | svelte-check (type-checks inside `.svelte` files too) |
-| `npm test` | unit tests (vitest) |
-| `npm run e2e` | Playwright smoke spec, chromium + webkit + firefox |
-| `npm run lint` / `npm run format` | eslint / prettier |
-| `npm run size-budget` | critical-path gzip budget + lazy-chunk check against a real build |
+| command                           | what it does                                                      |
+| --------------------------------- | ----------------------------------------------------------------- |
+| `npm run dev`                     | Vite dev server                                                   |
+| `npm run build`                   | production build → `dist/`                                        |
+| `npm run preview`                 | serve `dist/` locally                                             |
+| `npm run check`                   | svelte-check (type-checks inside `.svelte` files too)             |
+| `npm test`                        | unit tests (vitest)                                               |
+| `npm run e2e`                     | Playwright smoke spec, chromium + webkit + firefox                |
+| `npm run lint` / `npm run format` | eslint / prettier                                                 |
+| `npm run size-budget`             | critical-path gzip budget + lazy-chunk check against a real build |
 
 See `CLAUDE.md` for what each of these actually enforces and why.
 

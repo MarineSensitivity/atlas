@@ -18,6 +18,8 @@ export default ts.config(
       "node_modules",
       "tests/fixtures/**/dist", // built fixture output, not source
       ".tmp", // sandbox-only TMPDIR override, gitignored
+      "spikes", // S1-S4 spike harnesses (each its own package.json); root config must not lint them
+      ".claude/worktrees", // parallel spike-agent worktrees, each a full checkout with own node_modules
     ],
   },
   js.configs.recommended,

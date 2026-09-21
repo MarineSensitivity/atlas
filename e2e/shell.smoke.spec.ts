@@ -18,7 +18,8 @@ function collectConsoleErrors(page: Page): string[] {
     if (msg.type() !== "error") return;
     const url = msg.location()?.url ?? "";
     const basename = url.split("/").pop() ?? "";
-    if (msg.text().includes("Failed to load resource") && EXPECTED_MISSING_FILES.has(basename)) return;
+    if (msg.text().includes("Failed to load resource") && EXPECTED_MISSING_FILES.has(basename))
+      return;
     errors.push(`[${msg.type()}] ${msg.text()} (${url})`);
   });
   page.on("pageerror", (err) => errors.push(String(err)));
