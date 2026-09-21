@@ -340,34 +340,51 @@ describe("the shared access case table, run against index.html's REAL inline scr
   });
 });
 
-describe.skip("KNOWN GAP (atlas-2 review, fix round 1, judgment call 3): the inline early-fetch script does not prefer session.ver in preview mode", () => {
-  // src/lib/release/resolveVer.ts's candidateVer() makes session.ver AUTHORITATIVE in preview mode
-  // and ignores the path AND ?ver= outright (Caddy already decided which release a path may show by
-  // routing there at all). This inline script has NOT been given that same rule — it still resolves
-  // the version from path-then-query only (the same as version.ts's resolveVersion()), and never
-  // reads session.raw.ver at all. That is harmless TODAY: equal to path-derived resolution, because
-  // the preview host's Caddy only ever serves session.json under /{ver}/atlas/, so the path-derived
-  // version and session.ver always agree in every real deployment (none of the ACCESS_CASES above
-  // construct a conflicting case). Kept skipped rather than fixed here — deliberately deferred
-  // (atlas-2 Step 2 fix round 1, judgment call 3) until there is a concrete need to wire it — but
-  // named as a real, executable case so atlas-2 review rules on it rather than re-discovering it.
-  it("a preview session whose session.ver disagrees with the path resolves to session.ver (candidateVer's rule) — NOT YET true of this inline script", async () => {
+// WAS `describe.skip` — the gap it named is closed (atlas-2 phase review, fix round 1, ruling 2).
+// src/lib/release/resolveVer.ts's candidateVer() makes session.ver AUTHORITATIVE in preview mode and
+// ignores the path AND ?ver= outright (Caddy already decided which release a path may show by
+// routing there at all); the inline script now carries the same rule, and the shared case table
+// (`ACCESS_CASES`) drives both copies through it.
+describe("the inline early-fetch script prefers session.ver in preview mode (candidateVer's rule)", () => {
+  const CONFLICTING_ROUTES: Routes = {
+    [LATEST_URL]: { ok: true, textBody: "v7" },
+    [VERSIONS_URL]: {
+      ok: true,
+      jsonBody: [
+        { ver: "v7", access: "public" },
+        { ver: "v9", access: "restricted" },
+      ],
+    },
+    [SESSION_URL]: { ok: true, jsonBody: { preview: true, ver: "v9" } }, // session says v9
+  };
+
+  it("a preview session whose session.ver disagrees with the path resolves to session.ver", async () => {
     const early = runEarlyFetch({
       pathname: "/v7/atlas/", // path says v7
       search: "",
-      routes: {
-        [LATEST_URL]: { ok: true, textBody: "v7" },
-        [VERSIONS_URL]: {
-          ok: true,
-          jsonBody: [
-            { ver: "v7", access: "public" },
-            { ver: "v9", access: "restricted" },
-          ],
-        },
-        [SESSION_URL]: { ok: true, jsonBody: { preview: true, ver: "v9" } }, // session says v9
+      routes: CONFLICTING_ROUTES,
+    });
+    await expect(early.version).resolves.toBe("v9");
+  });
+
+  it("the path naming a version is what makes the session readable at all (the preview host's shape)", async () => {
+    // the same session, but at the PUBLIC host's URL shape (`/atlas/`, no version segment) and with
+    // a public candidate: the session is never awaited there, so session.ver cannot apply. This is
+    // the half of D6 that must not regress — the public host never waits on a same-origin round
+    // trip unless a restricted release is in play.
+    const requested: string[] = [];
+    const inner = makeFetch(CONFLICTING_ROUTES, requested);
+    const early = runEarlyFetch({
+      pathname: "/atlas/",
+      search: "",
+      fetchImpl: (url) => {
+        if (url === SESSION_URL) {
+          requested.push(url);
+          return new Promise(() => {}); // a session.json that never answers
+        }
+        return inner(url);
       },
     });
-    // candidateVer()'s rule says this should resolve to "v9"; the inline script resolves "v7" today.
-    await expect(early.version).resolves.toBe("v9");
+    await expect(early.version).resolves.toBe("v7");
   });
 });

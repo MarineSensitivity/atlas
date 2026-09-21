@@ -31,6 +31,7 @@ import { roundHalfEven, snapNoise } from "../../src/lib/geo/round";
 import { normalizeForAnalysis, unwrapPolygon } from "../../src/lib/geo/unwrap";
 import { gridFromBoot } from "../../src/lib/grid/grid";
 import type { AreaGeometry } from "../../src/lib/geo/types";
+import { bestOfN, describeMeasurement, ratioOf } from "../perf";
 
 const dir = fileURLToPath(new URL("../fixtures/places/", import.meta.url));
 
@@ -224,49 +225,75 @@ describe("antimeridian and frame handling", () => {
 });
 
 describe("performance (a Program-Area-sized place)", () => {
-  it("covers a ~70k-cell polygon well inside the 150 ms target", () => {
-    const grid = gridFromBoot({
-      grid: { nc: 7200, nr: 3600, xmin: -180, ymax: 90, resx: 0.05, resy: 0.05, lon360: false },
-    });
-    // a 600-vertex blob, semi-axes 8.2 x 7.1 deg = 164 x 142 cells -> ~70,000 cells covered
+  // atlas-2 phase review, ruling 3: every assertion here is either a HARD count (load-proof by
+  // construction) or goes through tests/perf.ts — best-of-N against a generous budget, plus the
+  // one assertion that actually pins the algorithm, a vertex-scaling RATIO. The previous single
+  // `performance.now()` sample measured the machine, not the code: 125 ms idle, 2,282 ms in 1 of 3
+  // full-suite runs, with `coverage.ts` untouched.
+  const GLOBAL05 = {
+    grid: { nc: 7200, nr: 3600, xmin: -180, ymax: 90, resx: 0.05, resy: 0.05, lon360: false },
+  };
+
+  /** the SAME wiggly blob (semi-axes 8.2 x 7.1 deg = 164 x 142 cells, ~70,000 cells) at `n`
+   * vertices. The shape — and therefore the covered cell SET — is independent of `n`, so two
+   * vertex counts differ in exactly one input dimension: the thing being scaled. */
+  function blob(n: number): AreaGeometry {
     const ring: [number, number][] = [];
-    const n = 600;
     for (let k = 0; k < n; k++) {
       const t = (2 * Math.PI * k) / n;
       const r = 1 + 0.08 * Math.sin(9 * t); // a wiggly boundary, not a circle
       ring.push([-90 + 8.2 * r * Math.cos(t), 28 + 7.1 * r * Math.sin(t)]);
     }
     ring.push(ring[0]);
-    const geom: AreaGeometry = { type: "Polygon", coordinates: [ring] };
+    return { type: "Polygon", coordinates: [ring] };
+  }
 
-    cellsInPolygon(geom, grid); // warm up
-    const t0 = performance.now();
+  it("covers a ~70k-cell polygon well inside the 150 ms target", () => {
+    const grid = gridFromBoot(GLOBAL05);
+    const geom = blob(600);
     const cells = cellsInPolygon(geom, grid);
-    const ms = performance.now() - t0;
-    // measured on this machine: see the number printed below; the assertion carries generous CI
-    // slack (10x) because a shared runner is not a laptop
-    console.log(`coverage perf: ${cells.length} cells in ${ms.toFixed(1)} ms`);
+    const m = bestOfN(5, () => cellsInPolygon(geom, grid));
+    console.log(describeMeasurement(`coverage perf (${cells.length} cells, 600 vertices)`, m));
     expect(cells.length).toBeGreaterThan(65_000);
-    expect(ms).toBeLessThan(1500);
+    expect(m.ms).toBeLessThan(1500); // generous slack over the ~37 ms measured here
+  });
+
+  it("cost scales with the VERTEX count, not quadratically (the load-proof assertion)", () => {
+    // 4x the vertices on the identical shape. The scanline walks every segment once per row, so
+    // linear cost means ~4x; an O(n^2) edge scan (every segment against every other) would be
+    // ~16x, and the seeded fault for this gate is exactly that. A busy machine slows BOTH
+    // measurements, so the ratio survives load in a way no absolute budget can.
+    const grid = gridFromBoot(GLOBAL05);
+    const small = blob(600);
+    const big = blob(2400);
+    const cellsSmall = cellsInPolygon(small, grid);
+    const cellsBig = cellsInPolygon(big, grid);
+    // the same shape, so the same answer: this is what makes the two timings comparable at all
+    expect(cellsBig.length).toBeGreaterThan(65_000);
+    expect(Math.abs(cellsBig.length - cellsSmall.length) / cellsSmall.length).toBeLessThan(0.02);
+
+    const mSmall = bestOfN(5, () => cellsInPolygon(small, grid));
+    const mBig = bestOfN(5, () => cellsInPolygon(big, grid));
+    const ratio = ratioOf(mBig, mSmall);
+    console.log(describeMeasurement("coverage perf (600 vertices)", mSmall));
+    console.log(describeMeasurement("coverage perf (2400 vertices)", mBig));
+    console.log(`coverage perf: 4x vertices cost ${ratio.toFixed(2)}x (linear ~4, quadratic ~16)`);
+    expect(ratio).toBeLessThan(8);
   });
 
   it("covers the traced GAA Program Area (many cells is cheap; many VERTICES is not)", () => {
     // the R-made fixture: 14,238 cells from a 63,417-vertex outline. Cost here is dominated by the
     // vertex count, not the cell count — the scanline walks every segment once per row — so this
-    // gets its own budget line: measured median 124.9 ms against the subplan's 150 ms, where the
-    // 74k-CELL blob above (600 vertices) takes 37 ms. See the report: bucketing segments by row
+    // gets its own budget line: measured best ~125 ms against the subplan's 150 ms, where the
+    // 70k-CELL blob above (600 vertices) takes ~37 ms. See the report: bucketing segments by row
     // would cut it, and is deliberately NOT done in this close-out round.
     const fx: PlaceFixture = JSON.parse(readFileSync(dir + "programarea_gaa.json", "utf8"));
     const grid = gridFromBoot(fx.grid);
     const geom = (fx.geometry ?? fx.polygon) as AreaGeometry;
-    cellsInPolygon(geom, grid); // warm up
-    const t0 = performance.now();
     const cells = cellsInPolygon(geom, grid);
-    const ms = performance.now() - t0;
-    console.log(
-      `coverage perf (GAA, 63,417 vertices): ${cells.length} cells in ${ms.toFixed(1)} ms`,
-    );
-    expect(cells.length).toBe(14_238);
-    expect(ms).toBeLessThan(2000); // generous CI slack over the ~125 ms measured here
+    const m = bestOfN(5, () => cellsInPolygon(geom, grid));
+    console.log(describeMeasurement("coverage perf (GAA, 63,417 vertices)", m));
+    expect(cells.length).toBe(14_238); // the hard assertion: load-proof, and the one that matters
+    expect(m.ms).toBeLessThan(2000); // generous CI slack over the ~125 ms measured here
   });
 });

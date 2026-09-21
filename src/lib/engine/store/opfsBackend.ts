@@ -116,6 +116,10 @@ export interface OpenStoreOptions {
   expectedDigest?: ExpectedDigest;
   emit?: FallbackSink;
   openDatabase?: OpenDatabase;
+  /** release labels the registry marks `access: "restricted"` (plan D6). Their OTHER-version db
+   * files are evicted before any public one, regardless of recency (atlas-2 review, ruling 5).
+   * Omitted = nothing known to be restricted. */
+  restrictedVersions?: Iterable<string>;
 
   // --- seams (all default to the real browser APIs) ---
   keepData?: boolean;
@@ -179,6 +183,7 @@ export async function openTableStoreBackend(opts: OpenStoreOptions): Promise<Sto
   const now = opts.now ?? (() => Date.now());
   const storage = opts.storage === undefined ? defaultStorage() : opts.storage;
   const rootProvider = opts.opfsRoot ?? defaultOpfsRoot;
+  const restrictedVersions = new Set(opts.restrictedVersions ?? []);
 
   const decision: StoreDecision = await selectStore({
     ver: opts.ver,
@@ -311,7 +316,14 @@ export async function openTableStoreBackend(opts: OpenStoreOptions): Promise<Sto
         db,
         rows: state.rows,
         budgetBytes,
-        otherFiles: () => otherVersionFiles(registry, file),
+        // a restricted OTHER release is evicted first regardless of recency (ruling 5). The caller
+        // supplies the set from `versions.json`; with none supplied nothing is marked and the order
+        // is plain LRU across other releases.
+        otherFiles: () =>
+          otherVersionFiles(registry, file).map((e) => ({
+            ...e,
+            restricted: restrictedVersions.has(e.ver),
+          })),
         deleteFile: async (victim) => {
           await deleteDbFile(dir, victim).catch(() => {});
           registry.delete(victim);
@@ -453,8 +465,21 @@ export async function purgeRestricted(
   const removed: string[] = [];
   for (const entry of await listDbFiles(dir)) {
     if (!wanted.has(entry.ver)) continue;
-    if (await deleteDbFile(dir, entry.file)) removed.push(entry.file);
-    registry.delete(entry.file);
+    // atlas-2 phase review, ruling 6: a delete that FAILS must not be forgotten. `removeEntry`
+    // rejects while any tab still holds the file's sync access handle, so a restricted file open in
+    // another tab would otherwise linger on disk with no registry row — unlisted, uncounted by the
+    // budget, and invisible to the next Sign out. Each file is also tried independently, so one
+    // locked file cannot abort the purge of the others.
+    let gone: boolean; // is it off the disk now (deleted here, or already absent)?
+    let deletedHere = false;
+    try {
+      deletedHere = await deleteDbFile(dir, entry.file);
+      gone = true; // no throw: either we removed it, or it was already NotFound
+    } catch {
+      gone = false; // still there, still ours to remember
+    }
+    if (deletedHere) removed.push(entry.file);
+    if (gone) registry.delete(entry.file);
   }
   writeRegistry(storage, registry);
   return removed;

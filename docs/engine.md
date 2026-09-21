@@ -224,6 +224,48 @@ database, and no tab that did not write a WAL replays it. So the gate was rewrit
 db file's size, and `checkpoint: false` is its committed seeded fault. (`.wal` size is NOT a
 discriminator: duckdb-wasm preallocates it at 7,332,7xx B either way.)
 
+## Eviction order — ruled, and not what the plan's wording said
+
+`atlas-2`'s `store/` paragraph says "evicting least-recently-used tiles first, then whole stale
+versions". Taken literally that throws away a tile of the release on screen right now before it
+touches a release nobody has opened in weeks. The phase review ruled the order (fix round 1,
+ruling 5), and `policy.ts`'s `planEviction` implements exactly this:
+
+1. **restricted OTHER-version files**, regardless of recency — plan D6: a reviewer's device keeps
+   unreleased data no longer than it has to, and `purgeRestricted()` (Sign out) is the only other
+   thing that removes them. The caller supplies the restricted labels from `versions.json`
+   (`openTableStoreBackend({ restrictedVersions })`); with none supplied nothing is marked.
+2. **the remaining OTHER-version files**, least recently used first;
+3. **cold tiles of the CURRENT release**, least recently used first.
+
+Non-tile tables (`taxon`, `zone_taxon`, `taxonomy`, `model`) are never evicted: they are the reason
+the tier exists and together are ~10–25 MB per release against a 300 MB budget.
+
+The ruling opens with a fourth step, "cold tiles of OTHER releases". Steps 1–2 above are that step
+and "whole stale versions" **collapsed**, necessarily: another release's tiles live inside a db file
+this tab has not opened and must not open (one handle per file, `S1.md` rule 6), so the whole file
+is the smallest unit available. The observable order is the ruled one. Seeded fault: restoring the
+plan's literal "tiles first" order turns
+`tests/engine/opfsPolicy.test.ts` › "evicts a COLD other release before a HOT tile of the current
+one" red.
+
+## Objects with no published digest — `built_at`, not the release label
+
+`tables/model.parquet` (v1–v7), every `serve/cell_model` tile, and `taxonomy` on a release whose
+`boot.tables` omits it carry no digest. They used to be keyed on the release LABEL alone, which is
+constant for the life of a release — so a corrected re-publish was served from OPFS stale,
+indefinitely, with no way to expire. Ruled (fix round 1, ruling 4): the key is **`boot.built_at` +
+the object's path** (`policy.ts`'s `noDigestKey`, used by both `analysis/sources.ts`'s `digestOf`
+and the session-start reconcile, so the writer and the checker cannot drift). No extra request, and
+no dependence on S3 exposing `ETag` through CORS; any rebuild of `app/` invalidates them. The
+matching obligation on the publisher is logged in atlas-1: re-publishing any object the app reads
+outside `app/` requires rebuilding `app/`.
+
+`built_at` is a required top-level key of `boot.json` in atlas-1's data contract (`schema, ver,
+built_at, msens`). A boot without it **fails closed**: the key then carries a per-page-load token,
+so nothing persisted by an earlier session is ever reused — stable within one session, different on
+every reload.
+
 ## Three bugs the real-browser run found
 
 Each has a named regression test; all three were invisible to a stub.

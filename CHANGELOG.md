@@ -1,3 +1,43 @@
+# atlas 0.7.5
+
+`atlas-2` phase review, fix round 1: the nine rulings. Two of them are user-visible bugs on the live
+site; the rest close gates that could not fail.
+
+- **The live `versions.json` was unreadable, so only `latest.txt`'s release could render.** The
+  published file is `{"versions":[…]}`; both copies of the access gate accepted a bare array only,
+  so the real registry fell to `registry-unreadable` — public v1–v6 were unreachable and the preview
+  host could not open v7b/v8/v9. It failed closed, so nothing leaked. `normalizeRegistry()` now
+  accepts **both** shapes in `src/lib/release/access.ts` and in `index.html`'s inline early-fetch
+  script; anything else (`{"versions":"x"}`, `{"versions":null}`, `{}`) stays unreadable. The live
+  body is in the shared case table verbatim, so both copies are driven through it.
+- **In preview mode `session.ver` now wins over the path and `?ver=` in the inline script too**,
+  matching `resolveVer.ts`'s `candidateVer()` (they disagreed: `/atlas/?ver=v8` with a session
+  naming v9 resolved to v8 inline, v9 in the module). It still goes through the same access check —
+  a session cannot name a release the registry does not list. `session.json` is now read whenever
+  the PATH names a version (the preview host's URL shape); the public host's own `/atlas/` shape
+  still never waits on it unless a restricted release is in play.
+- **Objects with no published digest are keyed on `boot.built_at` + path**, not the release label.
+  `tables/model.parquet`, every `serve/cell_model` tile and `taxonomy` (where `boot.tables` omits
+  it) were cached in OPFS for the life of the release — a corrected re-publish was served stale
+  indefinitely. A boot with no `built_at` fails closed and is not cached at all.
+- **Eviction order corrected**: restricted other-release files first (plan D6), then the remaining
+  other releases LRU, then the current release's cold tiles. The plan's literal "LRU tiles first"
+  dropped a hot tile of the release on screen before a cold release nobody had opened.
+- **`purgeRestricted()` keeps the registry row of a file whose delete FAILED** (a restricted file
+  still open in another tab would have lingered on disk, unlisted and invisible to the next Sign
+  out), purges each file independently, and its registry clear is now asserted.
+- **Timing gates are load-proof.** `tests/perf.ts` adds best-of-N and a scaling RATIO; the coverage
+  gates and the OPFS second-tab gate use them, and the counts stay hard assertions. The single
+  wall-clock sample they replaced red-lighted on scheduler noise (125 ms idle, 2,282 ms under load
+  with the code untouched) on a required check.
+- New gates: `tests/engine/noCreateWorker.wiring.test.ts` (the measured "never duckdb-wasm's
+  blob-worker helper, never a `coi` bundle" rule had none), and `tests/geo/rmod.test.ts` — R-sourced
+  fixtures (the exact `Rscript -e` is in the file) pinning all three of `rmod()`'s claims: floor
+  division, the guard pass (`-1e-17 %% 360` is 0, not 360), and `((x%y)+y)%y` being a different
+  function (38.800000000000011 where R gives 38.8).
+- `CLAUDE.md`: the analytics-privacy spec's path was wrong (it lives under
+  `e2e/fixtures/analytics-privacy/privacy.spec.ts`).
+
 # atlas 0.7.4
 
 `atlas-3` closing review, fix round 1 (of 2): four small fixes on `src/lib/ui/{Panel,Sheet}.svelte`

@@ -13,7 +13,12 @@ import { tableIdentifier } from "../../src/lib/engine/store/opfsPaths";
 import { fakeDb, fakeLocks, fakeOpfsRoot, fakeStorage, rejectingOpfsRoot, tick } from "./opfsFakes";
 
 const V9 = "v9.s1.dv1.4.3.duckdb";
-const BOOT = { tables: { taxon: { digest: "T2" }, cell: { digest: "C2" } } };
+const BOOT = {
+  // `built_at` is a required top-level key of boot.json (atlas-1's data contract) and is what keys
+  // every object boot.tables publishes no digest for (atlas-2 review, ruling 4).
+  built_at: "2026-09-21T10:00:00Z",
+  tables: { taxon: { digest: "T2" }, zone_taxon: { digest: "Z1" }, cell: { digest: "C2" } },
+};
 
 function harness(
   over: {
@@ -138,8 +143,10 @@ describe("openTableStoreBackend -- boot housekeeping", () => {
     const h = harness({
       metaRows: [
         { name: "v9/app/taxon.parquet", digest: "T1", bytes: 10, last_used: 1 }, // stale
-        { name: "v9/app/zone_taxon.parquet", digest: "Z1", bytes: 10, last_used: 1 }, // no opinion
+        { name: "v9/app/zone_taxon.parquet", digest: "Z1", bytes: 10, last_used: 1 }, // current
         { name: "v9/app/cell/tile=3/data_0.parquet", digest: "C2:3", bytes: 10, last_used: 1 },
+        // ANOTHER release's row: this boot has no opinion about it, so it must survive untouched
+        { name: "v7/app/taxon.parquet", digest: "whatever", bytes: 10, last_used: 1 },
       ],
     });
     const backend = await h.open();
@@ -158,6 +165,7 @@ describe("openTableStoreBackend -- boot housekeeping", () => {
     const store = backend.makeStore(h.dbs[0] as never, h.dbs[0].raw);
     expect(store.has("v9/app/taxon.parquet")).toBe(false);
     expect(store.has("v9/app/zone_taxon.parquet", "Z1")).toBe(true);
+    expect(store.has("v7/app/taxon.parquet", "whatever")).toBe(true);
   });
 
   it("(seeded fault) verifyDigests:false serves the stale table instead", async () => {
@@ -236,6 +244,59 @@ describe("purgeRestricted (the preview host's Sign out)", () => {
     await purgeRestricted(["v9"], { opfsRoot: fs.root as never, storage: fakeStorage() });
     expect(fs.atlas.files.has("v7.s1.dv1.4.3.duckdb")).toBe(true);
     expect(fs.atlas.files.has("v8.s1.dv1.4.3.duckdb")).toBe(true);
+  });
+
+  // atlas-2 phase review, ruling 6: the registry clear was unpinned (removing `writeRegistry` stayed
+  // green), and a file whose delete FAILED was forgotten — a restricted file still open in another
+  // tab would linger on disk with no registry row: unlisted, uncounted by the budget, and invisible
+  // to the next Sign out.
+  it("clears the registry rows of the files it removed", async () => {
+    const fs = fakeOpfsRoot(files());
+    const storage = fakeStorage({
+      [REGISTRY_KEY]: JSON.stringify({
+        "v9.s1.dv1.4.3.duckdb": { bytes: 10, lastUsedMs: 5 },
+        "v7.s1.dv1.4.3.duckdb": { bytes: 10, lastUsedMs: 6 },
+      }),
+    });
+    await purgeRestricted(["v9"], { opfsRoot: fs.root as never, storage });
+    const reg = JSON.parse(storage.map.get(REGISTRY_KEY)!);
+    expect(reg["v9.s1.dv1.4.3.duckdb"], "the removed file's row is gone").toBeUndefined();
+    expect(reg["v7.s1.dv1.4.3.duckdb"], "the public release's row is untouched").toEqual({
+      bytes: 10,
+      lastUsedMs: 6,
+    });
+  });
+
+  it("KEEPS the registry row of a file whose delete FAILED, and still purges the others", async () => {
+    const fs = fakeOpfsRoot(files());
+    // v9's file refuses to go (the shape of a sync access handle still held by another tab):
+    // NoModificationAllowedError, not NotFoundError, so deleteDbFile() rethrows it.
+    const locked = "v9.s1.dv1.4.3.duckdb";
+    const realRemove = fs.atlas.removeEntry.bind(fs.atlas);
+    fs.atlas.removeEntry = async (name: string) => {
+      if (name === locked) {
+        const err = new Error("The file is locked");
+        err.name = "NoModificationAllowedError";
+        throw err;
+      }
+      return realRemove(name);
+    };
+    const storage = fakeStorage({
+      [REGISTRY_KEY]: JSON.stringify({
+        [locked]: { bytes: 10, lastUsedMs: 5 },
+        "v8.s1.dv1.4.3.duckdb": { bytes: 10, lastUsedMs: 6 },
+      }),
+    });
+
+    const removed = await purgeRestricted(["v9", "v8"], { opfsRoot: fs.root as never, storage });
+    expect(removed, "only the one that actually went").toEqual(["v8.s1.dv1.4.3.duckdb"]);
+    expect(fs.atlas.files.has(locked), "the locked file is still on disk").toBe(true);
+    const reg = JSON.parse(storage.map.get(REGISTRY_KEY)!);
+    expect(reg[locked], "so it is still remembered, and the next Sign out will find it").toEqual({
+      bytes: 10,
+      lastUsedMs: 5,
+    });
+    expect(reg["v8.s1.dv1.4.3.duckdb"]).toBeUndefined();
   });
 
   it("an empty version list deletes nothing at all", async () => {

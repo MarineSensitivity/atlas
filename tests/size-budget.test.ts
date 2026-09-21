@@ -4,6 +4,7 @@ import {
   collectStaticGraph,
   CRITICAL_BUDGET_BYTES,
   evaluateBudget,
+  FORBIDDEN_LAZY_MARKERS,
   findForbiddenMarkers,
   findWorkerAssets,
   gzipSize,
@@ -12,6 +13,26 @@ import {
 
 function buf(text: string): Buffer {
   return Buffer.from(text, "utf8");
+}
+
+/**
+ * `randomBytes(n)` with any forbidden-lazy-marker occurrence neutralized.
+ *
+ * Why this exists (found flaky in the atlas-2 fix round, ~14% of runs): `evaluateBudget` also greps
+ * the reachable files' TEXT for `FORBIDDEN_LAZY_MARKERS`, and `shp` is three bytes — in 449 KB of
+ * uniform random bytes the chance that one of the markers appears by accident is about one run in
+ * seven. The straddle test below then failed for a reason that has nothing to do with the budget it
+ * is measuring, on a check that is required on `main` (the exact class of gate `tests/perf.ts`'s
+ * header argues against). Blanking the few matched runs changes the gzip size by a handful of bytes
+ * and leaves the payload just as incompressible.
+ */
+function incompressibleBytes(n: number): Buffer {
+  const text = randomBytes(n).toString("latin1");
+  const re = new RegExp(FORBIDDEN_LAZY_MARKERS.join("|"), "gi");
+  return Buffer.from(
+    text.replace(re, (m: string) => "\u0000".repeat(m.length)),
+    "latin1",
+  );
 }
 
 describe("collectStaticGraph", () => {
@@ -251,8 +272,10 @@ describe("evaluateBudget", () => {
   // trusting the budget assertion, so this is testing the BUDGET, not a compression fluke.
   it("a ~451 KB static path FAILS the default 450 KB budget, and a ~449 KB one PASSES it", () => {
     expect(CRITICAL_BUDGET_BYTES).toBe(450 * 1024);
-    const over = randomBytes(451 * 1024);
-    const under = randomBytes(449 * 1024);
+    const over = incompressibleBytes(451 * 1024);
+    const under = incompressibleBytes(449 * 1024);
+    // the payload must trip the BUDGET and nothing else, or this stops testing the budget
+    expect(findForbiddenMarkers(new Map([["index.js", under.toString("latin1")]]))).toEqual([]);
     expect(gzipSize(over)).toBeGreaterThan(CRITICAL_BUDGET_BYTES);
     expect(gzipSize(under)).toBeLessThan(CRITICAL_BUDGET_BYTES);
 

@@ -11,6 +11,7 @@
 import { MAX_CELL_MODEL_TILES, batchTiles } from "./place";
 import { cellModelKeySql, type SqlRunner, type Templates } from "./queries";
 import { ident } from "../engine/sql";
+import { noDigestKey } from "../engine/store/policy";
 import type { Engine } from "../engine/engine";
 
 /** the `boot.tables` entry shape atlas-1 publishes. */
@@ -28,11 +29,22 @@ export interface SourcesOptions {
   templates: Templates;
 }
 
-/** `boot.tables[name].digest`, or a stable fallback so a table is still registered exactly once. */
-function digestOf(boot: Record<string, unknown>, name: string, fallback: string): string {
+/**
+ * `boot.tables[name].digest` when the release publishes one, else {@link noDigestKey} — `boot.
+ * built_at` + the object's path (atlas-2 phase review, ruling 4).
+ *
+ * The fallback used to be the release-relative PATH alone, which is constant for the life of a
+ * release: `tables/model.parquet` on v1-v7, every `serve/cell_model` tile, and `taxonomy` wherever
+ * `boot.tables` omits it were therefore cached in OPFS forever, and a corrected re-publish was
+ * served stale indefinitely. `noDigestKey` is the ONE place that rule lives; `policy.ts`'s
+ * `expectedDigestFromBoot` (the session-start reconcile) computes the identical key from the same
+ * function, so the two cannot drift. A `boot` with no `built_at` fails closed — the key then
+ * carries a per-session token and nothing persisted is ever reused.
+ */
+function digestOf(boot: Record<string, unknown>, name: string, path: string): string {
   const tables = boot.tables as Record<string, BootTable> | undefined;
   const d = tables?.[name]?.digest;
-  return typeof d === "string" && d.length ? d : fallback;
+  return typeof d === "string" && d.length ? d : noDigestKey(boot, path);
 }
 
 export class AnalysisSources {
@@ -70,6 +82,12 @@ export class AnalysisSources {
     await this.#view(view, [file]);
   }
 
+  /** the digest one object is keyed on — exposed so a test can assert the rule without a DuckDB. */
+  digestFor(path: string, bootName?: string): string {
+    const file = `${this.ver}/${path}`;
+    return digestOf(this.boot, bootName ?? file, file);
+  }
+
   /**
    * The small tables every lens needs. `taxonomy` and `model` are OPTIONAL by presence: a release
    * whose bundle has neither still answers scores and the zone species table.
@@ -90,10 +108,16 @@ export class AnalysisSources {
   /** the wide cell tiles covering a place, as the `cell` view. */
   async cellTiles(tiles: readonly number[]): Promise<void> {
     const names: string[] = [];
+    const cell = (this.boot.tables as Record<string, BootTable> | undefined)?.cell?.digest;
+    const published = typeof cell === "string" && cell.length ? cell : null;
     for (const t of tiles) {
       const path = `app/cell/tile=${t}/data_0.parquet`;
       const file = `${this.ver}/${path}`;
-      await this.engine.load(file, this.#url(path), `${digestOf(this.boot, "cell", file)}:${t}`);
+      // the composite `policy.ts`'s `expectedDigestFromBoot` reconstructs: one published `cell`
+      // digest invalidates every cell tile of the release. With no published digest it falls to
+      // `noDigestKey`, which already carries the path (tile included), so no `:${t}` suffix.
+      const digest = published ? `${published}:${t}` : noDigestKey(this.boot, file);
+      await this.engine.load(file, this.#url(path), digest);
       names.push(file);
     }
     await this.#view("cell", names);
@@ -103,15 +127,16 @@ export class AnalysisSources {
    * Mount ONE batch of `cell_model` tiles as `cell_model` + `cell_model_key`.
    *
    * `cell_model` has no `boot.tables` entry either (it lives under `{ver}/serve/`, unchanged from
-   * what the server already publishes), so the digest is the release + tile, which is stable and is
-   * all a re-registration guard needs.
+   * what the server already publishes), so it is keyed on `boot.built_at` + the path
+   * ({@link noDigestKey}, atlas-2 phase review ruling 4). It used to be `{ver}:cell_model:{tile}` —
+   * constant for the life of the release, i.e. cached in OPFS forever.
    */
   async mountCellModel(tiles: readonly number[]): Promise<void> {
     const names: string[] = [];
     for (const t of tiles) {
       const path = `serve/cell_model/tile=${t}/data_0.parquet`;
       const file = `${this.ver}/${path}`;
-      await this.engine.load(file, this.#url(path), `${this.ver}:cell_model:${t}`);
+      await this.engine.load(file, this.#url(path), noDigestKey(this.boot, file));
       names.push(file);
     }
     await this.#view("cell_model", names);

@@ -179,11 +179,21 @@ function accumulate(rings: Ring[], grid: GridSpec, frac: Map<number, number>): v
  * R's `%%` on doubles (R's arithmetic.c `myfmod`), which is floor division and NOT C's `fmod`:
  * `x - floor(x/y)*y`, then one guard pass in case that lands exactly on `y`.
  *
- * The distinction is not pedantry. `((x % 360) + 360) % 360` would answer 38.80000000000001 where R
- * answers 38.8 for a positive `x`, because the add-then-subtract of a whole turn is not exact in
- * binary — a 1.4e-14 deg disagreement is enough to move a knife-edge cell across a half.
+ * All three claims below are pinned by R-sourced fixtures in `tests/geo/rmod.test.ts` (the exact
+ * `Rscript -e` line is in that file), and each has a seeded fault that turns it red:
+ *
+ * 1. **Floor division, not truncation.** `-10 %% 360` is 350 in R; C's `fmod` would say -10.
+ * 2. **The guard pass is load-bearing.** For a tiny negative `x`, `x - floor(x/y)*y` rounds to
+ *    exactly `y`: `-1e-17 - (-1)*360` is 360, not "just under 360". R answers 0, and so must this.
+ *    Dropping the guard (`return t`) returns a full turn where the answer is zero.
+ * 3. **`((x % y) + y) % y` is NOT the same function.** For `x = 38.8, y = 360` it answers
+ *    38.800000000000011 — the value R gives for `398.8 %% 360` — where R gives 38.8 itself
+ *    (38.799999999999997). The add-then-subtract of a whole turn is not exact in binary, and a
+ *    1.4e-14 deg disagreement is enough to move a knife-edge cell across a half.
+ *
+ * Exported solely so those fixtures can address it; nothing outside this module calls it.
  */
-function rmod(x: number, y: number): number {
+export function rmod(x: number, y: number): number {
   const t = x - Math.floor(x / y) * y;
   const q = Math.floor(t / y);
   return q === 0 ? t : t - q * y;

@@ -174,10 +174,36 @@ test("a second tab answers from MEMORY within the same time budget and never tou
     "a second tab is transparent: no opfs_fallback",
   ).toEqual([]);
 
-  // the time budget: S1 measured 1010.9 ms (chromium) / 2371 ms (firefox) for the same in-memory
-  // answer. 10 s is deliberately loose -- what it has to catch is a HANG (the seeded plain-lock
-  // fault never resolves at all), not a slow machine.
-  expect(second.ms).toBeLessThan(10_000);
+  // --- the time budget (atlas-2 phase review, ruling 3) ---------------------------------------
+  // The single sample this replaced was a measurement of the machine, not of the tier. Two
+  // assertions now, the same shape as `tests/perf.ts` uses in the unit suite:
+  //
+  //  (a) BEST-OF-N against a loose absolute budget. `init()` builds a whole fresh DuckDB (worker +
+  //      wasm) and re-fetches the parquet on every sample, so each sample is a real cold answer;
+  //      the minimum is the honest estimate, and N makes "every sample was descheduled" unlikely.
+  //      The budget's job is to catch a HANG (the seeded plain-lock fault never resolves at all),
+  //      not to police a slow runner. S1 measured 1010.9 ms (chromium) / 2371 ms (firefox).
+  //  (b) a RATIO against tab 1's own cold load on this same machine, in this same run. That is
+  //      what "within the same time budget" actually claims: the memory tier must not be
+  //      categorically slower than the OPFS tier. Load slows both, so the ratio survives it.
+  const N = 5;
+  const samples: number[] = [second.ms];
+  for (let i = 1; i < N; i++) {
+    await page2.evaluate(() => window.__opfsTest.init());
+    const s = await page2.evaluate(() => window.__opfsTest.loadAndCount());
+    expect(s.n, "every sample is a real answer, not an empty one").toBe(ROWS);
+    samples.push(s.ms);
+  }
+  const best2 = Math.min(...samples);
+  console.log(
+    `[second tab] best ${best2.toFixed(1)} ms of [${samples.map((s) => s.toFixed(1)).join(", ")}]` +
+      ` (tab1 cold ${count.ms.toFixed(1)} ms, ratio ${(best2 / count.ms).toFixed(2)}x)`,
+  );
+  expect(best2, "a second tab must ANSWER, not hang").toBeLessThan(15_000);
+  expect(
+    best2 / count.ms,
+    "the memory tier answers within the same order as the OPFS tier's cold load",
+  ).toBeLessThan(8);
   await page2.close();
 });
 

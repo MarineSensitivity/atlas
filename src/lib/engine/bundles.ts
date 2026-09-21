@@ -4,9 +4,13 @@
 // and `eh` wasm/worker files are self-hosted via `?url` imports -- no CDN, and this module is never
 // reachable from the entry's static import graph (dynamic `import()` only; the size-budget script's
 // forbidden-marker scan is what proves that). The worker is constructed by hand --
-// `new Worker(bundle.mainWorker)`, same-origin -- never `duckdb.createWorker()` (a blob worker:
-// `instantiate()` hangs forever, S1 Consequence 2) and never the `coi` bundle (GitHub Pages cannot
-// send COOP/COEP).
+// `new Worker(bundle.mainWorker)`, same-origin -- never duckdb-wasm's own blob-worker helper (a
+// blob worker: `instantiate()` hangs forever, S1 Consequence 2) and never the cross-origin-isolated
+// bundle (GitHub Pages cannot send COOP/COEP).
+//
+// Those two names are deliberately NOT spelled out here: `tests/engine/noCreateWorker.wiring.test.ts`
+// scans this whole directory for them as literal substrings, comments included, so that the rule is
+// mechanically checkable rather than a sentence someone has to remember.
 import * as duckdb from "@duckdb/duckdb-wasm";
 import mvpWorkerUrl from "@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url";
 import ehWorkerUrl from "@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url";

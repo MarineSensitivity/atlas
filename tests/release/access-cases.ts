@@ -13,12 +13,14 @@
 // release", which is the property that actually matters.
 import {
   decideAccess,
+  normalizeRegistry,
   requiresSession,
   type DenialReason,
   type VersionRow,
 } from "../../src/lib/release/access";
 import { PUBLIC_DATA_BASE, dataUrl, registryUrl } from "../../src/lib/release/dataBase";
 import { resolveSession, type SessionResponseLike } from "../../src/lib/release/session";
+import { previewVer } from "../../src/lib/release/resolveVer";
 import { isVersionLabel, versionFromPath, versionFromQuery } from "../../src/lib/release/version";
 
 export const LATEST_URL = registryUrl("latest.txt");
@@ -32,6 +34,110 @@ export const REGISTRY_ROWS: VersionRow[] = [
   { ver: "v8", status: "prerelease", access: "restricted", prev: "v7", released: "2026-08-02" },
   { ver: "v9", status: "prerelease", access: "restricted", prev: "v8", released: "2026-09-05" },
 ];
+
+/**
+ * **The LIVE `versions.json` body, verbatim** — `curl -s
+ * https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/versions.json`, fetched
+ * 2026-09-21. It is a `{"versions":[…]}` WRAPPER, not a bare array, and 11 rows: v7b/v9/v8
+ * prerelease+restricted, v7 released+public, v6…v1 retired+public.
+ *
+ * It is here as data, not as a shape assertion, because the atlas-2 review's finding 1 was exactly
+ * that both copies of the gate accepted only a bare array — so the real file read as
+ * `registry-unreadable`, hiding public v1–v6 and locking the preview host out of v7b/v8/v9. Both
+ * copies are now driven through this body.
+ */
+export const LIVE_VERSIONS_BODY = {
+  versions: [
+    {
+      ver: "v7b",
+      status: "prerelease",
+      access: "restricted",
+      released: "2026-09-20",
+      title: "v7.1: turtle core habitat + coverage floor",
+      prev: "v7",
+    },
+    {
+      ver: "v9",
+      status: "prerelease",
+      access: "restricted",
+      released: "2026-08-27",
+      title: "AquaX supersedes AquaMaps in US waters",
+      prev: null,
+    },
+    {
+      ver: "v8",
+      status: "prerelease",
+      access: "restricted",
+      released: "2026-07-28",
+      title: "Marine Atlas",
+      prev: null,
+    },
+    {
+      ver: "v7",
+      status: "released",
+      access: "public",
+      released: "2026-06-12",
+      title: "Validity decoupled from Program Areas",
+      prev: null,
+    },
+    {
+      ver: "v6",
+      status: "retired",
+      access: "public",
+      released: "2026-04-09",
+      title: "IUCN range outside US EEZ",
+      prev: null,
+    },
+    {
+      ver: "v5",
+      status: "retired",
+      access: "public",
+      released: "2026-03-24",
+      title: "MMPA spatial floor",
+      prev: null,
+    },
+    {
+      ver: "v4b",
+      status: "retired",
+      access: "public",
+      released: "2026-03-19",
+      title: "Turtle multiplicative merge",
+      prev: null,
+    },
+    {
+      ver: "v4",
+      status: "retired",
+      access: "public",
+      released: "2026-03-01",
+      title: "SWOT sea turtles",
+      prev: null,
+    },
+    {
+      ver: "v3",
+      status: "retired",
+      access: "public",
+      released: "2026-02-01",
+      title: "Merged models + extinction risk",
+      prev: null,
+    },
+    {
+      ver: "v2",
+      status: "retired",
+      access: "public",
+      released: "2026-01-01",
+      title: "Program Areas",
+      prev: null,
+    },
+    {
+      ver: "v1",
+      status: "retired",
+      access: "public",
+      released: "2023-09-01",
+      title: "Planning Areas",
+      prev: null,
+    },
+  ],
+};
 
 /** a v8 row with no `access` key at all — must be treated as restricted, never as public. */
 export const ROWS_MISSING_ACCESS: VersionRow[] = [
@@ -80,6 +186,12 @@ const withManifests = (routes: Routes): Routes => ({
   [manifestOf("v7")]: ok({ ver: "v7" }),
   [manifestOf("v9")]: ok({ ver: "v9" }),
   [manifestOf("v8")]: ok({ ver: "v8" }),
+});
+/** the live registry lists v1…v9; the retired public ones need manifests too. */
+const liveManifests = (routes: Routes): Routes => ({
+  ...withManifests(routes),
+  [manifestOf("v6")]: ok({ ver: "v6" }),
+  [manifestOf("v7b")]: ok({ ver: "v7b" }),
 });
 
 export const ACCESS_CASES: AccessCase[] = [
@@ -164,13 +276,84 @@ export const ACCESS_CASES: AccessCase[] = [
       forbidden: ["/v9/"],
     },
   },
+  // --- the registry's two accepted shapes, and everything else staying unreadable -------------
   {
-    name: "a versions.json that is not a list at all is unreadable, not empty",
+    name: 'LIVE versions.json ({"versions":[…]}) on the public host: ?ver=v6 renders v6',
+    pathname: "/atlas/",
+    search: "?ver=v6",
+    routes: liveManifests({
+      [LATEST_URL]: text("v7"),
+      [VERSIONS_URL]: ok(LIVE_VERSIONS_BODY),
+      [SESSION_URL]: missing(),
+    }),
+    expect: { ver: "v6", denied: null, manifestUrl: manifestOf("v6") },
+  },
+  {
+    name: "LIVE versions.json on the public host: ?ver=v9 is denied and falls through to latest",
+    pathname: "/atlas/",
+    search: "?ver=v9",
+    routes: liveManifests({
+      [LATEST_URL]: text("v7"),
+      [VERSIONS_URL]: ok(LIVE_VERSIONS_BODY),
+      [SESSION_URL]: missing(),
+    }),
+    expect: {
+      ver: "v7",
+      denied: { ver: "v9", reason: "restricted" },
+      manifestUrl: manifestOf("v7"),
+      forbidden: ["/v9/"],
+    },
+  },
+  {
+    name: "LIVE versions.json + a preview session on /v9/atlas/ renders v9",
+    pathname: "/v9/atlas/",
+    search: "",
+    routes: liveManifests({
+      [LATEST_URL]: text("v7"),
+      [VERSIONS_URL]: ok(LIVE_VERSIONS_BODY),
+      [SESSION_URL]: ok({ preview: true, ver: "v9" }),
+    }),
+    expect: { ver: "v9", denied: null, manifestUrl: manifestOf("v9") },
+  },
+  {
+    name: 'a versions.json whose "versions" is a string is unreadable, not empty',
     pathname: "/atlas/",
     search: "?ver=v9",
     routes: withManifests({
       [LATEST_URL]: text("v7"),
-      [VERSIONS_URL]: ok({ versions: REGISTRY_ROWS }),
+      [VERSIONS_URL]: ok({ versions: "x" }),
+      [SESSION_URL]: ok({ preview: true }),
+    }),
+    expect: {
+      ver: "v7",
+      denied: { ver: "v9", reason: "registry-unreadable" },
+      manifestUrl: manifestOf("v7"),
+      forbidden: ["/v9/"],
+    },
+  },
+  {
+    name: 'a versions.json whose "versions" is null is unreadable',
+    pathname: "/atlas/",
+    search: "?ver=v9",
+    routes: withManifests({
+      [LATEST_URL]: text("v7"),
+      [VERSIONS_URL]: ok({ versions: null }),
+      [SESSION_URL]: ok({ preview: true }),
+    }),
+    expect: {
+      ver: "v7",
+      denied: { ver: "v9", reason: "registry-unreadable" },
+      manifestUrl: manifestOf("v7"),
+      forbidden: ["/v9/"],
+    },
+  },
+  {
+    name: "an object with no versions key at all is unreadable",
+    pathname: "/atlas/",
+    search: "?ver=v9",
+    routes: withManifests({
+      [LATEST_URL]: text("v7"),
+      [VERSIONS_URL]: ok({}),
       [SESSION_URL]: ok({ preview: true }),
     }),
     expect: {
@@ -227,11 +410,56 @@ export const ACCESS_CASES: AccessCase[] = [
     },
   },
   {
-    name: "a public release named by the path needs no session at all",
+    name: "a public release named by the path renders even when session.json rejects",
     pathname: "/v7/atlas/",
     search: "",
     routes: withManifests({ ...REGISTRY, [SESSION_URL]: { reject: true } }),
     expect: { ver: "v7", denied: null, manifestUrl: manifestOf("v7") },
+  },
+
+  // --- session.ver outranks the path and ?ver= in preview mode (resolveVer.ts's candidateVer) ---
+  {
+    name: "a preview session's session.ver wins over the path",
+    pathname: "/v7/atlas/", // path says v7 …
+    search: "",
+    routes: withManifests({
+      ...REGISTRY,
+      [SESSION_URL]: ok({ preview: true, ver: "v9" }), // … the session says v9
+    }),
+    expect: { ver: "v9", denied: null, manifestUrl: manifestOf("v9") },
+  },
+  {
+    name: "a preview session's session.ver wins over ?ver= too",
+    pathname: "/v8/atlas/",
+    search: "?ver=v8",
+    routes: withManifests({ ...REGISTRY, [SESSION_URL]: ok({ preview: true, ver: "v9" }) }),
+    expect: { ver: "v9", denied: null, manifestUrl: manifestOf("v9") },
+  },
+  {
+    name: "session.ver still goes through the access check: a version the registry does not list is denied",
+    pathname: "/v7/atlas/",
+    search: "",
+    routes: withManifests({ ...REGISTRY, [SESSION_URL]: ok({ preview: true, ver: "v42" }) }),
+    expect: {
+      ver: "v7",
+      denied: { ver: "v42", reason: "unknown-version" },
+      manifestUrl: manifestOf("v7"),
+      forbidden: ["/v42/"],
+    },
+  },
+  {
+    name: "a malformed session.ver is ignored and the path is used",
+    pathname: "/v7/atlas/",
+    search: "",
+    routes: withManifests({ ...REGISTRY, [SESSION_URL]: ok({ preview: true, ver: "v9ab" }) }),
+    expect: { ver: "v7", denied: null, manifestUrl: manifestOf("v7") },
+  },
+  {
+    name: "a NON-preview session's ver is ignored entirely",
+    pathname: "/v7/atlas/",
+    search: "",
+    routes: withManifests({ ...REGISTRY, [SESSION_URL]: ok({ preview: false, ver: "v9" }) }),
+    expect: { ver: "v7", denied: null, manifestUrl: manifestOf("v7"), forbidden: ["/v9/"] },
   },
   {
     name: "when the fall-through target is itself restricted, nothing renders",
@@ -367,8 +595,8 @@ export async function runModulePipeline(c: AccessCase): Promise<PipelineResult> 
   const requested: string[] = [];
   const fetchImpl = makeFetch(c.routes, requested);
 
-  const fromPath = versionFromPath(c.pathname);
-  const asked = fromPath ?? versionFromQuery(c.search);
+  const pathVer = versionFromPath(c.pathname);
+  const asked = pathVer ?? versionFromQuery(c.search);
 
   const latest = await fetchImpl(LATEST_URL)
     .then(async (r) => {
@@ -378,22 +606,31 @@ export async function runModulePipeline(c: AccessCase): Promise<PipelineResult> 
     })
     .catch(() => null);
 
+  // BOTH accepted shapes, one rule: access.ts's normalizeRegistry(). index.html's inline copy has
+  // the byte-equivalent function, and this table drives both.
   const versions = await fetchImpl(VERSIONS_URL)
     .then(async (r) => {
       if (!r.ok) throw new Error("versions.json");
-      const body = await r.json();
-      return Array.isArray(body) ? (body as VersionRow[]) : null;
+      return normalizeRegistry(await r.json());
     })
     .catch(() => null);
 
   // session.json is started unconditionally but awaited ONLY when a candidate release is
-  // restricted — the public path must never wait on it (plan D6).
+  // restricted, or when the PATH names a version (the preview host's shape, where session.ver
+  // outranks the path) — the public host's own `/atlas/` shape must never wait on it (plan D6).
   const sessionPromise = resolveSession(
     () => fetchImpl(SESSION_URL) as Promise<SessionResponseLike>,
   );
-  const session = requiresSession(versions, asked, latest) ? await sessionPromise : null;
+  const sessionInfo = requiresSession(versions, asked, latest, { pathNamesVersion: !!pathVer })
+    ? await sessionPromise
+    : null;
+  const session = sessionInfo;
 
-  const decision = decideAccess({ requested: asked, latest, versions, session });
+  // candidateVer()'s rule (resolveVer.ts): in preview mode session.ver is authoritative and both
+  // the path and ?ver= are ignored. It is still gated by decideAccess() below.
+  const candidate = (sessionInfo ? previewVer(sessionInfo) : null) ?? asked;
+
+  const decision = decideAccess({ requested: candidate, latest, versions, session });
   if (decision.ver) {
     await fetchImpl(dataUrl(decision.ver, "manifest.json", session)).catch(() => null);
     await fetchImpl(dataUrl(decision.ver, "app/boot.json", session)).catch(() => null);
