@@ -1,7 +1,7 @@
 {
   "name": "atlas",
   "private": true,
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "MarineSensitivity Atlas: scores, species, places and reports for U.S. marine areas.",
   "license": "MIT",
   "type": "module",
@@ -34,6 +34,7 @@
     "duckdb:fetch-ext": "node scripts/fetch-duckdb-extensions.mjs",
     "e2e:engine": "playwright test --config=tests/fixtures/engine-e2e/playwright.config.ts",
     "e2e:parity": "playwright test --config=tests/fixtures/parity-e2e/playwright.config.ts",
+    "e2e:opfs": "playwright test --config=tests/fixtures/opfs-e2e/playwright.config.ts",
     "parity": "node scripts/parity/run.mjs",
     "parity:fixtures": "Rscript scripts/parity/fixtures.R",
     "parity:serve": "node scripts/parity/serve.mjs"

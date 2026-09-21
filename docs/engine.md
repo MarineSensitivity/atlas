@@ -155,3 +155,102 @@ S3 sends it anyway.)
 - The materialize-guard streaming path was measured against test doubles (a hand-rolled reader), not
   a real multi-hundred-MB fetch — the mechanism (abort on running total) is generic Streams API
   behaviour, but the exact chunk sizes a real S3 response delivers were not measured here.
+
+---
+
+# store/ — the OPFS tier: what it does, and the fallback matrix as measured
+
+atlas-2 Step 4 (Opus). The tier-2 store (plan D3: "an OPFS-persistent DuckDB per release … one tab
+holds it (Web Locks), everyone else and every failure mode runs in memory. The app never _requires_
+OPFS"). Harness: `tests/fixtures/opfs-e2e/` (port 4451), `npm run duckdb:fetch-ext && npm run
+e2e:opfs`. Every number below is from a real run on 2026-09-21 (macOS 15.7.1, Node 24, this
+worktree), with `extensions.duckdb.org` blocked in every spec and one real public object —
+`marine-atlas/v9/tables/taxon.parquet`, 1,033,168 B, 37,067 rows.
+
+## The fallback matrix
+
+Browsers: Playwright 1.63.0 — Chromium 153.0.8010.12, Firefox 155.0, WebKit 26.6. Every cell is a
+green assertion in `tests/fixtures/opfs-e2e/e2e/`.
+
+| situation                         | chromium                                | firefox                       | webkit                        |
+| --------------------------------- | --------------------------------------- | ----------------------------- | ----------------------------- |
+| first session (tier reached)      | `opfs`                                  | `opfs`                        | `opfs`                        |
+| reload, S3 blocked, answers from  | the persisted table, 37,067             | the persisted table, 37,067   | the persisted table, 37,067   |
+| … and takes to answer             | 16.1 ms (first load 644.6 ms)           | 5 ms (first load 700.0 ms)    | 12 ms (first load 607.0 ms)   |
+| second tab, lock held elsewhere   | `memory` / `lock-held`                  | `memory` / `lock-held`        | `memory` / `lock-held`        |
+| … answers in, never touching OPFS | 315.6 ms                                | 274.0 ms                      | 328.0 ms                      |
+| corrupted file                    | deleted → `memory`, `corrupt`           | deleted → `memory`, `corrupt` | deleted → `memory`, `corrupt` |
+| storage denied (probe rejects)    | `memory` / `opfs-unavailable`           | `memory` / `opfs-unavailable` | `memory` / `opfs-unavailable` |
+| "keep data on this device" off    | `memory` / `setting-off`, files deleted | same                          | same                          |
+| db file after CHECKPOINT          | 3,158,016 B                             | 3,420,160 B                   | 3,158,016 B                   |
+| db file with CHECKPOINT removed   | 12,288 B (an empty header)              | 12,288 B                      | 12,288 B                      |
+
+Only `no-locks-api`, `no-opfs-api` and `opfs-unavailable` emit `opfs_fallback` — plus whatever
+reason a later failure produces (`corrupt`, `quota`, `locked`, `checkpoint`, `write`). `lock-held`
+and `setting-off` are ordinary paths and emit nothing: a second tab is not an incident.
+
+## This corrects `S1.md` on WebKit
+
+`docs/spikes/S1.md` records Playwright's WebKit as a flat OPFS failure for every duckdb-wasm pin —
+`navigator.storage.getDirectory()` rejecting with `UnknownError: The operation failed for an unknown
+transient reason` inside the worker, before any file handle is requested. **On the same WebKit build
+(26.6), OPFS works and persists here**: WebKit reaches the `opfs` tier, writes the file, and a
+reload with S3 blocked reads 37,067 rows back out of it.
+
+The one methodological difference is the browser context. S1 used Playwright's default (ephemeral)
+context; this gate drives a real **persistent profile** (`launchPersistentContext`, `e2e/persistent.ts`)
+— which is what a browser actually is. S1's verdict itself is unchanged and was never load-bearing on
+this point ("it licenses only 'the app must never require OPFS'"), and the specs here hardcode no
+engine as the broken one: chromium and firefox MUST reach the OPFS tier, WebKit may reach either and
+must satisfy the corresponding contract, asserted specifically.
+
+Also measured, and WebKit-specific: **a per-test `userDataDir` does not isolate OPFS on WebKit.**
+Files written by one persistent profile were visible to the next, and across separate `playwright
+test` runs. Harmless for the product (same origin, same storage) but the specs purge at
+`beforeEach` so they do not depend on each other.
+
+## What CHECKPOINT actually buys — not what the step predicted
+
+The step's brief expected "CHECKPOINT removed → the reload finds no table". **It does not.**
+duckdb-wasm prepares `<path>.wal` in OPFS alongside the database (`prepareDBFileHandle` asks for
+both) and replays it on the next open, so an uncheckpointed table still comes back after a reload:
+the reload gate stays green with every `CHECKPOINT` deleted. That fault therefore cannot be that
+gate's seeded fault.
+
+What CHECKPOINT does is put the bytes in the **database**: 3.2 MB in the `.duckdb` with it, a
+12,288 B empty header without, on all three engines — the data sitting in the WAL instead. That
+matters because this app's own stale-suffix sweep and self-heal delete a WAL together with its
+database, and no tab that did not write a WAL replays it. So the gate was rewritten to assert the
+db file's size, and `checkpoint: false` is its committed seeded fault. (`.wal` size is NOT a
+discriminator: duckdb-wasm preallocates it at 7,332,7xx B either way.)
+
+## Three bugs the real-browser run found
+
+Each has a named regression test; all three were invisible to a stub.
+
+1. **`registerFileBuffer` transfers the buffer.** Reading `buffer.byteLength` after the call sees a
+   detached array — 0. `MemoryTableStore` had done exactly that since Step 3, so every `bytes` was
+   0 in every real browser, and the new LRU budget was a silent no-op. Measure before registering.
+   The OPFS path additionally hands the worker a **copy**, so that a write failure after the
+   transfer still has the bytes to fall back to memory with.
+2. **A cache hit did not count as a use.** `Engine#load` short-circuits on `has(name, digest)` and
+   never reaches `register()`, so `last_used` only ever moved on a (re-)registration: the LRU would
+   have evicted the hottest tile in the working set. Hence `TableStore.touch(name)`.
+3. **A failed `open()` leaked its worker.** `defaultOpenDatabase` threw without terminating the
+   DuckDB it had just created, and duckdb-wasm creates the file's sync access handle _before_ it
+   reads it — so the handle stayed open, `removeEntry()` kept failing, and the corrupted file
+   "self-healed" into a corrupted file that was still there. It now tears down its own worker before
+   rethrowing, and `deleteDbFile()` retries a bounded number of times besides (the handle is closed
+   inside the worker's realm, asynchronously).
+
+## What this note does NOT claim
+
+- No real Safari, no real mobile browser, one machine — the same caveat `S1.md` already states.
+- The WebKit finding above is about Playwright's WebKit 26.6 in a persistent profile. It is not a
+  statement about Safari, and it does not make OPFS a requirement anywhere.
+- The budget was exercised at 3.7 MB (a quota override), not at the real 300 MB cap, and with
+  one ~1 MB object standing in for a `cell_model` tile. Browser eviction mid-session, a real quota
+  error and a genuinely large multi-release store are still unmeasured — `S1.md`'s "nothing about
+  tier-2 scale" gap is narrowed, not closed.
+- "Storage denied" is injected at this app's own `opfsRoot` seam, not by a real private window.
+  WebKit's own pre-existing rejection (S1) is the only un-simulated instance anyone has measured.

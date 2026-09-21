@@ -13,7 +13,9 @@ import { createRealDuckDB, DUCKDB_ENGINE_VERSION } from "./bundles";
 import { fetchWithSizeGuard, MATERIALIZE_MAX_BYTES, MaterializeTooLargeError } from "./materialize";
 import { lit } from "./sql";
 import { MemoryTableStore, type DuckDBFileHandle } from "./store/memoryStore";
-import type { TableStore } from "./store/TableStore";
+import type { RawSql, TableStore } from "./store/TableStore";
+
+export type { RawSql } from "./store/TableStore";
 
 export { MATERIALIZE_MAX_BYTES } from "./materialize";
 
@@ -42,9 +44,18 @@ export interface EngineOptions {
    * self-hosted boot (`createRealDuckDB`). Overridden by tests. */
   createDb?: () => Promise<{ db: DuckDBHandleLike; worker?: { terminate(): void } }>;
   fetchImpl?: typeof fetch;
-  /** defaults to a fresh `MemoryTableStore` bound to the booted db. Pass an OPFS-backed store
-   * (atlas-2 Step 4) to swap tiers without touching this class. */
-  store?: (db: DuckDBHandleLike) => TableStore;
+  /**
+   * defaults to a fresh `MemoryTableStore` bound to the booted db. Pass an OPFS-backed store
+   * (atlas-2 Step 4, `store/opfsBackend.ts`'s `makeStore`) to swap tiers without touching this
+   * class.
+   *
+   * The second argument is a {@link RawSql} bound to this engine's ONE connection that deliberately
+   * BYPASSES the public promise chain. A store that owns real persisted tables has to issue its own
+   * DDL from inside `register()`, which already runs as a chain task; re-entering `exec()` there
+   * would enqueue behind the task that is waiting for it and deadlock. `MemoryTableStore` ignores
+   * it entirely.
+   */
+  store?: (db: DuckDBHandleLike, raw: RawSql) => TableStore;
   /** same-origin path DuckDB's extension autoloader is pointed at before the first query
    * (`docs/spikes/S3.md`/`S4.md`). `undefined` (the default) computes it from `document.baseURI`, so
    * it stays base-relative under both hosts; `null` disables the `SET` entirely (used only by the
@@ -97,7 +108,7 @@ export class Engine {
   #chain: Promise<unknown> = Promise.resolve();
   #bootPromise: Promise<void> | null = null;
   #store: TableStore | null = null;
-  #makeStore: (db: DuckDBHandleLike) => TableStore;
+  #makeStore: (db: DuckDBHandleLike, raw: RawSql) => TableStore;
   #createDb: NonNullable<EngineOptions["createDb"]>;
   #fetchImpl: typeof fetch;
   #extensionRepository: string | null;
@@ -162,7 +173,7 @@ export class Engine {
       this.#db = db;
       this.#worker = worker;
       this.#conn = await db.connect();
-      this.#store = this.#makeStore(db);
+      this.#store = this.#makeStore(db, this.#raw);
       if (this.#extensionRepository) {
         // MUST happen before the first read_parquet()/LOAD: unset, a blocked/unreachable
         // extensions.duckdb.org turns into an uncatchable-feeling WASM `RuntimeError: function
@@ -191,7 +202,10 @@ export class Engine {
     return this.#enqueue(async () => {
       await this.boot();
       const store = this.#store!;
-      if (store.has(name, digest)) return;
+      // a cache HIT is still a use: without this the OPFS tier's `last_used` would only ever move
+      // on a (re-)registration, so its LRU would evict by registration order and throw away the
+      // hottest tile in the working set. See `TableStore.touch`.
+      if (store.has(name, digest)) return store.touch(name);
 
       const endMark = this.#startMark("engine:load", { name, url });
       try {
@@ -216,6 +230,17 @@ export class Engine {
       }
     });
   }
+
+  /**
+   * The {@link RawSql} handed to a `TableStore` (see `EngineOptions.store`): the same single
+   * connection, NO chain, NO implicit `boot()`. It is an arrow property rather than a method so it
+   * can be passed by reference, and it is private so the only way to obtain one is to BE the store
+   * -- i.e. to be called from inside a chain task that already owns the ordering.
+   */
+  #raw: RawSql = async <T = Record<string, unknown>>(sql: string): Promise<T[]> => {
+    if (!this.#conn) throw new EngineUnavailableError(new Error("raw(): engine is not booted"));
+    return (await this.#conn.query<T>(sql)).toArray();
+  };
 
   /** Run one query on the single connection, serialized on the same chain as every `load()`. */
   exec<T = Record<string, unknown>>(sql: string): Promise<T[]> {

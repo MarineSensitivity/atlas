@@ -24,6 +24,19 @@ export interface TableRef {
   from: string;
 }
 
+/**
+ * Run one statement on the engine's single connection, WITHOUT going through `Engine`'s public
+ * promise chain (atlas-2 Step 4).
+ *
+ * A store implementation that owns real, persisted tables (OPFS) has to issue DDL of its own --
+ * `CREATE TABLE ... AS SELECT`, `DROP TABLE`, `INSERT INTO _meta`, `CHECKPOINT` -- and it is called
+ * from INSIDE a chain task (`Engine#load` -> `store.register()`). Re-entering `Engine#exec` from
+ * there would enqueue a task behind the one currently running and deadlock. Serialization is
+ * already guaranteed at that point precisely BECAUSE the caller holds the chain, so this bypass is
+ * safe exactly here and nowhere else: nothing outside a `TableStore` may be handed one.
+ */
+export type RawSql = <T = Record<string, unknown>>(sql: string) => Promise<T[]>;
+
 export interface TableStore {
   readonly kind: string;
 
@@ -39,6 +52,18 @@ export interface TableStore {
 
   /** Is `name` currently registered? With `digest` given, true only if it matches exactly. */
   has(name: string, digest?: string): boolean;
+
+  /**
+   * Record that `name` was just USED, without re-registering it (atlas-2 Step 4). A no-op for an
+   * unregistered name.
+   *
+   * This exists because a CACHE HIT is a use: `Engine#load` short-circuits on
+   * `has(name, digest)` and never reaches {@link TableStore.register}, so without this call the
+   * `lastUsedMs` of the tables a session actually reads would never move and the OPFS tier's LRU
+   * would evict by REGISTRATION order instead -- i.e. it would throw away the hottest tile in the
+   * working set. Caught by the eviction gate on its first real-browser run.
+   */
+  touch(name: string): Promise<void>;
 
   /**
    * The FROM-clause source for an already-registered `name` (the same {@link TableRef}
