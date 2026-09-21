@@ -21,6 +21,14 @@ proving the block reaches worker fetches. Also: `e2e/duckdb-spatial.spec.ts` now
 `SPIKE4_MANIFEST` (round 1 left it hardcoded to the true manifest, so the seeded-fault run showed
 no red at all for it — see "item 2" under part (b)).
 
+**Fix round 3 (this revision, reviewer finding N2):** `e2e/utm-noprj.fail.spec.ts` used a blanket
+`test.fail()`, which accepts ANY failure (a missing fixture, a parser exception, ...), so "a
+dropped `.prj` is still caught" was unproven. Replaced with an ordinary test asserting the trigger
+(the zip's real entry list has no `.prj`) and the symptom (bbox in the fixture's UTM metre range,
+zero console output, WGS84 error `> 1e6` m) positively — see the `.prj`-dropped section under
+part (a) for the two seeded-fault runs (a `.prj` put back; the fixture renamed away) that now
+correctly turn it red, where the old version would have stayed green either way.
+
 ## Versions (captured 2026-09-21)
 
 | tool | version |
@@ -78,7 +86,7 @@ SPIKE4_MANIFEST=fixtures_manifest.faulty.json TMPDIR=<writable-dir> npx playwrig
 TMPDIR=<writable-dir> npx vite dev --port 4314 --strictPort &
 TMPDIR=<writable-dir> npx playwright test e2e/duckdb-spatial.spec.ts -g "1.32.0: spatial \+ ST_Read\(gulf_rectangle" --reporter=list
 
-# fix round 1, item 2: the .prj-dropped fixture, parser-side proof (test.fail())
+# fix round 1/3, item 2: the .prj-dropped fixture, parser-side proof (ordinary test since fix round 3)
 TMPDIR=<writable-dir> npx playwright test e2e/utm-noprj.fail.spec.ts --reporter=list
 
 # fix round 2, item 1: real worker network observation + the blocked-network gate + control,
@@ -324,41 +332,97 @@ The failure above is entirely on the EXPECTATION side (the ground truth was hand
 real shapefile still has its `.prj`). Fix round 1, item 2 adds the same proof on the PARSER side:
 a real `.prj`-less shapefile, run through the exact same assertion.
 
-### `.prj`-dropped fixture, parser-side proof — `e2e/utm-noprj.fail.spec.ts` (`test.fail()`)
+### `.prj`-dropped fixture, parser-side proof — `e2e/utm-noprj.fail.spec.ts`
 
 `utm_zone_noprj.zip` is the *same* shapefile bytes as `utm_zone.zip` (same `.shp`/`.shx`/`.dbf`,
 written by the same `st_write()` call in `generate_fixtures.R`), with only the `.prj` component
-dropped before zipping (confirmed: `unzip -l` shows 3 files, not 4). The test's assertion ("parsed
-bbox matches the true WGS84 reprojection") is wrapped in `test.fail()` — it is EXPECTED to fail,
-because there is no CRS in the zip for shpjs to reproject with:
+dropped before zipping (confirmed: `unzip -l` shows 3 files, not 4).
+
+**Fix round 3 (reviewer finding N2):** this test used to wrap its whole body in a blanket
+`test.fail()`. `test.fail()` accepts ANY failure — a missing fixture, a parser exception, a server
+that never started would all report the same green "expected failure", so "a dropped `.prj` is
+still caught" was unproven. Replaced with an ordinary test that asserts the trigger and the
+symptom positively: (1) the zip's actual entry list (`unzip -Z1`, not "what the parser did") has
+no `.prj`; (2) shpjs's returned bbox falls inside the fixture's known UTM easting/northing range
+*and* is nowhere near a valid lon/lat (`|value| > 180`/`90`); (3) the captured browser console
+during parse is asserted `toHaveLength(0)` (not just logged — atlas-6 relies on "silently"); (4)
+the WGS84-comparison error (same `delta × METRES_PER_DEG` convention as
+`correctness.spec.ts`'s `utm_zone/shpjs` check) is asserted `> 1e6` m. No `try/catch` around the
+parse call, so a parser exception or a missing fixture (which makes the `unzip -Z1` step itself
+throw) now fails the test for real, instead of being accepted as the "expected" failure.
 
 ```
 $ TMPDIR=<writable-dir> npx playwright test e2e/utm-noprj.fail.spec.ts --reporter=list
 Running 1 test using 1 worker
 
-utm_zone_noprj/shpjs result: {"featureCount":1,"vertexCount":5,"bbox":[500000,4300000,520000,4320000],"firstRingOrientation":"CW","firstRingSignedArea":-400000000,"parseMs":0.7,"bytesFetched":618}
+utm_zone_noprj/shpjs result: {"featureCount":1,"vertexCount":5,"bbox":[500000,4300000,520000,4320000],"firstRingOrientation":"CW","firstRingSignedArea":-400000000,"parseMs":0.2,"bytesFetched":618}
 utm_zone_noprj/shpjs browser console during parse: []
-  ✘  1 [chromium] › e2e/utm-noprj.fail.spec.ts:24:1 › utm_zone_noprj via shpjs: no .prj in the zip -> must NOT match the true WGS84 reprojection (104ms)
+  ✓  1 [chromium] › e2e/utm-noprj.fail.spec.ts:28:1 › utm_zone_noprj: the zip really has no .prj, and shpjs silently returns raw UTM metres, far from the true WGS84 position (196ms)
 
-  1 passed (2.5s)
-$ echo $?
-0
+  1 passed (2.7s)
 ```
 
-`1 passed` (exit 0) here means the "expected failure" happened — the assertion genuinely failed
-(shown with `✘`), which is exactly what proves this gate still catches a dropped `.prj` on a real
-file. Had this test unexpectedly PASSED (matched the WGS84 ground truth despite no `.prj`),
-Playwright would report "1 failed" (exit 1) — itself a finding worth investigating, not a false
-green.
+**Two seeded faults run manually against this file, both reverted afterward (not committed as
+alternate fixtures):**
+
+1. `utm_zone_noprj.zip` temporarily replaced by a copy of `utm_zone.zip` (which HAS a `.prj`):
+   ```
+   $ cp utm_zone_noprj.zip /tmp/utm_zone_noprj.zip.orig-backup && cp utm_zone.zip utm_zone_noprj.zip
+   $ TMPDIR=<writable-dir> npx playwright test e2e/utm-noprj.fail.spec.ts --reporter=list; echo $?
+   Running 1 test using 1 worker
+     ✘  1 [chromium] › e2e/utm-noprj.fail.spec.ts:28:1 › utm_zone_noprj: the zip really has no .prj, and shpjs silently returns raw UTM metres, far from the true WGS84 position (216ms)
+
+     1) [chromium] › e2e/utm-noprj.fail.spec.ts:28:1 › ...
+       Error: zip entries: ["utm_zone.dbf","utm_zone.prj","utm_zone.shp","utm_zone.shx"] — a .prj is present, this fixture is supposed to have none
+       expect(received).toBe(expected) // Object.is equality
+       Expected: false
+       Received: true
+   1 failed
+   1
+   ```
+   Turns red immediately, naming the unexpected `.prj` — the old `test.fail()` version would have
+   reported this exact scenario as a green "expected failure" too (any assertion failure was
+   accepted), which is precisely the bug N2 flagged.
+
+2. Reverted (`cp /tmp/utm_zone_noprj.zip.orig-backup utm_zone_noprj.zip`, confirmed
+   `git diff --stat` empty), then the fixture renamed away:
+   ```
+   $ mv utm_zone_noprj.zip utm_zone_noprj.zip.renamed-away
+   $ TMPDIR=<writable-dir> npx playwright test e2e/utm-noprj.fail.spec.ts --reporter=list; echo $?
+   Running 1 test using 1 worker
+   zipinfo:  cannot find or open /.../fixtures/utm_zone_noprj.zip, /.../utm_zone_noprj.zip.zip or /.../utm_zone_noprj.zip.ZIP.
+     ✘  1 [chromium] › e2e/utm-noprj.fail.spec.ts:28:1 › ...
+       Error: Command failed: unzip -Z1 /.../fixtures/utm_zone_noprj.zip
+       zipinfo:  cannot find or open ...
+   1 failed
+   1
+   ```
+   Turns red (missing-fixture error), not green — the specific failure mode N2 called out
+   (`test.fail()` would have silently accepted this too, "proving" a dropped `.prj` from a test
+   that never even read a fixture). Reverted (`mv utm_zone_noprj.zip.renamed-away
+   utm_zone_noprj.zip`); `git diff --stat spikes/4/fixtures/utm_zone_noprj.zip` empty afterward —
+   confirmed byte-identical to the committed fixture.
 
 **What shpjs actually returns for a `.prj`-less shapefile — metres, silently, or a warning?**
 Silently, raw metres: `bbox: [500000, 4300000, 520000, 4320000]` — the exact same numbers as the
 `.prj`-having `utm_zone.zip` returns from its raw `.shp` bytes (i.e. treated as if they were
 already WGS84 degrees), and the captured `browser console during parse` array is `[]` — no
-`console.warn`, no thrown error, nothing surfaced to `page.on("console")`/`page.on("pageerror")`.
-This is the concrete finding atlas-6 needs: shpjs cannot detect "this shapefile has no CRS
-information" and does not attempt to; a dropped `.prj` produces plausible-looking but silently
-wrong coordinates, with no signal in-band for a UI to catch and warn the user about.
+`console.warn`, no thrown error, nothing surfaced to `page.on("console")`/`page.on("pageerror")`
+(now asserted `toHaveLength(0)`, not just logged). This is the concrete finding atlas-6 needs:
+shpjs cannot detect "this shapefile has no CRS information" and does not attempt to; a dropped
+`.prj` produces plausible-looking but silently wrong coordinates, with no signal in-band for a UI
+to catch and warn the user about.
+
+**Other specs under `spikes/4` checked for the same "accepts any failure" pattern** (per this
+review round): none found. `e2e/correctness.spec.ts` and `e2e/duckdb-spatial.spec.ts`'s
+seeded-fault runs (`SPIKE4_MANIFEST=fixtures_manifest.faulty.json`) are env-var-driven reds against
+ordinary, specific assertions (`toBe`, `toBeLessThan`, ...) — ordinary tests whose *expectation
+data* is swapped, not tests that accept any failure — which is a different, already-sound pattern,
+not the N2 anti-pattern. The `try/catch` blocks inside `page.on("response")`/`page.on
+("requestfinished")` handlers in `duckdb-spatial.spec.ts` and `duckdb-network.spec.ts` are
+best-effort telemetry capture only (byte counts / timings for the console log), never gate
+pass/fail — the actual test outcome in both files is decided by separate, unguarded `expect()`
+calls.
 
 ## (b) DuckDB-WASM `spatial` extension + `ST_Read` on a registered `.gpkg`
 
@@ -658,8 +722,13 @@ $ echo $?
 0
 ```
 
-36 = 19 (`correctness.spec.ts`) + 1 (`utm-noprj.fail.spec.ts`, expected-fail counts as passed) + 10
-(`duckdb-spatial.spec.ts`) + 6 (`duckdb-network.spec.ts`: 2 unblocked + 2 blocked + 1 reload + 1
-`custom_extension_repository`). Exit 0 against the true manifest;
-`SPIKE4_MANIFEST=fixtures_manifest.faulty.json` against `correctness.spec.ts` and
+36 = 19 (`correctness.spec.ts`) + 1 (`utm-noprj.fail.spec.ts`, an ordinary pass as of fix round 3 —
+no longer an "expected failure") + 10 (`duckdb-spatial.spec.ts`) + 6 (`duckdb-network.spec.ts`: 2
+unblocked + 2 blocked + 1 reload + 1 `custom_extension_repository`). Exit 0 against the true
+manifest; `SPIKE4_MANIFEST=fixtures_manifest.faulty.json` against `correctness.spec.ts` and
 `duckdb-spatial.spec.ts` each exits 1 (5 and 2 failures respectively) — both shown verbatim above.
+
+**Fix round 3 (reviewer finding N2) re-confirmation, from a from-scratch state:** full suite
+(36 tests, all specs) run again after the `utm-noprj.fail.spec.ts` rewrite —
+`36 passed (22.5s)`, exit 0 — then again after both seeded faults above were reverted —
+`36 passed (22.1s)`, exit 0. `git status --porcelain spikes/4/fixtures/` empty both times.
