@@ -26,6 +26,17 @@ export const RUNTIME_WORKER_BUDGET_BYTES = 150 * 1024; // 150 KB gzip (F3) — a
 // substrings, matched case-insensitively against the bundled text of every file reachable through
 // static imports. Matching on content (not just on chunk file names) catches the case where Rollup
 // inlines the forbidden module into the entry chunk instead of giving it its own file.
+//
+// NOTE (atlas-3 step 2b): this content-only scan CANNOT catch every forbidden static import.
+// Measured against d3-hierarchy imported the way Treemap.svelte uses it (only `hierarchy()` and
+// `.sum()`): once tree-shaken, the compiled code contains neither "d3-hierarchy" nor "treemap" as
+// literal text, AND a static import of a module this small is inlined directly into the entry
+// chunk by Rollup with no separate manifest entry at all (confirmed: `INEFFECTIVE_DYNAMIC_IMPORT`
+// warning, no distinguishing manifest key either) -- so no build-OUTPUT signal reliably identifies
+// it. `tests/treemap-lazy-import.wiring.test.ts` is the real gate for that one dependency: a
+// SOURCE-level scan for a static `import ... from "d3-hierarchy"` declaration, the same pattern
+// `tests/raster/ramps.wiring.test.ts` uses for "no second ramp defined outside ramps.ts". Keep
+// that in mind before adding a dependency to this list and assuming it is now covered.
 export const FORBIDDEN_LAZY_MARKERS = ["duckdb", "terra-draw", "docx", "shp", "treemap"];
 
 /**

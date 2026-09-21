@@ -1,4 +1,57 @@
-# atlas 0.5.0
+# atlas 0.6.0
+
+`atlas-3` step 2b: the "data half" — the three data-driven components spec.md and the parity docs
+call for (`Flower`, `DataTable`, `Treemap`) and the shared category table they all read colors from.
+
+- **`src/lib/ui/categories.ts`**: ONE table (key, label, icon, color TOKEN) for the eight species
+  categories, consumed by `Flower`, `Treemap` and (later) the legend/report — colors are `--cat-*`
+  custom-property NAMES from `tokens.css`, never resolved literals. `categoryFor()`/`categoryKeyFor()`
+  normalize the real data's several spellings of the same category to one token — in particular the
+  v8/v9 flower's "primary producer" component (`str_replace("_"," ")` of `extrisk_primary_producer`)
+  and `msens::sp_cat_from_taxonomy()`'s `"primary_producer"` both resolve to the SAME `--cat-primprod`
+  token as `"primprod"` itself, fixing the grey/NA petal `parity scores app.md:826-830` documents in
+  the old app. An unrecognized category falls back to a distinct `NO_DATA_CATEGORY` (`--cat-nodata`),
+  never silently to a real category.
+- **`src/lib/ui/Flower.svelte`** (SVG polar plot of component scores), with its geometry in
+  `src/lib/ui/flowerGeometry.ts` (`computeFlowerGeometry`, pure and unit-tested): EQUAL angular
+  width per component regardless of score or count (7 on v7, 8 on v8/v9); centre = the mean of the
+  NON-null components only (`msens::ggplot_flower()`'s `weighted.mean(..., na.rm = TRUE)` with all
+  weights 1); a component with no value draws NO petal and keeps its angular slot ("absent is not
+  zero" — a real score of 0 still draws a degenerate petal and stays reachable). Per-petal keyboard
+  focus + tooltip, a data-table toggle whose `<table>` reads off the SAME `components`/`geometry`
+  data as the SVG (so they cannot drift), and an always-available text summary. Colors come from
+  `categories.ts`; no color literal anywhere in the component.
+- **`src/lib/ui/DataTable.svelte`**, a virtualized/sortable/filterable grid (species/zone tables),
+  with its sort/filter/window/navigation math in `src/lib/ui/dataTableCore.ts` (pure, unit-tested).
+  Virtualizes: only the rows inside the scrolled viewport (plus overscan) are ever in the DOM, so
+  10,000 rows scroll smoothly. Sorting is stable, numeric columns compare numerically (never as
+  strings — "10" sorts after "9"), and nulls always sort last regardless of direction; per-column
+  filtering matches the FORMATTED display value, not the raw one (documented and regression-tested).
+  `aria-sort` on each header follows a click; keyboard cell navigation (arrow keys, Home/End,
+  PageUp/PageDown) moves a roving-tabindex active cell with a visible focus ring and scrolls it into
+  view. A CSV export hook (`onExport`) emits the current filtered+sorted rows; the component never
+  writes a file. One polite live-region announcement on load and on filter ("1,234 rows").
+- **`src/lib/ui/Treemap.svelte`** (replaces plotly's `spp_comp`, parity scores app.md §7.6), with
+  its rectangle math in `src/lib/ui/treemapLayout.ts` (`squarify`, pure, unit-tested, no dependency
+  on d3 at all). `d3-hierarchy` (a new EXACT-pinned dependency, `3.1.2`) builds the tree and rolls up
+  values (`hierarchy(data).sum(...)`) but is reached ONLY through a dynamic `import()` inside
+  `Treemap.svelte` — `tests/treemap-lazy-import.wiring.test.ts` is a SOURCE-level scan (not a
+  build-output one) proving no file statically imports it: measured against a real build, that
+  narrow usage (only `hierarchy()`/`.sum()`) compiles to code containing neither `"d3-hierarchy"`
+  nor `"treemap"` as literal text, and Rollup inlines a static import of a module this small
+  directly into the entry chunk with no separate manifest entry either — so
+  `scripts/size-budget-core.mjs`'s existing content-marker scan cannot be the gate for this one
+  dependency (documented in its own header). `npm run build && node scripts/size-budget.mjs`
+  confirms `index.html`'s static graph is unchanged (11.5 KB gzip). Keyboard-reachable, named cells;
+  category colors from `categories.ts`; a table equivalent, a text summary, and an empty state.
+- **Gallery + `e2e/gallery.spec.ts` extended** for all three: one section file each
+  (`Categories`, `Flower`, `DataTable`, `Treemap`), axe zero serious/critical in both themes at
+  both widths (already covered by the existing full-page scan), and new keyboard/behavior
+  specs — a header click sets `aria-sort` and it toggles asc → desc → none; arrow keys move the
+  DataTable's roving-tabindex active cell; a numeric column sorts numerically over 10,000 rows;
+  only a bounded row window is ever in the DOM; every Flower petal and Treemap cell is
+  keyboard-reachable and individually named; the Flower table toggle reads off the same numbers
+  as the petals. Screenshots regenerated for both themes at 390 and 1280 px.
 
 `atlas-3` step 2a: the design-system component foundation (Svelte 5 runes, `src/lib/ui/`), the icon
 map generator folded in from the stopped Haiku attempt, self-hosted fallback fonts, and

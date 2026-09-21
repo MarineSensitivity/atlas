@@ -200,3 +200,138 @@ test.describe("the seal (spec.md §9 / D10)", () => {
     await expect(off.locator("img.seal")).toHaveCount(0);
   });
 });
+
+test.describe("atlas-3 step 2b: the data components (Flower, DataTable, Treemap)", () => {
+  test("DataTable: a header click sets aria-sort, and it toggles asc -> desc -> none", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    // the FIRST <tr> in <thead> is the sortable header row; the second carries the per-column
+    // filter inputs (whose accessible names also mention the column label, so a plain
+    // hasText-on-any-th locator would ambiguously match both).
+    const header = page
+      .locator("#dt-small thead tr")
+      .first()
+      .locator("th", { hasText: "Scientific name" });
+    const sortBtn = header.getByRole("button", { name: "Scientific name" });
+
+    await expect(header).toHaveAttribute("aria-sort", "none");
+    await sortBtn.click();
+    await expect(header).toHaveAttribute("aria-sort", "ascending");
+    await sortBtn.click();
+    await expect(header).toHaveAttribute("aria-sort", "descending");
+    await sortBtn.click();
+    await expect(header).toHaveAttribute("aria-sort", "none");
+  });
+
+  test("DataTable: arrow keys move the roving-tabindex active cell", async ({ page }) => {
+    await gotoGallery(page, "navy");
+    const table = page.locator("#dt-small table");
+    const cell00 = table.locator('td[data-row="0"][data-col="0"]');
+    const cell01 = table.locator('td[data-row="0"][data-col="1"]');
+    const cell10 = table.locator('td[data-row="1"][data-col="0"]');
+
+    await cell00.click();
+    await expect(cell00).toBeFocused();
+    await expect(cell00).toHaveAttribute("tabindex", "0");
+    await expect(cell01).toHaveAttribute("tabindex", "-1");
+
+    await page.keyboard.press("ArrowRight");
+    await expect(cell01).toBeFocused();
+    await expect(cell01).toHaveAttribute("tabindex", "0");
+    await expect(cell00).toHaveAttribute("tabindex", "-1");
+
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowDown");
+    await expect(cell10).toBeFocused();
+  });
+
+  test("DataTable: a numeric column sorts numerically, not as strings ('9%' before '10%')", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    const table = page.locator("#dt-big table");
+    const header = page.locator("#dt-big thead tr").first().locator("th", { hasText: "ER score" });
+    await header.getByRole("button", { name: "ER score" }).click(); // ascending
+
+    // 10,000 rows cycling 0-99% gives both single- and double-digit percentages; a lexicographic
+    // ("string") sort would put "10%" before "9%" and break strict non-decreasing order somewhere
+    // in the first dozen rows -- a numeric sort never does.
+    const cells = table.locator('td[data-col="3"]');
+    const texts = await cells.evaluateAll((els) => els.slice(0, 12).map((el) => el.textContent));
+    const values = texts.map((t) => Number((t ?? "").replace("%", "")));
+    expect(values.length).toBeGreaterThan(5);
+    for (let i = 1; i < values.length; i++) {
+      expect(
+        values[i],
+        `row ${i} (${values[i]}%) is less than row ${i - 1} (${values[i - 1]}%)`,
+      ).toBeGreaterThanOrEqual(values[i - 1]);
+    }
+  });
+
+  test("DataTable: only a bounded window of rows is ever in the DOM, even with 10,000 rows", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    const rows = page.locator("#dt-big tbody tr[aria-rowindex]");
+    const count = await rows.count();
+    expect(count).toBeGreaterThan(0);
+    expect(count).toBeLessThan(50); // virtualized -- nowhere near the full 10,000
+  });
+
+  test("Flower: every drawn petal is keyboard-reachable and individually named", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    const petals = page.locator("#flower-eight .petal");
+    const n = await petals.count();
+    expect(n).toBe(8); // this fixture has no null components
+    for (let i = 0; i < n; i++) {
+      const petal = petals.nth(i);
+      await expect(petal).toHaveAttribute("tabindex", "0");
+      const label = await petal.getAttribute("aria-label");
+      expect(label, `petal ${i} has no accessible name`).toBeTruthy();
+    }
+    await petals.first().focus();
+    await expect(petals.first()).toBeFocused();
+  });
+
+  test("Treemap: every cell is keyboard-reachable and individually named", async ({ page }) => {
+    await gotoGallery(page, "navy");
+    const cells = page.locator("#treemap-populated .cell");
+    const n = await cells.count();
+    expect(n).toBeGreaterThan(0);
+    for (let i = 0; i < n; i++) {
+      const cell = cells.nth(i);
+      await expect(cell).toHaveAttribute("tabindex", "0");
+      const label = await cell.getAttribute("aria-label");
+      expect(label, `treemap cell ${i} has no accessible name`).toBeTruthy();
+    }
+    await cells.first().focus();
+    await expect(cells.first()).toBeFocused();
+  });
+
+  test("Treemap: an empty dataset shows the empty state, not a blank chart", async ({ page }) => {
+    await gotoGallery(page, "navy");
+    await expect(page.locator("#treemap-empty .empty")).toContainText("No species data");
+    await expect(page.locator("#treemap-empty .cell")).toHaveCount(0);
+  });
+
+  test("Flower: the data-table toggle shows the SAME numbers as the petals' tooltips", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    const flower = page.locator("#flower-eight");
+    const petalLabels = await flower
+      .locator(".petal")
+      .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
+    await flower.getByRole("button", { name: "Show table" }).click();
+    const rows = await flower.locator(".flower-table tbody tr:not(.mean-row)").evaluateAll((trs) =>
+      trs.map((tr) => {
+        const cells = tr.querySelectorAll("td");
+        return `${cells[0]?.textContent}: ${cells[1]?.textContent}`;
+      }),
+    );
+    expect(rows).toEqual(petalLabels);
+  });
+});
