@@ -14,6 +14,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const SPIKES_DIR = `${root}docs/spikes`;
 const S1 = `${SPIKES_DIR}/S1.md`;
 const S2 = `${SPIKES_DIR}/S2.md`;
+const S4 = `${SPIKES_DIR}/S4.md`;
 const PKG = `${root}package.json`;
 
 // every verdict file that exists, not a hard-coded list: a spike report written later must be
@@ -110,5 +111,14 @@ describe("the real repo: package.json must match the spike verdicts", () => {
   it("S2.md still pins maplibre-gl at 6.4.1+ (every 5.x is inside GHSA-jrc7-96c5-q579)", () => {
     const pins = parseVerdictPins(readFileSync(S2, "utf8"));
     expect(pins).toContainEqual({ name: "maplibre-gl", range: "^6.10.0" });
+  });
+
+  it("S4.md still pins the three upload parsers at the exact versions it measured", () => {
+    const pins = parseVerdictPins(readFileSync(S4, "utf8"));
+    expect(pins).toEqual([
+      { name: "shpjs", range: "6.2.0" },
+      { name: "@tmcw/togeojson", range: "7.1.2" },
+      { name: "flatgeobuf", range: "4.4.0" },
+    ]);
   });
 });

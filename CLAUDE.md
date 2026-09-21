@@ -67,13 +67,15 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
   `map.setStyle(composed, { diff: true })`. Never `addLayer()` piecemeal after `load` — layers added
   that way can silently vanish across a later style swap (`atlas-refs/"calcofi explore review.md"`
   §5, lesson 3).
-- **The two spike pins: `@duckdb/duckdb-wasm` at exactly `1.32.0`, `maplibre-gl` at `^6.10.0`.**
-  Decided by spikes S1 and S2; the evidence is in `docs/spikes/S1.md` and `S2.md` (each ends in a
-  one-line `**Verdict:**`), and the short reason is in `package.json`'s `pinReasons` block (JSON has
-  no comments, so that block _is_ lesson 10's inline comment). `tests/pins.test.ts` goes red if
-  either range drifts from its verdict line — change both together, or re-run the spike and rewrite
-  the verdict. Neither package is imported from `src/` yet; whoever first imports one follows the
-  wiring rules the pins depend on, because the pin is worth nothing without them:
+- **The spike pins: `@duckdb/duckdb-wasm` at exactly `1.32.0`, `maplibre-gl` at `^6.10.0`, and the
+  three upload parsers at exactly `shpjs@6.2.0`, `@tmcw/togeojson@7.1.2`, `flatgeobuf@4.4.0`.**
+  Decided by spikes S1, S2 and S4; the evidence is in `docs/spikes/S1.md`, `S2.md`, `S4.md` (each
+  ends in a one-line `**Verdict:**`), and the short reason is in `package.json`'s `pinReasons` block
+  (JSON has no comments, so that block _is_ lesson 10's inline comment). `tests/pins.test.ts` goes
+  red if any range drifts from its verdict line — change both together, or re-run the spike and
+  rewrite the verdict. **None of these packages is imported from `src/` yet** (the parsers land in
+  atlas-6, and each must be a dynamic `import()`, never a static one). Whoever first imports one
+  follows the wiring rules the pins depend on, because the pin is worth nothing without them:
   - **DuckDB (atlas-2):** self-host the `mvp` + `eh` bundles via `?url` and construct the worker
     yourself — `new Worker(bundle.mainWorker)`, same-origin — never `createWorker()`, never the
     `coi` bundle, and keep `@duckdb/duckdb-wasm` in `optimizeDeps.exclude`. Open `opfs://` only
@@ -94,6 +96,14 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
     ignored and `readPixels` then reads `(0,0,0,0)`) and call `map.resize()` right after
     construction (without it raster tile requests are non-deterministic headless). Do **not** add
     `maplibre-gl` to `optimizeDeps.exclude`.
+  - **Uploads (atlas-6):** every parser is a dynamic `import()`, and every parser's output goes
+    through one normalizer in `src/lib/geo/` that rejects projected coordinates (no parser but
+    `shpjs` reprojects, and `shpjs` returns raw metres _silently_ when a zip has no `.prj`), rewinds
+    rings to RFC 7946 (GDAL's shapefile writer disagrees with every other format's winding across
+    ±180°) and computes a dateline-aware bbox (all four parsers report a 355°-wide box for a 5°-wide
+    Aleutian polygon). A `.gpkg` goes through DuckDB `spatial`, which is **not** self-hosted: it
+    costs a one-time ~22 MB fetch from `extensions.duckdb.org`, so it is prompted, lazy, and falls
+    back to "convert to GeoJSON". See `docs/spikes/S4.md`.
 
 ## Budgets (`scripts/size-budget.mjs`)
 
