@@ -1,0 +1,252 @@
+{
+  "note": [
+    "Ground truth for src/lib/grid/grid.ts, the TS twin of msens/R/grid.R (cell_lonlat, cell_from_lonlat,",
+    "lon_span, lon_span_agg, bbox_spans_globe) plus the cell_model tile key from msens/R/cell_model.R",
+    "(cell_model_tile_sql). Every expectation below is derived by hand from the arithmetic in those files,",
+    "not from this repo's output. The two anchor cells (usa05 1909113 -> 179.475/51.825 Aleutians and",
+    "3418971 -> -90.525/27.525 Gulf of Mexico) are the values msens/R/grid.R:11-13 states as verified.",
+    "The grid spec is ALWAYS read from a boot.json-shaped object (atlas-1: boot.grid = {nc, nr, xmin,",
+    "ymax, resx, resy, lon360, tile{size}}), never from constants in the app."
+  ],
+  "grids": {
+    "global05": {
+      "grid_id": "global05",
+      "boot": {
+        "grid_id": "global05",
+        "grid": {
+          "nc": 7200,
+          "nr": 3600,
+          "xmin": -180,
+          "ymax": 90,
+          "resx": 0.05,
+          "resy": 0.05,
+          "lon360": false,
+          "tile": { "size": 50 }
+        }
+      }
+    },
+    "usa05": {
+      "grid_id": "usa05",
+      "boot": {
+        "grid_id": "usa05",
+        "grid": {
+          "nc": 3103,
+          "nr": 2006,
+          "xmin": 141.1,
+          "ymax": 82.6,
+          "resx": 0.05,
+          "resy": 0.05,
+          "lon360": true,
+          "tile": { "size": 50 }
+        }
+      }
+    }
+  },
+  "cell_from_lonlat": [
+    {
+      "id": "global05-east-of-180",
+      "grid": "global05",
+      "lon": 179.975,
+      "lat": 51.825,
+      "cell_id": 5500800,
+      "why": "col floor((179.975+180)/0.05)+1 = 7200, row ceiling((90-51.825)/0.05) = 764"
+    },
+    {
+      "id": "global05-west-of-180",
+      "grid": "global05",
+      "lon": -179.975,
+      "lat": 51.825,
+      "cell_id": 5493601,
+      "why": "the cell one step west across the antimeridian: col 1, same row 764"
+    },
+    {
+      "id": "global05-equator",
+      "grid": "global05",
+      "lon": 0.025,
+      "lat": 0.025,
+      "cell_id": 12956401,
+      "why": "col 3601, row 1800"
+    },
+    {
+      "id": "global05-top-left-corner",
+      "grid": "global05",
+      "lon": -180,
+      "lat": 90,
+      "cell_id": 1,
+      "why": "grid.R:238 — ceiling() gives row 0 exactly on the top edge; the guard lifts it to row 1"
+    },
+    {
+      "id": "global05-south-pole-outside",
+      "grid": "global05",
+      "lon": 0,
+      "lat": -90,
+      "cell_id": null,
+      "why": "validity is `lat > ymin`, and ymin = -90 exactly, so the bottom edge is outside"
+    },
+    {
+      "id": "global05-north-of-grid",
+      "grid": "global05",
+      "lon": 0,
+      "lat": 90.5,
+      "cell_id": null,
+      "why": "grid.R:240-243 — a point north of ymax is NA, never clamped to row 1"
+    },
+    {
+      "id": "usa05-aleutians-anchor",
+      "grid": "usa05",
+      "lon": 179.475,
+      "lat": 51.825,
+      "cell_id": 1909113,
+      "why": "the cell msens/R/grid.R:13 names: row 616, col 768"
+    },
+    {
+      "id": "usa05-gulf-anchor",
+      "grid": "usa05",
+      "lon": -90.525,
+      "lat": 27.525,
+      "cell_id": 3418971,
+      "why": "grid.R:12 — a -180..180 click is shifted +360 to 269.475 before the column arithmetic"
+    },
+    {
+      "id": "usa05-west-of-180",
+      "grid": "usa05",
+      "lon": 179.975,
+      "lat": 51.825,
+      "cell_id": 1909123,
+      "why": "row 616, col 778"
+    },
+    {
+      "id": "usa05-east-of-180",
+      "grid": "usa05",
+      "lon": -179.975,
+      "lat": 51.825,
+      "cell_id": 1909124,
+      "why": "the NEXT column (779), not a wrap: usa05 runs 141.10 E continuously across the antimeridian"
+    },
+    {
+      "id": "usa05-outside-frame",
+      "grid": "usa05",
+      "lon": 130,
+      "lat": 40,
+      "cell_id": null,
+      "why": "130 < xmin so it shifts to 490, past xmax = 141.10 + 3103*0.05 = 296.25: outside the grid"
+    }
+  ],
+  "cell_lonlat": [
+    {
+      "id": "global05-east-of-180",
+      "grid": "global05",
+      "cell_id": 5500800,
+      "lon": 179.975,
+      "lat": 51.825,
+      "wrap": true
+    },
+    {
+      "id": "global05-west-of-180",
+      "grid": "global05",
+      "cell_id": 5493601,
+      "lon": -179.975,
+      "lat": 51.825,
+      "wrap": true
+    },
+    {
+      "id": "usa05-gulf-wrapped",
+      "grid": "usa05",
+      "cell_id": 3418971,
+      "lon": -90.525,
+      "lat": 27.525,
+      "wrap": true
+    },
+    {
+      "id": "usa05-gulf-own-frame",
+      "grid": "usa05",
+      "cell_id": 3418971,
+      "lon": 269.475,
+      "lat": 27.525,
+      "wrap": false,
+      "why": "wrap=FALSE keeps the grid's own 0-360 frame, which an EXTENT needs (grid.R:121-125)"
+    },
+    {
+      "id": "usa05-aleutians",
+      "grid": "usa05",
+      "cell_id": 1909113,
+      "lon": 179.475,
+      "lat": 51.825,
+      "wrap": true
+    }
+  ],
+  "tile_of": [
+    {
+      "id": "global05-first-cell",
+      "grid": "global05",
+      "cell_id": 1,
+      "tile": 0,
+      "why": "((0//7200)//50)*(7200//50) + ((0%7200)//50)"
+    },
+    {
+      "id": "global05-east-of-180",
+      "grid": "global05",
+      "cell_id": 5500800,
+      "tile": 2303,
+      "why": "(763//50)=15, 15*144 = 2160; (7199//50)=143 -> 2303"
+    },
+    {
+      "id": "global05-west-of-180",
+      "grid": "global05",
+      "cell_id": 5493601,
+      "tile": 2160,
+      "why": "same row band, column 1 -> tile column 0"
+    },
+    {
+      "id": "usa05-aleutians",
+      "grid": "usa05",
+      "cell_id": 1909113,
+      "tile": 759,
+      "why": "nc 3103: (615//50)=12, 12*(3103//50=62) = 744; (767//50)=15 -> 759 (7200 would give 1584)"
+    },
+    {
+      "id": "usa05-gulf",
+      "grid": "usa05",
+      "cell_id": 3418971,
+      "tile": 1415,
+      "why": "(1101//50)=22, 22*62 = 1364; (2567//50)=51 -> 1415"
+    }
+  ],
+  "lon_span": [
+    {
+      "id": "bering",
+      "lon": [-179, -160, 170, 178],
+      "span": [170, 200],
+      "why": "the 0-360 frame is 30 deg wide against 357 in -180..180, so it wins (grid.R:175-185)"
+    },
+    { "id": "atlantic", "lon": [-30, 0, 20], "span": [-30, 20], "why": "frame unchanged" },
+    {
+      "id": "circumglobal",
+      "lon": [-179, -1, 1, 179],
+      "span": [-179, 179],
+      "why": "points either side of BOTH cut points: neither frame is narrower, so the -180..180 answer is returned unchanged and bbox_spans_globe() can reject it"
+    },
+    { "id": "empty", "lon": [], "span": [null, null] },
+    { "id": "non-finite-only", "lon": [null], "span": [null, null] }
+  ],
+  "lon_span_agg": [
+    { "id": "bering", "args": [-179, 178, 170, 200], "span": [170, 200] },
+    { "id": "atlantic", "args": [-30, 20, 20, 330], "span": [-30, 20] },
+    {
+      "id": "narrower-but-circumglobal",
+      "args": [-179, 179, 5, 355],
+      "span": [-179, 179],
+      "why": "the 0-360 span is 350, narrower than 358 but not < 350, so the shift is refused (grid.R:184)"
+    },
+    { "id": "x-not-finite", "args": [null, 10, 0, 10], "span": [null, null] },
+    { "id": "w-not-finite", "args": [-30, 20, null, 10], "span": [-30, 20] }
+  ],
+  "bbox_spans_globe": [
+    { "id": "null", "bb": null, "spans": true },
+    { "id": "wrong-length", "bb": [0, 0, 10], "spans": true },
+    { "id": "non-finite", "bb": [0, 0, null, 10], "spans": true },
+    { "id": "whole-world", "bb": [-180, -90, 180, 90], "spans": true },
+    { "id": "bering-camera", "bb": [160, 48, 210, 66], "spans": false },
+    { "id": "exactly-350", "bb": [0, 0, 350, 10], "spans": true }
+  ]
+}

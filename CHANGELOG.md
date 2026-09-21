@@ -1,3 +1,33 @@
+# atlas 0.2.0
+
+Core geometry runtime (plan phase `atlas-2`, Step 1). Plain TypeScript under `src/lib`, no Svelte
+import anywhere in it, so every rule below is callable from a test — and from `scripts/parity/`
+later — under plain Node.
+
+- **`src/lib/geo/placeCodec.ts` — the `g1` place codec** (plan D8): places live in the URL hash as
+  `g1.<name>.<base64url>` (delta + zigzag varints, 0x10 magic, precision 3, or 4 for a place under
+  half a degree), `z.<set>.<keys>` for a published zone, or `u.<name>.<sha256_8>` when a geometry is
+  too large to carry. Longitudes are stored **unwrapped**, so a Bering place runs 170...190 and no
+  decoder has to guess at the antimeridian. **Every analysis runs on `decode(encode(geometry))`**
+  (`roundTrip()`), so a shared link reproduces the sender's numbers exactly. `fitPlacesToUrl()`
+  applies the budget ladder: silent to 2,000 characters, a "long link" note to 8,000, then
+  Douglas-Peucker from 0.001 deg doubling to 0.02 deg — each rung taken only while the area moves by
+  <= 1 % and every ring stays simple — and finally the `u.` form. A 30-vertex place costs 104
+  characters. The shared vectors are `tests/fixtures/place_codec.json`, which msens carries
+  byte-identically as `inst/fixtures/place_codec.json`.
+- **`src/lib/grid/grid.ts` — both cell grids**, ported from `msens/R/grid.R`
+  (`cellFromLonLat`, `cellLonLat`, `lonSpan`, `lonSpanAgg`, `bboxSpansGlobe`) plus `tileOf()` from
+  `msens/R/cell_model.R`. The geometry always comes from a `boot.grid`-shaped object and the module
+  contains no grid constants at all: `usa05` (3103 x 2006 from 141.10 E on a 0-360 frame) and
+  `global05` (7200 x 3600 from -180) disagree about what a `cell_id` means, and a hardcoded `nc`
+  is how v7 ids get painted on v8's grid.
+- **`src/lib/geo/coverage.ts` — `cellsInPolygon()`**, the twin of `msens::cells_in_polygon_grid()`:
+  planar in degrees, interior cells by scanline, boundary cells by clipping the polygon (outer minus
+  holes) to the cell square, multipolygon parts summed and capped at 1, `pct` rounded R's way (half
+  to **even**, after a 1e-9 snap so a 0.5 % sliver is not decided by float noise) and cells at 0
+  dropped. Columns wrap modulo `nc` on `global05` and shift into the 141.10 frame on `usa05`.
+  Measured: a 74,024-cell place in 45 ms (target: 150 ms).
+
 # atlas 0.1.1
 
 - **Restricted releases can no longer render on the public host** (plan D6). `versions.json`'s
