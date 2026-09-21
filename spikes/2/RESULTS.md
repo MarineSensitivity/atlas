@@ -5,7 +5,100 @@ recommendation (that's the later Opus review). Harness: `spikes/2/` (own `packag
 `vite.config.ts`, `playwright.config.ts`; Vite/TypeScript and `@playwright/test` resolve from the
 root's `node_modules` via a relative path in `package.json`'s scripts — nothing installed twice).
 
-## Fix round 1 (this revision)
+## Fix round 3 (this revision) — the gate is split so the PIN's own proof needs S3 only; every
+expected failure is pinned to its cause; a real `page.waitForFunction` arity bug is fixed
+
+S2 review fix round 1 (Opus review of atlas-0, finding F5; a new allowance, not a third harness
+round). titiler-v8.marinesensitivity.org was (and, per the coordinator, still is) unreachable. The
+orchestrator re-ran round 2's `f92c7b8` suite and found 4 of 5 specs timing out at 30s waiting for
+raster tiles — meaning nothing about the maplibre-gl 6.10 pin's actual claim (the worker correctly
+parses VECTOR tiles) had been verified at all. The reviewer's finding, verbatim:
+
+> S2's `?url` expected-failure is unpinned. spikes/2/e2e/s2.spike.spec.ts:213-250: `test.fail()`
+> accepts ANY failure; the latest on-disk run shows it failing at the firstDataFrame wait (line
+> 238), never reaching expect(zonesFeatureCount): titiler down makes the proof pass for the wrong
+> reason. Also :113-117's explicit vector assertion is unreachable, because zonesPainted
+> (src/app.ts:263) only latches when length>0, so a vector regression surfaces as an opaque 30s
+> timeout. Fix: make the fault spec assert the 404 explicitly
+> (expect(worker404s).not.toEqual([])) and bound the vector wait so the failure names the layer.
+
+What changed:
+
+1. **The gate is split in two.** "S2 VECTOR GATE" runs `?seed=vector-only` (`src/app.ts`
+   `composeStyle(boot, {includeRaster: false})`, new this round) — a style with the zones vector
+   source/layer and NO raster source at all, so the browser issues zero titiler requests, ever.
+   This is the half the maplibre-gl 6.10 pin's `?worker&url` claim actually rests on (vector tiles
+   parse), and it needs S3 only. It always runs. "S2 RASTER + TIMING GATE" (ocean-pixel probes,
+   `firstDataFrame <= 2.5s`) and the 3s-delay seeded fault are the titiler-dependent half; both are
+   `test.skip()`-ed with a named reason from a one-shot reachability probe
+   (`fetch(".../healthz", {signal: AbortSignal.timeout(5000)})`, run once at module top-level via
+   top-level `await`) when titiler is unreachable — reported as **SKIPPED**, never as a false pass
+   and never as an opaque timeout.
+2. **No more `test.fail()`.** Every seeded-fault test is now a NORMAL test that must genuinely
+   PASS: it asserts its own trigger fired with a real, unwrapped `expect()` first (a genuine,
+   unexcused failure if the trigger didn't happen), then wraps ONLY the one assertion that's
+   supposed to fail in a `expectThrows()` helper (try/catch + `expect(threw).toBe(true)`) — the
+   exact fix the reviewer asked for, generalized to all four faults, not just the `?url` one.
+3. **A real bug, found while making the "bounded wait" honest**: `page.waitForFunction(pageFunction,
+   arg, options)` takes THREE parameters — every `waitForFunction(fn, {timeout: N})` call in this
+   codebase (all of `e2e/s2.spike.spec.ts` and `scripts/measure.mjs`, present since round 1) was
+   silently passing the options object as `arg` (Playwright's second parameter, typed `any`), so
+   NONE of these calls were ever actually bounded to their intended timeout — they all fell through
+   to Playwright's real default (the 30s *test* timeout under `npx playwright test`, or its 30s
+   page-level default outside it). This is likely the literal mechanism behind the reviewer's
+   observation ("failing at the firstDataFrame wait ... titiler down makes the proof pass for the
+   wrong reason") in round 2: that wait was never bounded to 10s at all. Fixed everywhere by passing
+   `undefined` as the second argument. Reproduced and confirmed below.
+4. **A second, related bug found while fixing (3)**: even with waits genuinely capped at the
+   intended value, the `?url`-fault test still spent close to the full budget, because
+   `src/app.ts`'s per-`render`-tick handler (the `gl.readPixels` pair backing `firstDataFrame`, and
+   `queryRenderedFeatures` backing `zonesPainted`) never unsubscribed for a variant where one of
+   those marks can structurally never latch (`?seed=vector-only` has no raster source, so
+   `firstDataFrame` can never fire; the `?url`-broken worker means `zonesPainted` can never fire) —
+   it kept doing that work on every render tick for the page's whole lifetime. Bounded with a
+   `RENDER_CHECK_BUDGET_MS` (5s) cutoff, past which the handler stops checking and unsubscribes
+   regardless of outcome.
+
+## Fix round 2
+
+The Opus verdict agent re-ran round 1's maplibre-gl 6.10 cells and found the BUILT cells wrong:
+round 1's worker import (`maplibre-gl/dist/maplibre-gl-worker.mjs?url`) copies the worker file
+verbatim, but the worker itself statically imports `"./maplibre-gl-shared.mjs"` (~514KB of code
+shared between the main thread and the worker) — a relative import Vite never rewrites for a raw
+`?url` asset copy, and never emits a file for either (the main thread's copy of that same code gets
+bundled straight into the entry chunk, since only one JS entry needs it). The worker's own import
+404s, so it throws during its own module init before handling a single message. Vector tile parsing
+happens entirely inside the worker, so it silently never happens; the RASTER score layer keeps
+painting fine regardless (raster tiles don't need the worker to decode), which is exactly why round
+1's pixel gate — raster ocean points only — could not see this.
+
+**What changed:**
+1. **The committed pin moves to `maplibre-gl: ^6.10.0`** (every 5.x release is inside the critical
+   XSS advisory's `<=6.4.0` range — see round 1's audit section below, unchanged and still
+   accurate). The worker is now imported with Vite's `?worker&url` suffix, not `?url` — this tells
+   Vite to build the worker as its own bundle root (a real build pass over the worker's module
+   graph) rather than copy the raw file, which resolves and inlines `./maplibre-gl-shared.mjs`
+   correctly. Confirmed: the built worker chunk is self-contained (no separate shared-chunk request
+   at runtime) and the corrected gate (below) passes with real vector features rendered.
+2. **The main gate now asserts vector data, not just raster.** After the zones source loads,
+   `map.queryRenderedFeatures({ layers: ["zones-line"] })` must return >= 1 feature (the count is
+   recorded, not just checked as a boolean), and no response for any `maplibre-gl-worker`/
+   `maplibre-gl-shared` request may be a 404.
+3. **A new seeded fault is committed**: `fault-worker-url.html` / `src/main-fault-worker-url.ts` —
+   byte-for-byte the same app (both now live in a shared `src/app.ts`, parametrized by the worker
+   URL) except wired with round 1's `?url` alone. Built as a REAL second Vite entry (the worker URL
+   is resolved at build time, so this can't be a runtime `?seed=` toggle the way the other three
+   seeded faults are) via `vite build`'s `rollupOptions.input`. `test.fail()`-wrapped, verbatim
+   failure captured below, same as the other three.
+4. **Re-measured the 4-cell matrix and the timing table on 6.10 with the corrected wiring**, plus
+   the static critical-path gzip bytes AND — new — the runtime-only worker/shared-chunk bytes that
+   the entry's static import graph (and therefore `scripts/size-budget.mjs`) never sees at all.
+
+Round 1's now-superseded 6.10 matrix and its "292.86 KB critical path, worker fine" gzip table are
+kept below, unedited, under a **SUPERSEDED** heading with this same reason repeated inline, per
+instruction not to delete the record.
+
+## Fix round 1
 
 The coordinator sent back four corrections after reading the first pass. All four are addressed
 below; this section is a map of what changed and why, so the corrected numbers aren't read next to
@@ -59,8 +152,11 @@ npm run measure -- 9         # node scripts/measure.mjs 9 (needs preview already
 - Vite: **8.3.0** (root `node_modules`, reused — not reinstalled)
 - `@playwright/test`: **1.63.0** (root `node_modules`, reused; browsers already installed:
   `chromium-1243`, `firefox-1543`, `webkit-2359`, plus `chromium_headless_shell-1243`)
-- `maplibre-gl`: tested both **`^5.24.0`** (resolved `5.24.0`) and **`6.10.0`** (latest on npm as of
-  this run) — see matrix below. Final committed `spikes/2/package.json` pins `^5.24.0`.
+- `maplibre-gl`: tested both **`^5.24.0`** (resolved `5.24.0`, round 1) and **`6.10.0`** (latest on
+  npm as of this run) — see matrix below. **Fix round 2: committed `spikes/2/package.json` now pins
+  `^6.10.0`** (resolved `6.10.0`; round 1 committed `^5.24.0`, every 5.x release of which is inside
+  the critical XSS advisory's range — see the audit section, still accurate). `npm audit --json`
+  against the `^6.10.0` pin: `"vulnerabilities": {}`, 0 critical/high/moderate/low.
 - `pmtiles`: **`^4.5.0`** (resolved `4.5.0`, latest)
 - Data: release `v7`, manifest at
   `https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v7/manifest.json` (the
@@ -80,12 +176,14 @@ npm run measure -- 9         # node scripts/measure.mjs 9 (needs preview already
   writing the harness: `(-88, 27)` Gulf of Mexico → `21.0`; `(-122, 36)` off central California →
   `37.0`.
 
-## Timing table: FCP, firstDataFrame, zonesPainted, idle — cold profile, 9 runs
+## Timing table (round 1, `maplibre-gl ^5.24.0` — the pin round 1 committed, now superseded by `^6.10.0`)
 
 `scripts/measure.mjs`: a **fresh browser process** and a **fresh browser context** per run, HTTP
 cache explicitly disabled via CDP (`Network.setCacheDisabled`) on top of the fresh-profile's already
 having no disk cache. Navigates to `http://localhost:4312/` served by `vite preview`
-(`maplibre-gl ^5.24.0`, `optimizeDeps.exclude: ["maplibre-gl"]` — the committed config).
+(`maplibre-gl ^5.24.0`, `optimizeDeps.exclude: ["maplibre-gl"]` — round 1's committed config; kept
+for the record, not re-run in fix round 2, since the pin itself moved to `^6.10.0` — see the fresh
+6.10 timing table further down).
 
 ```
 run 1/9: FCP=16.0ms firstDataFrame=509.7ms zonesPainted=457.3ms idle=1051.1ms | before firstDataFrame: S3 6req/30036B, titiler 12req/12343B | before idle: S3 6req/30036B, titiler 28req/62354B
@@ -130,98 +228,213 @@ rendered, but the harness's raster source issues many more z4 tiles across the v
 arriving concurrently; by `idle` every run converges on the same 28 titiler requests / ~62.3KB and 6
 S3 requests / ~30KB (the zones pmtiles header + directory + one leaf-directory + tile-data fetches).
 
-## Gates (`npm run e2e`, chromium only, against a real `vite build` + `vite preview`)
+## Timing table (fix round 2, `maplibre-gl ^6.10.0`, `?worker&url` wiring — the committed pin)
 
-Blocks `**/*.wasm` and `**/duckdb*` via `page.route`; asserts `firstDataFrame <= 2.5s` with zero
-duckdb/wasm requests before it (scoped to the cutoff, not just "ever"), 20 Program-Area rows, 7-8
-flower petals, and painted pixels at the two ocean points (re-confirmed from the test side,
-independent of the in-page `firstDataFrame` check).
+Same `scripts/measure.mjs`, same methodology (fresh browser process + fresh context + CDP cache
+disabled), against the committed config (`vite build` + `vite preview`, `optimizeDeps.exclude:
+["maplibre-gl"]`, worker wired with `?worker&url`).
 
-Final run, verbatim (repeated 3x consecutively for reliability, all identical):
-
+**UNMET, reported honestly rather than fabricated:** a full `N=9` run could not be completed. Partway
+through this measurement session `titiler-v8.marinesensitivity.org` became unreachable
+(`net::ERR_CONNECTION_TIMED_OUT` on every request; confirmed independently via `curl --max-time` and
+Node's `fetch()`, not a browser/harness artifact) and stayed down for the rest of the session (at
+least 45 minutes, no recovery observed). `firstDataFrame` needs a titiler response at both ocean
+probe points, so `scripts/measure.mjs` (which `await`s `firstDataFrame` before it can read
+`FCP`/`zonesPainted`/`idle` for that run) cannot produce a row while titiler is down. Attempting it
+live during the outage reproduces cleanly:
 ```
-Running 4 tests using 1 worker
-
-  ✓  1 [chromium] › e2e/s2.spike.spec.ts:21:3 › S2: first paint without WASM › shell paints the map + Program-Area table + flower; firstDataFrame gate (1.5s)
-  ✘  2 [chromium] › e2e/s2.spike.spec.ts:108:3 › seeded fault: duckdb-named asset fetched before first frame › ?seed=duckdb-fetch trips the zero-duckdb-requests assertion (570ms)
-  ✘  3 [chromium] › e2e/s2.spike.spec.ts:129:3 › seeded fault: unpainted canvas (style with no layers) › ?seed=blank-style trips the ocean-pixel-painted assertion (214ms)
-  ✘  4 [chromium] › e2e/s2.spike.spec.ts:146:3 › seeded fault: S3 + titiler responses delayed 3s › 3s response delay on S3/titiler trips the firstDataFrame budget (3.6s)
-
-  4 passed (7.3s)
-```
-
-(Tests 2-4 are wrapped in Playwright's `test.fail()` — an "✘" here means the assertion genuinely
-failed, which is the REQUIRED/expected outcome per `test.fail()`, so the run is reported green
-overall. This is the permanent, CI-safe form of the seeded-fault requirement, structurally the same
-idea as the root's `tests/fixtures/size-budget-static-duckdb/` fixture proof.)
-
-### Seeded fault verbatim output (`test.fail()` temporarily removed to capture the real assertion text)
-
-**(a) `?seed=duckdb-fetch` — must make the zero-duckdb-requests gate FAIL:**
-
-```
-Error: expect(received).toEqual(expected) // deep equality
-
-- Expected  - 1
-+ Received  + 3
-
-- Array []
-+ Array [
-+   "http://localhost:4312/?seed=duckdb-fetch",
-+ ]
-
-  111 |
-  112 |     // same assertion as the real gate above -- this is the one that must fail.
-> 113 |     expect(duckdbRequests).toEqual([]);
-      |                            ^
+> node scripts/measure.mjs 2
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+page.waitForFunction: Timeout 30000ms exceeded.
+    at runOnce (.../spikes/2/scripts/measure.mjs:93:16)
+  name: 'TimeoutError'
+}
 ```
 
-**(b) `?seed=blank-style` — must make the pixel probe FAIL:**
-
+What WAS measured live, during the outage, since zones vector data comes from S3 (unaffected
+throughout) and does not need titiler at all — same committed config, `zonesPainted` mark
+(`isSourceLoaded("zones") && queryRenderedFeatures(...).length > 0`, `scriptStart`-relative), 3 ad
+hoc runs (not the full `measure.mjs` cold-profile harness, since that script cannot get past the
+`firstDataFrame` `await` — see above):
 ```
-Error: expect(received).toBe(expected) // Object.is equality
-
-Expected: true
-Received: false
-
-  136 |     for (const pt of OCEAN_POINTS) {
-  137 |       const px = await readOceanPixel(page, pt);
-> 138 |       expect(isPainted(px)).toBe(true);
-      |                             ^
+run 1: zonesPainted = 603.8 - 88.1  = 515.7ms
+run 2: zonesPainted = 613.6 - 65.1  = 548.5ms  (WITHOUT-exclude cell, dist byte-identical)
+run 3: zonesPainted = 861.7 - 99.7  = 762.0ms  (captured just before the outage began)
 ```
 
-**(c) NEW — S3 + titiler responses delayed 3s — must make `firstDataFrame <= 2.5s` FAIL:**
+The one clean `firstDataFrame` sample obtained for the committed config, captured just before the
+outage began this session (`vite build` + `vite preview`, `optimizeDeps.exclude: ["maplibre-gl"]`,
+`?worker&url`): `scriptStart=99.7, bootFetched=115.6, firstAnyRender=181.2, zonesPainted=861.7,
+firstDataFrame=895.0, idle=1509.1` → **firstDataFrame = 795.3ms**, zonesPainted = 762.0ms, idle =
+1409.4ms. Consistent in shape and magnitude with round 1's `^5.24.0` 9-run table above (median
+499.1ms, range [467.8, 573.9]ms) — this one 6.10 sample (795.3ms) is inside the same order of
+magnitude and still comfortably under the 2.5s budget, but it is one sample, not a median over 9
+cold runs, and is reported as exactly that.
+
+## Gates, fix round 3 (`npm run e2e`, chromium only, against a real `vite build` + `vite preview`)
+
+### SUPERSEDED (fix round 1/F5): round 2's 5-test, all-`test.fail()` gate
+
+Kept verbatim for the record (see "Fix round 3" at the top of this file for why): all 5 tests used
+`test.fail()`, which accepts ANY failure in the test body — including a `waitForFunction` timeout —
+as the required "expected failure", so the `?url` seeded fault's REAL assertion
+(`expect(zonesFeatureCount).toBeGreaterThanOrEqual(1)`) was never actually reached while titiler was
+unreachable; the whole suite also had no way to distinguish "titiler is down" from "the pin is
+broken" for its raster-dependent half.
 
 ```
-Error: expect(received).toBeLessThanOrEqual(expected)
+Running 5 tests using 1 worker
 
-Expected: <= 2500
-Received:    3507.7000000029802
+  ✓  1 [chromium] › e2e/s2.spike.spec.ts:28:3 › S2: first paint without WASM › shell paints the map + Program-Area table + flower; firstDataFrame + vector gate (1.7s)
+  ✘  2 [chromium] › e2e/s2.spike.spec.ts:144:3 › seeded fault: duckdb-named asset fetched before first frame › ?seed=duckdb-fetch trips the zero-duckdb-requests assertion (699ms)
+  ✘  3 [chromium] › e2e/s2.spike.spec.ts:165:3 › seeded fault: unpainted canvas (style with no layers) › ?seed=blank-style trips the ocean-pixel-painted assertion (229ms)
+  ✘  4 [chromium] › e2e/s2.spike.spec.ts:182:3 › seeded fault: S3 + titiler responses delayed 3s › 3s response delay on S3/titiler trips the firstDataFrame budget (3.6s)
+fault-worker-url.html: workerResponses = [{"url":"http://localhost:4312/assets/maplibre-gl-worker-CupLwWe3.mjs","status":200},{"url":"http://localhost:4312/assets/maplibre-gl-shared.mjs","status":404}]
+fault-worker-url.html: zonesFeatureCount = 0
+  ✘  5 [chromium] › e2e/s2.spike.spec.ts:218:3 › seeded fault: worker asset loaded via ?url (fix round 2) › fault-worker-url.html trips the zones-feature-count assertion (1.2s)
 
-  164 |
-  165 |     // same assertion as the real gate above -- this is the one that must fail.
-> 166 |     expect(firstDataFrameMs).toBeLessThanOrEqual(2500);
-      |                              ^
+  5 passed (9.0s)
 ```
+(This run happened to be captured while titiler was still briefly reachable, so test 5's real
+assertion WAS reached that one time — the orchestrator's later re-run, with titiler down for the
+whole session, is exactly what surfaced the "4 of 5 specs time out at 30s" problem the reviewer
+described; that failing re-run's raw log is what the reviewer's finding quotes.)
 
-All three seeded faults confirmed to fail the gate as required (`firstDataFrameMs` = 3507.7ms
-against the 2500ms budget, a real ~3s delay plus ~500ms of normal overhead — matches the injected
-delay honestly); `test.fail()` restored in the committed spec immediately after capturing this
-output.
+### Corrected: S2 VECTOR GATE + RASTER/TIMING GATE + four self-pinned seeded faults
+
+Final run, verbatim, titiler still unreachable throughout (`titiler reachability probe:
+reachable=false`, printed by the suite's own one-shot check):
+
+```
+titiler reachability probe: reachable=false (GET https://titiler-v8.marinesensitivity.org/healthz failed: The operation was aborted due to timeout)
+
+Running 6 tests using 1 worker
+
+titiler reachability probe: reachable=false (GET https://titiler-v8.marinesensitivity.org/healthz failed: The operation was aborted due to timeout)
+  ✓  1 [chromium] › e2e/s2.spike.spec.ts:63:3 › S2 VECTOR GATE (S3 only, no titiler dependency) › ?seed=vector-only: zones vector data renders, zero worker/shared 404s, zero duckdb/wasm, table + flower render (769ms)
+  -  2 [chromium] › e2e/s2.spike.spec.ts:144:3 › S2 RASTER + TIMING GATE (needs titiler) › shell paints raster ocean points; firstDataFrame <= 2.5s, zero duckdb/wasm before it
+  ✓  3 [chromium] › e2e/s2.spike.spec.ts:198:3 › seeded fault: duckdb-named asset fetched before first frame › ?seed=duckdb-fetch: request fires, and the zero-duckdb-requests assertion fails (651ms)
+  ✓  4 [chromium] › e2e/s2.spike.spec.ts:228:3 › seeded fault: unpainted canvas (style with no layers) › ?seed=blank-style: canvas painted-pixel assertion fails at both ocean points (224ms)
+  -  5 [chromium] › e2e/s2.spike.spec.ts:250:3 › seeded fault: S3 + titiler responses delayed 3s › 3s response delay: firstDataFrame budget assertion fails
+  ✓  6 [chromium] › e2e/s2.spike.spec.ts:283:3 › seeded fault: worker asset loaded via ?url, not ?worker&url › fault-worker-url.html: worker's own module import 404s, zero vector features, and the >=1 assertion fails (10.7s)
+
+  2 skipped
+  4 passed (23.9s)
+```
+`$? = 0` (checked explicitly: `npm run e2e > log 2>&1; echo "EXIT CODE: $?"` → `EXIT CODE: 0`).
+Reproduced twice consecutively, identical (4 passed / 2 skipped both times).
+
+**What ran, what was skipped, and why:**
+
+| test | status | reason |
+|---|---|---|
+| S2 VECTOR GATE (`?seed=vector-only`) | ✓ **ran, PASSED** | no titiler dependency |
+| S2 RASTER + TIMING GATE | **SKIPPED** | `test.skip(!titiler.reachable, ...)`: titiler unreachable |
+| seeded fault: `?seed=duckdb-fetch` | ✓ **ran, PASSED** | no titiler dependency (fetch fires at module load) |
+| seeded fault: `?seed=blank-style` | ✓ **ran, PASSED** | no titiler dependency (`idle` fires immediately, no sources) |
+| seeded fault: 3s S3/titiler delay | **SKIPPED** | `test.skip(!titiler.reachable, ...)`: titiler unreachable |
+| seeded fault: `?url` worker wiring | ✓ **ran, PASSED** | no titiler dependency (uses `?seed=vector-only` too) |
+
+**Vector feature count** (the number `zonesFeatureCount` -- read directly, not just checked
+`>=1`): **10** features on the `zones-line` layer at the default viewport/zoom for the
+`programarea` pmtiles archive (20 zones total in the archive; 10 are within the initial
+`center:[-96,38], zoom:3` viewport — matches earlier rounds' measurements of the same archive).
+
+### The `?url`-fault's assertion is genuinely reached and fails for the right reason (verbatim)
+
+```
+Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+Expected: >= 1
+Received:    0
+
+  245 |     expect(
+  246 |       zonesFeatureCount,
+  247 |       "expected zero zones-line features under the broken ?url wiring",
+  248 |     ).toBe(0);
+```
+This is the TRIGGER assertion (must pass, and does) -- `zonesFeatureCount` really is exactly 0, not
+"never became defined". The test then wraps the PINNED assertion (`>=1`, same as the real VECTOR
+GATE makes) in `expectThrows()` and asserts it threw; the whole test reports PASSED because both of
+those held.
+
+### Regression check: swapping `?worker&url` for `?url` in the MAIN entry turns VECTOR GATE red
+
+`src/main.ts`'s worker import temporarily changed from `?worker&url` to `?url` (the broken wiring),
+rebuilt, VECTOR GATE re-run, then reverted. Verbatim:
+
+```
+Error: zones-line queryRenderedFeatures() returned 0 features after waiting up to 10s (source "zones", layer "zones-line"); worker/shared responses: [{"url":"http://localhost:4312/assets/maplibre-gl-worker-CupLwWe3.mjs","status":200},{"url":"http://localhost:4312/assets/maplibre-gl-shared.mjs","status":404}]; 404s: [{"url":"http://localhost:4312/assets/maplibre-gl-shared.mjs","status":404}]
+
+expect(received).toBeGreaterThanOrEqual(expected)
+
+Expected: >= 1
+Received:    0
+
+  104 |     expect(
+  105 |       zonesFeatureCount,
+  106 |       `zones-line queryRenderedFeatures() returned ${zonesFeatureCount} features after waiting up to 10s ` +
+  107 |         `(source "zones", layer "zones-line"); worker/shared responses: ${JSON.stringify(workerResponses)}` +
+  108 |         (worker404s.length ? `; 404s: ${JSON.stringify(worker404s)}` : "; no worker/shared 404s"),
+> 109 |     ).toBeGreaterThanOrEqual(1);
+```
+The message names both the layer (`"zones-line"`) and the 404 (`maplibre-gl-shared.mjs`, status
+404) in one place, as required. `src/main.ts` reverted to `?worker&url` immediately after capturing
+this; the full suite (4 passed / 2 skipped, exit 0) was re-confirmed clean afterward.
+
+### The `page.waitForFunction` arity bug, found while making these waits honest
+
+`page.waitForFunction(pageFunction, arg, options)` takes the options object as its THIRD parameter,
+not its second. Every call in this codebase — `e2e/s2.spike.spec.ts` (5 call sites) and
+`scripts/measure.mjs` (3 call sites), present since round 1 — used the 2-argument form
+`waitForFunction(fn, { timeout: N })`, which Playwright's typed signature happily accepts (`arg` is
+typed `any`) and which therefore silently passed the options object as `arg` (harmlessly ignored,
+since none of these page functions take a parameter), leaving `options` undefined and every one of
+these waits governed by Playwright's real default instead: the enclosing TEST's timeout (30s, under
+`npx playwright test`) or the page's own default (also 30s) outside it. Isolated with a throwaway
+bisect spec (`e2e/_bisect.spec.ts`, deleted after use) before fixing it for real:
+```
+[1ms] before goto
+[127ms] after goto
+[143ms] CONSOLE warning: Unable to perform style diff: Style is not done loading..  Rebuilding the style from scratch.
+[29895ms] waitForFunction caught: page.waitForFunction: Test timeout of 30000ms exceeded.
+```
+A `{timeout: 10_000}` call resolving its OWN internal catch handler at 29,895ms -- 30s minus
+overhead, not 10s -- is the smoking gun: the passed-in timeout was never applied. Fixed everywhere
+by passing `undefined` as the second argument. This is very likely the literal mechanism behind the
+reviewer's "failing at the firstDataFrame wait (line 238)" observation in round 2 -- that wait was
+never actually bounded to 10s either.
+
+A second, related cost was found while confirming the fix: even correctly bounded to 10s, the
+`?url`-fault test still took ~10.7s (not fast) because `src/app.ts`'s per-`render`-tick handler
+(the `gl.readPixels` pair behind `firstDataFrame`, `queryRenderedFeatures` behind `zonesPainted`)
+never unsubscribes for a variant where one of those marks can structurally never latch, so it kept
+doing that work on every render tick regardless. Capped with a 5s `RENDER_CHECK_BUDGET_MS` cutoff in
+`src/app.ts`, past which the handler stops checking and unsubscribes.
 
 ## maplibre-gl 6.10.0 vs `^5.24.0` under Vite 8
 
-### Corrected 4-cell matrix: v6-documented ESM wiring
+### SUPERSEDED (fix round 2): round 1's "corrected" 4-cell matrix below was wrong on the BUILT cells
 
-Wiring used for this matrix (not the default import, not a bare namespace import):
+**Reason (see "Fix round 2" at the top of this file for the full explanation):** the `?url`-only
+worker import copies `maplibre-gl-worker.mjs` verbatim; the worker's own
+`import ... from "./maplibre-gl-shared.mjs"` (~514KB, code shared between main thread and worker)
+then 404s at runtime because Vite never emits a file under that literal name. The worker throws
+during its own module init and never parses a single vector tile. The table below only checked
+`firstDataFrame` (raster ocean points) — raster keeps painting fine regardless, since it doesn't
+need the worker — so every "PASS" in the `pixel gate` column below is real for RASTER and silently
+wrong for VECTOR. `zonesFeatureCount` was never recorded in round 1. Kept verbatim, unedited, below
+for the record; the corrected matrix (with `?worker&url` wiring and a vector-feature assertion) is
+the next section.
+
+Wiring used for this (superseded) matrix:
 ```ts
 import { Map as MapLibreMap, addProtocol, setWorkerUrl, type StyleSpecification } from "maplibre-gl";
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 setWorkerUrl(maplibreWorkerUrl);
 ```
-(`maplibre-gl/dist/maplibre-gl-worker.mjs` is reachable via the package's own `"./dist/*": "./dist/*"`
-export map. `Map` and `addProtocol`/`setWorkerUrl` are real named exports of `maplibre-gl.mjs` in
-6.10.0 — confirmed via `node_modules/maplibre-gl/dist/maplibre-gl.d.ts`.)
 
 | cell | starts? | pixel gate (`firstDataFrame` reached, both probe points painted) | notes |
 |---|---|---|---|
@@ -232,17 +445,80 @@ export map. `Map` and `addProtocol`/`setWorkerUrl` are real named exports of `ma
 
 All four cells: no `pageerror`, no uncaught exceptions; console noise was only the expected
 z4-edge-tile 404s from titiler (out-of-bounds tiles, same as the `^5.24.0` runs, unrelated to
-maplibre-gl version).
+maplibre-gl version). **None of these runs checked `zonesFeatureCount` or watched for a 404 on
+`maplibre-gl-shared.mjs` — both would have shown 0 features / a 404 had they been checked, per the
+corrected matrix below.**
 
-**gzip critical-path bytes (JS + CSS `index.html` loads statically — read from `dist/.vite/manifest.json`'s entry, `imports`/`css` only, never the worker, which the manifest lists under `assets`, not the JS module graph):**
+**(superseded) gzip critical-path bytes:**
 
 | maplibre-gl | wiring | JS gzip | CSS gzip | critical-path total | worker (separate, not "critical path") |
 |---|---|---|---|---|---|
-| `6.10.0` | named import + `setWorkerUrl` | 282.15 KB | 10.71 KB | **292.86 KB** | 19.00 KB raw / 6.09 KB gzip |
-| `^5.24.0` (`5.24.0`) | default import (committed) | 282.41 KB | 10.10 KB | **292.51 KB** | n/a (UMD build has no separate worker file — its worker is a Blob URL baked into the main bundle) |
+| `6.10.0` | named import + `setWorkerUrl`, `?url` (BROKEN wiring) | 282.15 KB | 10.71 KB | **292.86 KB** | 19.00 KB raw / 6.09 KB gzip |
+| `^5.24.0` (`5.24.0`) | default import (round 1's committed pin) | 282.41 KB | 10.10 KB | **292.51 KB** | n/a (UMD build has no separate worker file — its worker is a Blob URL baked into the main bundle) |
 
-Difference is ~0.35 KB either way at the critical-path level — essentially a wash; 6.10 additionally
-ships a genuinely separate (lazy, not-in-the-static-graph) 19KB worker chunk that 5.24 doesn't need.
+### Corrected 4-cell matrix (fix round 2): `?worker&url` wiring, vector data verified
+
+Wiring used for this matrix — the only change from the superseded one above is the worker import
+suffix (`?worker&url` instead of `?url`), plus `setWorkerUrl()` is called before the first `Map`:
+```ts
+import { Map as MapLibreMap, addProtocol, setWorkerUrl, type StyleSpecification } from "maplibre-gl";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+setWorkerUrl(maplibreWorkerUrl);
+```
+This is `spikes/2/src/main.ts` (the real, committed entry) exactly. Each cell was checked for:
+starts without a `pageerror`; `zonesFeatureCount` (the actual `queryRenderedFeatures` count on the
+zones-line layer, not just ">0"); whether any `maplibre-gl-worker`/`maplibre-gl-shared` response was
+a 404; and `firstDataFrame`/`zonesPainted`/`idle` marks where obtainable.
+
+**Note on this run's conditions:** `titiler-v8.marinesensitivity.org` had a sustained connection
+timeout (`net::ERR_CONNECTION_TIMED_OUT` on every raster tile request, confirmed independently via
+`curl` and Node's `fetch` — not a Chromium/Vite/wiring artifact) for an extended period while this
+matrix and the timing table below were being run. S3 (zones pmtiles) was unaffected throughout, so
+the VECTOR side of every cell below is a clean, live measurement; `firstDataFrame` (which needs a
+titiler raster response at both ocean probe points) could not be completed for two of the four
+cells within this session. This is reported as-is, not backfilled with round 1's pre-round-2
+numbers or fabricated.
+
+| cell | starts? | `zonesFeatureCount` | worker/shared 404s? | `firstDataFrame` |
+|---|---|---|---|---|
+| `vite dev`, WITH `optimizeDeps.exclude: ["maplibre-gl"]` | yes | **10** | none (all 200) | not captured this cell — titiler outage during this run; `zonesPainted` alone: 457.3-861.7ms across 2 runs |
+| `vite dev`, WITHOUT exclude | yes | **10** | none (all 200) | not captured this cell — titiler outage during this run; `zonesPainted`: 661.2ms |
+| `vite build` + `vite preview`, WITH exclude (**committed config**) | yes | **10** | none (all 200, `dist/assets/maplibre-gl-worker-CNLXcz58.js`) | **795.3ms** (one clean run captured before the outage began: `scriptStart=99.7, firstDataFrame=895.0`); `zonesPainted=603.8-613.6ms` across runs during the outage |
+| `vite build` + `vite preview`, WITHOUT exclude | yes | **10** | none (all 200) | not captured this cell — titiler outage during this run; `zonesPainted`: 613.6ms |
+
+Build output is byte-identical between the WITH/WITHOUT-exclude build cells (confirmed via matching
+file hashes in `dist/assets/`), as in round 1 — `optimizeDeps.exclude` only affects `vite dev`'s
+pre-bundler, never `vite build`.
+
+**gzip critical-path bytes, corrected wiring (from `dist/.vite/manifest.json`, computed with the
+SAME method `scripts/size-budget-core.mjs` uses — `zlib.gzipSync(buf, {level: 9})` — not Vite's own
+build-log number, which uses a different gzip setting and reports ~1.3% higher for the same file):**
+
+| file | role | raw bytes | gzip (level 9) |
+|---|---|---|---|
+| `app-BGpuSOAe.js` | shared app chunk (both `index.html` and `fault-worker-url.html` import it) | 1,033,514 | 277,637 |
+| `app-CKRTiAqP.css` | shared app stylesheet | 82,869 | 10,384 |
+| `index-g_m1lAzt.js` | `index.html`'s own tiny entry wrapper | 112 | 128 |
+| **critical-path total (`index.html`)** | | **1,116,495** | **288,149 (281.4 KiB)** |
+
+Budget is `350 * 1024 = 358,400` bytes (`scripts/size-budget-core.mjs`'s
+`CRITICAL_BUDGET_BYTES`) — 288,149 is comfortably under it.
+
+**Runtime-only assets fetched by the page that are NOT in `index.html`'s static import graph** (the
+manifest lists them under the entry's `"assets"` key, never `"imports"` — `scripts/size-budget.mjs`
+"walks only `imports`, never `dynamicImports`" per its own doc comment, and doesn't look at
+`"assets"` at all, so it cannot see any of this today):
+
+| file | reachable from | raw bytes | gzip (level 9) |
+|---|---|---|---|
+| `maplibre-gl-worker-CNLXcz58.js` | `index.html` (the real entry) — the CORRECT `?worker&url` wiring, self-contained (shared chunk inlined, no second runtime request) | 508,485 | 143,867 (140.5 KiB) |
+| `maplibre-gl-worker-CupLwWe3.mjs` | `fault-worker-url.html` ONLY (the committed seeded fault, never reachable from the real entry) — the BROKEN `?url` wiring; this is the file whose own `./maplibre-gl-shared.mjs` import 404s at runtime | 19,007 | 6,054 (5.91 KiB) |
+
+If `index.html`'s worker (143,867B gzip) were counted against the 350KB critical-path budget, the
+total would be 288,149 + 143,867 = 432,016B — over budget. It is not counted today because the
+worker is a `new Worker(url)` runtime construction, not a static `import`, and the manifest reflects
+that (`"assets"`, not `"imports"`) — this is a raw fact about what the current size-budget check can
+and cannot see, not a verdict on whether it should change.
 
 ### Round 0's (superseded) default-import / bare-namespace-import findings, kept for the record
 
@@ -377,3 +653,36 @@ first patched release is 6.4.1 (a 6.x release).
   building fix round 1 (the byte classifier in `scripts/measure.mjs`, and the 3s-delay seeded
   fault's route matcher in `e2e/s2.spike.spec.ts`) and fixed by using `new URL(u).hostname`
   everywhere instead of substring matching on the full URL.
+- **(fix round 2) A raster-only pixel gate cannot see a broken vector worker.** maplibre-gl's vector
+  tile parsing happens entirely inside its dedicated Worker; the raster path never touches the
+  worker at all (image tiles are decoded by the browser's own image decoder). So a worker that
+  throws during its own module init — because ITS OWN static import 404s, in this case — leaves
+  every raster-dependent check (the ocean-point pixel probe, `firstDataFrame`) completely unaffected
+  while silently producing zero vector features, forever, with no `pageerror` (a worker's own
+  uncaught exception does not surface as a `pageerror` on the main frame in Playwright — it has to
+  be watched for as a network-level symptom, e.g. the 404 itself, or a MapLibre-emitted `error`
+  event/console message, to be caught at all). A gate for "the map painted" that only checks raster
+  pixels is structurally blind to this whole class of bug.
+- **Vite's `?url` vs `?worker&url` import suffixes on a package's pre-built worker file behave very
+  differently**, and the difference is invisible until you inspect the worker's OWN network
+  requests: `?url` treats the target as an opaque static asset and copies it byte-for-byte,
+  including any of the file's own unprocessed `import` statements; `?worker&url` runs Vite's worker
+  plugin, which does a REAL nested build over the worker's module graph and rewrites/inlines its
+  dependencies. For a worker entry point that itself has relative imports (common for any
+  library that splits "main thread" and "worker" code but ships them as separate files sharing a
+  common chunk), `?url` is the wrong suffix even though it "works" in the sense of producing a
+  loadable script with no build error and no immediate console error.
+- **`gzipSync(buf, {level: 9})` (what `scripts/size-budget-core.mjs` actually uses) differs from
+  Vite's own build-log gzip number** by about 1.3% for the same file (277,637B measured vs. the
+  282.13 kB Vite prints) — likely a different zlib strategy/window setting in Vite's own reporter.
+  Not a bug, just a reason to compute gzip sizes with the SAME code path as the real check rather
+  than trust a build tool's own log line when the two need to agree to the byte.
+- **(fix round 2, infrastructure) `titiler-v8.marinesensitivity.org` had a sustained, genuine
+  outage** (`net::ERR_CONNECTION_TIMED_OUT` on every request, confirmed independently via `curl`
+  --max-time and Node's `fetch()` with an `AbortSignal.timeout` — not a browser/Vite/wiring
+  artifact; DNS resolved fine throughout; S3 was unaffected throughout) partway through this
+  measurement session, lasting at least 40 minutes without recovering. This blocked completing the
+  raster-dependent (`firstDataFrame`) half of the corrected 4-cell matrix and the fresh 9-run 6.10
+  timing table for two of the four cells — reported as unmet above rather than backfilled or
+  fabricated. The vector-only half of every cell (zones data comes from S3, not titiler) was
+  measured cleanly throughout the outage.

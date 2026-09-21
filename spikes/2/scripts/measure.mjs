@@ -89,14 +89,22 @@ async function runOnce() {
       }
     });
 
+    // NOTE (fix round 3): page.waitForFunction(pageFunction, arg, options) -- options go THIRD.
+    // `.waitForFunction(fn, {timeout:N})` (2-arg) silently passes the options object as `arg`
+    // instead, so these used to fall through to Playwright's hard default (30s) rather than the
+    // intended 20s -- found while debugging a hang in e2e/s2.spike.spec.ts, same bug there. Never
+    // mattered here in practice (titiler was reachable for every real measure.mjs run), but fixed
+    // for correctness -- see RESULTS.md fix round 3.
     await page.goto(BASE_URL, { waitUntil: "commit" });
-    await page.waitForFunction(() => window.__s2?.marks?.firstDataFrame !== undefined, {
+    await page.waitForFunction(() => window.__s2?.marks?.firstDataFrame !== undefined, undefined, {
       timeout: 20_000,
     });
-    await page.waitForFunction(() => window.__s2?.marks?.zonesPainted !== undefined, {
+    await page.waitForFunction(() => window.__s2?.marks?.zonesPainted !== undefined, undefined, {
       timeout: 20_000,
     });
-    await page.waitForFunction(() => window.__s2?.marks?.idle !== undefined, { timeout: 20_000 });
+    await page.waitForFunction(() => window.__s2?.marks?.idle !== undefined, undefined, {
+      timeout: 20_000,
+    });
     // let any just-completed CDP loadingFinished events flush before reading cdpRequests.
     await page.waitForTimeout(300);
 
