@@ -8,8 +8,11 @@ import { test, expect } from "@playwright/test";
 // Promise.race (e.g. the JS realm wedged) still resolves this test as a failure rather than blocking
 // the run.
 //
-// fix round 1: test.fail() below turns WebKit's real-OPFS-unavailable red into an expected failure
-// (see persistence.spec.js's comment for why the exit code needs this).
+// fix round 2 (reviewer finding N2): removed the blanket test.fail(browserName === "webkit", ...)
+// from round 1 -- it counted green no matter WHY tab1's createAndCount failed, which could mask a
+// real regression (e.g. a network/404 fault) as "WebKit's known OPFS gap". Now WebKit asserts the
+// SPECIFIC recorded error text on tab1's own createAndCount and stops there (the second-tab probe's
+// premise -- tab1 genuinely holding an open file -- never holds on this engine; see RESULTS.md).
 const PKGS = ["132", "latest", "next"];
 const SOURCE_URL =
   "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v9/tables/taxon.parquet";
@@ -23,17 +26,22 @@ for (const pkg of PKGS) {
     browserName,
   }) => {
     test.setTimeout(OUTER_GUARD_MS + 10_000);
-    // WebKit here: the FIRST tab's own createAndCount already throws (real, pre-existing OPFS
-    // failure -- see RESULTS.md), before the second-tab probe this test is actually about ever
-    // runs. Expected fail, not attributed to any pin.
-    test.fail(
-      browserName === "webkit",
-      "WebKit: OPFS itself is unavailable in this environment (see RESULTS.md); tab1's own createAndCount fails before the second-tab probe runs.",
-    );
     const dbName = `atlas-spike-secondtab-${pkg}.duckdb`;
 
     await page.goto(`/?pkg=${pkg}`);
     await page.waitForFunction(() => !!window.spike);
+
+    if (browserName === "webkit") {
+      await expect(
+        page.evaluate(
+          async ({ dbName, sourceUrl }) => window.spike.createAndCount(dbName, sourceUrl),
+          { dbName, sourceUrl: SOURCE_URL },
+        ),
+        "WebKit's tab1 createAndCount must reject with the recorded, pre-existing OPFS error",
+      ).rejects.toThrow(/operation failed for an unknown transient reason/);
+      return;
+    }
+
     await page.evaluate(
       async ({ dbName, sourceUrl }) => window.spike.createAndCount(dbName, sourceUrl),
       { dbName, sourceUrl: SOURCE_URL },
