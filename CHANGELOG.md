@@ -52,7 +52,14 @@ merges. Still not wired into `index.html` — the shell is step 3.
   (spec.md §5.3). Collapsing swaps the panel for a `Pill` disclosure and moves focus to it;
   restoring moves focus back to control 1; `Esc` anywhere inside collapses (wired imperatively,
   not a template handler on a non-interactive element). Geometry persists per viewport size in
-  `localStorage` via `src/lib/ui/panelGeometry.ts` (pure, unit-tested, storage-injectable).
+  `localStorage` via `src/lib/ui/panelGeometry.ts` (pure, unit-tested, storage-injectable). Its
+  collapse control also carries a static `aria-pressed="false"` (matching the mockups exactly --
+  it is a disclosure, not a detent, but the group's three buttons render the attribute uniformly).
+- **`src/lib/ui/Sheet.svelte`**: the phone bottom sheet, three real detents (peek / half / full --
+  unlike Panel, peek keeps the sheet's own header visible, so it never swaps to a Pill), a wave top
+  edge, a grab handle, the same three header controls sized for touch. The scroll body carries
+  `tabindex="0"` + `role="region"` (axe's `scrollable-region-focusable`, seeded and fixed in the
+  mockups too). `src/lib/ui/sheetGeometry.ts` mirrors panelGeometry.ts's persistence shape.
 
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired

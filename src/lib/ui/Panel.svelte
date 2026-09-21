@@ -91,6 +91,7 @@
           <button
             type="button"
             data-panel-control="collapse"
+            aria-pressed="false"
             aria-expanded="true"
             aria-controls={bodyId}
             aria-label="Collapse to a pill"
