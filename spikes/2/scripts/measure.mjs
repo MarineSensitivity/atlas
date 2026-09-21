@@ -1,79 +1,150 @@
 #!/usr/bin/env node
-// atlas-0 Step 4, S2: raw FCP / map-first-frame / bytes-and-requests-before-first-frame
-// measurements on a cold profile (a fresh browser process per run -- no disk cache, no in-memory
-// cache reuse between runs). Requires `npm run build && npm run preview` already serving
-// http://localhost:4312/ in another shell (or pass MEASURE_BASE_URL).
+// atlas-0 Step 4, S2, fix round 1: raw FCP / firstDataFrame / zonesPainted / idle measurements on
+// a cold profile -- a fresh BROWSER PROCESS and a fresh CONTEXT per run, HTTP cache explicitly
+// disabled via CDP (not just relying on a fresh profile having no disk cache to begin with).
+// Requires `npm run build && npm run preview` already serving http://localhost:4312/ in another
+// shell (or pass MEASURE_BASE_URL).
 //
-// usage: node scripts/measure.mjs [n]   (n = number of runs, default 7)
+// Fix round 1 correction: the previous version of this script (and the gate) used
+// `map.once("render", ...)` as "first frame" -- that fires on the FIRST render of an empty
+// background, before any tile has ever arrived, so it said nothing about paint and could never go
+// red against the 2.5s budget. This version reads src/main.ts's real marks instead:
+//   - firstDataFrame: the first render after which gl.readPixels at BOTH ocean probe points reads
+//     back non-background data (checked fresh every render tick inside main.ts itself).
+//   - zonesPainted: isSourceLoaded("zones") AND a queryRenderedFeatures hit on the zones-line layer.
+//   - idle: MapLibre's own "idle" event.
+//
+// Cross-origin (S3 + titiler) request/byte counts use the CDP Network domain
+// (Network.loadingFinished.encodedDataLength), NOT the page's own Resource Timing API --
+// performance.getEntriesByType("resource") zeroes out transferSize/encodedBodySize for
+// cross-origin responses that don't send Timing-Allow-Origin (neither S3 nor titiler does), which
+// is why the first version of this script could only measure same-origin bytes.
+//
+// usage: node scripts/measure.mjs [n]   (n = number of runs, default 9)
 import { chromium } from "@playwright/test";
 
-const N = Number(process.argv[2] ?? 7);
+const N = Number(process.argv[2] ?? 9);
 const BASE_URL = process.env.MEASURE_BASE_URL ?? "http://localhost:4312/";
+const S3_HOSTNAME = "s3.us-east-1.amazonaws.com"; // path-style: bucket "oceanmetrics.io-public" is a path segment, not the hostname
+const TITILER_HOSTNAME = "titiler-v8.marinesensitivity.org";
 
 function median(nums) {
   const s = [...nums].sort((a, b) => a - b);
   const mid = Math.floor(s.length / 2);
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
+function fmt(nums) {
+  if (nums.length === 0) return "n/a";
+  return `median=${median(nums).toFixed(1)}ms range=[${Math.min(...nums).toFixed(1)}, ${Math.max(...nums).toFixed(1)}]ms`;
+}
+// classify by the REAL hostname (new URL().hostname), not a substring match on the whole URL --
+// a titiler tile request embeds the S3 COG url as a `?url=` query param, so a naive
+// `url.includes("oceanmetrics.io-public")` matched every titiler request too and silently zeroed
+// out the titiler bucket (found by running this harness -- see RESULTS.md fix round 1).
+function hostOf(url) {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "";
+  }
+}
+function isS3(url) {
+  return hostOf(url) === S3_HOSTNAME;
+}
+function isTitiler(url) {
+  return hostOf(url) === TITILER_HOSTNAME;
+}
 
 async function runOnce() {
-  // a fresh browser process per run = the "cold profile" -- slower to launch than reusing one
+  // a fresh browser PROCESS per run = the "cold profile" -- slower to launch than reusing one
   // browser, but that IS the point: no warm disk/memory cache carried from a previous run.
   const browser = await chromium.launch({
     args: ["--use-gl=swiftshader", "--enable-webgl-software-rendering", "--ignore-gpu-blocklist"],
   });
   try {
-    const page = await browser.newPage();
+    // a fresh CONTEXT too (not just reusing the browser's default one) -- explicit, not implied.
+    const context = await browser.newContext();
+    const page = await context.newPage();
 
-    await page.goto(BASE_URL, { waitUntil: "commit" });
-    await page.waitForFunction(() => window.__s2?.marks?.firstRender !== undefined, {
-      timeout: 15_000,
+    // CDP: disable the HTTP cache outright (belt-and-suspenders over "fresh profile has no cache
+    // yet") and track every request's real wire bytes via Network.loadingFinished, which reports
+    // encodedDataLength regardless of CORS/Timing-Allow-Origin (unlike the page's own Resource
+    // Timing API).
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Network.enable");
+    await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
+
+    /** @type {Map<string, {url:string, sentAt:number, finishedAt?:number, encodedDataLength?:number}>} */
+    const cdpRequests = new Map();
+    let t0 = null; // CDP "timestamp" (seconds, monotonic) of the main document request
+    cdp.on("Network.requestWillBeSent", (e) => {
+      if (t0 === null && e.type === "Document") t0 = e.timestamp;
+      cdpRequests.set(e.requestId, { url: e.request.url, sentAt: e.timestamp });
+    });
+    cdp.on("Network.loadingFinished", (e) => {
+      const r = cdpRequests.get(e.requestId);
+      if (r) {
+        r.finishedAt = e.timestamp;
+        r.encodedDataLength = e.encodedDataLength;
+      }
     });
 
-    // Resource Timing API (transferSize/encodedBodySize), not response content-length headers:
-    // `vite preview` serves gzip over chunked transfer-encoding with NO content-length header at
-    // all, which under-reported every same-origin asset as 0B when this script tracked
-    // page.on("response") headers instead (found by running this harness -- see RESULTS.md).
-    const { marks, paint, resources } = await page.evaluate(() => ({
+    await page.goto(BASE_URL, { waitUntil: "commit" });
+    await page.waitForFunction(() => window.__s2?.marks?.firstDataFrame !== undefined, {
+      timeout: 20_000,
+    });
+    await page.waitForFunction(() => window.__s2?.marks?.zonesPainted !== undefined, {
+      timeout: 20_000,
+    });
+    await page.waitForFunction(() => window.__s2?.marks?.idle !== undefined, { timeout: 20_000 });
+    // let any just-completed CDP loadingFinished events flush before reading cdpRequests.
+    await page.waitForTimeout(300);
+
+    const { marks, paint } = await page.evaluate(() => ({
       marks: window.__s2.marks,
       paint: Object.fromEntries(
         performance.getEntriesByType("paint").map((e) => [e.name, e.startTime]),
       ),
-      // the top-level document request isn't a "resource" entry -- it's "navigation" -- so it's
-      // stitched in here to get a complete before-first-frame byte count.
-      resources: [
-        ...performance.getEntriesByType("navigation").map((e) => ({
-          name: e.name,
-          startTime: e.startTime,
-          transferSize: e.transferSize,
-          encodedBodySize: e.encodedBodySize,
-          decodedBodySize: e.decodedBodySize,
-        })),
-        ...performance.getEntriesByType("resource").map((e) => ({
-          name: e.name,
-          startTime: e.startTime,
-          transferSize: e.transferSize,
-          encodedBodySize: e.encodedBodySize,
-          decodedBodySize: e.decodedBodySize,
-        })),
-      ],
     }));
 
-    const firstFrameMs = marks.firstRender - marks.scriptStart;
     const fcpMs = paint["first-contentful-paint"] ?? null;
+    const firstDataFrameMs = marks.firstDataFrame - marks.scriptStart;
+    const zonesPaintedMs = marks.zonesPainted - marks.scriptStart;
+    const idleMs = marks.idle - marks.scriptStart;
 
-    // "before first frame" = every resource whose fetch STARTED before the firstRender mark
-    // (both timestamps are performance.now() values relative to the same navigationStart, so no
-    // wall-clock reconciliation needed here, unlike an earlier version of this script).
-    const before = resources.filter((r) => r.startTime <= marks.firstRender);
-    const bytes = before.reduce((sum, r) => sum + (r.transferSize || 0), 0);
+    // CDP timestamps are seconds since an arbitrary (but monotonic, per-session) epoch; t0 (the
+    // main document request) approximates the same instant as performance.now()'s navigationStart
+    // -- so (cdpTimestamp - t0) * 1000 approximates the same clock the marks above use. This is an
+    // approximation (not exact to the millisecond), same caveat as fix round 0's wall-clock
+    // reconciliation.
+    function beforeMs(budgetMs) {
+      const cutoffCdp = t0 + budgetMs / 1000;
+      let s3Requests = 0,
+        s3Bytes = 0,
+        titilerRequests = 0,
+        titilerBytes = 0;
+      for (const r of cdpRequests.values()) {
+        const at = r.finishedAt ?? r.sentAt;
+        if (at > cutoffCdp) continue;
+        const bytes = r.encodedDataLength ?? 0;
+        if (isS3(r.url)) {
+          s3Requests++;
+          s3Bytes += bytes;
+        } else if (isTitiler(r.url)) {
+          titilerRequests++;
+          titilerBytes += bytes;
+        }
+      }
+      return { s3Requests, s3Bytes, titilerRequests, titilerBytes };
+    }
 
     return {
       fcpMs,
-      firstFrameMs,
-      requestCount: before.length,
-      bytes,
-      requests: before.map((r) => `${r.name} (transfer ${r.transferSize}B, decoded ${r.decodedBodySize}B)`),
+      firstDataFrameMs,
+      zonesPaintedMs,
+      idleMs,
+      beforeFirstDataFrame: beforeMs(firstDataFrameMs),
+      beforeIdle: beforeMs(idleMs),
     };
   } finally {
     await browser.close();
@@ -85,22 +156,33 @@ for (let i = 0; i < N; i++) {
   const r = await runOnce();
   results.push(r);
   console.log(
-    `run ${i + 1}/${N}: FCP=${r.fcpMs?.toFixed(1)}ms firstFrame=${r.firstFrameMs.toFixed(1)}ms ` +
-      `requests=${r.requestCount} bytes=${r.bytes}`,
+    `run ${i + 1}/${N}: FCP=${r.fcpMs?.toFixed(1)}ms firstDataFrame=${r.firstDataFrameMs.toFixed(1)}ms ` +
+      `zonesPainted=${r.zonesPaintedMs.toFixed(1)}ms idle=${r.idleMs.toFixed(1)}ms | ` +
+      `before firstDataFrame: S3 ${r.beforeFirstDataFrame.s3Requests}req/${r.beforeFirstDataFrame.s3Bytes}B, ` +
+      `titiler ${r.beforeFirstDataFrame.titilerRequests}req/${r.beforeFirstDataFrame.titilerBytes}B | ` +
+      `before idle: S3 ${r.beforeIdle.s3Requests}req/${r.beforeIdle.s3Bytes}B, ` +
+      `titiler ${r.beforeIdle.titilerRequests}req/${r.beforeIdle.titilerBytes}B`,
   );
 }
 
 const fcps = results.map((r) => r.fcpMs).filter((x) => x !== null);
-const frames = results.map((r) => r.firstFrameMs);
+const firstDataFrames = results.map((r) => r.firstDataFrameMs);
+const zonesPainteds = results.map((r) => r.zonesPaintedMs);
+const idles = results.map((r) => r.idleMs);
 
-console.log("\n--- summary ---");
+console.log("\n--- summary (N=" + N + ") ---");
+console.log(`FCP: ${fmt(fcps)}`);
+console.log(`firstDataFrame: ${fmt(firstDataFrames)}  (gate: <= 2500ms)`);
+console.log(`zonesPainted: ${fmt(zonesPainteds)}`);
+console.log(`idle: ${fmt(idles)}`);
+
+const medianRun = results[Math.floor(N / 2)];
+console.log(`\ncross-origin bytes/requests, representative run (index ${Math.floor(N / 2)}):`);
 console.log(
-  `FCP: median=${median(fcps).toFixed(1)}ms range=[${Math.min(...fcps).toFixed(1)}, ${Math.max(...fcps).toFixed(1)}]ms`,
+  `  before firstDataFrame: S3 ${medianRun.beforeFirstDataFrame.s3Requests} requests / ${medianRun.beforeFirstDataFrame.s3Bytes} bytes, ` +
+    `titiler ${medianRun.beforeFirstDataFrame.titilerRequests} requests / ${medianRun.beforeFirstDataFrame.titilerBytes} bytes`,
 );
 console.log(
-  `map-first-frame: median=${median(frames).toFixed(1)}ms range=[${Math.min(...frames).toFixed(1)}, ${Math.max(...frames).toFixed(1)}]ms`,
+  `  before idle: S3 ${medianRun.beforeIdle.s3Requests} requests / ${medianRun.beforeIdle.s3Bytes} bytes, ` +
+    `titiler ${medianRun.beforeIdle.titilerRequests} requests / ${medianRun.beforeIdle.titilerBytes} bytes`,
 );
-console.log(`requests before first frame (run 1 of ${N}): ${results[0].requestCount}`);
-console.log(`bytes before first frame (run 1 of ${N}): ${results[0].bytes}`);
-console.log(`request list (run 1 of ${N}):`);
-for (const u of results[0].requests) console.log(`  ${u}`);

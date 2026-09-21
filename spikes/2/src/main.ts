@@ -144,6 +144,24 @@ function renderFlower(flower: Boot["flower"]): void {
     petalsHtml;
 }
 
+// atlas-0 Step 4, S2 fix round 1: reads back the GL framebuffer at a lon/lat, same technique as
+// e2e/probe.ts's readOceanPixel (c.width/c.clientWidth for the device-pixel-ratio scale, y flipped
+// for the framebuffer's bottom-left origin) -- duplicated here (not imported) because this runs
+// synchronously inside the map's own "render" handler, in-page, not from Playwright.
+function isPointPainted(map: maplibregl.Map, lon: number, lat: number): boolean {
+  const canvas = map.getCanvas();
+  const gl = (canvas.getContext("webgl2") ?? canvas.getContext("webgl")) as WebGLRenderingContext | null;
+  if (!gl) return false;
+  const dpr = canvas.width / canvas.clientWidth;
+  const p = map.project([lon, lat]);
+  const fbX = Math.round(p.x * dpr);
+  const fbY = Math.round(canvas.height - p.y * dpr);
+  const pixel = new Uint8Array(4);
+  gl.readPixels(fbX, fbY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+  if (pixel[3] === 0) return false;
+  return !(pixel[0] === 11 && pixel[1] === 36 && pixel[2] === 54); // #0b2436 background triplet
+}
+
 async function boot(): Promise<void> {
   const res = await fetch("boot.json");
   const bootData: Boot = await res.json();
@@ -186,7 +204,46 @@ async function boot(): Promise<void> {
   // object and apply it with setStyle({diff:true}); never addLayer() piecemeal after load.
   map.setStyle(composed, { diff: true });
 
-  map.once("render", () => mark("firstRender"));
+  // fix round 1: `map.once("render", ...)` fires on the FIRST render of an empty/background-only
+  // frame, before any tile has ever arrived -- that number says nothing about the plan's "first
+  // paint" and can never fail the 2.5s gate. `firstAnyRender` below is kept only as a diagnostic,
+  // never used by a gate. The three marks a gate/report can actually use:
+  //   - firstDataFrame: the first "render" event after which gl.readPixels at BOTH ocean probe
+  //     points (from boot.json, not hardcoded) returns a non-background colour -- checked fresh on
+  //     every render tick until true, per plan Step 4 fix round 1.
+  //   - zonesPainted: isSourceLoaded("zones") AND queryRenderedFeatures on the zones-line layer
+  //     returns at least one feature (a source can be "loaded" with zero features rendered in the
+  //     current viewport, so both conditions are required).
+  //   - idle: MapLibre's own "idle" event (fires once tiles/placement settle).
+  let firstAnyRenderMarked = false;
+  let firstDataFrameMarked = false;
+  let zonesPaintedMarked = false;
+  function onRender(): void {
+    if (!firstAnyRenderMarked) {
+      mark("firstAnyRender");
+      firstAnyRenderMarked = true;
+    }
+    if (!firstDataFrameMarked) {
+      const allPainted = bootData.oceanProbePoints.every((pt) => isPointPainted(map, pt.lon, pt.lat));
+      if (allPainted) {
+        mark("firstDataFrame");
+        firstDataFrameMarked = true;
+      }
+    }
+    if (!zonesPaintedMarked && map.getSource("zones")) {
+      // getSource() guard above: the ?seed=blank-style variant has no "zones" source at all, and
+      // isSourceLoaded()/queryRenderedFeatures() on a nonexistent source/layer is not something to
+      // rely on across versions -- this mark simply never fires for that seed, which is correct.
+      const zonesLoaded = map.isSourceLoaded("zones");
+      const zonesFeatures = map.queryRenderedFeatures({ layers: ["zones-line"] });
+      if (zonesLoaded && zonesFeatures.length > 0) {
+        mark("zonesPainted");
+        zonesPaintedMarked = true;
+      }
+    }
+    if (firstDataFrameMarked && zonesPaintedMarked) map.off("render", onRender);
+  }
+  map.on("render", onRender);
   map.once("idle", () => mark("idle"));
 }
 
