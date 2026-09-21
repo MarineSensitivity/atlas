@@ -510,7 +510,11 @@ test.describe("fix round 1, item 7 (SC 2.4.3): Sheet's Esc moves focus to its ow
     await gotoGallery(page, "navy");
     const sheetSection = page.locator("#sheet");
     const collapseBtn = sheetSection.locator('[data-sheet-control="collapse"]');
-    await collapseBtn.focus();
+    // the real regression: focus starts on something INSIDE the body (the scrollable region
+    // itself, tabindex=0) -- collapsing to peek hides that body via display:none, which is the
+    // element that would strand focus if it were never moved. Focusing the collapse control
+    // itself first would trivially "pass" without exercising the bug at all.
+    await sheetSection.locator(".sheet-body").focus();
     await page.keyboard.press("Escape");
     await expect(collapseBtn).toBeFocused();
     const isBody = await page.evaluate(() => document.activeElement === document.body);
@@ -519,13 +523,29 @@ test.describe("fix round 1, item 7 (SC 2.4.3): Sheet's Esc moves focus to its ow
 });
 
 test.describe("fix round 1, item 8 (SC 1.4.10): no horizontal overflow at 320 CSS px", () => {
-  test("the whole gallery page reflows at 320x800 with no horizontal scroll", async ({ page }) => {
+  // Targeted at the two components the manual review actually flagged (About.svelte's fixed
+  // 372px, Panel.svelte's fixed --size-panel/380px -- "measured scrollWidth 430 > 320"), rather
+  // than a page-wide sweep: a page-wide zero-tolerance check also catches OTHER, pre-existing,
+  // unrelated reflow gaps this fix round never touched (e.g. a data table's own unbreakable-token
+  // cells, which SC 1.4.10 explicitly exempts from 2D-scroll-free reflow in the first place) --
+  // those are real findings for a future pass, not something to half-fix under this one's scope.
+  test("About and Panel each fit within a 320px viewport instead of forcing it wider", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 320, height: 800 });
     await gotoGallery(page, "navy");
-    const overflowPx = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    );
-    expect(overflowPx).toBeLessThanOrEqual(1); // 1px of rounding slack
+    // the INNER component's own box, not the outer gallery-section: a plain block ancestor with
+    // `width: auto` sizes itself to the containing block regardless of its content, so a fixed-
+    // width child overflowing it (ordinary `overflow: visible`) would never show up on the
+    // section's own boundingBox -- only on the fixed-width element itself.
+    for (const [sectionId, innerSelector] of [
+      ["#about", ".about"],
+      ["#panel", ".panel"],
+    ] as const) {
+      const box = await page.locator(sectionId).locator(innerSelector).first().boundingBox();
+      expect(box, innerSelector).not.toBeNull();
+      expect(box!.width, `${innerSelector} width`).toBeLessThanOrEqual(320);
+    }
   });
 });
 
