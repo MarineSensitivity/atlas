@@ -1,3 +1,31 @@
+# atlas 0.7.6
+
+`atlas-2` fix round 2: the three gate defects left after 0.7.5. All three are gates that could fail
+for the wrong reason, or not fail at all — no app behaviour changes.
+
+- **Perf tests no longer time out under load.** `tests/perf.ts` gains `PERF_TIMEOUT_MS` (60 s),
+  passed as the vitest timeout by every perf test: sampling N times needs N times the headroom, and
+  the default 5 s was never chosen with that in mind — the GAA case died with
+  `Test timed out in 5000ms` while its own measurement sat inside its 2 s budget. `bestOfN` also
+  stops as soon as one sample comes in under the budget, so a healthy implementation pays for one
+  run rather than five; only a genuinely slow one pays for all N, which is exactly when the extra
+  samples are worth it. The scaling RATIO is unchanged and still carries the weight.
+- **The `createWorker(` / `coi` / `getJsDelivrBundles(` scan is app-wide.** It covered
+  `src/lib/engine` only, so a rogue call in `src/lib/raster/`, `src/lens/` or `src/places/` — the
+  likeliest places for one — was invisible. It now scans all of `src/**` plus the inline scripts of
+  `index.html`, `report.html` and `gallery.html`; `spikes/**` (S1's harnesses exercise the helper on
+  purpose) and `tests/**` stay exempt. A new test guards the GATE's own scope, so it cannot narrow
+  back silently.
+- **The plain-lock seeded-fault demo runs on chromium and firefox only.** Under load WebKit tears
+  the browser context down around the deliberately never-resolving `evaluate`, and the spec dies
+  with "Target page, context or browser has been closed". Counting that as "the hang" would be
+  unsound — a closing context is also what a crash looks like — and a demonstration whose red does
+  not mean one specific thing is worth nothing. The rule under test is a browser API this app does
+  not implement, and `S1.md` already measured the same hang on all three engines. **The real OPFS
+  specs still run on all three engines, unchanged.**
+- `docs/engine.md`: a note for whoever wires the store that `openTableStoreBackend` needs
+  `restrictedVersions` from `versions.json`, or the "restricted first" eviction step never fires.
+
 # atlas 0.7.5
 
 `atlas-2` phase review, fix round 1: the nine rulings. Two of them are user-visible bugs on the live

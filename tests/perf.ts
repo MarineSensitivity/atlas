@@ -19,6 +19,21 @@
 //    linear algorithm given 4x the input costs ~4x; an accidentally quadratic one costs ~16x.
 //
 // Prefer a ratio for the property, and keep an absolute best-of-N as a coarse backstop.
+//
+// Every test using either MUST pass {@link PERF_TIMEOUT_MS} as its vitest timeout — see that
+// constant for the failure that made it necessary.
+/**
+ * The timeout every perf test must be given (vitest's third `it()` argument).
+ *
+ * Fix round 2, defect 1: best-of-5 on the GAA fixture ran [948.9, 1010.2, 522.3, 504.3, 599.6] ms
+ * on a loaded machine and blew vitest's DEFAULT 5,000 ms per-test timeout — so the suite went red
+ * with `Test timed out in 5000ms` even though the measurement itself was well inside its 2,000 ms
+ * budget. A sampling gate that samples N times inherently needs N times the headroom, and the
+ * default was never chosen with that in mind. 60 s is deliberately absurd: it exists to make the
+ * TIMEOUT never be the thing that fails, so that the only thing that can fail is the assertion.
+ */
+export const PERF_TIMEOUT_MS = 60_000;
+
 export interface Measurement {
   /** the minimum across all samples — the estimate the assertion uses. */
   ms: number;
@@ -26,14 +41,25 @@ export interface Measurement {
   samples: number[];
 }
 
-/** run `fn` `n` times (after one warm-up) and keep the fastest. `n` should be >= 5. */
-export function bestOfN(n: number, fn: () => unknown): Measurement {
+/**
+ * Run `fn` up to `n` times (after one warm-up) and keep the fastest.
+ *
+ * **It stops as soon as one sample comes in under `budgetMs`.** A pass needs exactly one good
+ * sample — the minimum is the estimate, and no later sample can lower a number already under
+ * budget — so the common case costs one run, not `n`. Only a genuinely slow implementation, or one
+ * being descheduled every single time, pays for all `n`; and that is precisely the case where the
+ * extra samples are worth their cost, because that is when the answer is still in doubt.
+ *
+ * Omitting `budgetMs` (the ratio callers, which have no absolute budget) samples all `n`.
+ */
+export function bestOfN(n: number, fn: () => unknown, budgetMs?: number): Measurement {
   fn(); // warm up: JIT, caches, lazy allocation
   const samples: number[] = [];
   for (let i = 0; i < n; i++) {
     const t0 = performance.now();
     fn();
     samples.push(performance.now() - t0);
+    if (budgetMs !== undefined && samples[samples.length - 1] < budgetMs) break;
   }
   return { ms: Math.min(...samples), samples };
 }
