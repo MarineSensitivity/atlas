@@ -17,8 +17,9 @@ work in _this_ repo day to day.
 - Preview the build: `npm run preview`
 - Lint / format: `npm run lint`, `npm run format` (`format:check` in CI-style, no writes)
 - e2e smoke (chromium/webkit/firefox): `npm run e2e` (needs `npx playwright install` once)
-- Size budget: `npm run size-budget` (against a real `npm run build`); the red-fixture control is
-  `npm run build:fixture:size-budget` (see `tests/fixtures/size-budget-static-duckdb/`)
+- Size budget: `npm run size-budget` (against a real `npm run build`); the red-fixture controls are
+  `npm run build:fixture:size-budget` (see `tests/fixtures/size-budget-static-duckdb/`) and
+  `npm run build:fixture:size-budget-worker` (see `tests/fixtures/size-budget-worker/`)
 - `node scripts/check-dist-session.mjs [dist]`, `node scripts/check-relative-assets.mjs [dist]` —
   the two other build-time invariants (see Rules, below)
 
@@ -139,21 +140,35 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
 
 ## Budgets (`scripts/size-budget.mjs`)
 
-- **350 KB gzip** for the critical path: everything `index.html` loads before first interaction
-  (app chunk + eventual maplibre-gl + pmtiles + CSS + fonts). Spike S2 measured maplibre-gl 6.10 +
-  pmtiles + CSS at **292.86 KB gzip** on their own, so ~57 KB is left for all app code — budget
-  accordingly. Note the MapLibre worker (143.9 KB gzip via `?worker&url`) is emitted as an _asset_,
-  not a static import, so the checker below does not currently see it even though the browser does
-  download it at map construction; atlas-2 should extend the checker to count the entry's `assets`.
+- **350 KB gzip** for the static critical path: everything `index.html`'s own `<script>`s load before
+  first interaction (app chunk + eventual maplibre-gl + pmtiles + CSS + fonts). Spike S2 measured
+  maplibre-gl 6.10 + pmtiles + CSS at **292.86 KB gzip** on their own, so ~57 KB is left for all app
+  code — budget accordingly.
+- **150 KB gzip, separately, for runtime workers** (`RUNTIME_WORKER_BUDGET_BYTES`): a worker referenced
+  from the static graph (e.g. maplibre-gl's, wired via `?worker&url` per S2.md — 143.9 KB gzip
+  measured) downloads at construction time, before first interaction, but it is not part of the entry's
+  own `<script>` payload, so it is not folded into the 350 KB number — it gets its own budget instead.
+  The checker does NOT rely on the manifest's `assets`/`imports` fields to find it (that depends on
+  chunk-splitting specifics this repo doesn't control): it reads the compiled text of every file on the
+  static path for the `new URL("<file>.js", import.meta.url)` pattern a `?worker&url` import (or a
+  hand-written `new Worker(new URL(...))`) compiles to, resolves it dist-relative, and confirms it by
+  actually reading the file — a worker referencing a worker of its own is followed transitively. The
+  script prints both budget lines plus their sum ("before first interaction") and fails on either.
 - Anything meant to be lazy — `duckdb*`, `terra-draw*`, `docx*`, `shp*`, the treemap — must never
-  appear in the entry's _static_ import graph (it must be a dynamic `import()`). The checker reads
-  `dist/.vite/manifest.json`, walks only `imports` (never `dynamicImports`), and greps the reachable
-  files' text for those markers — so an accidentally-inlined forbidden module is still caught, not
-  just a chunk whose file name happens to say "duckdb".
+  appear in the entry's _static_ import graph, and must never appear inside a runtime worker either
+  (it must be a dynamic `import()`). The checker reads `dist/.vite/manifest.json`, walks only `imports`
+  (never `dynamicImports`), and greps the reachable files' (and any runtime workers') text for those
+  markers — so an accidentally-inlined forbidden module is still caught, not just a chunk whose file
+  name happens to say "duckdb".
+- A manifest with no entry for `index.html`, or an entry with no `"file"` (a build that silently failed
+  to emit it), is a hard `FAIL`, never a vacuous pass over zero files.
 - `npm run build:fixture:size-budget` builds `tests/fixtures/size-budget-static-duckdb/` (a stub
-  module named/worded like the real dependency, statically imported on purpose) and running the
-  checker against it must fail — the committed proof that this check can actually fail. Every gate
-  in this repo ships with a seeded fault like this one; a check that cannot fail is not a check.
+  module named/worded like the real dependency, statically imported on purpose) and
+  `npm run build:fixture:size-budget-worker` builds `tests/fixtures/size-budget-worker/` (a stub
+  worker padded past the runtime-worker budget with deterministic, gzip-incompressible bytes) —
+  running the checker against either must fail, and CI (`pages.yml`) asserts that on every run, not
+  just in a unit test: the committed proof that this check can actually fail. Every gate in this repo
+  ships with a seeded fault like this one; a check that cannot fail is not a check.
 
 ## Testing pyramid
 

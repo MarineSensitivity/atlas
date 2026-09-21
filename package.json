@@ -19,6 +19,7 @@
     "e2e": "playwright test",
     "size-budget": "node scripts/size-budget.mjs",
     "build:fixture:size-budget": "vite build --config tests/fixtures/size-budget-static-duckdb/vite.config.ts",
+    "build:fixture:size-budget-worker": "vite build --config tests/fixtures/size-budget-worker/vite.config.ts",
     "check:no-session": "node scripts/check-dist-session.mjs",
     "check:relative-assets": "node scripts/check-relative-assets.mjs"
   },

@@ -11,6 +11,12 @@
 // Contract: each verdict file ends with a line starting `**Verdict:**` that names every pin it
 // implies as a `pkg@range` token inside backticks, e.g. `` `maplibre-gl@^6.10.0` ``. Every such pin
 // must appear in package.json's dependencies/devDependencies with exactly that range.
+//
+// atlas-0 review fix round 1, F2 (guard): the root package.json is not the only place maplibre-gl can
+// be declared — every spikes/*/package.json is a real page that really executes (Playwright drives
+// it), so a spike still stuck on a `^5.24.0`-shaped range is still inside GHSA-jrc7-96c5-q579. This is
+// a floor check, not an exact-pin check (a spike is allowed a wider range than the app's own pin, as
+// long as its floor never dips below the patched version).
 import { readFileSync } from "node:fs";
 
 const VERDICT_PREFIX = "**Verdict:**";
@@ -81,4 +87,107 @@ export function checkPinsOnDisk(pkgJsonPath, verdictPaths) {
     pins: parseVerdictPins(readFileSync(p, "utf8")),
   }));
   return comparePins(pkgJson, declared);
+}
+
+// --- minimal semver: just enough to answer "does this range admit a version below a floor?" ---------
+// Deliberately not a general range solver (no `||`, hyphen ranges, `x`/`*`, or build metadata) — this
+// repo's package.json files only ever write `^X.Y.Z`, `~X.Y.Z`, `>=X.Y.Z` or an exact `X.Y.Z`, and all
+// four share one property: they are a contiguous range starting AT the written version with no gaps
+// below it, so the range's own floor (the version literally written) is exactly the smallest version it
+// can resolve to. Answering "does it admit a version below F" therefore reduces to "is the floor < F".
+
+const VERSION_RE = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
+
+/** @param {string} v @returns {{major:number,minor:number,patch:number,pre:string|null}} */
+export function parseVersion(v) {
+  const m = VERSION_RE.exec(String(v).trim());
+  if (!m) throw new Error(`not a plain semver version: "${v}"`);
+  return { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]), pre: m[4] ?? null };
+}
+
+/** @returns {-1|0|1} a<b / a==b / a>b, by semver precedence (a version WITH a prerelease sorts before
+ * the same major.minor.patch without one; prerelease identifiers themselves compare as plain strings —
+ * good enough here, none of the versions this module compares carry multi-field prereleases). */
+export function compareVersions(a, b) {
+  const pa = parseVersion(a);
+  const pb = parseVersion(b);
+  for (const k of /** @type {const} */ (["major", "minor", "patch"])) {
+    if (pa[k] !== pb[k]) return pa[k] < pb[k] ? -1 : 1;
+  }
+  if (pa.pre === pb.pre) return 0;
+  if (pa.pre === null) return 1;
+  if (pb.pre === null) return -1;
+  return pa.pre < pb.pre ? -1 : pa.pre > pb.pre ? 1 : 0;
+}
+
+const RANGE_RE = /^(?:\^|~|>=)?\s*(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/;
+
+/**
+ * the smallest version a `^`/`~`/`>=`/exact range can resolve to (see the block comment above for why
+ * that is always just the version written).
+ * @param {string} range
+ * @returns {string}
+ */
+export function rangeFloor(range) {
+  const m = RANGE_RE.exec(String(range).trim());
+  if (!m) {
+    throw new Error(
+      `unsupported range form (only ^X.Y.Z, ~X.Y.Z, >=X.Y.Z or an exact X.Y.Z are handled): "${range}"`,
+    );
+  }
+  return m[1];
+}
+
+/**
+ * @param {string} range
+ * @param {string} floorVersion
+ * @returns {boolean} true if `range` can resolve to a version strictly below `floorVersion`
+ */
+export function rangeAdmitsBelow(range, floorVersion) {
+  return compareVersions(rangeFloor(range), floorVersion) < 0;
+}
+
+// GHSA-jrc7-96c5-q579: critical (CVSS 10.0) XSS sanitizer bypass, vulnerable_version_range "<= 6.4.0",
+// first_patched_version "6.4.1" (docs/spikes/S2.md). Every published 5.x release is inside it.
+export const MAPLIBRE_SAFE_FLOOR = "6.4.1";
+
+/**
+ * atlas-0 review fix round 1, F2 (guard): every spikes/*\/package.json is a real page a browser really
+ * executes, not just documentation — so a spike declaring a maplibre-gl range whose floor is below the
+ * patched version is exactly as dangerous as it would be in the app's own package.json.
+ * @param {string[]} pkgJsonPaths every spikes/*\/package.json path found on disk
+ * @param {(path: string) => object} readPkgJson defaults to reading + JSON-parsing the file; injectable
+ *   for tests
+ * @returns {string[]} problems; empty means green
+ */
+export function checkSpikeMaplibreFloor(
+  pkgJsonPaths,
+  readPkgJson = (p) => JSON.parse(readFileSync(p, "utf8")),
+) {
+  const problems = [];
+  for (const p of pkgJsonPaths) {
+    const pkg = readPkgJson(p);
+    const deps = { ...(pkg.devDependencies ?? {}), ...(pkg.dependencies ?? {}) };
+    const range = deps["maplibre-gl"];
+    if (range === undefined) continue; // this spike doesn't depend on maplibre-gl at all
+
+    let unsafe;
+    try {
+      unsafe = rangeAdmitsBelow(range, MAPLIBRE_SAFE_FLOOR);
+    } catch (err) {
+      problems.push(
+        `${p} declares maplibre-gl@${range}, which this checker's minimal range parser cannot read ` +
+          `(${err.message}) — widen scripts/check-pins-core.mjs's parser or pin an exact version`,
+      );
+      continue;
+    }
+    if (unsafe) {
+      problems.push(
+        `${p} declares maplibre-gl@${range}, which admits a version below ${MAPLIBRE_SAFE_FLOOR} — ` +
+          `every published 5.x release is inside the critical advisory GHSA-jrc7-96c5-q579 ` +
+          `(docs/spikes/S2.md); bump it to at least ^${MAPLIBRE_SAFE_FLOOR}`,
+      );
+    }
+  }
+  return problems;
 }

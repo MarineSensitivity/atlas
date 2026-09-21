@@ -2,9 +2,10 @@
 
 A tiny, self-contained Vite project whose entry (`index.html` → `main.ts`) **statically** imports
 `duckdb-stub.ts` — a stub standing in for `@duckdb/duckdb-wasm`'s real entry chunk, named so
-`scripts/size-budget.mjs`'s forbidden-marker check can find it without the real dependency being
-installed (S1 has not pinned a duckdb-wasm version yet, and atlas-0 is explicitly not allowed to add
-it).
+`scripts/size-budget.mjs`'s forbidden-marker check can find it the same way it would find the real
+package. `@duckdb/duckdb-wasm` is now a real dependency (pinned exactly `1.32.0`, `docs/spikes/S1.md`),
+but a stub keeps this fixture's own build small and independent of the real package's size — the rule
+under test is "never statically imported," not "how big is duckdb-wasm."
 
 Build it, then run the checker against its output:
 

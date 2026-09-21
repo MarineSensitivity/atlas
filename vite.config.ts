@@ -21,8 +21,9 @@ export default defineConfig({
   plugins: [svelte()],
   optimizeDeps: {
     // @duckdb/duckdb-wasm ships its own worker + wasm and the optimizer breaks it (same story that made
-    // CalCOFI Explorer exclude it, atlas-refs/"calcofi explore review.md" §1) — excluded pre-emptively
-    // here even though the dependency itself is NOT added yet (S1 has not pinned a version).
+    // CalCOFI Explorer exclude it, atlas-refs/"calcofi explore review.md" §1). Pinned at exactly 1.32.0
+    // per docs/spikes/S1.md (see package.json's "pinReasons"); this exclude stays regardless of when the
+    // dependency is actually wired into app code.
     exclude: ["@duckdb/duckdb-wasm"],
   },
   build: {
