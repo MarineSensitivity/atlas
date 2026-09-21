@@ -37,6 +37,21 @@ functions, importable by the lenses later.
   "preview mode has exactly one door" — no `localStorage`, no `location.host` compare anywhere under
   `src/lib/release`).
 
+Fix round 1 (review):
+
+- **`Sel.theme` is now tri-state** (`"light" | "dark" | "auto"`, plan atlas-3): `"auto"` is the
+  default — never written to the URL — and follows `prefers-color-scheme` at render time via the new
+  `resolveTheme(theme, prefersDark)` (`"navy" | "paper"`, `null`/unavailable resolves to `"navy"`).
+  `theme=light` and `theme=dark` are both explicit overrides and now BOTH round-trip: previously
+  `"light"` was (wrongly) treated as the constant default and silently dropped on format.
+- `defaultOut`'s scores/species mapping now reads a single exported `DEFAULT_OUT_BY_LENS` table
+  (`src/lib/state/types.ts`) that `parseSel` and `formatSel` both read, pinned by a test that checks
+  parse and format against the same table for every `Lens`.
+- Added a named, skipped test (`tests/release/inline-early-fetch.test.ts`) documenting that
+  `index.html`'s inline early-fetch script does not yet prefer `session.ver` in preview mode the way
+  `src/lib/release/resolveVer.ts`'s `candidateVer()` does — harmless today (the preview host's path
+  always carries the same version), deliberately not wired up yet.
+
 # atlas 0.1.1
 
 - **Restricted releases can no longer render on the public host** (plan D6). `versions.json`'s

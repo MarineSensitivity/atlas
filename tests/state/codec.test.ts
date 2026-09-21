@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { formatSel, parseSel, type UrlLike } from "../../src/lib/state/codec";
-import { DEFAULT_SEL, defaultLens, defaultOut, type Sel } from "../../src/lib/state/types";
+import {
+  DEFAULT_OUT_BY_LENS,
+  DEFAULT_SEL,
+  defaultLens,
+  defaultOut,
+  resolveTheme,
+  type Sel,
+} from "../../src/lib/state/types";
 import type { AliasLookup } from "../../src/lib/state/legacy";
 
 const EMPTY: UrlLike = { search: "", hash: "" };
@@ -90,6 +97,22 @@ describe("out: default is 'per lens' (defaultOut), pinned so a change is a delib
       "?lens=species",
     );
   });
+
+  it("parse and format both read DEFAULT_OUT_BY_LENS — the ONE table (fix round 1)", () => {
+    for (const [lens, out] of Object.entries(DEFAULT_OUT_BY_LENS) as [
+      keyof typeof DEFAULT_OUT_BY_LENS,
+      string,
+    ][]) {
+      // defaultOut() itself reads only the table
+      expect(defaultOut(lens)).toBe(out);
+      // parseSel's contextual default (no `out` key) matches the table for every lens
+      expect(parseSel({ search: `?lens=${lens}`, hash: "" }).out).toBe(out);
+      // formatSel omits `out` exactly when it equals the table's entry for that lens
+      expect(formatSel({ ...DEFAULT_SEL, lens, out: out as Sel["out"] }).search).toBe(
+        lens === DEFAULT_SEL.lens ? "" : `?lens=${lens}`,
+      );
+    }
+  });
 });
 
 describe("pal: enum, default spectral_r", () => {
@@ -104,7 +127,7 @@ describe("pal: enum, default spectral_r", () => {
   });
 });
 
-describe("proj / rep / theme / tour: enums with fixed defaults", () => {
+describe("proj / rep / tour: enums with fixed defaults", () => {
   it("proj defaults to globe and clamps garbage", () => {
     expect(parseSel(EMPTY).proj).toBe("globe");
     expect(parseSel({ search: "?proj=flat", hash: "" }).proj).toBe("globe");
@@ -117,18 +140,77 @@ describe("proj / rep / theme / tour: enums with fixed defaults", () => {
     expect(parseSel({ search: "?rep=model", hash: "" }).rep).toBe("model");
   });
 
-  it("theme defaults to light and clamps garbage", () => {
-    expect(parseSel(EMPTY).theme).toBe("light");
-    expect(parseSel({ search: "?theme=blue", hash: "" }).theme).toBe("light");
-    expect(parseSel({ search: "?theme=dark", hash: "" }).theme).toBe("dark");
-  });
-
   it("tour defaults to on; only tour=off is ever written or read as off", () => {
     expect(parseSel(EMPTY).tour).toBe("on");
     expect(parseSel({ search: "?tour=off", hash: "" }).tour).toBe("off");
     expect(parseSel({ search: "?tour=bogus", hash: "" }).tour).toBe("on");
     expect(formatSel({ ...DEFAULT_SEL, tour: "on" }).search).toBe("");
     expect(formatSel({ ...DEFAULT_SEL, tour: "off" }).search).toBe("?tour=off");
+  });
+});
+
+describe("theme: tri-state, default 'auto' (fix round 1, plan atlas-3)", () => {
+  it("defaults to 'auto' with no key", () => {
+    expect(parseSel(EMPTY).theme).toBe("auto");
+  });
+
+  it("parses explicit light/dark, and clamps garbage to 'auto'", () => {
+    expect(parseSel({ search: "?theme=light", hash: "" }).theme).toBe("light");
+    expect(parseSel({ search: "?theme=dark", hash: "" }).theme).toBe("dark");
+    expect(parseSel({ search: "?theme=blue", hash: "" }).theme).toBe("auto");
+  });
+
+  it("an explicit theme=auto reads back as auto (idempotent with the default)", () => {
+    expect(parseSel({ search: "?theme=auto", hash: "" }).theme).toBe("auto");
+  });
+
+  // the fix-round-1 seeded fault: theme=light used to be silently dropped on format, because
+  // "light" was (wrongly) treated as the constant default. Both explicit values must now survive.
+  it("formatSel writes theme=light — the seeded fault this guards (light was silently dropped)", () => {
+    expect(formatSel({ ...DEFAULT_SEL, theme: "light" }).search).toBe("?theme=light");
+  });
+
+  it("formatSel writes theme=dark", () => {
+    expect(formatSel({ ...DEFAULT_SEL, theme: "dark" }).search).toBe("?theme=dark");
+  });
+
+  it("formatSel NEVER writes theme=auto — the seeded fault: auto emitted", () => {
+    expect(formatSel({ ...DEFAULT_SEL, theme: "auto" }).search).toBe("");
+  });
+
+  it("light and dark both round-trip exactly (parse . format = identity)", () => {
+    for (const theme of ["light", "dark"] as const) {
+      const { search } = formatSel({ ...DEFAULT_SEL, theme });
+      expect(parseSel({ search, hash: "" }).theme).toBe(theme);
+    }
+  });
+});
+
+describe("resolveTheme: the tri-state Sel.theme -> the two renderable brand themes", () => {
+  it("'dark' resolves to navy regardless of prefersDark", () => {
+    expect(resolveTheme("dark", true)).toBe("navy");
+    expect(resolveTheme("dark", false)).toBe("navy");
+    expect(resolveTheme("dark", null)).toBe("navy");
+  });
+
+  it("'light' resolves to paper regardless of prefersDark", () => {
+    expect(resolveTheme("light", true)).toBe("paper");
+    expect(resolveTheme("light", false)).toBe("paper");
+    expect(resolveTheme("light", null)).toBe("paper");
+  });
+
+  it("'auto' + prefersDark true resolves to navy", () => {
+    expect(resolveTheme("auto", true)).toBe("navy");
+  });
+
+  it("'auto' + prefersDark false resolves to paper", () => {
+    expect(resolveTheme("auto", false)).toBe("paper");
+  });
+
+  // the seeded fault: auto resolving to paper when prefers-color-scheme is unavailable — it must
+  // resolve to navy (the MMA dark theme) instead, matching "navy when the media query is unavailable".
+  it("'auto' + prefersDark null (media query unavailable) resolves to navy, NOT paper", () => {
+    expect(resolveTheme("auto", null)).toBe("navy");
   });
 });
 
@@ -334,7 +416,7 @@ describe("unknown keys are ignored; unknown values fall back to defaults", () =>
   });
 
   it("an unrecognized value on a known enum key falls back to the default, not an error", () => {
-    expect(parseSel({ search: "?theme=neon", hash: "" }).theme).toBe("light");
+    expect(parseSel({ search: "?theme=neon", hash: "" }).theme).toBe("auto");
   });
 
   it("a formatted-then-reparsed Sel never carries an unknown key forward", () => {

@@ -15,8 +15,15 @@ export type Palette = "spectral_r" | "viridis" | "cividis" | "magma";
 export type Projection = "globe" | "mercator";
 export type Representation = "native" | "model";
 export type Outline = "programarea" | "ecoregion" | "none";
-export type Theme = "light" | "dark";
+/** tri-state (fix round 1, atlas-3): `"auto"` is the default — never written to the URL — and
+ * follows `prefers-color-scheme` at render time (`resolveTheme`, below); `"light"`/`"dark"` are
+ * explicit OVERRIDES, and BOTH must round-trip (before this fix, `theme=light` was silently dropped
+ * because "light" was treated as the constant default — a sender on a dark system shared a light
+ * view and the recipient saw dark). */
+export type Theme = "light" | "dark" | "auto";
 export type Tour = "on" | "off";
+/** the resolved, renderable theme — plan atlas-3's two brand themes. */
+export type ResolvedTheme = "navy" | "paper";
 
 /** `map=lon,lat,zoom[,bearing,pitch]` — bearing/pitch travel together (both present or both absent),
  * matching the compact 3- or 5-field tuple the URL carries (`atlas-refs/"calcofi explore review.md"`
@@ -96,7 +103,9 @@ export const PALETTES: readonly Palette[] = ["spectral_r", "viridis", "cividis",
 export const PROJECTIONS: readonly Projection[] = ["globe", "mercator"];
 export const REPRESENTATIONS: readonly Representation[] = ["native", "model"];
 export const OUTLINES: readonly Outline[] = ["programarea", "ecoregion", "none"];
-export const THEMES: readonly Theme[] = ["light", "dark"];
+/** every value `theme=` may parse from, including `"auto"` (the default, read back identically to
+ * an absent key — see `parseSel`). */
+export const THEMES: readonly Theme[] = ["light", "dark", "auto"];
 export const LENSES: readonly Lens[] = ["scores", "species"];
 
 /**
@@ -115,9 +124,31 @@ export function defaultLens(sp: string | undefined): Lens {
  * documented interpretation for this phase (no UI yet to confirm against) — pinned by a regression
  * test (tests/state/codec.test.ts) so a later, deliberate change to it is visible in a diff rather
  * than silent drift.
+ *
+ * ONE exported table (fix round 1): both `parseSel` (the contextual default when `out` is absent)
+ * and `formatSel` (the "is this a default?" comparison) call `defaultOut`, which reads only this
+ * table — so atlas-4/5 change the mapping in exactly one place, and
+ * tests/state/codec.test.ts asserts parse and format agree with it for every `Lens`.
  */
+export const DEFAULT_OUT_BY_LENS: Record<Lens, Outline> = {
+  scores: "programarea",
+  species: "none",
+};
+
 export function defaultOut(lens: Lens): Outline {
-  return lens === "scores" ? "programarea" : "none";
+  return DEFAULT_OUT_BY_LENS[lens];
+}
+
+/**
+ * The renderable theme (plan atlas-3): `"dark"` -> navy, `"light"` -> paper, `"auto"` follows
+ * `prefersDark` (the live `matchMedia("(prefers-color-scheme: dark)").matches` value, injected so
+ * this stays a pure function) and resolves to **navy** when that signal is unavailable (`null`) —
+ * i.e. only an explicit `prefersDark === false` ever yields paper from `"auto"`.
+ */
+export function resolveTheme(theme: Theme, prefersDark: boolean | null): ResolvedTheme {
+  if (theme === "dark") return "navy";
+  if (theme === "light") return "paper";
+  return prefersDark === false ? "paper" : "navy";
 }
 
 /** every field's context-INDEPENDENT default (see `defaultLens`/`defaultOut` for the two that are
@@ -141,7 +172,7 @@ export const DEFAULT_SEL: Sel = {
   sel: undefined,
   show: [],
   hide: [],
-  theme: "light",
+  theme: "auto",
   tour: "on",
   pl: undefined,
   t: undefined,
