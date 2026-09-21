@@ -48,6 +48,11 @@ merges. Still not wired into `index.html` — the shell is step 3.
 - **`src/lib/ui/Pill.svelte`**: one small control for three shapes spec.md §5.3/§5.4 both need --
   a selectable toggle (`pressed`), a disclosure (`expanded` + `controls`, what a collapsed Panel
   becomes), or disabled-with-a-reason (dashed border, strike-through, a tooltip).
+- **`src/lib/ui/Panel.svelte`**: the floating panel with collapse · half · full in its upper right
+  (spec.md §5.3). Collapsing swaps the panel for a `Pill` disclosure and moves focus to it;
+  restoring moves focus back to control 1; `Esc` anywhere inside collapses (wired imperatively,
+  not a template handler on a non-interactive element). Geometry persists per viewport size in
+  `localStorage` via `src/lib/ui/panelGeometry.ts` (pure, unit-tested, storage-injectable).
 
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
