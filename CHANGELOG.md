@@ -83,6 +83,9 @@ merges. Still not wired into `index.html` — the shell is step 3.
   applicable" text (unit-tested per statute/category, including the Leatherback regression case).
 - **`src/lib/ui/Toast.svelte`**: the ONE polite live region (`role="status" aria-live="polite"`),
   queued (`src/lib/ui/toastQueue.ts`, pure, unit-tested), auto-dismissing, individually dismissible.
+- **`src/lib/ui/Honeycomb.svelte`**: the loader, seven hexagons pulsing in sequence; the keyframe
+  animation turns off under `prefers-reduced-motion` and the status text is always present either
+  way.
 
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
