@@ -1,0 +1,15 @@
+{
+  "note": "sha256 of every coverage fixture ADOPTED from msens inst/fixtures/places/ (written by the R twin of cellsInPolygon). The files are copied byte for byte and prettier is told to leave tests/fixtures/places alone, so these hashes are the same on both sides: if one repo edits a fixture, tests/geo/adoptedFixtures.test.ts goes red here and the copies have drifted apart.",
+  "source": "msens inst/fixtures/places/",
+  "files": {
+    "antimeridian_global05.json": "df1f1369f6cb97ece515c54a2fde1f3ca28e4f9c59f2c14f82d0af7620dd03c9",
+    "antimeridian_usa05.json": "db3b347ed7bb78984004a970e77b2c4278b195542e2b5dcccac747195e38540f",
+    "gulf_rectangle.json": "eb5ca9018852d6f7011684b4a3023516c523eb3352e42d87cf9ff34950f286cb",
+    "half_cell_even.json": "1af8d94246c8ef24c8e255197a1ea5bfd0db495d2d1a6b99928794db19f5f985",
+    "half_cell_even_up.json": "a72a11108dc0effade14a53dce9dff2760a76a0d4b7142433ea38b399bdf4864",
+    "multipolygon.json": "b7df69d707e85fdc8781af29be0831ba57e7014193bde1069e10bd031a68b72e",
+    "polygon_hole.json": "bb9bf32f70e59bbdc06d4bce3dbf98d2161092f43d63b952c893153664fa91e5",
+    "programarea_gaa.json": "942699eb402274a9612ea8f5071a83926977e114817898f5fb83c733a3d0cc43",
+    "sliver_corner.json": "4ce995ed5aba6d6fa944f04747b22f80c3b69d02f54c8792c5ff9e026145cc33"
+  }
+}

@@ -106,6 +106,14 @@ later — under plain Node.
   dropped. Columns wrap modulo `nc` on `global05` and shift into the 141.10 frame on `usa05`.
   Measured: a 74,024-cell place in 45 ms (target: 150 ms). `cellFractions()` exposes the same cells
   with their unrounded fraction.
+- **The msens fixtures are adopted, byte for byte.** Nine files written by the R twin — including
+  `programarea_gaa.json`, the traced GAA Program Area (63,417 vertices, 14,238 cells) — now live in
+  `tests/fixtures/places/`, and `tests/fixtures/places.sha256.json` pins each one's sha256 so a
+  fixture edited in either repo is visible here. Seven reproduce exactly. The two antimeridian
+  fixtures write their ring **wrapped** (`179.9 -> -179.9`), which read literally (RFC 7946, and
+  plan D8's unwrapped storage) is the 359.8-degree complement of the intended box; the very same box
+  written unwrapped (`179.9 -> 180.1`) reproduces the msens answer cell for cell on both grids, so
+  the difference is one of input convention and neither side has been changed to hide it.
 - **The 1e-9 snap in front of that rounding is now proven, not asserted.** A sweep over exact-half
   rectangles across the Gulf finds that **4,522 of 8,640 on `global05` and 4,002 of 8,640 on
   `usa05`** round the wrong way if the raw `frac * 100` is rounded as it arrives — so
