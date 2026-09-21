@@ -28,6 +28,32 @@ export interface VersionRow {
  */
 export type AccessLevel = "public" | "restricted" | "unknown";
 
+/**
+ * Normalize a parsed `versions.json` body into rows, or `null` for "unreadable".
+ *
+ * **The live file is `{"versions": [ … ]}`** (verified against the bucket 2026-09-21; msens's
+ * `R/version.R` documents and unwraps that wrapper). A bare array is also accepted because earlier
+ * copies of this app only ever handled that shape and a future publisher may emit it. Anything else
+ * — `{"versions": "x"}`, `{"versions": null}`, `{}`, a string, a number — stays unreadable and
+ * therefore fails closed: `check()` then allows exactly `latest.txt`'s version and nothing else.
+ *
+ * Accepting only the bare array (the atlas-2 review's finding 1) made the LIVE registry unreadable:
+ * public v1–v6 were unreachable and the preview host could not open v7b / v8 / v9. It fails closed,
+ * so nothing leaked — but it is the D6 checklist's forbidden case, and the live body is now in the
+ * shared case table (`tests/release/access-cases.ts`) verbatim so it cannot regress.
+ *
+ * `index.html`'s inline script carries a byte-for-byte equivalent of this rule; both are driven
+ * through that one table.
+ */
+export function normalizeRegistry(body: unknown): VersionRow[] | null {
+  if (Array.isArray(body)) return body as VersionRow[];
+  if (body && typeof body === "object") {
+    const wrapped = (body as { versions?: unknown }).versions;
+    if (Array.isArray(wrapped)) return wrapped as VersionRow[];
+  }
+  return null;
+}
+
 export function accessOf(rows: VersionRow[] | null | undefined, ver: string | null): AccessLevel {
   if (!ver || !Array.isArray(rows)) return "unknown";
   const row = rows.find((r) => r && typeof r === "object" && r.ver === ver);
@@ -46,7 +72,21 @@ export function requiresSession(
   rows: VersionRow[] | null | undefined,
   requested: string | null,
   latest: string | null,
+  opts: {
+    /**
+     * does the PATH name a version (`/v9/atlas/`)? That is the preview host's URL shape and only
+     * its Caddy ever produces it — the public host is always mounted at `/atlas/`. When it does,
+     * the session must be read even for a PUBLIC candidate, because `session.ver` outranks the path
+     * (`resolveVer.ts`'s `candidateVer`) and we cannot know what it names without asking.
+     *
+     * This keeps D6's actual guarantee intact: the PUBLIC host's own URL shape (`/atlas/`, with or
+     * without `?ver=`) never waits on the same-origin round trip unless a restricted release is in
+     * play, which is the case the gate was written for.
+     */
+    pathNamesVersion?: boolean;
+  } = {},
 ): boolean {
+  if (opts.pathNamesVersion) return true;
   if (!Array.isArray(rows)) return false; // unreadable registry: latest.txt only, session irrelevant
   return accessOf(rows, requested) === "restricted" || accessOf(rows, latest) === "restricted";
 }

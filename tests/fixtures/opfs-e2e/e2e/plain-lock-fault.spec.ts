@@ -50,7 +50,13 @@ test("(seeded fault) a plain locks.request without ifAvailable hangs the second 
     "without ifAvailable the second tab queues behind tab1's lock and never answers",
   ).toBe("timeout");
 
-  // ... and the SAME tab, with the shipped option, answers immediately.
+  // Close the faulted tab BEFORE opening another one. Its in-page `init({plainLock:true})` promise
+  // is still pending forever, holding a QUEUED lock request; leaving that tab alive alongside a
+  // third page made WebKit close the whole context out from under `page3.goto()` (observed once in
+  // a full three-engine run). Nothing is awaited on it, so closing it loses nothing.
+  await page2.close();
+
+  // ... and a fresh tab, with the shipped option, answers immediately.
   const page3 = await context.newPage();
   await page3.goto("/");
   await page3.waitForFunction(() => !!window.__opfsTest);
@@ -69,6 +75,5 @@ test("(seeded fault) a plain locks.request without ifAvailable hangs the second 
     "resolved",
   );
 
-  await page2.close();
   await page3.close();
 });

@@ -168,10 +168,18 @@
           .catch(function () {
             return null;
           });
+        // mirrors src/lib/release/access.ts's normalizeRegistry(): the LIVE file is
+        // {"versions":[...]}; a bare array is accepted too; anything else is unreadable (not
+        // "empty"), which fails closed to latest.txt's version alone.
+        function normalizeRegistry(body) {
+          if (Array.isArray(body)) return body;
+          if (body && typeof body === "object" && Array.isArray(body.versions)) {
+            return body.versions;
+          }
+          return null;
+        }
         var versions = fetchJSON(DATA_BASE + "versions.json")
-          .then(function (rows) {
-            return Array.isArray(rows) ? rows : null; // not a list = unreadable, not "empty"
-          })
+          .then(normalizeRegistry)
           .catch(function () {
             return null;
           });
@@ -209,9 +217,27 @@
           }
           return "unknown";
         }
-        function requiresSession(rows, requested, lat) {
+        // pathVer: the path names a version (`/v9/atlas/`) — the PREVIEW host's URL shape, the only
+        // place Caddy serves session.json. session.ver outranks the path (see previewVer below), so
+        // the session must be read there even for a public candidate. The PUBLIC host's own shape
+        // (`/atlas/`, with or without ?ver=) still never waits unless a restricted release is in play.
+        function requiresSession(rows, requested, lat, pathVer) {
+          if (pathVer) return true;
           if (!Array.isArray(rows)) return false; // unreadable: latest.txt only, session irrelevant
           return accessOf(rows, requested) === "restricted" || accessOf(rows, lat) === "restricted";
+        }
+        // mirrors src/lib/release/resolveVer.ts's previewVer()/candidateVer(): in preview mode the
+        // version is the one in session.ver and the path AND ?ver= are both ignored — Caddy already
+        // decided which release this path may show by routing here at all, so re-deriving it from
+        // the URL would let a stray ?ver= on a preview tab ask for a DIFFERENT release. Not trusted
+        // unless it is itself a well-formed label, and it still goes through check() below: a
+        // session cannot name a version the registry does not list.
+        function previewVer(sess) {
+          if (!sess || sess.preview !== true) return null;
+          var raw = sess.raw;
+          if (!raw || typeof raw !== "object") return null;
+          var v = raw.ver;
+          return typeof v === "string" && VERSION_RE.test(v) ? v : null;
         }
         // returns null when allowed, else the denial reason
         function check(ver, rows, lat, sess) {
@@ -223,7 +249,7 @@
           return sess && sess.preview === true ? null : "restricted";
         }
         function decide(requested, lat, rows, sess) {
-          var candidate = requested || lat;
+          var candidate = previewVer(sess) || requested || lat;
           if (!candidate) return { ver: null, denied: null };
           var reason = check(candidate, rows, lat, sess);
           if (!reason) return { ver: candidate, denied: null };
@@ -259,12 +285,15 @@
         }
 
         // --- resolve, gate, then (and only then) fetch the release --------------------------
-        var requested = versionFromPath(location.pathname) || versionFromQuery(location.search);
+        var pathVer = versionFromPath(location.pathname);
+        var requested = pathVer || versionFromQuery(location.search);
 
         var decision = Promise.all([latest, versions]).then(function (r) {
           var lat = r[0];
           var rows = r[1];
-          var gated = requiresSession(rows, requested, lat) ? session : Promise.resolve(null);
+          var gated = requiresSession(rows, requested, lat, pathVer)
+            ? session
+            : Promise.resolve(null);
           return gated.then(function (sess) {
             var d = decide(requested, lat, rows, sess);
             d.base = dataBase(d.ver, sess);

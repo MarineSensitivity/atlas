@@ -107,7 +107,8 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
   browser history events"** setting, if left on, makes gtag.js independently re-read the live URL on
   every `history.replaceState` — bypassing all of that. See `docs/analytics.md` for why this must stay
   off for `G-9HW6L751XG`, how to verify it in the network panel, and the gates that do cover the
-  code side (`tests/analytics/noRawLocation.wiring.test.ts`, `e2e/analytics-privacy.spec.ts`).
+  code side (`tests/analytics/noRawLocation.wiring.test.ts`, and the Playwright spec
+  `e2e/fixtures/analytics-privacy/privacy.spec.ts`, run by `npm run e2e:analytics-privacy`).
 - **The spike pins: `@duckdb/duckdb-wasm` at exactly `1.32.0`, `maplibre-gl` at `^6.10.0`, and the
   three upload parsers at exactly `shpjs@6.2.0`, `@tmcw/togeojson@7.1.2`, `flatgeobuf@4.4.0`.**
   Decided by spikes S1, S2 and S4; the evidence is in `docs/spikes/S1.md`, `S2.md`, `S4.md` (each
