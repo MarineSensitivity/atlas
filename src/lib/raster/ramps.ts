@@ -8,6 +8,7 @@
 // Every legend, click popup, zone choropleth and report gradient key must import from here —
 // tests/raster/ramps.wiring.test.ts is the seeded-fault gate that scans src/ and fails if a second
 // ramp or palette array is ever planted outside this file.
+import { roundHalfEven } from "../geo/round";
 import type { Palette } from "../state/types";
 
 /** re-exported under this module's own name so callers of raster/ don't have to know the palette
@@ -60,23 +61,11 @@ export function legendStops(stops: PaletteStops, min: number, max: number): Lege
   }));
 }
 
-// local half-even (banker's) rounding to the nearest integer — R's `round()` default, and the exact
+// half-even (banker's) rounding to the nearest integer — R's `round()` default, and the exact
 // behavior the choropleth bin formula requires (a drawn rectangle produces exact `.5` fractions, and
 // `Math.round` always rounds `.5` UP, silently shifting every exact-half cell into the next bin — the
-// seeded fault this gate exists to catch).
-//
-// TODO(atlas-2 geo/): replace this private copy with `import { roundHalfEven } from
-// "../geo/round"` once that branch merges. DO NOT create src/lib/geo/round.ts from here — geo/ is
-// another agent's territory (see this repo's worktree instructions) — so this stays a small, tested
-// duplicate until then.
-function roundHalfEven(x: number): number {
-  const floor = Math.floor(x);
-  const diff = x - floor;
-  if (diff < 0.5) return floor;
-  if (diff > 0.5) return floor + 1;
-  // exact half: round to the nearest EVEN integer
-  return floor % 2 === 0 ? floor : floor + 1;
-}
+// seeded fault this gate exists to catch). It comes from `geo/round.ts`, the ONE copy of R's
+// `round()` in this repo (the private duplicate that lived here until geo/ landed on main is gone).
 
 function clamp(x: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, x));

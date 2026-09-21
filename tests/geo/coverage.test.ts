@@ -12,18 +12,25 @@
 //     "grid":     { nc, nr, xmin, ymax, resx, resy, lon360, tile: { size } },   // boot.grid shape
 //     "geometry": { GeoJSON Polygon | MultiPolygon },   // or "polygon": <same>
 //     "expected": [[cell_id, pct], ...]          // or [{ cell_id, pct_covered }, ...]
+//
+//     // a `normalize-*` fixture additionally carries (plan D8 addendum):
+//     "unwrapped": { GeoJSON },                  // what unwrapRing() must make of `geometry`
+//     "cells_if_read_literally": <n>             // how many cells `geometry` covers UNUNWRAPPED
 //   }
 //
 // `expected` is the WHOLE answer (sorted by cell_id): a cell that is absent must be absent, which
-// is what the corner-sliver case (pct exactly 0.5 -> half-even 0 -> dropped) pins.
+// is what the corner-sliver case (pct exactly 0.5 -> half-even 0 -> dropped) pins. On a
+// `normalize-*` fixture it is the coverage of the UNWRAPPED ring, so the loader unwraps first —
+// and `cells_if_read_literally` is there so that unwrapping quietly moving INSIDE coverage.ts (the
+// one thing the addendum forbids) cannot pass: the wrapped ring must still read as written.
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { cellsInPolygon } from "../../src/lib/geo/coverage";
 import { roundHalfEven, snapNoise } from "../../src/lib/geo/round";
+import { normalizeForAnalysis, unwrapPolygon } from "../../src/lib/geo/unwrap";
 import { gridFromBoot } from "../../src/lib/grid/grid";
 import type { AreaGeometry } from "../../src/lib/geo/types";
-import { isDisputed } from "./disputed";
 
 const dir = fileURLToPath(new URL("../fixtures/places/", import.meta.url));
 
@@ -34,6 +41,8 @@ interface PlaceFixture {
   grid: unknown;
   geometry?: AreaGeometry;
   polygon?: AreaGeometry;
+  unwrapped?: AreaGeometry;
+  cells_if_read_literally?: number;
   expected: ([number, number] | { cell_id: number; pct?: number; pct_covered?: number })[];
 }
 
@@ -48,18 +57,43 @@ const files = readdirSync(dir)
 
 describe("cellsInPolygon over tests/fixtures/places/*.json", () => {
   it("finds fixture files at all (an empty directory must not pass vacuously)", () => {
-    expect(files.length).toBeGreaterThanOrEqual(23);
+    expect(files.length).toBeGreaterThanOrEqual(33);
     expect(files).toContain("programarea_gaa.json"); // the R-made Program Area
+    // the ten shared normalize-* vectors, without which the unwrap rule is untested: seven from
+    // msens, plus the three written here (both threshold cases and usa05's 141.10 seam)
+    expect(files.filter((f) => f.startsWith("normalize-"))).toHaveLength(10);
   });
 
   for (const name of files) {
     const fx: PlaceFixture = JSON.parse(readFileSync(dir + name, "utf8"));
-    // the two antimeridian fixtures are the one open disagreement with msens, and it is about the
-    // INPUT convention, not the math: tests/geo/adoptedFixtures.test.ts states both answers and
-    // proves the same box written unwrapped agrees exactly. Nothing here is adjusted to hide it.
-    if (isDisputed(name)) continue;
-    it(`${name}${fx.note ? ` — ${fx.note.slice(0, 80)}` : ""}`, () => {
-      const geom = (fx.geometry ?? fx.polygon) as AreaGeometry;
+    const label = `${name}${fx.note ? ` — ${fx.note.slice(0, 80)}` : ""}`;
+    const geom = (fx.geometry ?? fx.polygon) as AreaGeometry;
+
+    // a normalize-* fixture pins the WHOLE boundary contract, in three separate assertions so a
+    // failure names which half broke: the rule, the math, or the separation between them
+    if (fx.unwrapped) {
+      describe(label, () => {
+        it("unwrap(wrapped) is the fixture's unwrapped ring, exactly", () => {
+          expect(unwrapPolygon(geom)).toEqual(fx.unwrapped);
+          expect(normalizeForAnalysis(geom)).toEqual(fx.unwrapped); // the composed entry point too
+        });
+
+        it("coverage(unwrapped) is the fixture's cells", () => {
+          const got = cellsInPolygon(fx.unwrapped as AreaGeometry, gridFromBoot(fx.grid)).map(
+            (c) => [c.cell_id, c.pct] as [number, number],
+          );
+          expect(got).toEqual(pairs(fx));
+        });
+
+        it("coverage(wrapped) still reads the ring LITERALLY — unwrap is never inside coverage", () => {
+          const got = cellsInPolygon(geom, gridFromBoot(fx.grid));
+          expect(got.length).toBe(fx.cells_if_read_literally);
+        });
+      });
+      continue;
+    }
+
+    it(label, () => {
       const got = cellsInPolygon(geom, gridFromBoot(fx.grid)).map(
         (c) => [c.cell_id, c.pct] as [number, number],
       );
@@ -140,6 +174,47 @@ describe("antimeridian and frame handling", () => {
     // usa05 is 155.15 deg wide: a polygon in the Atlantic (lon -30) is simply not on this grid,
     // and a modulo-nc wrap would silently land it somewhere in the Pacific
     expect(cellsInPolygon(box(-30, 30, -29.95, 30.05), usa05)).toEqual([]);
+  });
+
+  // the ruling of 2026-09-21: coverage.ts frames a `lon360` grid's coordinates PER VERTEX, the
+  // twin of msens `.frame_ring()` (place.R:130-133), rather than shifting the whole polygon by the
+  // turns its westernmost vertex needs. The two rules agree on every UNWRAPPED fixture — which is
+  // why the disagreement survived a whole round — and differ on everything else, so they cannot
+  // both be the twin. The numbers below are what settles it.
+  describe("the per-vertex frame shift on a lon360 grid", () => {
+    it("reads a WRAPPED box on usa05 as 4 cells, as R does (a whole-polygon shift said 2,323)", () => {
+      // usa05's frame is cut at 141.10 E, not at 180, so per vertex 179.9 stays and -179.9 becomes
+      // 180.1: the ring is contiguous here even though it is wrapped. Under the old whole-polygon
+      // shift the SAME ring became 180.1..539.9 and covered 2,323 cells of the window.
+      const got = cellsInPolygon(box(179.9, 50, -179.9, 50.05), usa05);
+      expect(got).toEqual([
+        { cell_id: 2020830, pct: 100 },
+        { cell_id: 2020831, pct: 100 },
+        { cell_id: 2020832, pct: 100 },
+        { cell_id: 2020833, pct: 100 },
+      ]);
+      // and global05, which has no frame to shift into, still reads the complement literally
+      expect(cellsInPolygon(box(179.9, 50, -179.9, 50.05), global05)).toHaveLength(7196);
+    });
+
+    it("tears a ring that crosses the 141.10 seam itself, identically on both sides", () => {
+      // 140 is west of usa05's window start, so it frames to 500 while 142 stays: the ring spans
+      // 142..500 and the grid keeps columns 19..3103 of row 652. The old whole-polygon shift moved
+      // the WHOLE box to 500..502 and returned nothing at all, which is the other way to be wrong.
+      const got = cellsInPolygon(box(140, 50, 142, 50.05), usa05);
+      expect(got).toHaveLength(3085);
+      expect(got[0]).toEqual({ cell_id: 651 * 3103 + 19, pct: 100 });
+      expect(got[got.length - 1]).toEqual({ cell_id: 651 * 3103 + 3103, pct: 100 });
+      expect(got.every((c) => c.pct === 100)).toBe(true);
+    });
+
+    it("uses R's floor-division modulus, not fmod: the Gulf frames to 270 on usa05", () => {
+      // -90 IS 270 on a window that starts at 141.10 E. `((x % 360) + 360) % 360` would answer
+      // 1.4e-14 deg away from R here, which is exactly the size that moves a knife-edge cell.
+      expect(cellsInPolygon(box(-90, 27, -89.95, 27.05), usa05)).toEqual(
+        cellsInPolygon(box(270, 27, 270.05, 27.05), usa05),
+      );
+    });
   });
 
   it("clips a polygon that runs off the top of the grid", () => {
