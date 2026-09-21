@@ -33,6 +33,10 @@ merges. Still not wired into `index.html` — the shell is step 3.
   nothing in `index.html` changed. `src/gallery/App.svelte` discovers one section per component
   under `src/gallery/sections/*.svelte` with `import.meta.glob`, so later commits never edit a
   shared file to add one.
+- **`src/lib/ui/Icon.svelte`**: the one component that renders `ICON_PATHS[name]`. An unknown name
+  renders nothing rather than throwing (a caller typo cannot blank the page); an optional `title`
+  gives the icon its own accessible name, otherwise it stays `aria-hidden` for a control that
+  already has one.
 
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
