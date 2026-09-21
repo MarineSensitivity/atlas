@@ -186,10 +186,16 @@ test.describe("the seal (spec.md §9 / D10)", () => {
 
     const seal = on.locator("img.seal");
     await expect(seal).toBeVisible();
-    const box = await seal.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.width).toBeGreaterThanOrEqual(72);
-    expect(box!.height).toBeGreaterThanOrEqual(72);
+    // the seal's own content box, NOT its boundingBox() -- the guide's required clear space is
+    // padding on this same element (box-sizing: content-box), so boundingBox() (which measures
+    // the padded border-box) stays >= 72 even if the image content itself were shrunk. The content
+    // size is what spec.md's ">= 72 CSS px" rule is actually about.
+    const contentSize = await seal.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { width: parseFloat(cs.width), height: parseFloat(cs.height) };
+    });
+    expect(contentSize.width).toBeGreaterThanOrEqual(72);
+    expect(contentSize.height).toBeGreaterThanOrEqual(72);
 
     await expect(off.locator("img.seal")).toHaveCount(0);
   });
