@@ -31,6 +31,19 @@ call for (`Flower`, `DataTable`, `Treemap`) and the shared category table they a
   PageUp/PageDown) moves a roving-tabindex active cell with a visible focus ring and scrolls it into
   view. A CSV export hook (`onExport`) emits the current filtered+sorted rows; the component never
   writes a file. One polite live-region announcement on load and on filter ("1,234 rows").
+- **`src/lib/ui/Treemap.svelte`** (replaces plotly's `spp_comp`, parity scores app.md §7.6), with
+  its rectangle math in `src/lib/ui/treemapLayout.ts` (`squarify`, pure, unit-tested, no dependency
+  on d3 at all). `d3-hierarchy` (a new EXACT-pinned dependency, `3.1.2`) builds the tree and rolls up
+  values (`hierarchy(data).sum(...)`) but is reached ONLY through a dynamic `import()` inside
+  `Treemap.svelte` — `tests/treemap-lazy-import.wiring.test.ts` is a SOURCE-level scan (not a
+  build-output one) proving no file statically imports it: measured against a real build, that
+  narrow usage (only `hierarchy()`/`.sum()`) compiles to code containing neither `"d3-hierarchy"`
+  nor `"treemap"` as literal text, and Rollup inlines a static import of a module this small
+  directly into the entry chunk with no separate manifest entry either — so
+  `scripts/size-budget-core.mjs`'s existing content-marker scan cannot be the gate for this one
+  dependency (documented in its own header). `npm run build && node scripts/size-budget.mjs`
+  confirms `index.html`'s static graph is unchanged (11.5 KB gzip). Keyboard-reachable, named cells;
+  category colors from `categories.ts`; a table equivalent, a text summary, and an empty state.
 
 `atlas-3` step 2a: the design-system component foundation (Svelte 5 runes, `src/lib/ui/`), the icon
 map generator folded in from the stopped Haiku attempt, self-hosted fallback fonts, and
