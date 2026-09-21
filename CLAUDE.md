@@ -142,8 +142,9 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
 
 - **350 KB gzip** for the static critical path: everything `index.html`'s own `<script>`s load before
   first interaction (app chunk + eventual maplibre-gl + pmtiles + CSS + fonts). Spike S2 measured
-  maplibre-gl 6.10 + pmtiles + CSS at **292.86 KB gzip** on their own, so ~57 KB is left for all app
-  code — budget accordingly.
+  maplibre-gl 6.10 + pmtiles + CSS at **288,149 B gzip (281.4 KiB)** on their own — measured on the
+  pinned `^6.10.0` with the same `gzipSync(level 9)` this checker uses — so ~70 KB is left for all
+  app code; budget accordingly.
 - **150 KB gzip, separately, for runtime workers** (`RUNTIME_WORKER_BUDGET_BYTES`): a worker referenced
   from the static graph (e.g. maplibre-gl's, wired via `?worker&url` per S2.md — 143.9 KB gzip
   measured) downloads at construction time, before first interaction, but it is not part of the entry's
