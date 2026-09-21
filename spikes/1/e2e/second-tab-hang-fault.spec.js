@@ -13,6 +13,11 @@ const OUTER_GUARD_MS = IN_PAGE_TIMEOUT_MS + 5_000;
 test("seeded fault: a hung in-page attempt is still caught by the outer guard, not left hanging", async ({
   page,
 }) => {
+  // fix round 1: unconditional expected-failure. This test's whole point is to fail (proving the
+  // hang detector can actually detect a hang); test.fail() turns that intended red into a run that
+  // still exits 0, and would go red for real if the seeded fault ever stopped reproducing (i.e. if
+  // this started resolving before the outer guard, meaning the fault injection broke).
+  test.fail(true, "seeded/expected: this scenario is a deliberately-hung in-page attempt; it must fail.");
   test.setTimeout(OUTER_GUARD_MS + 10_000);
   await page.goto(`/?pkg=132&hangSecondTab=1`);
   await page.waitForFunction(() => !!window.spike);

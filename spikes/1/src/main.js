@@ -18,6 +18,10 @@ log(`spike ready: pkg=${pkg} resolvedVersion=${entry.resolvedVersion}`);
 // hold its opfs file open (not terminate) while a second page probes the same file.
 let live = null;
 
+// the release function for whatever Web Lock acquireLockCreateAndHold is currently holding in this
+// page instance (null when nothing is held).
+let heldLockRelease = null;
+
 window.spike = {
   pkg,
   resolvedVersion: entry.resolvedVersion,
@@ -126,5 +130,128 @@ window.spike = {
     await conn.close();
     await db.terminate();
     return { opfsError, n };
+  },
+
+  // --- Web Locks (fix round 1): master plan D3's actual mechanism -- "one tab holds it (Web
+  // Locks), everyone else and every failure mode runs in memory." One fixed lock name per dbName so
+  // every tab on this origin contends for the same lock (`atlas-opfs:<dbName>`, never opens the
+  // opfs:// file itself without holding it).
+
+  // tab 1: acquires the lock with { ifAvailable: true }; if granted (lock !== null), HOLDS the lock
+  // unconditionally (until releaseHeldLock(), or automatically if this tab/page is closed/killed
+  // outright -- tested by page.close() in the spec) for the life of this call, and separately tries
+  // to create the table under it. The hold does NOT depend on that create succeeding: Web Locks
+  // itself needs no storage/OPFS at all, so the lock is held even where OPFS is unavailable (WebKit,
+  // here) -- that is what lets tab2 genuinely observe "unavailable" and prove the in-memory fallback
+  // works everywhere, independent of whether OPFS itself works.
+  async acquireLockCreateAndHold(dbName, sourceUrl) {
+    const lockName = `atlas-opfs:${dbName}`;
+    return new Promise((resolveOuter) => {
+      navigator.locks.request(lockName, { ifAvailable: true }, async (lock) => {
+        if (lock === null) {
+          resolveOuter({ acquired: false });
+          return;
+        }
+        const result = { acquired: true };
+        let heldDb = null;
+        try {
+          const { duckdb, db } = await createDb(pkg);
+          await db.open({ path: `opfs://${dbName}`, accessMode: duckdb.DuckDBAccessMode.READ_WRITE });
+          const conn = await db.connect();
+          await conn.query("INSTALL httpfs; LOAD httpfs;");
+          await conn.query(`CREATE TABLE t AS SELECT * FROM '${sourceUrl}'`);
+          const res = await conn.query("SELECT count(*)::BIGINT AS n FROM t");
+          result.n = Number(res.toArray()[0].n);
+          await conn.query("CHECKPOINT");
+          await conn.close();
+          heldDb = db;
+          live = { db };
+        } catch (err) {
+          result.opfsError = String(err && err.message ? err.message : err);
+        }
+        resolveOuter(result);
+        // hold the lock until releaseHeldLock() resolves this -- unconditional, regardless of
+        // whether the OPFS create above succeeded.
+        await new Promise((resolveHeld) => {
+          heldLockRelease = resolveHeld;
+        });
+        if (heldDb) {
+          await heldDb.terminate();
+          live = null;
+        }
+      });
+    });
+  },
+
+  // graceful release of whatever lock acquireLockCreateAndHold is currently holding in THIS page.
+  releaseHeldLock() {
+    if (heldLockRelease) {
+      const fn = heldLockRelease;
+      heldLockRelease = null;
+      fn();
+      return true;
+    }
+    return false;
+  },
+
+  // any other tab: probes the SAME lock with { ifAvailable: true }.
+  // - lock === null (someone else holds it, e.g. tab 1 above): answers count(*) from a brand-new
+  //   IN-MEMORY database (`db.open({})`, no path) -- never calls db.open with an opfs:// path, so a
+  //   createSyncAccessHandle conflict is structurally impossible on this branch.
+  // - lock acquired (nobody held it, or the holder released/closed): reads the REAL persisted opfs
+  //   file, proving a fresh tab can pick the lock back up once it is free.
+  async probeLockAndAnswer(dbName, sourceUrl) {
+    const lockName = `atlas-opfs:${dbName}`;
+    const startedAt = performance.now();
+    return new Promise((resolveOuter, rejectOuter) => {
+      navigator.locks.request(lockName, { ifAvailable: true }, async (lock) => {
+        try {
+          if (lock === null) {
+            const { db } = await createDb(pkg);
+            await db.open({}); // in-memory: no path, no opfs:// touched at all
+            const conn = await db.connect();
+            await conn.query("INSTALL httpfs; LOAD httpfs;");
+            await conn.query(`CREATE TABLE t AS SELECT * FROM '${sourceUrl}'`);
+            const res = await conn.query("SELECT count(*)::BIGINT AS n FROM t");
+            const n = Number(res.toArray()[0].n);
+            await conn.close();
+            await db.terminate();
+            resolveOuter({ lockAcquired: false, n, ms: performance.now() - startedAt });
+            return;
+          }
+          const { duckdb, db } = await createDb(pkg);
+          await db.open({ path: `opfs://${dbName}`, accessMode: duckdb.DuckDBAccessMode.READ_WRITE });
+          const conn = await db.connect();
+          const res = await conn.query("SELECT count(*)::BIGINT AS n FROM t");
+          const n = Number(res.toArray()[0].n);
+          await conn.close();
+          await db.terminate();
+          resolveOuter({ lockAcquired: true, n, ms: performance.now() - startedAt });
+        } catch (err) {
+          rejectOuter(err);
+        }
+      });
+    });
+  },
+
+  // seeded fault: the SAME second-tab flow but with a plain navigator.locks.request (no
+  // ifAvailable) -- while tab 1 holds the lock, this call queues and does not run its callback until
+  // the lock is free, i.e. it hangs. Raced against timeoutMs so the hang is measured (bounded), not
+  // an actual indefinite stall of the test runner.
+  async probeLockNoIfAvailable(dbName, timeoutMs) {
+    const lockName = `atlas-opfs:${dbName}`;
+    const started = performance.now();
+    const attempt = new Promise((resolve) => {
+      navigator.locks.request(lockName, async () => {
+        resolve({ outcome: "acquired-after-wait", ms: performance.now() - started });
+      });
+    });
+    const timeout = new Promise((resolve) =>
+      setTimeout(
+        () => resolve({ outcome: "timeout", ms: performance.now() - started }),
+        timeoutMs,
+      ),
+    );
+    return Promise.race([attempt, timeout]);
   },
 };
