@@ -1,0 +1,1 @@
+not a real duckdb asset -- a fake, duckdb-named binary used ONLY by the ?seed=duckdb-fetch seeded fault (atlas-0 Step 4, S2 gate: "a variant that statically imports (or fetches) a duckdb-named asset before first frame must make the spec FAIL"). See src/main.ts and e2e/s2.spike.spec.ts.

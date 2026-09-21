@@ -1,0 +1,18 @@
+{
+  "name": "atlas-spike-2",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "atlas-0 Step 4, S2: first paint without WASM. Own page/deps so the root package.json is untouched (an Opus agent applies the pins the spike implies later). Vite, TypeScript and @playwright/test are NOT devDependencies here on purpose -- they resolve from the root's node_modules two levels up (npm scripts below call them by relative ../../node_modules path) so this spike really exercises the root's pinned Vite 8 / Playwright 1.63, not a second copy.",
+  "scripts": {
+    "dev": "node ../../node_modules/vite/bin/vite.js --port 4312 --strictPort",
+    "build": "node ../../node_modules/vite/bin/vite.js build",
+    "preview": "node ../../node_modules/vite/bin/vite.js preview --port 4312 --strictPort",
+    "e2e": "node ../../node_modules/.bin/playwright test",
+    "measure": "node scripts/measure.mjs"
+  },
+  "dependencies": {
+    "maplibre-gl": "^5.24.0",
+    "pmtiles": "^4.5.0"
+  }
+}
