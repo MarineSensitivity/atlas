@@ -11,10 +11,25 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
-// atlas-3 step 1 surfaces. Step 3 adds "index.html" here when the shell's critical CSS lands.
-export const SCAN_ROOTS = ["src/lib/brand", "docs/design/mockups"];
-const SCANNED_EXTENSIONS = new Set([".css", ".html", ".svg", ".ts", ".svelte", ".mjs", ".js"]);
+// atlas-3 step 1 surfaces, plus step 2's component library and gallery. Step 3 adds "index.html"
+// here when the shell's critical CSS lands.
+export const SCAN_ROOTS = ["src/lib/brand", "src/lib/ui", "src/gallery", "docs/design/mockups"];
+const SCANNED_EXTENSIONS = new Set([
+  ".css",
+  ".html",
+  ".svg",
+  ".ts",
+  ".svelte",
+  ".mjs",
+  ".js",
+  ".json",
+]);
 export const TOKENS_FILE = join("src", "lib", "brand", "tokens.css");
+// tokens.json is a generated, deterministic RE-EXPORT of tokens.css (scripts/export-tokens.mjs):
+// every hex literal in it already went through the one allowed source above, so it gets the same
+// narrow carve-out as tokens.css itself — nothing else may skip this gate by pattern-matching a
+// filename, only this one generated file.
+export const TOKENS_JSON_FILE = join("src", "lib", "brand", "tokens.json");
 export const VENDOR_DIR = join("src", "lib", "brand", "vendor") + sep;
 const PROVENANCE_RE = /vendored verbatim from/i;
 
@@ -49,7 +64,7 @@ export function findHexLiterals(rootDir = ".", readFile = (p) => readFileSync(p,
       const rel = relative(rootDir, file);
       const ext = file.slice(file.lastIndexOf("."));
       if (!SCANNED_EXTENSIONS.has(ext)) continue;
-      if (rel === TOKENS_FILE) continue;
+      if (rel === TOKENS_FILE || rel === TOKENS_JSON_FILE) continue;
       const content = readFile(file);
       if (rel.startsWith(VENDOR_DIR)) {
         // vendored assets keep their own colors, but only if they say where they came from

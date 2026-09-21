@@ -5,7 +5,11 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { findHexLiterals, SCAN_ROOTS } from "../scripts/check-hex-literals-core.mjs";
+import {
+  findHexLiterals,
+  SCAN_ROOTS,
+  TOKENS_JSON_FILE,
+} from "../scripts/check-hex-literals-core.mjs";
 
 const TOKENS = readFileSync("src/lib/brand/tokens.css", "utf8");
 const MOTIF_CAP = 0.1; // MMA Branding Guide 2026, pp. 9-10
@@ -32,9 +36,44 @@ describe("no hex literal outside tokens.css", () => {
     expect(findHexLiterals(".")).toEqual([]);
   });
 
-  it("scans the mockups and the brand directory", () => {
+  it("scans the mockups, the brand directory, the component library and the gallery", () => {
     expect(SCAN_ROOTS).toContain("docs/design/mockups");
     expect(SCAN_ROOTS).toContain("src/lib/brand");
+    expect(SCAN_ROOTS).toContain("src/lib/ui");
+    expect(SCAN_ROOTS).toContain("src/gallery");
+  });
+
+  it("flags a planted literal in a component under src/lib/ui (the step 2 seeded fault)", () => {
+    const d = makeRepo({
+      "src/lib/brand/tokens.css": ":root { --mma-gold: #e8c24a; }",
+      "src/lib/ui/HexButton.svelte": "<style>.hex { background: #e8c24a; }</style>",
+    });
+    const hits = findHexLiterals(d);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].path).toBe(join("src", "lib", "ui", "HexButton.svelte"));
+  });
+
+  it("flags a planted literal in a gallery section too", () => {
+    const d = makeRepo({
+      "src/gallery/sections/Chip.svelte": "<style>.chip { color: #fff; }</style>",
+    });
+    expect(findHexLiterals(d)).toHaveLength(1);
+  });
+
+  it("exempts ONLY tokens.json, generated verbatim from tokens.css, not every .json file", () => {
+    const withTokensJson = makeRepo({
+      "src/lib/brand/tokens.json": '{"navy":{"--mma-gold":"#e8c24a"}}',
+    });
+    expect(findHexLiterals(withTokensJson)).toEqual([]);
+
+    const otherJson = makeRepo({
+      "src/lib/ui/some-data.json": '{"color":"#e8c24a"}',
+    });
+    expect(findHexLiterals(otherJson)).toHaveLength(1);
+  });
+
+  it("holds for the committed tokens.json", () => {
+    expect(findHexLiterals(".").filter((h) => h.path === TOKENS_JSON_FILE)).toEqual([]);
   });
 
   it("flags a planted literal in mockup CSS (the seeded fault)", () => {

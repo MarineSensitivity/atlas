@@ -1,4 +1,24 @@
-# atlas 0.4.0
+# atlas 0.5.0
+
+`atlas-3` step 2a: the design-system component foundation (Svelte 5 runes, `src/lib/ui/`), the icon
+map generator folded in from the stopped Haiku attempt, self-hosted fallback fonts, and
+`gallery.html` as a third Vite entry. `DataTable`, `Flower` and `Treemap` are step 2b, after this
+merges. Still not wired into `index.html` — the shell is step 3.
+
+- **The icon map is generated, not typed by hand** (`scripts/build-icon-paths.mjs` ->
+  `src/lib/ui/icon-paths.ts`): every MDI-backed name in `docs/design/spec.md` §6 comes from
+  `@mdi/js` by export name (a wrong name throws instead of drawing a wrong picture), and the
+  bespoke `flower` glyph is read from `src/lib/brand/glyphs/flower.svg`, never retyped. The
+  generator is a pure function (`generateIconPathsSource`) that formats its own output with
+  prettier's API, so `tests/icon-paths.test.ts` compares it to the committed file in memory —
+  no shell-out, so the test can never rewrite the tracked file the way the stopped attempt's did.
+  `@mdi/js` is an exact-pinned devDependency and never enters the app bundle.
+- **`src/lib/brand/tokens.json`**, a deterministic export of `tokens.css`
+  (`scripts/export-tokens.mjs`), resolved per theme with every `var()` reference expanded. Same
+  pure-function/no-shell-out shape as the icon generator; `check-hex-literals` gets a narrow,
+  named exemption for exactly this one generated file, and now also scans `src/lib/ui` and
+  `src/gallery`.
+
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
 into the app, `index.html` is untouched and `dist/` is unchanged.
