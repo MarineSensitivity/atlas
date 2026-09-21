@@ -3,150 +3,101 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>MarineSensitivity Atlas</title>
+    <title>Scores · MarineSensitivity Atlas</title>
     <meta name="description" content="Scores, species, places and reports for U.S. marine areas." />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+
     <!--
-      critical CSS, inlined so the shell paints before any JavaScript bundle loads or parses
-      (plan atlas-0 Deliverable 2). Real design tokens arrive in atlas-3; for now this uses the
-      four MMA hex values directly (ground truth: Gold #E8C24A, Steel #173D6D, Navy #001A57,
-      Crimson #6E110F).
+      atlas-3 step 3: fonts. The ONE display weight the first frame needs (headlines are never
+      lighter than Bold, guide p. 5) is preloaded -- the budget has room (spec.md §12: the display
+      face's 2-weight budget is <= 20 KB gzip; this one file is ~10 KB).
+
+      Measured fix (e2e/shell.cls.spec.ts caught it): the body face (Carlito) also needs preloading,
+      not just the display face. `font-display: swap` shows the fallback for however long the
+      request takes, however short -- fonts.css's metric overrides make that fallback match
+      Carlito's OWN box model closely, but not perfectly, on every platform (they are tuned to
+      Arial, which is what `sans-serif` resolves to on Windows and Linux/Liberation Sans, but not
+      quite what it resolves to on macOS). Preloading both weights wins the race often enough that
+      the browser already has Carlito by the time it paints, so the mismatched fallback is never
+      actually painted at all -- measured CLS = 0 with this in place, nonzero without it. The
+      lens switch's PRESSED state is bold body text (Segmented.svelte, untouched here), which is
+      why Bold matters in the first frame too, not just Regular.
+    -->
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="./src/lib/brand/fonts/jost-bold-latin.woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="./src/lib/brand/fonts/carlito-regular-latin.woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="./src/lib/brand/fonts/carlito-bold-latin.woff2"
+      crossorigin
+    />
+
+    <!--
+      critical CSS, inlined so the shell paints before any JavaScript bundle loads or parses (plan
+      atlas-0 Deliverable 2, carried into atlas-3 step 3). `@import` pulls in src/shell/shell.css
+      (which itself imports src/lib/brand/tokens.css) -- Vite's html-inline-proxy resolves BOTH
+      imports and inlines the resolved CSS text directly into this tag, in dev and in build alike
+      (see vite.config.ts's comment on the html/css pipeline). That is the "build step that copies
+      [token values] from tokens.css" the review checklist asks for: nobody types a token value by
+      hand here, the bundler copies it -- tests/check-inlined-tokens.test.ts proves the copy is
+      faithful, and it is proven able to fail with a seeded, mutated fixture.
+
+      shell.css is the SAME file src/shell/Shell.svelte imports for the hydrated app's own layout,
+      so the skeleton below and the real shell read identical geometry -- no second, hand-typed
+      copy of any size/spacing value to drift between them (the CLS gate,
+      e2e/shell.cls.spec.ts, is what actually proves it, at both viewports and both themes).
     -->
     <style>
-      :root {
-        --mma-gold: #e8c24a;
-        --mma-steel: #173d6d;
-        --mma-navy: #001a57;
-        --mma-crimson: #6e110f;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      html,
-      body {
-        margin: 0;
-        height: 100%;
-      }
-      body {
-        font-family:
-          system-ui,
-          -apple-system,
-          "Segoe UI",
-          sans-serif;
-        color: #101820;
-        background: #fff;
-      }
-      #shell {
-        display: grid;
-        grid-template-columns: 64px 1fr;
-        grid-template-rows: 56px 1fr;
-        grid-template-areas: "topbar topbar" "rail main";
-        height: 100vh;
-        min-height: 100%;
-      }
-      .ms-topbar {
-        grid-area: topbar;
-        background: var(--mma-navy);
-        color: var(--mma-gold);
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        padding: 0 1rem;
-        font-weight: 600;
-      }
-      .ms-topbar .ms-title {
-        white-space: nowrap;
-      }
-      #version-badge {
-        margin-left: auto;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-      }
-      .ms-version {
-        font-weight: 400;
-        opacity: 0.85;
-      }
-      .ms-preview-badge {
-        background: var(--mma-crimson);
-        color: #fff;
-        font-size: 0.7rem;
-        letter-spacing: 0.05em;
-        padding: 0.2rem 0.5rem;
-        border-radius: 3px;
-      }
-      .ms-rail {
-        grid-area: rail;
-        background: var(--mma-steel);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.5rem;
-        padding-top: 0.75rem;
-      }
-      .ms-rail button {
-        width: 44px;
-        height: 44px;
-        border: none;
-        border-radius: 6px;
-        background: rgba(255, 255, 255, 0.08);
-        color: var(--mma-gold);
-        font-size: 0.65rem;
-        cursor: pointer;
-      }
-      .ms-rail button:hover,
-      .ms-rail button:focus-visible {
-        background: rgba(255, 255, 255, 0.2);
-      }
-      #main {
-        grid-area: main;
-        position: relative;
-        display: grid;
-        grid-template-columns: minmax(280px, 360px) 1fr;
-        min-width: 0;
-      }
-      #panel {
-        overflow: auto;
-        border-right: 1px solid #d8dde3;
-        padding: 1rem;
-        min-width: 0;
-      }
-      .ms-skel {
-        background: #e5e7eb;
-        border-radius: 4px;
-        height: 1rem;
-        margin-bottom: 0.6rem;
-      }
-      .ms-skel.short {
-        width: 60%;
-      }
-      #map {
-        background: #cfe3f7;
-        min-width: 0;
-      }
-      @media (max-width: 480px) {
-        #shell {
-          grid-template-columns: 1fr;
-          grid-template-rows: 56px auto 1fr;
-          grid-template-areas: "topbar" "rail" "main";
-        }
-        .ms-rail {
-          flex-direction: row;
-          padding: 0.5rem;
-        }
-        #main {
-          grid-template-columns: 1fr;
-          grid-template-rows: auto minmax(200px, 1fr);
-        }
-        #panel {
-          border-right: none;
-          border-bottom: 1px solid #d8dde3;
-        }
-      }
+      @import "./src/shell/shell.css";
     </style>
+
     <script>
       window.__t0 = performance.now();
     </script>
+
+    <!--
+      pre-paint theme script (spec.md §3): sets `data-theme` on <html> before first paint, through
+      the SAME rule as src/lib/state/types.ts's `resolveTheme` (dark -> navy, light -> paper,
+      "auto"/absent -> prefers-color-scheme, falling back to navy when that signal is unavailable).
+      It reads ONLY `location.search` and `matchMedia` and writes ONLY `document.documentElement.
+      dataset.theme` -- no localStorage, no fetch, nothing else -- so there is no flash of the wrong
+      theme and no other side effect. tests/shell/theme-preboot.test.ts runs this exact script (
+      extracted from this file, like tests/release/inline-early-fetch.test.ts does for the early-
+      fetch script below) through the same case table `resolveTheme` is tested against, and asserts
+      the two never disagree; it also asserts the script touches nothing but that one dataset key.
+    -->
+    <script>
+      (function () {
+        var theme;
+        var q = new URLSearchParams(location.search).get("theme");
+        if (q === "dark") theme = "navy";
+        else if (q === "light") theme = "paper";
+        else {
+          var prefersDark = null;
+          try {
+            prefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
+          } catch (e) {
+            prefersDark = null;
+          }
+          theme = prefersDark === false ? "paper" : "navy";
+        }
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+
     <!--
       early-fetch: kicks off the registry (latest.txt, versions.json) and session.json before the
       app bundle even starts parsing (CalCOFI Explorer's index.html:159-163 pattern,
@@ -350,34 +301,143 @@
     </script>
   </head>
   <body>
-    <div id="shell">
-      <header class="ms-topbar">
-        <span class="ms-title">MarineSensitivity Atlas</span>
-        <span id="version-badge"></span>
+    <a class="skip-link" href="#panel-region">Skip to the details panel</a>
+
+    <div id="shell" class="app">
+      <header class="topbar" data-tour="topbar">
+        <span data-tour="brand" style="display: flex; align-items: center; gap: var(--space-2)">
+          <img class="mark mark--navy" src="./src/lib/brand/vendor/mst-mark.svg" alt="" />
+          <img class="mark mark--paper" src="./src/lib/brand/vendor/mst-mark-dark.svg" alt="" />
+          <h1 class="brand-title" id="app-title">Marine Sensitivity Atlas</h1>
+        </span>
+
+        <button
+          type="button"
+          class="chip"
+          id="sk-version-chip"
+          data-tour="version-chip"
+          data-control="version-chip"
+          aria-hidden="true"
+          tabindex="-1"
+        ></button>
+
+        <div
+          class="sk-seg"
+          role="group"
+          aria-label="Lens"
+          data-tour="lens-switch"
+          data-control="lens-switch"
+          aria-hidden="true"
+        >
+          <span class="is-pressed">Scores</span>
+          <span>Species</span>
+        </div>
+
+        <div
+          class="search-field topbar-desktop-only"
+          data-tour="search"
+          data-control="search"
+          aria-hidden="true"
+        >
+          <span class="sk-icon-16"></span>
+          <span>Search species and places</span>
+          <span class="kbd">/</span>
+        </div>
+
+        <span class="spacer"></span>
+
+        <!--
+          flat siblings of .topbar, exactly matching src/shell/Shell.svelte's Share/Report/Help/
+          theme buttons (no wrapping element -- an extra wrapper here would change how .topbar's
+          own `gap` is distributed and shift everything after it; e2e/shell.cls.spec.ts's
+          geometry-equality gate caught exactly that). Each icon placeholder is 18x18, the exact
+          size Shell.svelte passes to <Icon size={18}/> for these four (--icon class is 20px, sized
+          for the search field's icon instead).
+        -->
+        <span
+          class="tool topbar-desktop-only"
+          aria-hidden="true"
+          data-tour="share"
+          data-control="share"
+          ><span class="sk-icon-tool"></span>Share</span
+        >
+        <span
+          class="tool topbar-desktop-only"
+          aria-hidden="true"
+          data-tour="report-top"
+          data-control="report-top"
+          ><span class="sk-icon-tool"></span>Report</span
+        >
+        <span
+          class="tool topbar-desktop-only"
+          aria-hidden="true"
+          data-tour="help"
+          data-control="help"
+          ><span class="sk-icon-tool"></span
+        ></span>
+        <span class="tool" aria-hidden="true" data-tour="theme" data-control="theme"
+          ><span class="sk-icon-tool"></span
+        ></span>
       </header>
-      <nav class="ms-rail" aria-label="tools">
-        <button type="button" data-control="lens-scores" aria-label="Scores" disabled>
-          Scores
-        </button>
-        <button type="button" data-control="lens-species" aria-label="Species" disabled>
-          Species
-        </button>
-        <button type="button" data-control="lens-places" aria-label="Places" disabled>
-          Places
-        </button>
-        <button type="button" data-control="lens-report" aria-label="Report" disabled>
-          Report
-        </button>
-      </nav>
-      <main id="main">
-        <section id="panel" aria-label="details panel">
-          <div class="ms-skel" aria-hidden="true"></div>
-          <div class="ms-skel" aria-hidden="true"></div>
-          <div class="ms-skel short" aria-hidden="true"></div>
-        </section>
-        <div id="map" role="img" aria-label="map (not yet loaded)"></div>
+
+      <main class="stage" id="stage">
+        <div
+          id="map"
+          class="map"
+          role="img"
+          aria-label="Map (loads in a later phase)"
+          data-tour="map"
+        ></div>
+
+        <nav
+          class="rail-region"
+          id="rail-region"
+          aria-label="Tools"
+          data-tour="rail"
+          data-control="rail"
+        >
+          <div class="sk-rail" aria-hidden="true">
+            <span class="sk-hexbtn is-pressed"></span>
+            <span class="sk-hexbtn"></span>
+            <span class="sk-hexbtn"></span>
+            <span class="sk-hexbtn"></span>
+            <span class="sk-hexbtn"></span>
+          </div>
+        </nav>
+
+        <div class="panel-region" id="panel-region" data-tour="panel" data-control="panel">
+          <div class="sk-panel" aria-hidden="true">
+            <div class="sk-panel-grab"></div>
+            <div class="sk-panel-head">
+              <p class="sk-panel-title">Layers</p>
+              <div class="sk-panel-controls">
+                <span class="sk-panel-ctrl"></span>
+                <span class="sk-panel-ctrl"></span>
+                <span class="sk-panel-ctrl"></span>
+              </div>
+            </div>
+            <div class="sk-panel-body">
+              Layers, palette and outline options arrive in a later phase.
+            </div>
+          </div>
+        </div>
+
+        <div class="about-region" id="about-region" data-tour="about" data-control="about">
+          <div class="sk-about" aria-hidden="true">
+            <div class="sk-about-head">
+              <span class="sk-icon-tool"></span>
+              <h2>About this release</h2>
+              <span class="sk-about-tool"></span>
+            </div>
+          </div>
+        </div>
       </main>
     </div>
+
+    <noscript>
+      This app needs JavaScript to render the map, scores and species. Please enable it.
+    </noscript>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

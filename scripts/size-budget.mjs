@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // CLI wrapper around size-budget-core.mjs. Usage:
-//   node scripts/size-budget.mjs [--dist dist] [--entry index.html] [--budget-kb 350] [--worker-budget-kb 150]
+//   node scripts/size-budget.mjs [--dist dist] [--entry index.html] [--budget-kb 450] [--worker-budget-kb 150]
 //
 // Run against a real `vite build` output it should be green; run against either committed red fixture
 // it must be red:

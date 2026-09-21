@@ -148,15 +148,20 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
 
 ## Budgets (`scripts/size-budget.mjs`)
 
-- **350 KB gzip** for the static critical path: everything `index.html`'s own `<script>`s load before
-  first interaction (app chunk + eventual maplibre-gl + pmtiles + CSS + fonts). Spike S2 measured
-  maplibre-gl 6.10 + pmtiles + CSS at **288,149 B gzip (281.4 KiB)** on their own — measured on the
-  pinned `^6.10.0` with the same `gzipSync(level 9)` this checker uses — so ~70 KB is left for all
-  app code; budget accordingly.
-- **150 KB gzip, separately, for runtime workers** (`RUNTIME_WORKER_BUDGET_BYTES`): a worker referenced
-  from the static graph (e.g. maplibre-gl's, wired via `?worker&url` per S2.md — 143.9 KB gzip
-  measured) downloads at construction time, before first interaction, but it is not part of the entry's
-  own `<script>` payload, so it is not folded into the 350 KB number — it gets its own budget instead.
+- **450 KB gzip** for the static critical path: everything `index.html`'s own `<script>`s load before
+  first interaction (app chunk + eventual maplibre-gl + pmtiles + CSS + fonts). Plan D13, relaxed
+  2026-09-21 (owner: "we don't need to be so tight on the 350 KB budget") — the original 350 KB cap
+  (atlas-0 Deliverable 4) left too little room once atlas-3 step 3's shell (Svelte runtime +
+  Shell.svelte + the self-hosted Jost/Carlito brand fonts) was actually measured: spike S2's
+  maplibre-gl 6.10 + pmtiles + CSS (**288,149 B gzip, 281.4 KiB**, measured on the pinned `^6.10.0`
+  with the same `gzipSync(level 9)` this checker uses) plus the shell's own ~108 KB gzip already
+  totals ~396 KB, leaving under 54 KB for atlas-4/5's lens code under the old cap. 450 KB leaves
+  ~50 KB more than that; budget accordingly.
+- **150 KB gzip, separately, for runtime workers** (`RUNTIME_WORKER_BUDGET_BYTES`, unchanged by D13):
+  a worker referenced from the static graph (e.g. maplibre-gl's, wired via `?worker&url` per S2.md —
+  143.9 KB gzip measured) downloads at construction time, before first interaction, but it is not part
+  of the entry's own `<script>` payload, so it is not folded into the static number — it gets its own
+  budget instead. The two together ("before first interaction") total 600 KB.
   The checker does NOT rely on the manifest's `assets`/`imports` fields to find it (that depends on
   chunk-splitting specifics this repo doesn't control): it reads the compiled text of every file on the
   static path for the `new URL("<file>.js", import.meta.url)` pattern a `?worker&url` import (or a

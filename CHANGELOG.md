@@ -1,3 +1,110 @@
+# atlas 0.7.2
+
+`atlas-3` step 3 (the shell wired into `index.html`) and its fix round 1, merged into main after
+`atlas-2` step 3b and `atlas-3` step 4's accessibility round (both below, at 0.7.0/0.7.1) had
+already landed independently.
+
+`atlas-3` step 3, fix round 2 (integration, after the merge above): the accessibility round changed
+components under this step without either side knowing about the other, so three things needed
+reconciling once both landed on the same branch.
+
+- **`src/shell/Shell.svelte`**: the round-1 "TEMPORARY SHIM" (a local `announce()` + its own live
+  region, added because `src/lib/ui/announcer.ts` didn't exist yet on this branch) is gone. The
+  shell now mounts the real `<Announcer />` once and calls the real `announce()` from
+  `src/lib/ui/announcer.ts`; `src/lib/ui/touch-targets.css` is imported once at the app root
+  alongside `tokens.css`/`fonts.css`. `e2e/shell.a11y.spec.ts` asserts exactly one
+  `[aria-live]`/`role="status"` node exists, before and after a full interaction walk (seeded
+  fault: leaving the old shim's `<div>` in place alongside `<Announcer />` turns this red).
+- **`src/shell/shell.css`**: the accessibility round's own component changes reopened the
+  geometry-equality gate. `touch-targets.css`'s `button.chip{min-width:24px}` ties the version
+  chip's own `.chip{min-width:84px}` on specificity and was winning on source order, collapsing the
+  chip back to content width — requalified to `button.chip`. `Panel`/`About`'s new
+  `width:100%;max-width:...` (for 320 px reflow) need a definite width from their absolutely
+  positioned wrapper to resolve against; without one the shrink-to-fit algorithm was bottoming out
+  on the panel/about body text's intrinsic width instead. Gave `.panel-region`/`.about-region` an
+  explicit `width`.
+- **320 px overflow** (the a11y round's known gap): two real bugs, both now fixed in `shell.css`
+  only (no `src/lib/ui` component touched). `.app`'s single implicit grid column had no minimum
+  size cap, so at 320 px its "auto-minimum" fell back to the topbar's max-content width and the
+  track (and `.topbar` stretched to it) silently grew past the viewport; `.app`'s own
+  `overflow: hidden` then clipped the excess without ever tripping `scrollWidth > clientWidth`, so
+  a plain overflow check missed it even though the theme toggle was genuinely clipped off-screen.
+  Fixed with `grid-template-columns: minmax(0, 1fr)`. Separately, even with that fixed, the
+  topbar's own default gap and padding left the mark, version chip, lens switch and theme toggle
+  (nothing else is hidden at this width; every one is load-bearing) no room to fit in 320 px; a new
+  `@media (max-width: 380px)` rule tightens `.topbar`'s own gap/padding (never a control's content)
+  to reclaim it. `scripts/verify.mjs`'s `VIEWPORTS` gains a 320×800 entry, and a new
+  `e2e/shell.a11y.spec.ts` layout suite imports `assertLayout`/`VIEWPORTS` straight from
+  `verify.mjs` (both themes × all three viewports) so the two can never drift.
+
+`atlas-3` step 3, fix round 1: the CLS and "no theme flash" gates from the initial shell could not
+actually fail (confirmed: an 8 px skeleton offset and the theme-setting line replaced with
+`void theme;` both left every existing shell spec green). Replaced/added the real gates, which then
+caught four genuine bugs the vacuous versions had let through.
+
+- **`e2e/shell.cls.spec.ts`** is now a GEOMETRY-EQUALITY gate: with the app bundle route-aborted
+  (`blockAppBundle`, new in `e2e/hermetic.ts`), it captures the bounding box of every keyed
+  skeleton element and compares it, within 0.5 px, to the same element once real hydration
+  completes — the actual claim this step makes, which the Layout Instability API cannot observe
+  (it only scores nodes that persist across frames; `src/main.ts`'s `replaceChildren()` + `mount()`
+  removes and recreates every one of them). The old PerformanceObserver check is kept as a
+  secondary assertion (it still catches a font-swap shift on nodes that DO persist post-hydration).
+  Found and fixed by writing this gate:
+  - `src/shell/shell.css`'s bare `.icon{width:20px;height:20px}` collided with
+    `src/lib/ui/Icon.svelte`'s own literal `class="icon"` and silently forced EVERY hydrated icon
+    to 20×20 regardless of its `size` prop (14/16/18) — a real visual bug, not just a test gap.
+    Renamed to `.sk-icon-16`/`.sk-icon-tool`, sized per real icon.
+  - The skeleton's Share/Report/Help/theme buttons were wrapped in an extra `<span>` not present
+    in `Shell.svelte`, changing how `.topbar`'s own `gap` distributed and shifting everything
+    after it by 8 px.
+  - A bare `<p>` (the panel/sheet body text) carries a UA `margin-block: 1em` the skeleton's
+    placeholder never had; added a global `p { margin: 0 }` reset.
+  - The skeleton's phone panel header kept the desktop `Panel`'s 116px absolute-control
+    reservation; `Sheet.svelte`'s real header uses plain flex + `margin-left: auto` instead and
+    needs none of it.
+  - The skeleton's phone panel had a full 1px border; `Sheet.svelte`'s real `.sheet` has only
+    `border-top`.
+- **`e2e/shell.theme-flash.spec.ts`** (new): with the app bundle blocked, asserts `data-theme` and
+  the painted background for every `?theme=`/`prefers-color-scheme` combination — the only way to
+  observe the pre-paint script before `Shell.svelte`'s own `$effect` could paper over a broken one.
+- **Budget relaxed** (plan D13, owner: "we don't need to be so tight on the 350 KB budget"): the
+  static critical path budget is now **450 KB gzip** (`CRITICAL_BUDGET_BYTES`,
+  `scripts/size-budget-core.mjs`), up from 350; runtime workers stay at 150 KB gzip. The
+  self-hosted brand fonts stay wired exactly as first shipped.
+
+`atlas-3` step 3 (initial): the shell wired into `index.html`. A static skeleton (top bar, five-tool rail,
+one floating panel frame, the phone bottom bar/sheet) paints as inlined critical CSS before any
+bundle loads or parses, then `src/main.ts` hydrates it with the real components — geometrically
+IDENTICAL to the skeleton, measured at CLS = 0 (desktop 1280×800 and phone 390×844, both themes).
+
+- **`index.html`**: the inlined `<style>` block is now `@import "./src/shell/shell.css"` (which
+  itself `@import`s `tokens.css` and `fonts.css`) — Vite's own CSS pipeline resolves and inlines the
+  real, byte-verified token values at build/dev time, so no token value is ever hand-typed into the
+  page (`scripts/check-inlined-tokens.mjs` proves the two stay equal after every build). A pre-paint
+  script sets `data-theme` from `?theme=`/`prefers-color-scheme` through the exact rule
+  `src/lib/state/types.ts`'s `resolveTheme` uses (falling back to `navy`), reading and writing
+  nothing else — there is no theme flash on first paint.
+- **`src/shell/Shell.svelte`** (new): hydrates the skeleton with the real `Rail`, `Panel`/`Sheet`,
+  `Segmented`, `About` and `VersionBadge` components. The lens switch, the theme toggle and the `/`
+  search shortcut all read/write view state ONLY through `src/lib/state` (`history.replaceState`,
+  never `pushState`); the Flower rail tool fades in place (`aria-disabled`, never removed) in the
+  Species lens; the on-map About card carries the seal behind `VITE_SEAL`/`VITE_AGENCY`
+  (`.env.example` documents both, plus `VITE_SEAL_URL`; CI's build step sets `VITE_SEAL=1`,
+  `VITE_AGENCY=MMA` per the owner's approval).
+- **`src/shell/tools.ts`** (new): the rail's five-tool data (order, labels, per-lens body text),
+  extracted so "Flower fades only in the Species lens, in its own third slot" is a plain unit test,
+  not something only provable by reading the component.
+- Preloads the one display-face weight (Jost Bold) the first frame needs, plus both Carlito
+  (body-face) weights — a measured CLS regression (a font swap on a platform whose `sans-serif`
+  fallback isn't metrically Arial-identical) is what the second preload actually fixes.
+- New gates: `scripts/check-inlined-tokens.mjs` (+ core/test) proves the inlined critical CSS never
+  drifts from `tokens.css`; `scripts/check-hex-literals.mjs` now also scans `index.html` and
+  `src/shell/shell.css`; `scripts/verify.mjs`'s state matrix covers the real shell (default, both
+  explicit themes, the Species lens) at both viewports; new Playwright specs
+  (`e2e/shell.cls.spec.ts`, `e2e/shell.a11y.spec.ts`, `e2e/shell.url-state.spec.ts`) and
+  `tests/shell/*` cover CLS, axe, keyboard reach, roving tabindex, the URL-is-the-view contract and
+  a `pushState` source-scan guard.
+
 # atlas 0.7.1
 
 `atlas-3` step 4, fix round 1: a manual (Opus) accessibility walk of the gallery by keyboard and

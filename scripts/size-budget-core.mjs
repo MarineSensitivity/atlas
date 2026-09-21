@@ -3,9 +3,10 @@
 // against a real `vite build` (green) and the committed red fixtures (red).
 //
 // plan atlas-0 Deliverable 4: fail when the critical path — everything index.html loads before first
-// interaction — exceeds 350 KB gzip, OR when any chunk that is supposed to be lazy (duckdb*, terra-draw*,
-// docx*, shp*, the treemap) appears in the entry's STATIC import graph. `dynamicImports` are deliberately
-// never walked: that is exactly the escape hatch that keeps those libraries lazy.
+// interaction — exceeds the static budget (450 KB gzip, plan D13 — see below), OR when any chunk that
+// is supposed to be lazy (duckdb*, terra-draw*, docx*, shp*, the treemap) appears in the entry's
+// STATIC import graph. `dynamicImports` are deliberately never walked: that is exactly the escape
+// hatch that keeps those libraries lazy.
 //
 // atlas-0 review fix round 1, F3: a runtime worker (maplibre-gl's, wired per S2.md's `?worker&url` +
 // setWorkerUrl) downloads at `new Map()` construction — before first interaction, same as anything else
@@ -13,12 +14,21 @@
 // `assets` array either (that depends on chunk-splitting specifics this repo does not control). So the
 // worker is found the same way `findForbiddenMarkers` finds a forbidden library: by reading the compiled
 // bytes of every file already known to be on the static path, not by trusting manifest bookkeeping. It
-// gets counted, but in its OWN budget (`RUNTIME_WORKER_BUDGET_BYTES`), not folded into the 350 KB static
-// number — see `evaluateBudget`.
+// gets counted, but in its OWN budget (`RUNTIME_WORKER_BUDGET_BYTES`), not folded into the static
+// critical-path number — see `evaluateBudget`.
 import { gzipSync } from "node:zlib";
 import { posix } from "node:path";
 
-export const CRITICAL_BUDGET_BYTES = 350 * 1024; // 350 KB gzip (plan atlas-0 Deliverable 4)
+// plan D13, relaxed 2026-09-21 ("We don't need to be so tight on the 350 KB budget"): 350 -> 450 KB
+// gzip for the static critical path. The arithmetic that motivated the relax: MapLibre 6.10 +
+// pmtiles + its own CSS measures 288,149 B gzip on its own (S2.md), and atlas-3 step 3's shell
+// (Svelte runtime + Shell.svelte + the self-hosted Jost/Carlito brand fonts, kept as wired) already
+// measures ~108 KB gzip once index.html actually hydrates something — 288 + 108 = ~396 KB, which
+// left under 54 KB for atlas-4/5's own lens code under the OLD 350 KB cap. 450 KB leaves ~54 KB
+// more than that (~50 KB free), the room the owner decided the lenses need. Runtime workers keep
+// their own, separate 150 KB gzip budget (F3, unchanged), so the two together ("before first
+// interaction") total 600 KB.
+export const CRITICAL_BUDGET_BYTES = 450 * 1024; // 450 KB gzip (plan D13, relaxed 2026-09-21)
 export const RUNTIME_WORKER_BUDGET_BYTES = 150 * 1024; // 150 KB gzip (F3) — a separate budget for every
 // runtime worker referenced from the static graph (measured: maplibre-gl's own worker is 143.9 KB gzip,
 // S2.md Consequences #10); pending the project owner's confirmation of the exact numbers.

@@ -1,0 +1,605 @@
+/*
+ * atlas-3 step 3: the app shell's own layout CSS -- one file, imported BOTH by index.html's inline
+ * critical `<style>` (via `@import`, which Vite resolves and inlines at dev/build time -- see the
+ * head comment in index.html) and by src/shell/Shell.svelte (a normal bundled import). Because both
+ * the pre-JS static skeleton and the post-hydration real shell read the SAME rules from the SAME
+ * file, there is no second, hand-typed copy of any geometry value to drift (CLAUDE.md's "keep core
+ * logic in one exported place" applied to CSS, not just TS).
+ *
+ * Two kinds of rule live here:
+ *   1. STRUCTURAL / positioning rules for the real components (topbar row, the stage, the map, and
+ *      where the floating rail/panel/about regions sit) -- these apply to both the skeleton's plain
+ *      HTML and the hydrated Svelte components, since src/lib/ui/* components position only
+ *      THEMSELVES (Panel.svelte, for example, sets only `width`, never `position`/`top`/`right` --
+ *      the composing shell owns placement, by design).
+ *   2. SKELETON-ONLY rules (prefixed `sk-`) that reproduce the exact box model of a handful of
+ *      src/lib/ui/* components (HexButton, Rail, Panel, Segmented, About) so the static, pre-JS
+ *      skeleton in index.html paints at the SAME size as the hydrated frame that replaces it (CLS
+ *      gate: tests/e2e/shell.cls.spec.ts). Those components are Svelte-scoped, so their own
+ *      `<style>` blocks never reach plain HTML -- these rules are a deliberate, narrow, geometry-only
+ *      duplication of values already reviewed in the component build (atlas-3 step 2a/2b); they are
+ *      NOT restyled here, only reproduced, and this repo's rule against touching those components is
+ *      respected -- nothing under src/lib/ui is edited to make this file work.
+ *
+ * No hex literal: every color is `var(--token)` (scripts/check-hex-literals.mjs scans this file).
+ */
+@import "../lib/brand/tokens.css";
+/* the @font-face rules (local() first, then the self-hosted metric-compatible fallback) must be
+   part of the CRITICAL path, not a later async stylesheet -- registering them only after the
+   skeleton's first paint would let the browser lay text out in a generic fallback first and swap
+   fonts once fonts.css finally loaded, which is exactly the metric-override machinery in that file
+   is there to prevent. index.html preloads the one display weight this frame needs (see its own
+   head comment); this import is what makes that preload matter at all. */
+@import "../lib/brand/fonts.css";
+/* atlas-3 step 4 fix round 1 (SC 2.5.8): the shared coarse-pointer touch-target floor, imported
+   once at the app root as that step's own report asks -- it targets several src/lib/ui/*
+   selectors (`.seg button`, `button.chip`, ...) that the shell's own hand-built version chip and
+   the real Segmented component both carry, so both the skeleton and the hydrated frame pick up
+   the SAME floor symmetrically (never a skeleton/hydrated mismatch). */
+@import "../lib/ui/touch-targets.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  color: var(--text-primary);
+  background: var(--surface-map);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* a bare <p> (Shell.svelte's Panel/Sheet body text) carries a UA default `margin-block: 1em` --
+   ~14 px above AND below at this body font size -- that the skeleton's plain placeholder text
+   never had, which is exactly the 34 px panel-frame height drift
+   e2e/shell.cls.spec.ts's geometry-equality gate caught. src/lib/ui/About.svelte already resets
+   its own <p> the same way; this generalizes that reset. */
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--text-link);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-control);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--space-2);
+  top: calc(var(--space-2) * -6);
+  z-index: 60;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+.skip-link:focus {
+  top: var(--space-2);
+}
+
+/* --- app frame: the map is the page; everything else floats over it (spec.md §1) -------------- */
+/* `minmax(0, 1fr)`, not a bare implicit column: without it the single column's automatic minimum
+   size falls back to the topbar's own max-content width (grid's "auto-minimum" rule), so at very
+   narrow viewports (320 px) the grid track -- and `.topbar` stretched to it -- silently grows past
+   the viewport instead of shrinking to it. `overflow: hidden` above then clips the excess without
+   ever registering on `document.documentElement.scrollWidth`, so a plain scrollWidth check misses
+   it entirely even though controls are genuinely clipped off-screen (caught by verify.mjs's per
+   `[data-control]` bounding-box check at the 320x800 viewport instead). */
+.app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: var(--size-topbar) 1fr;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.stage {
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+  background: var(--surface-map);
+}
+
+/* --- top bar, 48 px, wave lower edge (guide p. 10) --------------------------------------------- */
+.topbar {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  height: var(--size-topbar);
+  background: color-mix(in srgb, var(--surface-panel) var(--glass-opacity), transparent);
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--elev-1);
+}
+
+.topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--motif-wave-height) * -1);
+  height: var(--motif-wave-height);
+  background: var(--motif-color);
+  opacity: var(--motif-wave-opacity);
+  -webkit-mask: url("../lib/brand/motifs/wave.svg") repeat-x center / auto 100%;
+  mask: url("../lib/brand/motifs/wave.svg") repeat-x center / auto 100%;
+  pointer-events: none;
+}
+
+.mark {
+  display: block;
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+:root:not([data-theme="paper"]) .mark--paper {
+  display: none;
+}
+:root[data-theme="paper"] .mark--navy {
+  display: none;
+}
+
+.brand-title {
+  flex: none;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: var(--tracking-display);
+  white-space: nowrap;
+  margin: 0;
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* --- hand-built top-bar controls (version chip, search, Share/Report/Help/theme) --------------- */
+/* `button.chip`, not bare `.chip`: src/lib/ui/touch-targets.css's own `button.chip{min-width:24px}`
+   (imported above) has the SAME element+class specificity, and without this qualifier here it
+   otherwise WINS on specificity regardless of import order (0,1,1 beats 0,1,0), silently
+   overriding the 84px reservation below back down to content size -- the fix round 2 regression
+   the geometry-equality gate caught the moment touch-targets.css was wired in. */
+button.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 28px;
+  /* reserves room for the version chip's icon + a realistic label ("v7", "v12b", ...) so the
+     async VersionBadge text (empty at first paint, per src/lib/ui/VersionBadge.svelte) never
+     grows the button past this width once it resolves -- a measured CLS regression this exact
+     number fixed (a chip narrower than its own eventual content shifted everything after it by
+     the difference; e2e/shell.cls.spec.ts is what caught it). */
+  min-width: 84px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-pill);
+  background: var(--fill-control);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  flex: none;
+  cursor: pointer;
+}
+.chip:hover {
+  border-color: var(--text-secondary);
+}
+
+.search-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 240px;
+  height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  flex: none;
+}
+.search-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+.search-field input::placeholder {
+  color: var(--text-secondary);
+}
+.search-field input:focus-visible {
+  outline: none; /* the field itself carries the ring, so the caret isn't double-ringed */
+}
+.search-field:focus-within {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.search-field .kbd {
+  flex: none;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 40px;
+  min-width: 40px;
+  padding: 0 var(--space-3);
+  flex: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.tool:hover {
+  background: var(--fill-control);
+}
+@media (pointer: coarse) {
+  .tool {
+    height: var(--size-touch);
+    min-width: var(--size-touch);
+  }
+}
+
+/* SKELETON-ONLY decorative icon placeholders. Deliberately NOT named `.icon`: src/lib/ui/Icon.svelte
+   renders its own SVG with a literal `class="icon"` (its own SCOPED style, `.icon.svelte-xxxxx`,
+   sets no width/height of its own -- it relies on the SVG's `width`/`height` attributes for that).
+   A global, UNSCOPED `.icon{width:...}` rule here would match that same class token and OVERRIDE
+   the real icon's own size attributes on every hydrated <Icon>, regardless of its `size` prop --
+   a real bug this file had (every icon rendered at 20x20, not 14/16/18) that
+   e2e/shell.cls.spec.ts's geometry-equality gate caught as an 8 px topbar drift. Each skeleton
+   placeholder below is named and sized for the ONE real icon size it stands in for. */
+.sk-icon-16 {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.sk-icon-tool {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+/* --- floating regions: rail, panel/sheet, about. Each src/lib/ui component sizes only itself; --- */
+/* --- this shell owns WHERE it floats (Panel.svelte/Sheet.svelte/Rail.svelte/About.svelte never --- */
+/* --- set position/top/right/bottom -- see each component's own header comment). ----------------- */
+.rail-region {
+  position: absolute;
+  left: var(--space-3);
+  top: var(--space-3);
+  z-index: 15;
+}
+
+.panel-region {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 16;
+  /* atlas-3 step 4 fix round 1 changed Panel.svelte's `.panel` to `width:100%;max-width:380px`
+     (so it can reflow narrower at 320px) instead of a fixed `width:380px` -- but `width:100%`
+     needs a CONCRETE basis to resolve against. Without an explicit width here, this element (
+     absolutely positioned, `left:auto`, `width:auto`, only `right` given) falls back to the
+     shrink-to-fit algorithm, which (with a 100%-width child) bottoms out on the PANEL BODY TEXT's
+     own intrinsic content width -- 314.5 px for this step's placeholder text, not 380 -- an
+     unpredictable width the geometry-equality gate caught. Supplying it explicitly here removes
+     the ambiguity and matches what the component's own `max-width` clearly intends. */
+  width: min(var(--size-panel), calc(100vw - var(--space-3) * 2));
+}
+
+.about-region {
+  position: absolute;
+  left: calc(var(--size-rail) + var(--space-4));
+  bottom: var(--space-3);
+  z-index: 14;
+  /* same shrink-to-fit ambiguity, and the same fix, as .panel-region above: atlas-3 step 4 fix
+     round 1 changed About.svelte's `.about` to `width:100%;max-width:372px` (its own hardcoded
+     value -- no shared token exists for it), which otherwise resolves against the release-note
+     paragraph's intrinsic content width instead of 372px. This card is `display:none` below the
+     900px breakpoint (see below), so 372px is always reachable here -- no min() needed. */
+  width: 372px;
+}
+
+@media (max-width: 899px) {
+  .rail-region {
+    left: 50%;
+    top: auto;
+    bottom: var(--space-3);
+    transform: translateX(-50%);
+  }
+
+  /* the sheet (Sheet.svelte's root, a plain block <section> with no width of its own -- see its
+     header comment) stretches to fill this region the same way a block element always does when
+     both `left` and `right` give its absolutely-positioned ancestor a definite width. */
+  .panel-region {
+    top: auto;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    /* `left`, `right` AND an explicit `width` together over-constrain an absolutely positioned
+       box (CSS 2.1 10.3.7) -- the desktop rule's `width` above would otherwise win and `right`
+       get silently recomputed from it, undoing the full-width stretch this media query wants. */
+    width: auto;
+  }
+
+  /* the on-map About card is a desktop-only affordance at this step: the phone viewport has no
+     room for a 372 px opaque card alongside the sheet and the bottom rail (open item, not blocking:
+     docs/design/spec.md §14). */
+  .about-region {
+    display: none;
+  }
+
+  /* the phone top bar drops search/Share/Report/Help (the reviewed phone mockup,
+     docs/design/mockups/phone-sheet-half.html): the lens switch, the version chip and the theme
+     toggle are what is left, and the title collapses to the mark alone (spec.md §10) -- the
+     accessible name stays on the <h1>, only visually hidden. */
+  .brand-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .topbar-desktop-only {
+    display: none;
+  }
+}
+
+/* very narrow phones (320 px, the smallest viewport verify.mjs covers): even with search/Share/
+   Report/Help and the title already dropped above, the mark + version chip + lens switch + theme
+   toggle's own min-content widths plus the default gap/padding still add up to ~356 px -- wider
+   than the viewport. Nothing here is hidden (every remaining control is load-bearing), so the fix
+   is to reclaim space from the topbar's own gap and padding rather than any control's content. */
+@media (max-width: 380px) {
+  .topbar {
+    gap: var(--space-1);
+    padding: 0 var(--space-1);
+  }
+}
+
+/* ================================================================================================ */
+/* SKELETON ONLY: geometry duplicated (not restyled) from src/lib/ui/{HexButton,Rail,Panel,Segmented, */
+/* About}.svelte so index.html's pre-JS static markup paints at the same size as the hydrated frame. */
+/* Every rule below is read ONLY by plain elements carrying an `sk-` class; real components never    */
+/* carry that class, so this never touches their own rendering.                                      */
+/* ================================================================================================ */
+
+.sk-seg {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.sk-seg span {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.sk-seg span.is-pressed {
+  background: var(--fill-accent);
+  color: var(--text-on-accent);
+  font-weight: 700;
+}
+
+.sk-rail {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-1);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface-panel) var(--glass-opacity), transparent);
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--elev-2);
+}
+@media (max-width: 899px) {
+  .sk-rail {
+    flex-direction: row;
+  }
+}
+.sk-hexbtn {
+  position: relative;
+  width: var(--size-touch);
+  height: var(--size-touch);
+  flex: none;
+}
+.sk-hexbtn::before,
+.sk-hexbtn::after {
+  content: "";
+  position: absolute;
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+}
+.sk-hexbtn::before {
+  inset: 0;
+  background: var(--border-control);
+}
+.sk-hexbtn::after {
+  inset: 2px;
+  background: var(--fill-control);
+}
+.sk-hexbtn.is-pressed::after {
+  background: var(--fill-accent);
+}
+
+.sk-panel {
+  width: var(--size-panel);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--surface-panel) var(--glass-opacity), transparent);
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--elev-3);
+  overflow: hidden;
+}
+@media (max-width: 899px) {
+  .sk-panel {
+    width: 100%;
+    /* Sheet.svelte's real `.sheet` has only a TOP border (`border-top: 1px solid ...`), not the
+       desktop Panel's full 1px border on every side -- the extra 1px on the left/right here inset
+       the whole head/body content by 1px, which is exactly the 1px "panel-collapse" x drift
+       e2e/shell.cls.spec.ts's geometry-equality gate caught at the phone viewport. */
+    border: 0;
+    border-top: 1px solid var(--border-control);
+    border-radius: var(--radius-card) var(--radius-card) 0 0;
+    height: var(--size-sheet-half);
+  }
+  .sk-panel .sk-panel-grab {
+    display: block;
+    width: 44px;
+    height: 4px;
+    margin: var(--space-3) auto var(--space-2);
+    border-radius: var(--radius-pill);
+    background: var(--border-control);
+    flex: none;
+  }
+}
+.sk-panel-grab {
+  display: none;
+}
+.sk-panel-head {
+  position: relative;
+  padding: var(--space-3) 116px var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--divider);
+  flex: none;
+}
+@media (max-width: 899px) {
+  .sk-panel-head {
+    border-bottom: 0;
+    /* Sheet.svelte's real `.sheet-head` reserves no space for its controls (they sit in normal
+       flex flow via `margin-left: auto`, not absolutely positioned like Panel's) -- the 116px
+       reservation above is a DESKTOP-only, Panel-specific need. Keeping it at phone shifted the
+       controls 100 px right of where Sheet actually renders them (e2e/shell.cls.spec.ts's
+       geometry-equality gate caught this as a "panel-collapse" x mismatch). */
+    padding: 0 var(--space-4) var(--space-2) var(--space-4);
+  }
+}
+.sk-panel-title {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-display);
+  margin: 0;
+  /* NOT an explicit line-height: Panel.svelte's real `.panel-title` (and Sheet's `.sheet-title`)
+     set none either, relying on the DISPLAY FACE's own "normal" line-height (Jost's fonts.css
+     metric overrides give it one taller than `--leading-tight` would) -- hardcoding 1.2 here made
+     the skeleton's title 6 px shorter than the hydrated one (the same gate caught this too). */
+}
+.sk-panel-controls {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+}
+@media (max-width: 899px) {
+  .sk-panel-controls {
+    position: static;
+    margin-left: auto;
+  }
+  .sk-panel-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+}
+.sk-panel-ctrl {
+  width: 32px;
+  height: 32px;
+  flex: none;
+}
+@media (pointer: coarse), (max-width: 899px) {
+  .sk-panel-ctrl {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
+}
+.sk-panel-body {
+  flex: 1;
+  overflow: hidden;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  max-height: 60vh;
+  color: var(--text-secondary);
+  font-size: var(--text-md);
+}
+@media (max-width: 899px) {
+  .sk-panel-body {
+    max-height: none;
+    padding: 0 var(--space-4) var(--space-4);
+  }
+}
+
+.sk-about {
+  width: 372px;
+  padding: var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+  box-shadow: var(--elev-2);
+}
+.sk-about-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.sk-about-head h2 {
+  flex: 1;
+  font-size: var(--text-sm);
+  margin: 0;
+}
+.sk-about-tool {
+  width: var(--size-touch);
+  height: var(--size-touch);
+  flex: none;
+}

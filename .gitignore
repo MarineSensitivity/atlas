@@ -4,6 +4,11 @@ dist-fixture
 *.local
 .tmp
 
+# local overrides of .env.example (VITE_SEAL / VITE_AGENCY / VITE_SEAL_URL, atlas-3 plan D10) --
+# never committed; CI sets these directly in .github/workflows/pages.yml's build step instead.
+.env
+.env.local
+
 # vite / vitest / svelte-check
 .vite
 *.tsbuildinfo

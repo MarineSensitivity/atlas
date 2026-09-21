@@ -11,11 +11,24 @@ import { chromium } from "@playwright/test";
 export const VIEWPORTS = {
   desktop: { width: 1280, height: 800 },
   phone: { width: 390, height: 844 },
+  // the smallest viewport the shell must never overflow at (atlas-3 step 3 fix round 2, item 4):
+  // catches the "grid blowout" class of bug where an ancestor's `overflow: hidden` clips a control
+  // off-screen without ever tripping `scrollWidth > clientWidth` on <html> -- only the per
+  // `[data-control]` bounding-box check below actually sees it.
+  phoneNarrow: { width: 320, height: 800 },
 };
 
 // filled in by atlas-2+ as view states exist (release picker, lens, places, ...). Each entry is a
-// path+query+hash fragment appended to the base URL. Empty today: the shell has no view state yet.
-export const STATE_MATRIX = [{ name: "shell (no state)", path: "/" }];
+// path+query+hash fragment appended to the base URL. atlas-3 step 3 adds the shell itself: the
+// default view, and the two explicit theme overrides (?theme= wins over prefers-color-scheme, so
+// these are reachable regardless of the runner's own OS theme) -- every other view state (release,
+// places, ...) still has no UI in this phase.
+export const STATE_MATRIX = [
+  { name: "shell (default)", path: "/" },
+  { name: "shell (theme=paper)", path: "/?theme=paper" },
+  { name: "shell (theme=dark)", path: "/?theme=dark" },
+  { name: "shell (species lens)", path: "/?lens=species" },
+];
 
 /**
  * No horizontal overflow, and every interactive control (`[data-control]`) fully inside the
@@ -34,8 +47,12 @@ export async function assertLayout(page) {
   const controls = page.locator("[data-control]");
   const count = await controls.count();
   for (let i = 0; i < count; i++) {
-    const box = await controls.nth(i).boundingBox();
     const name = await controls.nth(i).getAttribute("data-control");
+    // a control legitimately absent at this viewport (e.g. the phone top bar drops Share/Report/
+    // Help/search -- spec.md §10) is `display: none`, not a layout bug: skip it rather than
+    // failing "not rendered". A control that IS shown but positioned off-screen still fails below.
+    if (!(await controls.nth(i).isVisible())) continue;
+    const box = await controls.nth(i).boundingBox();
     if (!box) {
       problems.push(`control "${name}" has no bounding box (not rendered)`);
       continue;

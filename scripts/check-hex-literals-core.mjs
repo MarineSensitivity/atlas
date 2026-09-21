@@ -12,8 +12,17 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 // atlas-3 step 1 surfaces, plus step 2's component library and gallery. Step 3 adds "index.html"
-// here when the shell's critical CSS lands.
-export const SCAN_ROOTS = ["src/lib/brand", "src/lib/ui", "src/gallery", "docs/design/mockups"];
+// (the shell's inlined critical CSS) and "src/shell/shell.css" (the file that CSS is `@import`ed
+// from, and the one src/shell/Shell.svelte imports too) now that the shell's critical CSS lands.
+// A SCAN_ROOTS entry may name a single FILE, not only a directory -- see `walk()` below.
+export const SCAN_ROOTS = [
+  "src/lib/brand",
+  "src/lib/ui",
+  "src/gallery",
+  "docs/design/mockups",
+  "index.html",
+  "src/shell/shell.css",
+];
 const SCANNED_EXTENSIONS = new Set([
   ".css",
   ".html",
@@ -38,11 +47,18 @@ const HEX_LITERAL_RE = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-f
 
 function walk(dir) {
   const out = [];
+  let st;
+  try {
+    st = statSync(dir);
+  } catch {
+    return out; // a root that does not exist yet is not a failure
+  }
+  if (st.isFile()) return [dir]; // a SCAN_ROOTS entry may name one file, e.g. "index.html"
   let entries;
   try {
     entries = readdirSync(dir);
   } catch {
-    return out; // a root that does not exist yet is not a failure
+    return out;
   }
   for (const entry of entries) {
     const p = join(dir, entry);

@@ -1,7 +1,7 @@
 {
   "name": "atlas",
   "private": true,
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "MarineSensitivity Atlas: scores, species, places and reports for U.S. marine areas.",
   "license": "MIT",
   "type": "module",
@@ -26,6 +26,7 @@
     "check:no-session": "node scripts/check-dist-session.mjs",
     "check:relative-assets": "node scripts/check-relative-assets.mjs",
     "check:duckdb-ext": "node scripts/check-duckdb-ext.mjs",
+    "check:inlined-tokens": "node scripts/check-inlined-tokens.mjs",
     "contrast": "node scripts/contrast.mjs",
     "check:hex-literals": "node scripts/check-hex-literals.mjs",
     "mockups:shots": "node scripts/mockup-shots.mjs",

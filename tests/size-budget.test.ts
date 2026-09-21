@@ -1,6 +1,8 @@
+import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   collectStaticGraph,
+  CRITICAL_BUDGET_BYTES,
   evaluateBudget,
   findForbiddenMarkers,
   findWorkerAssets,
@@ -239,6 +241,35 @@ describe("evaluateBudget", () => {
     });
     expect(r.ok).toBe(false);
     expect(r.reasons.some((x) => x.includes("exceeds"))).toBe(true);
+  });
+
+  // plan D13, relaxed 2026-09-21: CRITICAL_BUDGET_BYTES is 450 KB gzip (was 350). This proves the
+  // DEFAULT budget (no `budgetBytes` override, unlike the synthetic 1-byte-budget case above) is
+  // really 450 KB by straddling that exact line: a static path that gzips to just over 450 KB
+  // FAILS, one that gzips to just under it PASSES. Random bytes barely compress (near-incompressible),
+  // so a buffer of N raw bytes reliably gzips to within a few bytes of N -- confirmed below before
+  // trusting the budget assertion, so this is testing the BUDGET, not a compression fluke.
+  it("a ~451 KB static path FAILS the default 450 KB budget, and a ~449 KB one PASSES it", () => {
+    expect(CRITICAL_BUDGET_BYTES).toBe(450 * 1024);
+    const over = randomBytes(451 * 1024);
+    const under = randomBytes(449 * 1024);
+    expect(gzipSize(over)).toBeGreaterThan(CRITICAL_BUDGET_BYTES);
+    expect(gzipSize(under)).toBeLessThan(CRITICAL_BUDGET_BYTES);
+
+    const overResult = evaluateBudget({
+      manifest: smallManifest,
+      entryKey: "index.html",
+      readFile: () => over,
+    });
+    expect(overResult.ok).toBe(false);
+    expect(overResult.reasons.some((x) => x.includes("exceeds"))).toBe(true);
+
+    const underResult = evaluateBudget({
+      manifest: smallManifest,
+      entryKey: "index.html",
+      readFile: () => under,
+    });
+    expect(underResult.ok).toBe(true);
   });
 
   it("fails cleanly when the entry key is missing from the manifest", () => {
