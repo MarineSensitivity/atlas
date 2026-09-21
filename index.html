@@ -165,9 +165,12 @@
     <script>
       (function () {
         var VERSION_RE = /^v[0-9]+[a-z]?$/;
+        // derived from VERSION_RE, not a second hardcoded literal — see
+        // src/lib/release/version.ts's PATH_VERSION_RE for why (drift).
+        var PATH_VERSION_RE = new RegExp("^/(" + VERSION_RE.source.slice(1, -1) + ")/");
 
         function versionFromPath(pathname) {
-          var m = /^\/(v[0-9]+[a-z]?)\//.exec(pathname);
+          var m = PATH_VERSION_RE.exec(pathname);
           return m ? m[1] : null;
         }
         function versionFromQuery(search) {
@@ -197,14 +200,21 @@
         }
         function fetchSession() {
           // same-origin; a 404 (public GitHub Pages: this file never exists) and a network error
-          // both resolve to "public" (plan D6) rather than rejecting.
+          // both resolve to "public" (plan D6) rather than rejecting. Always normalizes to
+          // { preview: boolean } — never passes the raw parsed body through — so this can't
+          // silently drift from src/lib/release/session.ts's SessionInfo shape (a body of `{}`,
+          // with no `preview` key, must resolve the same way as an explicit `preview: false`).
           return fetch("session.json", { cache: "no-cache" })
             .then(function (r) {
-              return r.ok
-                ? r.json().catch(function () {
-                    return { preview: false };
-                  })
-                : { preview: false };
+              if (!r.ok) return { preview: false };
+              return r
+                .json()
+                .then(function (body) {
+                  return { preview: !!(body && typeof body === "object" && body.preview === true) };
+                })
+                .catch(function () {
+                  return { preview: false };
+                });
             })
             .catch(function () {
               return { preview: false };

@@ -8,13 +8,19 @@
 // string, since it becomes a URL path segment).
 export const VERSION_RE = /^v[0-9]+[a-z]?$/;
 
+// derived from VERSION_RE.source (strip the ^ and $ anchors, wrap in a capture group between
+// slashes) rather than a second hardcoded literal: two independently-typed copies of the same
+// shape are exactly how this drifts silently (see tests/release/version.test.ts's regex-source
+// assertion and the ^v[0-9]+[a-z]?$ vs ^v[0-9]+[a-z]*$ case it exists to catch).
+const PATH_VERSION_RE = new RegExp(`^/(${VERSION_RE.source.slice(1, -1)})/`);
+
 export function isVersionLabel(v: string | null | undefined): v is string {
   return typeof v === "string" && VERSION_RE.test(v);
 }
 
 /** the leading `/v9/` (etc.) path segment, if there is one — the preview host's shape. */
 export function versionFromPath(pathname: string): string | null {
-  const m = /^\/(v[0-9]+[a-z]?)\//.exec(pathname);
+  const m = PATH_VERSION_RE.exec(pathname);
   return m ? m[1] : null;
 }
 
