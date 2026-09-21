@@ -92,4 +92,18 @@
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
+
+  /* SC 1.4.1/1.4.11: forced-colors mode leaves the default and accent chip backgrounds
+     indistinguishable (both fall back to Canvas); Highlight/HighlightText restores the
+     accent/active state, and an explicit border keeps a plain chip's shape visible. */
+  @media (forced-colors: active) {
+    .chip {
+      border-color: ButtonText;
+    }
+    .chip--accent {
+      background: Highlight;
+      border-color: Highlight;
+      color: HighlightText;
+    }
+  }
 </style>
