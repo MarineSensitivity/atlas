@@ -81,6 +81,8 @@ merges. Still not wired into `index.html` — the shell is step 3.
   dismissible. The protection chips (spec.md §5.5) are plain instances of it --
   `src/lib/ui/protectionChip.ts` already computes the exact "MMPA · floor 20" / "MMPA · not
   applicable" text (unit-tested per statute/category, including the Leatherback regression case).
+- **`src/lib/ui/Toast.svelte`**: the ONE polite live region (`role="status" aria-live="polite"`),
+  queued (`src/lib/ui/toastQueue.ts`, pure, unit-tested), auto-dismissing, individually dismissible.
 
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
