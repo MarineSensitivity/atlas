@@ -37,6 +37,11 @@ merges. Still not wired into `index.html` — the shell is step 3.
   renders nothing rather than throwing (a caller typo cannot blank the page); an optional `title`
   gives the icon its own accessible name, otherwise it stays `aria-hidden` for a control that
   already has one.
+- **`src/lib/ui/HexButton.svelte`**: the rail's hexagon button, all of spec.md §5.1/§5.2/§5.4's
+  states -- idle, `aria-pressed` active (Gold fill on `navy`, Steel on `paper`, via
+  `--fill-accent`), and inactive (`aria-disabled="true"`, NOT the `disabled` attribute, so it
+  stays focusable; glyph fades to `--icon-inactive`; a tooltip explains why; clicking it
+  re-announces that reason through an `onAnnounce` callback instead of doing anything else).
 
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
