@@ -212,8 +212,11 @@
     outline-offset: 2px;
   }
 
-  .panel-controls button[aria-pressed="true"],
-  .panel-controls button[aria-expanded="true"] {
+  /* SC 1.4.1: aria-expanded="true" is NOT in this selector -- the collapse control (Panel.svelte's
+     own header button, above) is always expanded whenever these controls are visible at all, so
+     matching on it here painted collapse as if it were the currently-selected detent permanently,
+     with no relation to which of Half/Full is actually active (atlas-3 closing review, item 1). */
+  .panel-controls button[aria-pressed="true"] {
     color: var(--text-primary);
     border-color: var(--border-control);
     background: var(--fill-control);

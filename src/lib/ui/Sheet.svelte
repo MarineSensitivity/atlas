@@ -200,8 +200,11 @@
     outline-offset: 2px;
   }
 
-  .panel-controls button[aria-pressed="true"],
-  .panel-controls button[aria-expanded="true"] {
+  /* SC 1.4.1: aria-expanded="true" is NOT in this selector -- the collapse control's own
+     aria-expanded is true for BOTH the half and full detents (only false at peek), so matching on
+     it here painted collapse as pressed alongside whichever detent was actually active, with no
+     way to tell them apart (atlas-3 closing review, item 1). */
+  .panel-controls button[aria-pressed="true"] {
     color: var(--text-primary);
     border-color: var(--border-control);
     background: var(--fill-control);

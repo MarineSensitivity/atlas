@@ -92,7 +92,7 @@ test("a full interaction walk never calls history.pushState, and never grows his
   const panel = page.locator("#panel-region");
   await panel.locator('[data-panel-control="collapse"]').click();
   await panel.locator("button.panel-pill").click();
-  await page.keyboard.press("/");
+  await page.getByLabel("Search species and places").click();
   await page.keyboard.type("leatherback");
 
   const pushStateCalls = await page.evaluate(
