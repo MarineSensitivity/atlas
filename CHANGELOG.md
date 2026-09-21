@@ -18,6 +18,14 @@ merges. Still not wired into `index.html` — the shell is step 3.
   pure-function/no-shell-out shape as the icon generator; `check-hex-literals` gets a narrow,
   named exemption for exactly this one generated file, and now also scans `src/lib/ui` and
   `src/gallery`.
+- **Fonts** (`src/lib/brand/fonts.css`): Century Gothic and Calibri are `local()`-only — no font
+  file for either is redistributed. Self-hosted open fallbacks: Jost for display (TeX Gyre
+  Adventor's GUST renaming clause was ambiguous enough to skip; Jost's OFL reserves no name) and
+  Carlito for body, both Latin-basic subset WOFF2 via fonttools/pyftsubset, `font-display: swap`
+  with `size-adjust`/`ascent-override`/`descent-override`/`line-gap-override` so the swap does
+  not reflow. Carlito's OFL reserves that name, so the subset file's own name table was renamed to
+  "Carlito MMA Subset" (the CSS still declares `font-family: "Carlito"`). Each license kept beside
+  its font. Not wired into `index.html`'s critical path yet.
 
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
