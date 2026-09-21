@@ -77,6 +77,10 @@ merges. Still not wired into `index.html` — the shell is step 3.
   decorative chevron overlay -- spec.md §6's `version` icon, named for the `v7 ▾` chip but shared
   by every select-like control.
 - **`src/lib/ui/Switch.svelte`**: a generic on/off control, `role="switch"`.
+- **`src/lib/ui/Chip.svelte`**: plain or interactive (a `version` chip like `v7 ▾`), optionally
+  dismissible. The protection chips (spec.md §5.5) are plain instances of it --
+  `src/lib/ui/protectionChip.ts` already computes the exact "MMPA · floor 20" / "MMPA · not
+  applicable" text (unit-tested per statute/category, including the Leatherback regression case).
 
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
