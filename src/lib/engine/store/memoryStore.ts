@@ -51,6 +51,10 @@ export class MemoryTableStore implements TableStore {
     return this.#entries.get(name);
   }
 
+  ref(name: string): TableRef | undefined {
+    return this.#entries.has(name) ? { from: `read_parquet(${lit(name)})` } : undefined;
+  }
+
   list(): TableEntry[] {
     return [...this.#entries.values()];
   }

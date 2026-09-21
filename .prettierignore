@@ -11,3 +11,9 @@ spikes
 # inst/fixtures/places/, and tests/fixtures/places.sha256.json pins that. Reformatting one would
 # break the comparison in the other repo, so prettier must not touch this directory.
 tests/fixtures/places
+
+# R-generated parity references (scripts/parity/fixtures.R, atlas-2 Step 3b). Written by
+# jsonlite as one line at 17 significant digits, which is exactly what makes the 1e-9 gate
+# meaningful; reformatting them here would put them back out of step on the next regeneration
+# (and expand a 1 MB reference to many times that).
+tests/fixtures/parity
