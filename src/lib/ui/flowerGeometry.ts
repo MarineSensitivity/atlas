@@ -10,7 +10,7 @@
 // angular SLOT (so the ring's layout doesn't shift depending on which components happen to be
 // present) but draws no petal in it and excludes it from the mean -- "absent is not zero"
 // (docs/design/spec.md / the plan).
-import { categoryFor, type Category } from "./categories";
+import { categoryFor, categoryKeyFor, type Category } from "./categories";
 
 export interface FlowerComponentInput {
   /** raw category/component key as the data names it (msens sp_cat, or the flower's
@@ -95,6 +95,15 @@ export function sectorPath(
  * PURE: the flower's geometry for one place's components. Equal angular width regardless of score
  * or petal count (7 vs 8); a null score draws no petal and never enters the mean; scores are
  * clamped to [0, 100] before being drawn.
+ *
+ * Throws if two components resolve to the SAME real category (e.g. "primary producer" and
+ * "primprod" -- both synonyms of `primprod` in categories.ts): two petals sharing one color/label
+ * is not a rendering choice, it is caller data that collapsed two distinct slots onto one
+ * category, and the flower has no way to tell them apart visually (spec.md: "no information by
+ * color alone" -- two IDENTICAL colors for two DIFFERENT components is the same failure in
+ * reverse). Components that do not match any known category (both resolve to "nodata") are NOT
+ * checked against each other -- several genuinely unrecognized labels are an ordinary, expected
+ * shape of real data, not a caller bug.
  */
 export function computeFlowerGeometry(
   components: readonly FlowerComponentInput[],
@@ -106,6 +115,20 @@ export function computeFlowerGeometry(
   const noData: FlowerSlot[] = [];
 
   if (n === 0) return { petals, noData, centerValue: null, sliceCount: 0 };
+
+  const seenCategoryKeys = new Map<string, string>(); // resolved CategoryKey -> the raw input key
+  for (const c of components) {
+    const resolved = categoryKeyFor(c.key);
+    if (resolved === null) continue;
+    const firstSeenAs = seenCategoryKeys.get(resolved);
+    if (firstSeenAs !== undefined) {
+      throw new Error(
+        `computeFlowerGeometry: "${firstSeenAs}" and "${c.key}" both resolve to category ` +
+          `"${resolved}" -- two components may not share one category`,
+      );
+    }
+    seenCategoryKeys.set(resolved, c.key);
+  }
 
   const angleStep = 360 / n; // EQUAL for every slot, regardless of score or count -- the seeded
   // fault this rule guards against is a width proportional to score (unequal petals)
@@ -137,4 +160,35 @@ export function computeFlowerGeometry(
     : null;
 
   return { petals, noData, centerValue, sliceCount: n };
+}
+
+/**
+ * PURE: the flower's text summary (SC 1.1.1 -- "every chart has a table equivalent AND a text
+ * summary"), built from the SAME `FlowerGeometry` the SVG draws, so the two cannot disagree. The
+ * seeded fault this replaces: the summary's own count previously came from
+ * `components.length` (every input, INCLUDING ones with no score) rather than `petals.length`
+ * (only the ones actually drawn and averaged) -- "mean 45 across 7 components" over a ring that
+ * visibly draws 6 petals plus one empty "no data" slot. The count here is always
+ * `geometry.petals.length`; absent components are named in their own sentence, never folded into
+ * that count.
+ */
+export function describeFlowerSummary(title: string, geometry: FlowerGeometry): string {
+  const { petals, noData, centerValue } = geometry;
+  const meanText = centerValue !== null ? String(Math.round(centerValue)) : "no data";
+  const n = petals.length;
+
+  if (n === 0) {
+    const absent = noData.map((s) => s.category.label).join(", ");
+    return `${title}. Composite mean: no data. No data for any component (${absent}).`;
+  }
+
+  const parts = petals.map((p) => `${p.category.label} ${p.score}`);
+  let text =
+    `${title}. Composite mean ${meanText} across ${n} component${n === 1 ? "" : "s"}: ` +
+    `${parts.join(", ")}.`;
+  if (noData.length > 0) {
+    const absent = noData.map((s) => s.category.label).join(", ");
+    text += ` No data for ${absent}.`;
+  }
+  return `${text} See the component table below for exact values.`;
 }

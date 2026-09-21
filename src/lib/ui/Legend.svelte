@@ -10,16 +10,28 @@
     title: string;
     stops: LegendStop[];
     formatValue?: (value: number) => string;
+    /** the unit the values are in (e.g. "score", "%"); passed by the caller, never hard-coded
+     * here -- see the ramp's aria-label below (SC 1.1.1: the ramp's only text equivalent). */
+    unit: string;
   }
 
-  let { title, stops, formatValue = (v: number) => v.toFixed(2) }: Props = $props();
+  let { title, stops, formatValue = (v: number) => v.toFixed(2), unit }: Props = $props();
   const gradient = $derived(`linear-gradient(to right, ${stops.map((s) => s.color).join(", ")})`);
+  // the ramp's only accessible name: states the quantity (title) and both endpoints, with units --
+  // a continuous ramp cannot meet 3:1 stop-to-stop (spec.md §8), so this IS the text equivalent
+  // (SC 1.1.1), not merely a decorative caption.
+  const rampName = $derived.by(() => {
+    if (stops.length === 0) return `${title}, no data`;
+    const lo = formatValue(stops[0].value);
+    const hi = formatValue(stops[stops.length - 1].value);
+    return `${title}, ${unit} ramp from ${lo} to ${hi} ${unit}`;
+  });
 </script>
 
 <div class="legend">
   <h2>{title}</h2>
-  <div class="ramp" style="background: {gradient}"></div>
-  <div class="ramp-ticks">
+  <div class="ramp" role="img" aria-label={rampName} style="background: {gradient}"></div>
+  <div class="ramp-ticks" aria-hidden="true">
     {#each stops as s, i (i)}
       <span>{formatValue(s.value)}</span>
     {/each}
@@ -40,6 +52,18 @@
   .ramp {
     height: 10px;
     border-radius: var(--radius-pill);
+  }
+
+  /* SC 1.4.1/1.4.11: forced-colors mode replaces `background-image` with `none` outright, which
+     would leave the ramp completely blank -- unlike a chrome control's state, the ramp's colors
+     ARE the data (a continuous score gradient), so forced-color-adjust: none keeps the author's
+     gradient instead of trying to express it in the four system colors. A border keeps its
+     boundary visible against a Canvas-colored page either way. */
+  @media (forced-colors: active) {
+    .ramp {
+      forced-color-adjust: none;
+      border: 1px solid CanvasText;
+    }
   }
 
   .ramp-ticks {

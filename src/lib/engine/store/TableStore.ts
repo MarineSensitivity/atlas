@@ -40,6 +40,19 @@ export interface TableStore {
   /** Is `name` currently registered? With `digest` given, true only if it matches exactly. */
   has(name: string, digest?: string): boolean;
 
+  /**
+   * The FROM-clause source for an already-registered `name` (the same {@link TableRef}
+   * {@link TableStore.register} returned), or `undefined` when `name` is not registered.
+   *
+   * atlas-2 Step 3b (the SQL twins) needs this: a place's `cell` / `cell_model` view spans MANY
+   * registered tiles, so the caller composes one view out of several refs and cannot go back to the
+   * single ref a `register()` call returned. It stays on the interface rather than in a caller
+   * because the two backends spell a source differently -- MEMORY a `read_parquet('name')` over a
+   * registered virtual file, OPFS (Step 4) a bare table identifier -- and no SQL template may know
+   * which is live.
+   */
+  ref(name: string): TableRef | undefined;
+
   get(name: string): TableEntry | undefined;
 
   /** Every currently registered table. Order is not significant; callers needing an LRU order sort

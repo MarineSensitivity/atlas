@@ -4,6 +4,7 @@
   // glyph itself never changes -- only its orientation does.
   import type { Snippet } from "svelte";
   import Icon from "./Icon.svelte";
+  import { uid } from "./uid";
 
   interface Props {
     title: string;
@@ -17,7 +18,8 @@
   // track a later change to the prop.
   // svelte-ignore state_referenced_locally
   let open = $state(defaultOpen);
-  const bodyId = $derived(`accordion-body-${title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`);
+  // per-INSTANCE, not per-title (SC 4.1.2) -- see HexButton.svelte's identical fix.
+  const bodyId = uid("accordion-body");
 </script>
 
 <div class="acc">
@@ -33,11 +35,12 @@
       <Icon name="chevronDown" size={18} class="acc-chevron {open ? 'acc-chevron--open' : ''}" />
     </button>
   </h3>
-  {#if open}
-    <div class="acc-body" id={bodyId}>
-      {@render children()}
-    </div>
-  {/if}
+  <!-- always rendered (never {#if open}), toggled with `hidden` -- an aria-controls target must
+       actually EXIST in the DOM (SC 4.1.2); removing it entirely while collapsed is exactly the
+       kind of dangling reference item 1's generic id-reference test (e2e/gallery.spec.ts) catches. -->
+  <div class="acc-body" id={bodyId} hidden={!open}>
+    {@render children()}
+  </div>
 </div>
 
 <style>

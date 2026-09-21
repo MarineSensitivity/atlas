@@ -4,6 +4,8 @@
   // layer filter), a DISCLOSURE (`expanded` + `controls`, e.g. Panel's collapsed state), or
   // disabled with a reason (spec.md: "…feeds the merged model, but v7 publishes no surface for
   // it"). Exactly one of `pressed`/`expanded` applies to a given instance -- never both.
+  import { uid } from "./uid";
+
   interface Props {
     label: string;
     pressed?: boolean;
@@ -30,7 +32,30 @@
   }: Props = $props();
 
   let showTooltip = $state(false);
-  const tooltipId = $derived(`pill-tip-${label.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`);
+  // per-INSTANCE, not per-label (SC 4.1.2) -- see HexButton.svelte's identical fix.
+  const tooltipId = uid("pill-tip");
+
+  // SC 1.4.13: hoverable (a short close delay covers the gap the pointer crosses to reach the
+  // tooltip) and Esc-dismissible without moving focus -- see HexButton.svelte's identical fix.
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function showNow() {
+    clearTimeout(closeTimer);
+    showTooltip = true;
+  }
+
+  function scheduleHide() {
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => (showTooltip = false), 150);
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape" && showTooltip) {
+      event.stopPropagation();
+      clearTimeout(closeTimer);
+      showTooltip = false;
+    }
+  }
 </script>
 
 <span class="pill-wrap">
@@ -44,15 +69,23 @@
     aria-disabled={disabled ? "true" : undefined}
     aria-describedby={disabled && disabledReason ? tooltipId : undefined}
     {onclick}
-    onfocus={() => (showTooltip = true)}
-    onblur={() => (showTooltip = false)}
-    onmouseenter={() => (showTooltip = true)}
-    onmouseleave={() => (showTooltip = false)}
+    onkeydown={handleKeydown}
+    onfocus={showNow}
+    onblur={scheduleHide}
+    onmouseenter={showNow}
+    onmouseleave={scheduleHide}
   >
     {label}
   </button>
   {#if disabled && disabledReason}
-    <span class="tooltip" id={tooltipId} role="tooltip" hidden={!showTooltip}>
+    <span
+      class="tooltip"
+      id={tooltipId}
+      role="tooltip"
+      hidden={!showTooltip}
+      onmouseenter={showNow}
+      onmouseleave={scheduleHide}
+    >
       {disabledReason}
     </span>
   {/if}
@@ -116,7 +149,7 @@
     font-size: var(--text-sm);
     white-space: nowrap;
     box-shadow: var(--elev-2);
-    pointer-events: none;
+    /* hoverable (SC 1.4.13): the pointer must be able to reach and rest on the tooltip itself */
     z-index: 10;
   }
 </style>

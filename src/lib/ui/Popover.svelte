@@ -5,6 +5,7 @@
   // button that opens a Modal is the caller's job (see the gallery section).
   import { onMount, type Snippet } from "svelte";
   import Icon from "./Icon.svelte";
+  import { uid } from "./uid";
 
   interface Props {
     /** the trigger's accessible name, e.g. "About the ER-score rule" */
@@ -14,9 +15,11 @@
 
   let { label, children }: Props = $props();
   let open = $state(false);
+  let wrapEl: HTMLSpanElement | undefined;
   let triggerEl: HTMLButtonElement | undefined;
   let popoverEl: HTMLDivElement | undefined = $state();
-  const popoverId = $derived(`popover-${label.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`);
+  // per-INSTANCE, not per-label (SC 4.1.2) -- see HexButton.svelte's identical fix.
+  const popoverId = uid("popover");
 
   function close() {
     if (!open) return;
@@ -31,24 +34,35 @@
     open = false; // dismissed by clicking elsewhere -- focus was already elsewhere, no return needed
   }
 
-  function handleDocumentKeydown(event: KeyboardEvent) {
+  // LOCAL, not document-level: the innermost open layer handles Esc first. A listener on
+  // `document` only ever runs once the keydown has already bubbled past every ancestor
+  // (including an enclosing Panel's own Escape-collapses-it handler), so by the time this fired
+  // the panel would already have collapsed too. Attached to the popover's own wrapper, this runs
+  // WHILE the event is still bubbling through the popover's own subtree, before it ever reaches
+  // an ancestor Panel -- stopPropagation() there keeps it from doing so.
+  function handleLocalKeydown(event: KeyboardEvent) {
     if (event.key === "Escape" && open) {
       event.preventDefault();
+      event.stopPropagation();
       close();
     }
   }
 
   onMount(() => {
     document.addEventListener("pointerdown", handleDocumentPointerdown);
-    document.addEventListener("keydown", handleDocumentKeydown);
+    // imperative, not a template `onkeydown`, so svelte-check's a11y rule (rightly, for the usual
+    // case of a fake button) does not flag a plain wrapper span for a keyboard shortcut that is
+    // really about the whole popover, not a widget role this element should pretend to have.
+    const el = wrapEl;
+    el?.addEventListener("keydown", handleLocalKeydown);
     return () => {
       document.removeEventListener("pointerdown", handleDocumentPointerdown);
-      document.removeEventListener("keydown", handleDocumentKeydown);
+      el?.removeEventListener("keydown", handleLocalKeydown);
     };
   });
 </script>
 
-<span class="popover-wrap">
+<span class="popover-wrap" bind:this={wrapEl}>
   <button
     type="button"
     class="popover-trigger"
@@ -60,11 +74,12 @@
   >
     <Icon name="info" size={16} />
   </button>
-  {#if open}
-    <div class="popover" id={popoverId} bind:this={popoverEl}>
-      {@render children()}
-    </div>
-  {/if}
+  <!-- always rendered (never {#if open}), toggled with `hidden` -- aria-controls (on the trigger
+       above) must reference an element that actually EXISTS in the DOM (SC 4.1.2); see
+       Accordion.svelte's identical fix for the same reason. -->
+  <div class="popover" id={popoverId} bind:this={popoverEl} hidden={!open}>
+    {@render children()}
+  </div>
 </span>
 
 <style>

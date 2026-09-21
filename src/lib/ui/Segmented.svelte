@@ -60,4 +60,16 @@
     color: var(--text-on-accent);
     font-weight: 700;
   }
+
+  /* SC 1.4.1/1.4.11: forced-colors mode leaves every segment's background at Canvas, erasing
+     which lens is selected; Highlight/HighlightText restores that distinction. */
+  @media (forced-colors: active) {
+    .seg {
+      border-color: ButtonText;
+    }
+    .seg button[aria-pressed="true"] {
+      background: Highlight;
+      color: HighlightText;
+    }
+  }
 </style>

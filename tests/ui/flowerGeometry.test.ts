@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeFlowerGeometry,
+  describeFlowerSummary,
   sectorPath,
   type FlowerComponentInput,
 } from "../../src/lib/ui/flowerGeometry";
@@ -140,14 +141,41 @@ describe("the mean rule: centre = mean of the non-null components (even weights)
   });
 });
 
-describe("categories.ts resolution (the two primary-producer spellings)", () => {
-  it("'primprod' and 'primary producer' petals share the same color token", () => {
-    const g = computeFlowerGeometry([
-      { key: "primprod", score: 50 },
-      { key: "primary producer", score: 50 },
-    ]);
-    expect(g.petals[0].category.color).toBe(g.petals[1].category.color);
-    expect(g.petals[0].category.color).toBe("--cat-primprod");
+describe("computeFlowerGeometry refuses two components that share one category", () => {
+  // categories.test.ts already proves "primprod" and "primary producer" resolve to the SAME
+  // category (--cat-primprod) -- exactly why they must never BOTH appear as separate flower
+  // components: two petals with the identical color/label is not a rendering choice, it is
+  // caller data that collapsed two distinct slots onto one category (the gallery's own fixture
+  // had this bug: both spellings, listed as if they were different components).
+  it("throws when the two primary-producer spellings both appear", () => {
+    expect(() =>
+      computeFlowerGeometry([
+        { key: "primprod", score: 50 },
+        { key: "primary producer", score: 50 },
+      ]),
+    ).toThrow(/primprod.*primary producer|primary producer.*primprod/);
+  });
+
+  it("throws even when the literal raw key is repeated verbatim", () => {
+    expect(() =>
+      computeFlowerGeometry([
+        { key: "bird", score: 10 },
+        { key: "bird", score: 20 },
+      ]),
+    ).toThrow(/both resolve to category "bird"/);
+  });
+
+  it("does NOT throw for several unrecognized (nodata) categories -- that shape is ordinary data", () => {
+    expect(() =>
+      computeFlowerGeometry([
+        { key: "unknown-a", score: 10 },
+        { key: "unknown-b", score: 20 },
+      ]),
+    ).not.toThrow();
+  });
+
+  it("does not throw for the normal eight-category fixture (one of each)", () => {
+    expect(() => computeFlowerGeometry(EIGHT)).not.toThrow();
   });
 });
 
@@ -172,5 +200,64 @@ describe("sectorPath", () => {
   it("a span <= 180deg clears the large-arc-flag", () => {
     const d = sectorPath(0, 0, 10, 0, 180);
     expect(d).toMatch(/A 10 10 0 0 1/);
+  });
+});
+
+describe("describeFlowerSummary (SC 1.1.1: the text summary must not contradict the mean it describes)", () => {
+  // the exact seeded fault this closes: "mean 45 across 7 components" over a geometry that only
+  // drew 6 petals plus one "no data" slot -- the OLD summary counted every INPUT component
+  // (components.length), not the number the mean was actually averaged over.
+  it("the component count is the number of DRAWN petals, never the no-data ones too", () => {
+    const geometry = computeFlowerGeometry([
+      { key: "bird", score: 62 },
+      { key: "coral", score: null },
+      { key: "fish", score: 40 },
+      { key: "invertebrate", score: 55 },
+      { key: "mammal", score: 70 },
+      { key: "primprod", score: 33 },
+      { key: "turtle", score: 12 },
+    ]);
+    const text = describeFlowerSummary("Program Area: GEO", geometry);
+    expect(text).toContain("across 6 components");
+    expect(text).not.toContain("across 7 components");
+  });
+
+  it("names the absent component in its own sentence, separate from the count", () => {
+    const geometry = computeFlowerGeometry([
+      { key: "bird", score: 62 },
+      { key: "coral", score: null },
+    ]);
+    const text = describeFlowerSummary("Cell 123", geometry);
+    expect(text).toContain("No data for Coral");
+  });
+
+  it("says nothing about absent components when there are none", () => {
+    const geometry = computeFlowerGeometry(EIGHT);
+    expect(describeFlowerSummary("Full study area", geometry)).not.toContain("No data for");
+  });
+
+  it("singular 'component' for exactly one drawn petal", () => {
+    const geometry = computeFlowerGeometry([{ key: "bird", score: 62 }]);
+    expect(describeFlowerSummary("Cell 1", geometry)).toContain("across 1 component:");
+  });
+
+  it("an all-null flower reports no mean and names every absent component", () => {
+    const geometry = computeFlowerGeometry([
+      { key: "bird", score: null },
+      { key: "coral", score: null },
+    ]);
+    const text = describeFlowerSummary("Cell 99999", geometry);
+    expect(text).toContain("Composite mean: no data");
+    expect(text).toContain("Bird");
+    expect(text).toContain("Coral");
+  });
+
+  it("the mean in the text is the SAME rounded value the hub renders (they read off one geometry)", () => {
+    const geometry = computeFlowerGeometry([
+      { key: "bird", score: 60 },
+      { key: "coral", score: 61 },
+    ]);
+    const roundedCenter = Math.round(geometry.centerValue!);
+    expect(describeFlowerSummary("Cell 1", geometry)).toContain(`mean ${roundedCenter}`);
   });
 });

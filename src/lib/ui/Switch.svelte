@@ -70,4 +70,24 @@
     transform: translateX(18px);
     background: var(--text-on-accent);
   }
+
+  /* SC 1.4.1/1.4.11: forced-colors mode strips the track/thumb backgrounds to nothing distinct,
+     erasing on vs off; system colors (the same Highlight/HighlightText pair the OS uses for a
+     selected control) restore that distinction without overriding the user's chosen palette. */
+  @media (forced-colors: active) {
+    .switch-track {
+      background: ButtonFace;
+      border-color: ButtonText;
+    }
+    .switch--on .switch-track {
+      background: Highlight;
+      border-color: Highlight;
+    }
+    .switch-thumb {
+      background: ButtonText;
+    }
+    .switch--on .switch-thumb {
+      background: HighlightText;
+    }
+  }
 </style>

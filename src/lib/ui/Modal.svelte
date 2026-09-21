@@ -6,6 +6,7 @@
   // reproduce what the platform already guarantees, less reliably.
   import type { Snippet } from "svelte";
   import Icon from "./Icon.svelte";
+  import { uid } from "./uid";
 
   interface Props {
     open: boolean;
@@ -19,7 +20,8 @@
 
   let { open, title, children, onclose }: Props = $props();
   let dialogEl: HTMLDialogElement | undefined;
-  const titleId = $derived(`modal-title-${title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`);
+  // per-INSTANCE, not per-title (SC 4.1.2) -- see HexButton.svelte's identical fix.
+  const titleId = uid("modal-title");
 
   $effect(() => {
     if (!dialogEl) return;
@@ -36,6 +38,14 @@
   // the dialog's own first/last focusable element explicitly, so the browser's default handling
   // for the boundary case never runs at all.
   function handleDialogKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      // the innermost open layer handles Esc first: if this modal is ever rendered nested inside
+      // a Panel's DOM subtree, the raw keydown would otherwise keep bubbling past the dialog (the
+      // browser's own Escape-closes-the-dialog default action does not stop propagation) and also
+      // collapse the enclosing panel.
+      event.stopPropagation();
+      return;
+    }
     if (event.key !== "Tab" || !dialogEl) return;
     const focusable = [...dialogEl.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)];
     if (focusable.length === 0) return;

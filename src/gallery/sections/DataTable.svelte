@@ -110,13 +110,26 @@
 <div class="col">
   <h3>Small table (sort a column, filter, arrow-key between cells)</h3>
   <div id="dt-small">
-    <DataTable {columns} rows={small} getRowId={(r) => r.id} height={260} {onExport} />
+    <DataTable
+      label="Species table (small)"
+      {columns}
+      rows={small}
+      getRowId={(r) => r.id}
+      height={260}
+      {onExport}
+    />
   </div>
   <p class="note">{lastExport}</p>
 
   <h3 id="dt-big-label">10,000 rows (virtualized)</h3>
   <div id="dt-big">
-    <DataTable {columns} rows={big} getRowId={(r) => r.id} height={320} />
+    <DataTable
+      label="Species table (10,000 rows)"
+      {columns}
+      rows={big}
+      getRowId={(r) => r.id}
+      height={320}
+    />
   </div>
 </div>
 

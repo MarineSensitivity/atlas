@@ -1,9 +1,13 @@
-# atlas 0.7.1
+# atlas 0.7.2
 
-`atlas-3` step 3, fix round 1: the CLS and "no theme flash" gates from 0.7.0 could not actually
-fail (confirmed: an 8 px skeleton offset and the theme-setting line replaced with `void theme;`
-both left every existing shell spec green). Replaced/added the real gates, which then caught four
-genuine bugs the vacuous versions had let through.
+`atlas-3` step 3 (the shell wired into `index.html`) and its fix round 1, merged into main after
+`atlas-2` step 3b and `atlas-3` step 4's accessibility round (both below, at 0.7.0/0.7.1) had
+already landed independently.
+
+`atlas-3` step 3, fix round 1: the CLS and "no theme flash" gates from the initial shell could not
+actually fail (confirmed: an 8 px skeleton offset and the theme-setting line replaced with
+`void theme;` both left every existing shell spec green). Replaced/added the real gates, which then
+caught four genuine bugs the vacuous versions had let through.
 
 - **`e2e/shell.cls.spec.ts`** is now a GEOMETRY-EQUALITY gate: with the app bundle route-aborted
   (`blockAppBundle`, new in `e2e/hermetic.ts`), it captures the bounding box of every keyed
@@ -33,11 +37,9 @@ genuine bugs the vacuous versions had let through.
 - **Budget relaxed** (plan D13, owner: "we don't need to be so tight on the 350 KB budget"): the
   static critical path budget is now **450 KB gzip** (`CRITICAL_BUDGET_BYTES`,
   `scripts/size-budget-core.mjs`), up from 350; runtime workers stay at 150 KB gzip. The
-  self-hosted brand fonts stay wired exactly as 0.7.0 shipped them.
+  self-hosted brand fonts stay wired exactly as first shipped.
 
-# atlas 0.7.0
-
-`atlas-3` step 3: the shell wired into `index.html`. A static skeleton (top bar, five-tool rail,
+`atlas-3` step 3 (initial): the shell wired into `index.html`. A static skeleton (top bar, five-tool rail,
 one floating panel frame, the phone bottom bar/sheet) paints as inlined critical CSS before any
 bundle loads or parses, then `src/main.ts` hydrates it with the real components — geometrically
 IDENTICAL to the skeleton, measured at CLS = 0 (desktop 1280×800 and phone 390×844, both themes).
@@ -69,6 +71,102 @@ IDENTICAL to the skeleton, measured at CLS = 0 (desktop 1280×800 and phone 390�
   (`e2e/shell.cls.spec.ts`, `e2e/shell.a11y.spec.ts`, `e2e/shell.url-state.spec.ts`) and
   `tests/shell/*` cover CLS, axe, keyboard reach, roving tabindex, the URL-is-the-view contract and
   a `pushState` source-scan guard.
+
+# atlas 0.7.1
+
+`atlas-3` step 4, fix round 1: a manual (Opus) accessibility walk of the gallery by keyboard and
+accessibility tree found 13 defects axe's serious/critical filter missed (Section 508 requires
+fixing these before the lenses build on these components). All 13 are fixed:
+
+- **`HexButton`/`Pill`/`Modal`/`Accordion`/`Popover`/`About`**: tooltip/panel ids are per-instance
+  (`uid()`), never derived from a label/prop that can repeat — fixes duplicate ids across multiple
+  same-labelled instances (SC 4.1.2). `HexButton`/`Pill` tooltips are hoverable and Esc-dismissible
+  without moving focus (SC 1.4.13). `Accordion`'s body and `Popover`'s floating content are now
+  always rendered (toggled via `hidden`) instead of removed from the DOM, so their
+  `aria-controls`/`aria-describedby` targets always exist.
+- **`HexButton`/`Switch`/`Segmented`/`Chip`/`Legend`**: a `forced-colors: active` fallback keeps
+  idle/pressed/inactive and selected/unselected states visually distinct under Windows High
+  Contrast (SC 1.4.1/1.4.11); `Legend`'s gradient itself is preserved (`forced-color-adjust: none`).
+- **`Flower`/`Treemap`**: the SVG root is `role="group"` (never `role="img"`, which hid every
+  child); each petal/cell keeps its own `role="img"` + computed name (SC 1.1.1/4.1.2). `Flower`'s
+  text summary is now built from the petals actually drawn, not the raw component count (fixes a
+  summary/chart count mismatch); `computeFlowerGeometry()` now refuses two components that resolve
+  to the same category.
+- **`DataTable`**: takes a required `label` (the grid's accessible name); `aria-rowcount`/
+  `aria-rowindex` now account for both header rows (SC 1.3.1/4.1.2). A clipped cell's full value is
+  reachable via a hover/focus overlay (SC 1.4.4/1.4.12), and the roving-tabindex "active" cell is
+  now visually distinct from a real `:focus-visible` ring.
+- **`Sheet`**: Esc-to-peek moves focus to its own collapse control, never `<body>` (SC 2.4.3).
+- **`Panel`/`About`**: no longer force a fixed width past 320px viewports (SC 1.4.10); `Panel`'s
+  Escape handler now defers to a nested open layer (a `Popover`, a `Select`) that already handled
+  the same keydown.
+- **`Toast`**: auto-dismiss pauses on hover/focus and resumes with the time actually left (SC
+  2.2.1).
+- **`src/lib/ui/announcer.ts` + `Announcer.svelte`**: the ONE shared polite live region — every
+  component calls `announce(text)` instead of rendering its own `role="status"` (SC 4.1.3); six
+  concurrent regions collapse to one.
+- **`src/lib/ui/touch-targets.css`**: a shared 24px (any pointer) / 44px (coarse pointer) floor for
+  every previously-undersized control (SC 2.5.8).
+- Fixed a real WCAG contrast failure found while triaging axe's `incomplete` findings: paper
+  theme's `--cat-bird` measured 4.4:1 against white label text (below 4.5:1 AA); darkened to
+  `#166a99`.
+- `e2e/gallery.spec.ts`'s axe check now also fails on any untriaged `incomplete` finding, not just
+  serious/critical violations.
+
+# atlas 0.7.0
+
+`atlas-2` step 3b (Opus half): the `sql/*.sql` twins of msens's scoring and species functions, the
+thin TypeScript layer that runs them for a place in bounded memory, and the R-vs-SQL parity harness
+that keeps the two from drifting. Nothing here is reachable from `index.html`'s static graph (the
+size budget is unchanged at 11.5 KB gzip); the lenses reach it through a dynamic `import()`.
+
+- **`sql/` — nine verbatim ports, each header naming its R twin (`file:line`) and the fixture that
+  pins it.** `species_for_zone.sql` (the precomputed `app/zone_taxon.parquet` read),
+  `species_for_cells.sql` (`.species_sql()`), `species_shares.sql` (`.species_shares()`, the ONE
+  rule both species paths come through), `scores_for_cells.sql` (the **blended** zone method),
+  `cells_in_study_area.sql` (D7b's clip), `cell_components.sql` (the click popup),
+  `composition.sql` (the treemap's taxonomy join), and `cell_model_key.sql` / `cell_model_seq.sql`
+  — the `cell_model` join chosen by `boot.id_field`, two files rather than a hard-coded column,
+  because assuming v8's `mdl_id` on v7 is a `Binder Error`, not a wrong number. Metrics are
+  addressed by `metric_key` throughout (the wide cell tile carries one DOUBLE column per key);
+  `value` appears in no file, and `tests/analysis/sqlTwins.test.ts` scans for it, allowing only
+  `zone_value` and DuckDB's `UNPIVOT ... VALUE` keyword.
+- **The blend is in the DENOMINATOR, and that is the whole gate.** `sum(coalesce(v,0)*pct)` and
+  `sum(v*pct)` are the same number, so the published zone method differs from the old one only in
+  dividing by the weight of every touched study-area cell (`w_all`) instead of the weight of the
+  cells that have the metric (`w_present`). Both are returned — `score` and `mean_where_present` —
+  so the panel gets "17.7, over 1.4 % of the place", and the parity harness's RED side reads the
+  old formula off the same row.
+- **`src/lib/analysis/`**: `place.ts` (`analysisGeometry()` = `normalizeForAnalysis()` then
+  `decode(encode(...))` — that order, since the encoder REFUSES a wrapped ring; `placeCells()`,
+  `tilesForCells()`, `batchTiles()`), `combine.ts` (the bounded-memory fold), `queries.ts` (the
+  engine-agnostic orchestration the browser AND the parity harness both run), `sources.ts` (the
+  browser's `Engine` plumbing), `templates.ts` (the `?raw` imports).
+- **Bounded memory for big places**: `species_for_cells.sql` answers ONE batch of ≤ 8 `cell_model`
+  tiles with partial sums (`Σ area·pct/100`, `Σ val·pct`, `Σ pct`), the batch's buffers are dropped,
+  and `combineSpeciesPartials()` folds them — a sum and a ratio of sums, both exact under partition.
+  `tests/analysis/batching.test.ts` proves batch sizes 1…64 agree with one big batch to 1e-12 over a
+  37-tile, 120-model fixture, and that the answer is NOT the mean of the batches' means.
+- **`TableStore.ref(name)`** (new on the interface, implemented by `MemoryTableStore`): the
+  FROM-clause source of an already-registered table, so a view can span many tiles without any
+  caller knowing whether MEMORY or OPFS is live. The OPFS store (Step 4) implements the same method.
+- **Parity harness** (`scripts/parity/`): `fixtures.R` calls msens through `devtools::load_all()` on
+  the `atlas-contract` worktree, read-only, and writes `tests/fixtures/parity/{v7,v9}/*.json`;
+  `run.mjs` executes the SAME `sql/*.sql` files under Node and diffs. `--base` takes a directory or
+  a URL (`mirror.mjs` assembles the local stand-in for the bucket, `serve.mjs` serves it), so the
+  same harness runs against S3 after the push; `--sql-dir` points it at a mutated copy, which is how
+  each seeded fault is demonstrated. Gates, green on v7 AND v9: row counts equal and max|Δ| < 1e-9
+  on `area_km2`, `avg_suit`, `pct_cat`, `score`; GAA traced from its outline reproduces its
+  published composite within 0.5 on v9 (0.0972); and the RED side — the OLD formula must still miss
+  **GEO** by ≥ 49.1448 (v9) / 58.9534 (v7) on turtle, so a silently-lost blend cannot pass.
+- **`tests/fixtures/parity-e2e/`** (`npm run e2e:parity`): one of each query through the real
+  DuckDB-WASM engine, chromium/firefox/webkit, with `extensions.duckdb.org` blocked, asserted
+  against the same R fixtures.
+- **`tests/fixtures/place_codec.json`** gains the `encode_reject` list with the
+  `reject_wrapped_ring` vector msens is owed (its commit `4d99721`): the byte-level encoder refuses
+  a ring that still steps 340° (code `wrapped`), while the high-level path normalizes first and
+  yields the already-committed `bering` token. New sha256
+  `50ad541afff2c2cd2c0d005d89f8ba230e2d19f9595ffcf1b03c233899d2897f` — msens re-copies the file.
 
 # atlas 0.6.0
 

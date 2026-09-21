@@ -46,17 +46,40 @@ test.describe("screenshots: every section, both themes, phone and desktop widths
   }
 });
 
-test.describe("axe: zero serious/critical findings, both themes, both widths", () => {
+// atlas-3 step 4 fix round 1: the gate itself had a hole -- it filtered on serious/critical and
+// silently ignored `incomplete` entirely, where aria-prohibited-attr (28 nodes), duplicate-id-aria
+// (6 nodes) and color-contrast (16 nodes) all sat unexamined. `incomplete` must now be EMPTY, or
+// every entry still present must be explicitly triaged here with a reason -- a new incomplete id
+// showing up untriaged fails the gate, the same as a real violation would. Fixing items 1
+// (per-instance ids) and 4 (role="img" instead of role-less aria-label) makes
+// aria-prohibited-attr and duplicate-id-aria disappear outright.
+const INCOMPLETE_ALLOWLIST: Record<string, string> = {
+  "color-contrast":
+    "axe cannot statically resolve two kinds of composited color here: (1) color-mix()/" +
+    "backdrop-filter glass surfaces (every panel/rail's translucent background), and (2) the " +
+    'Treemap cell labels, plain SVG <text> painted over a <rect> it reports as "overlapped" ' +
+    "even though the label and its background share one element and one fixed contrast (label " +
+    "color: --text-on-accent; fill: a --cat-* token -- both already gated). " +
+    "scripts/contrast.mjs verifies every brand-chrome token pair against --surface-panel-basis " +
+    "(the measured worst-case OPAQUE composite of that glass over the map); the eight --cat-*" +
+    " tokens are measured against that same surface too (see tokens.css's @contrast block) -- " +
+    "this IS the real gate for both cases axe cannot resolve on its own.",
+};
+
+test.describe("axe: zero serious/critical findings, and every `incomplete` finding triaged, both themes, both widths", () => {
   for (const theme of THEMES) {
     for (const viewport of VIEWPORTS) {
       test(`${theme} @ ${viewport.name}`, async ({ page }) => {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await gotoGallery(page, theme);
-        const { violations } = await new AxeBuilder({ page })
+        const { violations, incomplete } = await new AxeBuilder({ page })
           .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
           .analyze();
         const bad = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
         expect(bad, JSON.stringify(bad, null, 2)).toEqual([]);
+
+        const untriaged = incomplete.filter((v) => !(v.id in INCOMPLETE_ALLOWLIST));
+        expect(untriaged, JSON.stringify(untriaged, null, 2)).toEqual([]);
       });
     }
   }
@@ -333,5 +356,364 @@ test.describe("atlas-3 step 2b: the data components (Flower, DataTable, Treemap)
       }),
     );
     expect(rows).toEqual(petalLabels);
+  });
+});
+
+// atlas-3 step 4 fix round 1: 13 defects an Opus manual accessibility walk found that axe's
+// serious/critical filter missed. Each block below is one item; the seeded fault for each is
+// documented in this step's report (a manual revert-run-revert pass), not re-encoded here as a
+// permanent mutation test the way tests/*.test.ts do for pure logic -- these assert real rendered
+// behavior a unit test cannot see.
+test.describe("fix round 1, item 1 (SC 4.1.2): every id-reference resolves to a UNIQUE node", () => {
+  test("no aria-describedby/aria-labelledby/aria-controls target is missing, duplicated, or shared", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    const problems = await page.evaluate(() => {
+      const found: string[] = [];
+      const idCounts = new Map<string, number>();
+      for (const el of document.querySelectorAll("[id]")) {
+        idCounts.set(el.id, (idCounts.get(el.id) ?? 0) + 1);
+      }
+      for (const attr of ["aria-describedby", "aria-labelledby", "aria-controls"]) {
+        for (const el of document.querySelectorAll(`[${attr}]`)) {
+          for (const id of (el.getAttribute(attr) ?? "").split(/\s+/).filter(Boolean)) {
+            const count = idCounts.get(id) ?? 0;
+            if (count === 0) found.push(`${attr}="${id}" on <${el.tagName}> has no matching id`);
+            else if (count > 1)
+              found.push(`id="${id}" (referenced by ${attr}) is shared by ${count} elements`);
+          }
+        }
+      }
+      return found;
+    });
+    expect(problems).toEqual([]);
+  });
+
+  test("the enabled Flower rail button's own tooltip describes ITSELF, not the inactive rail's", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    // #rail's first toolbar (Scores lens) has an ENABLED Flower button; its second toolbar
+    // (Species lens) has the INACTIVE one with a DIFFERENT tooltip text ("...Scores only"). Both
+    // are labelled "Flower plot" -- exactly the label collision the fix closes.
+    const enabledFlower = page
+      .locator("#rail [role='toolbar']")
+      .nth(0)
+      .locator("button[aria-label='Flower plot']");
+    const describedById = await enabledFlower.getAttribute("aria-describedby");
+    const description = await page.locator(`#${describedById}`).textContent();
+    expect(description).not.toContain("Scores only");
+  });
+});
+
+test.describe("fix round 1, item 2 (SC 1.4.13): tooltips are hoverable and Esc-dismissible without moving focus", () => {
+  test("HexButton: the pointer can move onto the tooltip itself without it disappearing", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    const btn = page.locator("#hex-button button[aria-label='Layers']").first();
+    await btn.hover();
+    const tooltipId = await btn.getAttribute("aria-describedby");
+    const tooltip = page.locator(`#${tooltipId}`);
+    await expect(tooltip).toBeVisible();
+    await tooltip.hover();
+    await page.waitForTimeout(200); // past the close-delay if hoverable failed
+    await expect(tooltip).toBeVisible();
+  });
+
+  test("HexButton: Esc hides the tooltip without moving focus off the button", async ({ page }) => {
+    await gotoGallery(page, "navy");
+    const btn = page.locator("#hex-button button[aria-label='Layers']").first();
+    await btn.focus();
+    const tooltipId = await btn.getAttribute("aria-describedby");
+    const tooltip = page.locator(`#${tooltipId}`);
+    await expect(tooltip).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(tooltip).toBeHidden();
+    await expect(btn).toBeFocused();
+  });
+});
+
+test.describe("fix round 1, item 3 (SC 1.4.1/1.4.11): forced-colors mode does not erase state", () => {
+  test.use({ forcedColors: "active" });
+
+  test("HexButton: idle, pressed and inactive faces are visually distinct system colors", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    const idle = page.locator("#hex-button button[aria-pressed='false']").first();
+    const pressed = page.locator("#hex-button button[aria-pressed='true']").first();
+    const inactive = page.locator("#hex-button button[aria-disabled='true']");
+    const idleColor = await idle.evaluate((el) => getComputedStyle(el, "::after").backgroundColor);
+    const pressedColor = await pressed.evaluate(
+      (el) => getComputedStyle(el, "::after").backgroundColor,
+    );
+    expect(pressedColor).not.toBe(idleColor);
+
+    const idleIconColor = await idle.locator(".icon").evaluate((el) => getComputedStyle(el).color);
+    const inactiveIconColor = await inactive
+      .locator(".icon")
+      .evaluate((el) => getComputedStyle(el).color);
+    expect(inactiveIconColor).not.toBe(idleIconColor);
+  });
+
+  test("Legend: the ramp is not blank (forced-color-adjust: none keeps the data gradient)", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    const backgroundImage = await page
+      .locator("#legend .ramp")
+      .evaluate((el) => getComputedStyle(el).backgroundImage);
+    expect(backgroundImage).not.toBe("none");
+  });
+});
+
+test.describe("fix round 1, item 4 (SC 1.1.1/4.1.2): Flower petals and Treemap cells keep their own accessible name", () => {
+  test("Flower: role=group on the SVG (never role=img), role=img + a computed name on each petal", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    const svg = page.locator("#flower-eight svg.flower-svg");
+    await expect(svg).toHaveAttribute("role", "group");
+    await expect(svg.getByRole("img", { name: "Coral: 18" })).toBeVisible();
+  });
+
+  test("Treemap: each cell keeps role=img with its own computed name", async ({ page }) => {
+    await gotoGallery(page, "navy");
+    const invertebrate = page
+      .locator("#treemap-populated")
+      .getByRole("img", { name: /^Invertebrate: /, exact: false });
+    await expect(invertebrate.first()).toBeVisible();
+  });
+});
+
+test.describe("fix round 1, item 6 (SC 1.3.1/4.1.2): the grid has a name, and its row count/index include both header rows", () => {
+  test("aria-rowcount is data rows PLUS the two header rows; aria-rowindex starts data rows at 3", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    const table = page.locator("#dt-small table");
+    await expect(table).toHaveAttribute("aria-label", "Species table (small)");
+    await expect(table).toHaveAttribute("aria-rowcount", "8"); // 6 data rows + 2 header rows
+    await expect(table.locator("thead tr").nth(0)).toHaveAttribute("aria-rowindex", "1");
+    await expect(table.locator("thead tr").nth(1)).toHaveAttribute("aria-rowindex", "2");
+    await expect(table.locator("tbody tr[aria-rowindex]").first()).toHaveAttribute(
+      "aria-rowindex",
+      "3",
+    );
+  });
+});
+
+test.describe("fix round 1, item 7 (SC 2.4.3): Sheet's Esc moves focus to its own collapse control, never <body>", () => {
+  test("collapsing to peek via Esc leaves focus on the collapse button", async ({ page }) => {
+    await gotoGallery(page, "navy");
+    const sheetSection = page.locator("#sheet");
+    const collapseBtn = sheetSection.locator('[data-sheet-control="collapse"]');
+    // the real regression: focus starts on something INSIDE the body (the scrollable region
+    // itself, tabindex=0) -- collapsing to peek hides that body via display:none, which is the
+    // element that would strand focus if it were never moved. Focusing the collapse control
+    // itself first would trivially "pass" without exercising the bug at all.
+    await sheetSection.locator(".sheet-body").focus();
+    await page.keyboard.press("Escape");
+    await expect(collapseBtn).toBeFocused();
+    const isBody = await page.evaluate(() => document.activeElement === document.body);
+    expect(isBody).toBe(false);
+  });
+});
+
+test.describe("fix round 1, item 8 (SC 1.4.10): no horizontal overflow at 320 CSS px", () => {
+  // Targeted at the two components the manual review actually flagged (About.svelte's fixed
+  // 372px, Panel.svelte's fixed --size-panel/380px -- "measured scrollWidth 430 > 320"), rather
+  // than a page-wide sweep: a page-wide zero-tolerance check also catches OTHER, pre-existing,
+  // unrelated reflow gaps this fix round never touched (e.g. a data table's own unbreakable-token
+  // cells, which SC 1.4.10 explicitly exempts from 2D-scroll-free reflow in the first place) --
+  // those are real findings for a future pass, not something to half-fix under this one's scope.
+  test("About and Panel each fit within a 320px viewport instead of forcing it wider", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 800 });
+    await gotoGallery(page, "navy");
+    // the INNER component's own box, not the outer gallery-section: a plain block ancestor with
+    // `width: auto` sizes itself to the containing block regardless of its content, so a fixed-
+    // width child overflowing it (ordinary `overflow: visible`) would never show up on the
+    // section's own boundingBox -- only on the fixed-width element itself.
+    for (const [sectionId, innerSelector] of [
+      ["#about", ".about"],
+      ["#panel", ".panel"],
+    ] as const) {
+      const box = await page.locator(sectionId).locator(innerSelector).first().boundingBox();
+      expect(box, innerSelector).not.toBeNull();
+      expect(box!.width, `${innerSelector} width`).toBeLessThanOrEqual(320);
+    }
+  });
+});
+
+test.describe("fix round 1, item 9 (SC 2.2.1): a Toast's auto-dismiss pauses while focused", () => {
+  test("focusing its Dismiss button keeps a toast alive past its 5s timeout", async ({ page }) => {
+    await gotoGallery(page, "navy");
+    const toastSection = page.locator("#toast");
+    await toastSection.getByRole("button", { name: "Announce a result" }).click();
+    const toast = toastSection.locator(".toast").first();
+    await expect(toast).toBeVisible();
+    await toast.getByRole("button", { name: "Dismiss" }).focus();
+    await page.waitForTimeout(6000);
+    await expect(toast).toBeVisible(); // still here -- the timer was paused while focused
+  });
+});
+
+test.describe("fix round 1, item 10 (SC 4.1.3): exactly ONE live region exists, even after several components announce", () => {
+  test("on initial load", async ({ page }) => {
+    await gotoGallery(page, "navy");
+    expect(await page.locator('[aria-live], [role="status"]').count()).toBe(1);
+  });
+
+  test("after several different components each announce something", async ({ page }) => {
+    await gotoGallery(page, "navy");
+    // both targets below are intentionally aria-disabled (not the disabled attribute -- spec.md
+    // §5.2: "stays focusable and explains itself"), so a real pointer user CAN click them; only
+    // Playwright's own extra-cautious actionability check treats aria-disabled as unclickable,
+    // hence `force: true` on both.
+    await page
+      .locator("#rail [role='toolbar']")
+      .nth(1)
+      .locator("button[aria-label='Flower plot']")
+      .click({ force: true });
+    await page.locator("#hex-button button[aria-disabled='true']").click({ force: true });
+    await page.locator("#toast").getByRole("button", { name: "Announce a result" }).click();
+    expect(await page.locator('[aria-live], [role="status"]').count()).toBe(1);
+  });
+});
+
+test.describe("fix round 1, item 11 (SC 1.1.1): the Legend ramp has a text equivalent stating both endpoints with units", () => {
+  test("role=img, a name with the quantity and both endpoints with units, and aria-hidden ticks", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    const ramp = page.locator("#legend .ramp");
+    await expect(ramp).toHaveAttribute("role", "img");
+    const name = await ramp.getAttribute("aria-label");
+    expect(name).toContain("Composite score");
+    expect(name).toMatch(/from .+ to .+ score/);
+    await expect(page.locator("#legend .ramp-ticks")).toHaveAttribute("aria-hidden", "true");
+  });
+});
+
+test.describe("fix round 1, item 12 (SC 1.4.4/1.4.12): no cell content is lost under the WCAG text-spacing stylesheet", () => {
+  test("a clipped cell's full value is still reachable via focus/hover", async ({ page }) => {
+    await gotoGallery(page, "navy");
+    // the standard SC 1.4.12 test stylesheet (W3C's own technique C36/C35 verification method)
+    await page.addStyleTag({
+      content: `* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p { margin-bottom: 2em !important; }`,
+    });
+    const cell = page.locator("#dt-small td[data-row='0'][data-col='1']"); // scientific name
+    await cell.click();
+    await expect(cell.locator(".cell-expand")).toBeVisible();
+    await expect(cell.locator(".cell-expand")).toHaveText("Balaenoptera musculus");
+  });
+});
+
+test.describe("fix round 1, item 13 (SC 2.5.8): every control reaches 44 CSS px on a coarse (touch) pointer", () => {
+  test.use({ hasTouch: true });
+
+  const SELECTORS = [
+    "#popover .popover-trigger",
+    "#switch .switch",
+    "#segmented button",
+    "#pill .pill",
+    "#data-table .sort-btn",
+    "#data-table .filter-field",
+    "#chip .chip-dismiss",
+  ];
+
+  for (const selector of SELECTORS) {
+    test(selector, async ({ page }) => {
+      await gotoGallery(page, "navy");
+      const el = page.locator(selector).first();
+      await expect(el).toBeVisible();
+      const box = await el.boundingBox();
+      expect(box, selector).not.toBeNull();
+      expect(box!.width, `${selector} width`).toBeGreaterThanOrEqual(44);
+      expect(box!.height, `${selector} height`).toBeGreaterThanOrEqual(44);
+    });
+  }
+});
+
+test.describe("fix round 1, also: Panel/Sheet's collapse control is a pure disclosure (no static aria-pressed)", () => {
+  test("Panel's collapse button carries aria-expanded but not aria-pressed", async ({ page }) => {
+    await gotoGallery(page, "navy");
+    const collapseBtn = page.locator("#panel [data-panel-control='collapse']");
+    await expect(collapseBtn).toHaveAttribute("aria-expanded", "true");
+    await expect(collapseBtn).not.toHaveAttribute("aria-pressed", /.*/);
+  });
+
+  test("Sheet's collapse button carries aria-expanded but not aria-pressed", async ({ page }) => {
+    await gotoGallery(page, "navy");
+    const collapseBtn = page.locator("#sheet [data-sheet-control='collapse']");
+    await expect(collapseBtn).toHaveAttribute("aria-expanded", /true|false/);
+    await expect(collapseBtn).not.toHaveAttribute("aria-pressed", /.*/);
+  });
+});
+
+test.describe("fix round 1, also: the innermost open layer handles Esc first", () => {
+  test("Esc inside a Popover NESTED in a Panel closes only the popover, leaving the panel expanded", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    const panelSection = page.locator("#panel");
+    const nestedTrigger = panelSection.locator(".popover-trigger");
+    await nestedTrigger.click();
+    await expect(panelSection.locator(".popover")).toBeVisible();
+    await page.keyboard.press("Escape");
+    // the popover's own local, stopPropagation()-ing handler must run first, during the SAME
+    // bubble pass, before the keydown ever reaches Panel's own root-level handler -- if it did
+    // not, the panel underneath would ALSO collapse on this same Escape press.
+    await expect(panelSection.locator(".popover")).toBeHidden();
+    await expect(panelSection.locator(".panel-surface")).toBeVisible();
+  });
+});
+
+test.describe("fix round 1, also: Panel's body is keyboard-reachable even with no focusable child", () => {
+  test("Panel's body region has tabindex=0 and its own accessible name", async ({ page }) => {
+    await gotoGallery(page, "navy");
+    const body = page.locator("#panel .panel-body");
+    await expect(body).toHaveAttribute("tabindex", "0");
+    await expect(body).toHaveAttribute("role", "region");
+  });
+});
+
+test.describe("fix round 1, also: a real focus ring and the roving-tabindex 'active' cell are visually distinct", () => {
+  test("DataTable: the active-but-unfocused cell uses a lighter, dashed indicator, not the strong focus ring", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    const cell00 = page.locator("#dt-small td[data-row='0'][data-col='0']");
+    const cell01 = page.locator("#dt-small td[data-row='0'][data-col='1']");
+    // a mouse click focuses the cell but browsers do not treat that as :focus-visible -- move
+    // there with a REAL keyboard arrow press (from an adjacent cell) to get the true "just
+    // tabbed/arrowed here" focus ring this fix distinguishes from the merely-active one.
+    await cell01.click();
+    await cell01.press("ArrowLeft");
+    await expect(cell00).toBeFocused();
+    const focusedOutline = await cell00.evaluate((el) => getComputedStyle(el).outlineStyle);
+    expect(focusedOutline).toBe("solid");
+    await page.keyboard.press("Tab"); // move real focus elsewhere (the export button, say)
+    const stillActiveButNotFocused = page.locator("#dt-small td[data-row='0'][data-col='0']");
+    await expect(stillActiveButNotFocused).not.toBeFocused();
+    const unfocusedOutline = await stillActiveButNotFocused.evaluate(
+      (el) => getComputedStyle(el).outlineStyle,
+    );
+    expect(unfocusedOutline).toBe("dashed");
+  });
+});
+
+test.describe("fix round 1, also: the Flower petal fixture has no duplicate category, and the fixture never had one", () => {
+  test("#flower-eight has exactly 8 distinct petal categories (colors)", async ({ page }) => {
+    await gotoGallery(page, "navy");
+    const fills = await page
+      .locator("#flower-eight .petal")
+      .evaluateAll((els) => els.map((el) => getComputedStyle(el).fill));
+    expect(new Set(fills).size).toBe(fills.length);
+    expect(fills).toHaveLength(8);
   });
 });

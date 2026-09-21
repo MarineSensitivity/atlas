@@ -6,6 +6,7 @@
   // question of where that URL should actually point once the asset is published somewhere).
   import { agencyDisplayName, SEAL_MIN_PX, shouldShowSeal } from "./sealVisibility";
   import Icon from "./Icon.svelte";
+  import { uid } from "./uid";
 
   // Not yet a real, published URL: MarineSensitivity.github.io/branding/ is gitignored in that
   // repo today, so this 404s until the asset is published (either un-gitignore + publish it there,
@@ -14,7 +15,10 @@
   const DEFAULT_SEAL_URL = "https://marinesensitivity.org/branding/mma-seal.svg";
 
   interface Props {
-    /** unique among About instances on one page (drives element ids) */
+    /** unique among About instances on one page (drives element ids); defaults to a fresh
+     * per-instance id (SC 4.1.2) rather than a fixed string, since two instances that both fell
+     * back to the same default would produce two same-named "About this release" region
+     * landmarks with colliding ids underneath */
     id?: string;
     /** the release/basemap attribution line, shown whether or not the seal renders */
     releaseNote: string;
@@ -25,7 +29,7 @@
   }
 
   let {
-    id = "about",
+    id,
     releaseNote,
     sealFlag = import.meta.env.VITE_SEAL,
     agency = import.meta.env.VITE_AGENCY,
@@ -33,14 +37,19 @@
     defaultExpanded = false,
   }: Props = $props();
 
+  // resolved and cached ONCE per instance (a plain const, not a destructuring default or a
+  // $derived) so uid("about") is never called again for this instance on a later re-render.
+  // svelte-ignore state_referenced_locally
+  const resolvedId = id ?? uid("about");
+
   // `defaultExpanded` is deliberately read only ONCE, as an "uncontrolled" initial value.
   // svelte-ignore state_referenced_locally
   let expanded = $state(defaultExpanded);
   let sealFailed = $state(false);
   const showSeal = $derived(shouldShowSeal(sealFlag, agency) && !sealFailed);
   const agencyName = $derived(agencyDisplayName(agency));
-  const titleId = $derived(`${id}-title`);
-  const bodyId = $derived(`${id}-body`);
+  const titleId = `${resolvedId}-title`;
+  const bodyId = `${resolvedId}-body`;
 </script>
 
 <section class="about" aria-labelledby={titleId}>
@@ -81,7 +90,11 @@
 
 <style>
   .about {
-    width: 372px;
+    /* SC 1.4.10 (Reflow): a fixed 372px overflowed the viewport at 320px CSS width (measured
+       scrollWidth 430 > 320, once the .about card's own border/padding is included) -- a max
+       plus 100% lets it shrink on a narrow viewport instead of forcing horizontal scroll. */
+    width: 100%;
+    max-width: 372px;
     padding: var(--space-3);
     border: 1px solid var(--border-control);
     border-radius: var(--radius-card);

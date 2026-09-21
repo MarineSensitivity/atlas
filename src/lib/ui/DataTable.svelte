@@ -4,6 +4,7 @@
   // virtualization window, keyboard cell navigation -- are pure functions in dataTableCore.ts,
   // unit-tested there; this component only wires them to DOM state.
   import { tick } from "svelte";
+  import { announce } from "./announcer";
   import Icon from "./Icon.svelte";
   import {
     type CellPosition,
@@ -11,6 +12,8 @@
     type DataTableColumn,
     filterRows,
     formatRowCountAnnouncement,
+    gridRowCount,
+    gridRowIndex,
     nextCellPosition,
     scrollTopForRow,
     sortRows,
@@ -18,6 +21,9 @@
   } from "./dataTableCore";
 
   interface Props {
+    /** the grid's accessible name (SC 1.3.1/4.1.2: a grid must have one) AND the subject named in
+     * its "loaded" announcement, e.g. "Species table" -> "Species table loaded, 1,234 rows". */
+    label: string;
     columns: DataTableColumn<T>[];
     rows: T[];
     getRowId?: (row: T) => string | number;
@@ -30,7 +36,7 @@
     onExport?: (rows: T[]) => void;
   }
 
-  let { columns, rows, getRowId, height = 400, rowHeight = 32, onExport }: Props = $props();
+  let { label, columns, rows, getRowId, height = 400, rowHeight = 32, onExport }: Props = $props();
 
   let sortColumnKey = $state<string | null>(null);
   let sortDirection = $state<SortDirection>(null);
@@ -53,11 +59,18 @@
   const visibleRows = $derived(sortedRows.slice(windowState.startIndex, windowState.endIndex));
   const pageSize = $derived(Math.max(1, Math.floor(height / rowHeight)));
 
-  // ONE polite live-region announcement on load AND on filter (spec.md §11): derived off
-  // filteredRows.length alone, which is set once on mount (the initial "load") and recomputed
-  // whenever rows, columns or filters change -- never merely because of a sort or cell move
-  // (sortedRows/activeCell are not read here, so they cannot retrigger it).
-  const liveMessage = $derived(formatRowCountAnnouncement(filteredRows.length));
+  // announces through the ONE shared live region (spec.md §11 / SC 4.1.3 -- this component
+  // renders no role="status" of its own) on load AND on every filter change: tracks
+  // filteredRows.length alone, so a sort or a cell move (sortedRows/activeCell are not read here)
+  // never retriggers it. The FIRST run (isInitialLoad still true) names the subject ("Species
+  // table loaded, …"); every run after that is a plain "Filtered to …" -- see
+  // formatRowCountAnnouncement's own header for why.
+  let isInitialLoad = true;
+  $effect(() => {
+    const count = filteredRows.length;
+    announce(formatRowCountAnnouncement(count, isInitialLoad ? "loaded" : "filtered", label));
+    isInitialLoad = false;
+  });
 
   function ariaSortFor(col: DataTableColumn<T>): "ascending" | "descending" | "none" | undefined {
     if (!col.sortable) return undefined;
@@ -131,7 +144,6 @@
 
 <div class="datatable">
   <div class="toolbar">
-    <div class="live-region" role="status" aria-live="polite">{liveMessage}</div>
     <button
       type="button"
       class="export-btn"
@@ -152,11 +164,12 @@
     <table
       class="grid"
       role="grid"
-      aria-rowcount={sortedRows.length}
+      aria-label={label}
+      aria-rowcount={gridRowCount(sortedRows.length)}
       aria-colcount={columns.length}
     >
       <thead>
-        <tr>
+        <tr aria-rowindex="1">
           {#each columns as col (col.key)}
             <th scope="col" aria-sort={ariaSortFor(col)}>
               {#if col.sortable}
@@ -172,7 +185,7 @@
             </th>
           {/each}
         </tr>
-        <tr class="filter-row">
+        <tr class="filter-row" aria-rowindex="2">
           {#each columns as col (col.key)}
             <th scope="col">
               <label class="filter-field">
@@ -197,7 +210,7 @@
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <tbody onkeydown={onGridKeydown}>
         {#if sortedRows.length === 0}
-          <tr>
+          <tr aria-rowindex={gridRowIndex(0)}>
             <td colspan={columns.length} class="empty">No rows match the current filter.</td>
           </tr>
         {:else}
@@ -206,7 +219,7 @@
           </tr>
           {#each visibleRows as row, i (getRowId ? getRowId(row) : windowState.startIndex + i)}
             {@const rowIndex = windowState.startIndex + i}
-            <tr aria-rowindex={rowIndex + 1} style={`height:${rowHeight}px`}>
+            <tr aria-rowindex={gridRowIndex(rowIndex)} style={`height:${rowHeight}px`}>
               {#each columns as col, colIndex (col.key)}
                 {@const isActive = activeCell.row === rowIndex && activeCell.col === colIndex}
                 <td
@@ -217,9 +230,18 @@
                   data-row={rowIndex}
                   data-col={colIndex}
                   tabindex={isActive ? 0 : -1}
+                  title={cellValue(row, col)}
                   onclick={() => onCellClick({ row: rowIndex, col: colIndex })}
                 >
-                  {cellValue(row, col)}
+                  <span class="cell-text">{cellValue(row, col)}</span>
+                  {#if isActive}
+                    <!-- SC 1.4.4/1.4.12: the cell text stays single-line + ellipsized so the
+                         virtualization's fixed rowHeight math holds at 10k rows, but a
+                         keyboard-focused (or hovered) cell reveals its FULL, un-clipped value --
+                         nothing longer than the column width is ever unrecoverable, at any zoom
+                         or text-spacing setting. -->
+                    <span class="cell-expand">{cellValue(row, col)}</span>
+                  {/if}
                 </td>
               {/each}
             </tr>
@@ -244,13 +266,8 @@
   .toolbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: var(--space-2);
-  }
-
-  .live-region {
-    color: var(--text-secondary);
-    font-size: var(--text-xs);
   }
 
   .export-btn {
@@ -358,8 +375,13 @@
   }
 
   .cell {
+    position: relative;
     padding: var(--space-1) var(--space-2);
     border-bottom: 1px solid var(--divider);
+  }
+
+  .cell-text {
+    display: block;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -369,10 +391,43 @@
     text-align: right;
   }
 
-  .cell:focus-visible,
-  .cell--active {
+  /* a REAL focus (the browser's own indicator) is a distinct, stronger ring from "this is the
+     cell roving tabindex would land on if you tabbed into the grid" -- .cell--active alone used
+     to paint the SAME strong ring even while the grid itself had no focus at all, which read as
+     "the table has focus" when it did not (SC 4.1.2: the visual state must match what a screen
+     reader would report -- the cell is not, in fact, focused). */
+  .cell:focus-visible {
     outline: 2px solid var(--focus-ring);
     outline-offset: -2px;
+  }
+
+  .cell--active:not(:focus-visible) {
+    outline: 1px dashed var(--border-control);
+    outline-offset: -2px;
+  }
+
+  /* SC 1.4.4/1.4.12: reveals the cell's full, un-clipped value on hover or focus -- a child of
+     .cell, so it counts toward :hover for as long as the pointer is over EITHER the cell or the
+     overlay itself (SC 1.4.13's "hoverable"), with no separate JS needed for that. */
+  .cell-expand {
+    display: none;
+  }
+
+  .cell:hover .cell-expand,
+  .cell:focus .cell-expand {
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 100%;
+    z-index: 20;
+    max-width: 320px;
+    white-space: normal;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-control);
+    background: var(--surface-raised);
+    color: var(--text-primary);
+    box-shadow: var(--elev-2);
   }
 
   .spacer td {

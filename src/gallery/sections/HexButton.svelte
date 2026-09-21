@@ -1,7 +1,15 @@
 <script lang="ts">
+  import { announce } from "../../lib/ui/announcer";
   import HexButton from "../../lib/ui/HexButton.svelte";
 
-  let announced = $state("");
+  // visible for review only -- the actual announcement goes through the page's ONE shared
+  // Announcer (mounted once in App.svelte), never a second role="status" region here.
+  let lastAnnounced = $state("");
+
+  function onAnnounce(text: string) {
+    lastAnnounced = text;
+    announce(text);
+  }
 </script>
 
 <div class="row">
@@ -19,13 +27,13 @@
       label="Flower plot"
       inactive
       inactiveReason="Flower plot — Scores only"
-      onAnnounce={(text) => (announced = text)}
+      {onAnnounce}
     />
     <figcaption>inactive (hover/focus to see the tooltip; click to hear it announced)</figcaption>
   </figure>
 </div>
 
-<p class="live" role="status" aria-live="polite">{announced}</p>
+<p class="live">Last announced: {lastAnnounced || "(nothing yet)"}</p>
 
 <style>
   .row {

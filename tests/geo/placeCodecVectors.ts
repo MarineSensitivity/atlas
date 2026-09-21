@@ -22,7 +22,8 @@ import {
   type Place,
   type GeomPlace,
 } from "../../src/lib/geo/placeCodec";
-import type { AreaGeometry, Position } from "../../src/lib/geo/types";
+import { normalizeForAnalysis, wrappedEdge } from "../../src/lib/geo/unwrap";
+import type { AreaGeometry, Position, Ring } from "../../src/lib/geo/types";
 
 export const hex = (b: Uint8Array) =>
   Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
@@ -108,6 +109,60 @@ export const ZONES: Record<string, { place: Place; why: string }> = {
     why: "zone keys are percent-encoded with the same rule as names, so a key may contain , ~ or . safely.",
   },
 };
+
+/**
+ * The geometry the BYTE-LEVEL encoder must refuse: the Bering box written WRAPPED
+ * (`170 -> -170`), which is the same ground as `GEOMS.bering` and a different byte stream if a
+ * codec quietly repaired it.
+ *
+ * Owed to msens and quoted verbatim from its commit `4d99721` (atlas-1 A1 round 2): D8 addendum
+ * ruling 2, after the two languages were found to disagree about the same geometry because the
+ * first ruling's wording invited both readings. `place_encode_strict()` (R) and `encodeGeometry()`
+ * (here) both signal `wrapped`; `place_encode()` (R) and `normalizeForAnalysis()` + `encodePlace()`
+ * (here) both yield the token below. Same high-level call, same token; same low-level call, same
+ * error.
+ */
+export const WRAPPED_RING: Ring = [
+  [170, 51],
+  [-170, 51],
+  [-170, 56],
+  [170, 56],
+  [170, 51],
+];
+
+export const ENCODE_REJECT_GEOMETRY: AreaGeometry = {
+  type: "Polygon",
+  coordinates: [WRAPPED_RING],
+};
+
+/** the widest consecutive-vertex longitude step in the ring, in degrees -- 340 here. */
+function maxLonStep(ring: Ring): number {
+  let m = 0;
+  for (let i = 1; i < ring.length; i++) m = Math.max(m, Math.abs(ring[i][0] - ring[i - 1][0]));
+  return m;
+}
+
+function encodeRejectVector() {
+  const geometry = ENCODE_REJECT_GEOMETRY;
+  const name = "Bering box";
+  const normalized = normalizeForAnalysis(geometry);
+  return {
+    id: "reject_wrapped_ring",
+    kind: "encode_reject",
+    why:
+      "the BYTE-LEVEL encoder refuses a ring that is still wrapped; the high-level entry " +
+      "normalizes first and yields the bering token",
+    name,
+    precision: choosePrecision(normalized),
+    geometry,
+    code: "wrapped",
+    // asserted, not asserted-about: wrappedEdge() must find it, and the step must be this wide
+    wrapped_edge: wrappedEdge(WRAPPED_RING),
+    max_step_deg: maxLonStep(WRAPPED_RING),
+    unwrapped: normalized,
+    token_via_high_level: encodePlace({ kind: "geom", name, geometry: normalized }),
+  };
+}
 
 export const UPLOAD: { place: Place; why: string } = {
   place: { kind: "upload", name: "Big survey area", digest: "3f1a9c04" },
@@ -220,6 +275,9 @@ export function buildFixture() {
       hash: encodePlaces(multi),
     },
     reject: rejects(),
+    // tokens a DECODER must refuse live in `reject`; this is the one geometry an ENCODER must
+    // refuse, which is a different question and therefore its own list (msens 4d99721).
+    encode_reject: [encodeRejectVector()],
   };
 }
 

@@ -10,7 +10,7 @@
 </script>
 
 <div class="stage">
-  <Legend title="Composite score" {stops} formatValue={(v) => v.toFixed(1)} />
+  <Legend title="Composite score" {stops} formatValue={(v) => v.toFixed(1)} unit="score" />
 </div>
 
 <style>

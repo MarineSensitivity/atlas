@@ -1,0 +1,44 @@
+/*
+ * atlas-3 step 4 fix round 1 (SC 2.5.8 Target Size Minimum): one shared rule for every control
+ * this review found under the WCAG floor -- popover-trigger (18x18), chip-dismiss (16x16),
+ * toast-dismiss (20x20), Switch (42x24), Segmented's buttons (30 px tall), Pill/Chip (28 px tall),
+ * DataTable's sort-btn (36 px) and its filter input (28 px). SC 2.5.8 itself only requires 24 CSS
+ * px on ANY pointer; this app's own design additionally wants the full 44 px (--size-touch) under
+ * a coarse (touch) pointer, matching every other control already built to that rule (e.g.
+ * Panel.svelte's own header controls).
+ *
+ * Plain, unscoped CSS (not a Svelte component's own <style> block) so ONE set of selectors covers
+ * every one of these controls regardless of which component renders them -- Svelte's per-component
+ * style scoping only adds an extra hash class alongside the original one, it never renames it, so
+ * these selectors still match. Imported once at the app root (src/gallery/main.ts here; whoever
+ * wires the real shell into index.html/src/main.ts must import it there too -- see this step's
+ * report). `min-width`/`min-height` only: never a fixed `width`/`height`, so nothing here fights a
+ * component's own sizing, only raises its floor.
+ */
+.popover-trigger,
+.chip-dismiss,
+.toast-dismiss,
+.switch,
+.seg button,
+.pill,
+button.chip,
+.sort-btn,
+.filter-field {
+  min-width: 24px;
+  min-height: 24px;
+}
+
+@media (pointer: coarse) {
+  .popover-trigger,
+  .chip-dismiss,
+  .toast-dismiss,
+  .switch,
+  .seg button,
+  .pill,
+  button.chip,
+  .sort-btn,
+  .filter-field {
+    min-width: var(--size-touch);
+    min-height: var(--size-touch);
+  }
+}

@@ -4,6 +4,7 @@
   // this file. Sections are sorted by name so the page (and its Playwright screenshot baseline)
   // is deterministic regardless of filesystem read order.
   import type { Component } from "svelte";
+  import Announcer from "../lib/ui/Announcer.svelte";
 
   const modules = import.meta.glob<{ default: Component }>("./sections/*.svelte", {
     eager: true,
@@ -33,6 +34,9 @@
 </script>
 
 <div class="gallery">
+  <!-- the ONE live region for the whole page (SC 4.1.3) -- every component calls announce() from
+       src/lib/ui/announcer.ts instead of rendering a region of its own. -->
+  <Announcer />
   <a class="skip-link" href="#gallery-main">Skip to sections</a>
   <header class="gallery-head">
     <h1>Atlas component gallery</h1>

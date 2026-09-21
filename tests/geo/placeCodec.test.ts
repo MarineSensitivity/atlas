@@ -37,6 +37,7 @@ import {
   type Place,
 } from "../../src/lib/geo/placeCodec";
 import { douglasPeucker, ringIsSimple } from "../../src/lib/geo/simplify";
+import { normalizeForAnalysis, wrappedEdge } from "../../src/lib/geo/unwrap";
 import { geometryArea, type AreaGeometry, type Position } from "../../src/lib/geo/types";
 import { GEOMS, buildFixture, circle30, hex } from "./placeCodecVectors";
 
@@ -141,6 +142,47 @@ describe("tests/fixtures/place_codec.json (shared with msens inst/fixtures/place
       expect(err, "should have thrown").toBeInstanceOf(PlaceCodecError);
       expect((err as PlaceCodecError).code).toBe(r.code);
       expect(tryDecodePlace(r.token)).toBeNull(); // the URL parser never throws
+    });
+  }
+
+  // The vector owed to msens (its commit 4d99721's body quotes it in full): the one geometry an
+  // ENCODER must refuse, as opposed to the tokens above, which a DECODER must refuse. D8 addendum
+  // ruling 2 -- the strict, byte-level path refuses a still-wrapped ring in BOTH languages, and the
+  // high-level path normalizes first and yields the SAME token in both. A codec that quietly
+  // repaired the ring would make the byte stream depend on which language wrote it.
+  for (const v of fx.encode_reject) {
+    describe(`encode_reject ${v.id}`, () => {
+      it(`the byte-level encoder refuses it with code "${v.code}"`, () => {
+        let err: unknown;
+        try {
+          encodeGeometry(v.geometry, v.precision);
+        } catch (e) {
+          err = e;
+        }
+        expect(err, "encodeGeometry should have thrown").toBeInstanceOf(PlaceCodecError);
+        expect((err as PlaceCodecError).code).toBe(v.code);
+        // the message must name the actual step and the remedy, as R's condition does
+        expect((err as Error).message).toContain(v.max_step_deg.toFixed(4));
+        expect((err as Error).message).toContain("normalizeForAnalysis");
+      });
+
+      it(`the ring really does step ${v.max_step_deg} degrees`, () => {
+        expect(v.max_step_deg).toBe(340);
+        expect(wrappedEdge(v.geometry.coordinates[0])).toBe(v.wrapped_edge);
+        expect(v.wrapped_edge).toBeGreaterThanOrEqual(0);
+      });
+
+      it("the high-level path normalizes first and yields the bering token", () => {
+        const normalized = normalizeForAnalysis(v.geometry);
+        expect(normalized).toEqual(v.unwrapped);
+        const token = encodePlace({ kind: "geom", name: v.name, geometry: normalized });
+        expect(token).toBe(v.token_via_high_level);
+        // ... which is byte-for-byte the already-committed `bering` vector: the same ground,
+        // written wrapped, becomes the same token, so a shared link is frame-independent
+        const bering = fx.vectors.find((x: { id: string }) => x.id === "bering");
+        expect(token).toBe(bering.token);
+        expect(token).toBe("g1.Bering%20box.EAMBAQSg4BTwnAbAuAIAAJBOv7gCAA");
+      });
     });
   }
 });

@@ -16,3 +16,13 @@ export function enqueueToast(queue: ToastMessage[], id: number, text: string): T
 export function dismissToast(queue: ToastMessage[], id: number): ToastMessage[] {
   return queue.filter((t) => t.id !== id);
 }
+
+/**
+ * PURE: the time left on an auto-dismiss timer of `totalMs` after `elapsedMs` have passed,
+ * clamped to 0 (never negative). SC 2.2.1 (Timing Adjustable): a toast pausing on hover/focus
+ * needs to resume with whatever time was actually left, not restart the full duration nor keep
+ * counting down while paused -- this is the arithmetic Toast.svelte's pause()/resume() apply.
+ */
+export function remainingMs(totalMs: number, elapsedMs: number): number {
+  return Math.max(0, totalMs - elapsedMs);
+}
