@@ -4,7 +4,8 @@
 // themes, a contrast gate and a future brand revision one-file changes. This checker makes the rule
 // mechanical over the surfaces atlas-3 owns. Two deliberate carve-outs, both narrow:
 //   1. src/lib/brand/tokens.css — the single place a color literal is allowed to exist.
-//   2. src/lib/brand/vendor/** — brand marks copied from another repo, unmodified except for the
+//   2. src/lib/brand/tokens.json — the generated export of tokens.css (color literals needed only here).
+//   3. src/lib/brand/vendor/** — brand marks copied from another repo, unmodified except for the
 //      provenance comment. Each must carry a "vendored verbatim from" line naming its source, or it
 //      is reported as a failure too: a carve-out nobody can use by accident.
 // Markdown is not scanned: docs/design/spec.md documents the palette, quoting hex on purpose.
@@ -15,6 +16,7 @@ import { join, relative, sep } from "node:path";
 export const SCAN_ROOTS = ["src/lib/brand", "docs/design/mockups"];
 const SCANNED_EXTENSIONS = new Set([".css", ".html", ".svg", ".ts", ".svelte", ".mjs", ".js"]);
 export const TOKENS_FILE = join("src", "lib", "brand", "tokens.css");
+export const TOKENS_JSON_FILE = join("src", "lib", "brand", "tokens.json");
 export const VENDOR_DIR = join("src", "lib", "brand", "vendor") + sep;
 const PROVENANCE_RE = /vendored verbatim from/i;
 
@@ -49,7 +51,7 @@ export function findHexLiterals(rootDir = ".", readFile = (p) => readFileSync(p,
       const rel = relative(rootDir, file);
       const ext = file.slice(file.lastIndexOf("."));
       if (!SCANNED_EXTENSIONS.has(ext)) continue;
-      if (rel === TOKENS_FILE) continue;
+      if (rel === TOKENS_FILE || rel === TOKENS_JSON_FILE) continue;
       const content = readFile(file);
       if (rel.startsWith(VENDOR_DIR)) {
         // vendored assets keep their own colors, but only if they say where they came from
