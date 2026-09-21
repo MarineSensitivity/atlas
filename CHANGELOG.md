@@ -64,6 +64,19 @@ merges. Still not wired into `index.html` — the shell is step 3.
   `<dialog>` element's `showModal()`/`close()` rather than hand-rolled JS -- the platform already
   guarantees top-layer focus containment and restoring focus to whatever had it before the dialog
   opened.
+- **`src/lib/ui/Accordion.svelte`**: `aria-expanded` disclosure, one chevron icon that rotates
+  180deg (never swapped for a second icon).
+- **`src/lib/ui/Popover.svelte`**: the `ⓘ` trigger + floating content spec.md's "Panels" section
+  describes ("a two-sentence popover whose 'More' opens a modal") -- dismiss on outside click or
+  Esc, focus returns to the trigger. Composing its content with a "More" button that opens a
+  `Modal` is the caller's job.
+- **`src/lib/ui/Segmented.svelte`**: the top bar's lens switch (`Scores | Species`), plain Tab
+  order rather than roving tabindex -- spec.md §5.3 makes the same call for the panel-size group:
+  two or three targets do not justify it.
+- **`src/lib/ui/Select.svelte`**: a native `<select>` (full keyboard/AT support for free) with a
+  decorative chevron overlay -- spec.md §6's `version` icon, named for the `v7 ▾` chip but shared
+  by every select-like control.
+- **`src/lib/ui/Switch.svelte`**: a generic on/off control, `role="switch"`.
 
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
