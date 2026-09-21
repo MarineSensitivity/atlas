@@ -1,3 +1,38 @@
+# atlas 0.7.0
+
+`atlas-3` step 3: the shell wired into `index.html`. A static skeleton (top bar, five-tool rail,
+one floating panel frame, the phone bottom bar/sheet) paints as inlined critical CSS before any
+bundle loads or parses, then `src/main.ts` hydrates it with the real components — geometrically
+IDENTICAL to the skeleton, measured at CLS = 0 (desktop 1280×800 and phone 390×844, both themes).
+
+- **`index.html`**: the inlined `<style>` block is now `@import "./src/shell/shell.css"` (which
+  itself `@import`s `tokens.css` and `fonts.css`) — Vite's own CSS pipeline resolves and inlines the
+  real, byte-verified token values at build/dev time, so no token value is ever hand-typed into the
+  page (`scripts/check-inlined-tokens.mjs` proves the two stay equal after every build). A pre-paint
+  script sets `data-theme` from `?theme=`/`prefers-color-scheme` through the exact rule
+  `src/lib/state/types.ts`'s `resolveTheme` uses (falling back to `navy`), reading and writing
+  nothing else — there is no theme flash on first paint.
+- **`src/shell/Shell.svelte`** (new): hydrates the skeleton with the real `Rail`, `Panel`/`Sheet`,
+  `Segmented`, `About` and `VersionBadge` components. The lens switch, the theme toggle and the `/`
+  search shortcut all read/write view state ONLY through `src/lib/state` (`history.replaceState`,
+  never `pushState`); the Flower rail tool fades in place (`aria-disabled`, never removed) in the
+  Species lens; the on-map About card carries the seal behind `VITE_SEAL`/`VITE_AGENCY`
+  (`.env.example` documents both, plus `VITE_SEAL_URL`; CI's build step sets `VITE_SEAL=1`,
+  `VITE_AGENCY=MMA` per the owner's approval).
+- **`src/shell/tools.ts`** (new): the rail's five-tool data (order, labels, per-lens body text),
+  extracted so "Flower fades only in the Species lens, in its own third slot" is a plain unit test,
+  not something only provable by reading the component.
+- Preloads the one display-face weight (Jost Bold) the first frame needs, plus both Carlito
+  (body-face) weights — a measured CLS regression (a font swap on a platform whose `sans-serif`
+  fallback isn't metrically Arial-identical) is what the second preload actually fixes.
+- New gates: `scripts/check-inlined-tokens.mjs` (+ core/test) proves the inlined critical CSS never
+  drifts from `tokens.css`; `scripts/check-hex-literals.mjs` now also scans `index.html` and
+  `src/shell/shell.css`; `scripts/verify.mjs`'s state matrix covers the real shell (default, both
+  explicit themes, the Species lens) at both viewports; new Playwright specs
+  (`e2e/shell.cls.spec.ts`, `e2e/shell.a11y.spec.ts`, `e2e/shell.url-state.spec.ts`) and
+  `tests/shell/*` cover CLS, axe, keyboard reach, roving tabindex, the URL-is-the-view contract and
+  a `pushState` source-scan guard.
+
 # atlas 0.6.0
 
 `atlas-3` step 2b: the "data half" — the three data-driven components spec.md and the parity docs

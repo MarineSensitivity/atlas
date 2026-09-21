@@ -27,7 +27,6 @@
   import Sheet from "../lib/ui/Sheet.svelte";
   import Segmented from "../lib/ui/Segmented.svelte";
   import About from "../lib/ui/About.svelte";
-  import Toast from "../lib/ui/Toast.svelte";
   import VersionBadge from "../lib/ui/VersionBadge.svelte";
   import { createSelStore } from "../lib/state/sel.svelte";
   import { defaultOut, resolveTheme } from "../lib/state/types";
@@ -77,15 +76,24 @@
   // in place -- never removed -- in the Species lens (spec.md §5.2): "activeTool" is chrome (which
   // panel is open), not URL view state.
   let activeTool = $state<ToolName>("layers");
-  let toastRef: { push: (text: string) => void } | undefined;
   const railItems = $derived(buildRailItems(sel.lens === "species"));
 
   function selectTool(name: string) {
     activeTool = name as ToolName;
   }
 
-  function announce(text: string) {
-    toastRef?.push(text);
+  // --- the shell's one polite live region (spec.md §11: "one polite live region announces async
+  // results ... and an inactive control's reason when it is activated") -----------------------
+  // TEMPORARY SHIM: the parallel accessibility-review agent is consolidating every component's
+  // own ad-hoc live region into ONE `src/lib/ui/Announcer.svelte` + `announce()` in
+  // `src/lib/ui/announcer.ts`, which does not exist on this branch yet. This is a local
+  // stand-in with the SAME call signature (`announce(message: string): void`) and exactly one
+  // `role="status" aria-live="polite"` region, mounted once at the end of the template below --
+  // at merge time, swap this block for an import of the real module (same call sites, same
+  // signature, no other change needed here).
+  let announcement = $state("");
+  function announce(message: string) {
+    announcement = message;
   }
 
   // --- top bar: version chip, lens switch, search, Share / Report / Help / theme ---------------
@@ -278,4 +286,5 @@
   </div>
 </main>
 
-<Toast bind:this={toastRef} />
+<!-- TEMPORARY SHIM -- see the `announce()` comment above: the shell's one live region. -->
+<div class="visually-hidden" role="status" aria-live="polite">{announcement}</div>
