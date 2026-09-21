@@ -339,3 +339,35 @@ describe("the shared access case table, run against index.html's REAL inline scr
     await expect(early.manifest).resolves.toEqual({ ver: "v7" });
   });
 });
+
+describe.skip("KNOWN GAP (atlas-2 review, fix round 1, judgment call 3): the inline early-fetch script does not prefer session.ver in preview mode", () => {
+  // src/lib/release/resolveVer.ts's candidateVer() makes session.ver AUTHORITATIVE in preview mode
+  // and ignores the path AND ?ver= outright (Caddy already decided which release a path may show by
+  // routing there at all). This inline script has NOT been given that same rule — it still resolves
+  // the version from path-then-query only (the same as version.ts's resolveVersion()), and never
+  // reads session.raw.ver at all. That is harmless TODAY: equal to path-derived resolution, because
+  // the preview host's Caddy only ever serves session.json under /{ver}/atlas/, so the path-derived
+  // version and session.ver always agree in every real deployment (none of the ACCESS_CASES above
+  // construct a conflicting case). Kept skipped rather than fixed here — deliberately deferred
+  // (atlas-2 Step 2 fix round 1, judgment call 3) until there is a concrete need to wire it — but
+  // named as a real, executable case so atlas-2 review rules on it rather than re-discovering it.
+  it("a preview session whose session.ver disagrees with the path resolves to session.ver (candidateVer's rule) — NOT YET true of this inline script", async () => {
+    const early = runEarlyFetch({
+      pathname: "/v7/atlas/", // path says v7
+      search: "",
+      routes: {
+        [LATEST_URL]: { ok: true, textBody: "v7" },
+        [VERSIONS_URL]: {
+          ok: true,
+          jsonBody: [
+            { ver: "v7", access: "public" },
+            { ver: "v9", access: "restricted" },
+          ],
+        },
+        [SESSION_URL]: { ok: true, jsonBody: { preview: true, ver: "v9" } }, // session says v9
+      },
+    });
+    // candidateVer()'s rule says this should resolve to "v9"; the inline script resolves "v7" today.
+    await expect(early.version).resolves.toBe("v9");
+  });
+});

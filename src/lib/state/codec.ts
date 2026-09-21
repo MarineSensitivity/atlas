@@ -1,0 +1,200 @@
+// `Sel` <-> URL, exactly per the key table in `atlas-2 core runtime ...md`'s `state/` section. A
+// plain module, no DOM/svelte dependency — Node-testable (CLAUDE.md "Testing pyramid"). Every rule
+// here follows `atlas-refs/"calcofi explore review.md"` §4's precedent: query for short scalars,
+// hash for places + title only; `,`/`:` left un-escaped for a readable, paste-able link; every field
+// written only when it differs from its default; an unknown key or a malformed value never throws —
+// it is ignored / clamped to the default instead.
+import { isVersionLabel } from "../release/version";
+import { NO_ALIAS_LOOKUP, rewriteLegacyParams, type AliasLookup } from "./legacy";
+import {
+  DEFAULT_SEL,
+  LENSES,
+  OUTLINES,
+  PALETTES,
+  PROJECTIONS,
+  REPRESENTATIONS,
+  THEMES,
+  defaultLens,
+  defaultOut,
+  type Lens,
+  type MapView,
+  type Sel,
+} from "./types";
+
+export interface UrlLike {
+  search: string;
+  hash: string;
+}
+
+// --- shared write-side helper: readable, paste-able values (§4) --------------------------------
+
+/** un-escape `%2C` -> `,` and `%3A` -> `:` AFTER `URLSearchParams` serializes — both characters are
+ * legal, unreserved-enough in a query/fragment that no server or parser needs them escaped, and a
+ * link a person reads and pastes keeps them raw (same call CalCOFI Explorer made, §4). Parsing needs
+ * no matching "re-escape" step: `URLSearchParams` reads a literal `,`/`:` in a value identically to
+ * its percent-encoded form, since neither is a `&`/`=` delimiter. */
+function prettyEncode(params: URLSearchParams): string {
+  return params.toString().replace(/%2C/g, ",").replace(/%3A/g, ":");
+}
+
+// --- per-field parsers: each returns a clamped value, never throws -----------------------------
+
+function cleanString(v: string | null): string | undefined {
+  if (v === null) return undefined;
+  const t = v.trim();
+  return t.length > 0 ? t : undefined;
+}
+
+function parseEnum<T extends string>(v: string | null, allowed: readonly T[], fallback: T): T {
+  return v !== null && (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
+}
+
+function parseVersionLike(v: string | null): string | undefined {
+  return v !== null && isVersionLabel(v) ? v : undefined;
+}
+
+/** `us`: default true (US-only); only `"0"` (exactly) turns it off — any other value, including
+ * garbage, falls back to the default (unknown values fall back to defaults). */
+function parseUs(v: string | null): boolean {
+  return v !== "0";
+}
+
+function parseFlag(v: string | null): boolean {
+  return v === "1";
+}
+
+const SEL_TOKEN_RE = /^(cell:[^:,]+|zone:[^:,]+:[^:,]+|place:\d+)$/;
+
+function parseSelToken(v: string | null): string | undefined {
+  return v !== null && SEL_TOKEN_RE.test(v) ? v : undefined;
+}
+
+function parseList(v: string | null): string[] {
+  if (v === null) return [];
+  return v
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+const NUMBER_RE = /^-?\d+(?:\.\d+)?$/;
+
+function parseNum(s: string): number | null {
+  if (!NUMBER_RE.test(s)) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** `map=lon,lat,zoom` (3 fields) or `map=lon,lat,zoom,bearing,pitch` (5 fields, travelling
+ * together); any other field count, or any non-numeric field, is malformed and clamps to `undefined`
+ * (falls back to the `area` preset). */
+function parseMapView(v: string | null): MapView | undefined {
+  if (v === null) return undefined;
+  const parts = v.split(",");
+  if (parts.length !== 3 && parts.length !== 5) return undefined;
+  const nums = parts.map(parseNum);
+  if (nums.some((n) => n === null)) return undefined;
+  const [lon, lat, zoom, bearing, pitch] = nums as number[];
+  return parts.length === 3 ? { lon, lat, zoom } : { lon, lat, zoom, bearing, pitch };
+}
+
+function formatMapView(m: MapView): string {
+  const base = `${m.lon},${m.lat},${m.zoom}`;
+  return m.bearing === undefined && m.pitch === undefined
+    ? base
+    : `${base},${m.bearing ?? 0},${m.pitch ?? 0}`;
+}
+
+// --- parseSel ------------------------------------------------------------------------------------
+
+function parseSelUnsafe(loc: UrlLike, alias: AliasLookup): Sel {
+  const params = new URLSearchParams(loc.search ?? "");
+  rewriteLegacyParams(params, alias);
+  const hashParams = new URLSearchParams((loc.hash ?? "").replace(/^#/, ""));
+
+  const sp = cleanString(params.get("sp"));
+  const lens: Lens = parseEnum(params.get("lens"), LENSES, defaultLens(sp));
+  const out = parseEnum(params.get("out"), OUTLINES, defaultOut(lens));
+
+  return {
+    ver: parseVersionLike(params.get("ver")),
+    lens,
+    lyr: cleanString(params.get("lyr")),
+    pal: parseEnum(params.get("pal"), PALETTES, DEFAULT_SEL.pal),
+    unit: cleanString(params.get("unit")) ?? DEFAULT_SEL.unit,
+    area: cleanString(params.get("area")) ?? DEFAULT_SEL.area,
+    map: parseMapView(params.get("map")),
+    proj: parseEnum(params.get("proj"), PROJECTIONS, DEFAULT_SEL.proj),
+    sp,
+    in: cleanString(params.get("in")) ?? DEFAULT_SEL.in,
+    rep: parseEnum(params.get("rep"), REPRESENTATIONS, DEFAULT_SEL.rep),
+    us: parseUs(params.get("us")),
+    out,
+    obis: parseFlag(params.get("obis")),
+    sel: parseSelToken(params.get("sel")),
+    show: parseList(params.get("show")),
+    hide: parseList(params.get("hide")),
+    theme: parseEnum(params.get("theme"), THEMES, DEFAULT_SEL.theme),
+    tour: parseEnum(params.get("tour"), ["on", "off"] as const, DEFAULT_SEL.tour),
+    pl: cleanString(hashParams.get("pl")),
+    t: cleanString(hashParams.get("t")),
+  };
+}
+
+/**
+ * Parse a `Sel` out of the current URL. Never throws (clamps every malformed value to its default,
+ * ignores every unknown key) — even a `loc` whose `search`/`hash` getters themselves throw resolves
+ * to `DEFAULT_SEL` rather than propagating, so a bad `location` can never crash the app's boot.
+ */
+export function parseSel(loc: UrlLike, alias: AliasLookup = NO_ALIAS_LOOKUP): Sel {
+  try {
+    return parseSelUnsafe(loc, alias);
+  } catch {
+    return { ...DEFAULT_SEL };
+  }
+}
+
+// --- formatSel -----------------------------------------------------------------------------------
+
+/**
+ * Serialize `sel` back to a URL, writing ONLY fields that differ from their default (the shipped
+ * default view is `""`/`""` — no query, no hash) and using `,`/`:` un-escaped for readability. Query
+ * holds every field except `pl`/`t`, which live in the hash (plan: a fragment is never sent to a
+ * server or a referrer).
+ */
+export function formatSel(sel: Sel): { search: string; hash: string } {
+  const params = new URLSearchParams();
+
+  if (sel.ver !== undefined) params.set("ver", sel.ver);
+  const lensDefault = defaultLens(sel.sp);
+  if (sel.lens !== lensDefault) params.set("lens", sel.lens);
+  if (sel.lyr) params.set("lyr", sel.lyr);
+  if (sel.pal !== DEFAULT_SEL.pal) params.set("pal", sel.pal);
+  if (sel.unit !== DEFAULT_SEL.unit) params.set("unit", sel.unit);
+  if (sel.area !== DEFAULT_SEL.area) params.set("area", sel.area);
+  if (sel.map) params.set("map", formatMapView(sel.map));
+  if (sel.proj !== DEFAULT_SEL.proj) params.set("proj", sel.proj);
+  if (sel.sp) params.set("sp", sel.sp);
+  if (sel.in !== DEFAULT_SEL.in) params.set("in", sel.in);
+  if (sel.rep !== DEFAULT_SEL.rep) params.set("rep", sel.rep);
+  if (sel.us === false) params.set("us", "0");
+  const outDefault = defaultOut(sel.lens);
+  if (sel.out !== outDefault) params.set("out", sel.out);
+  if (sel.obis === true) params.set("obis", "1");
+  if (sel.sel) params.set("sel", sel.sel);
+  if (sel.show.length > 0) params.set("show", sel.show.join(","));
+  if (sel.hide.length > 0) params.set("hide", sel.hide.join(","));
+  if (sel.theme !== DEFAULT_SEL.theme) params.set("theme", sel.theme);
+  if (sel.tour !== DEFAULT_SEL.tour) params.set("tour", sel.tour);
+
+  const hashParams = new URLSearchParams();
+  if (sel.pl) hashParams.set("pl", sel.pl);
+  if (sel.t) hashParams.set("t", sel.t);
+
+  const searchKeys = [...params.keys()];
+  const hashKeys = [...hashParams.keys()];
+  return {
+    search: searchKeys.length > 0 ? `?${prettyEncode(params)}` : "",
+    hash: hashKeys.length > 0 ? `#${prettyEncode(hashParams)}` : "",
+  };
+}
