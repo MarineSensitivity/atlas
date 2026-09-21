@@ -18,7 +18,8 @@
 // Explore the whole search space with:
 //   KNIFE_EDGE_SEARCH=1 npx vitest run tests/geo/knifeEdge.test.ts --reporter=verbose
 import { describe, it, expect } from "vitest";
-import { writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { cellFractions, cellsInPolygon } from "../../src/lib/geo/coverage";
 import { roundHalfEven, snapNoise } from "../../src/lib/geo/round";
 import { gridFromBoot, type GridSpec } from "../../src/lib/grid/grid";
@@ -207,6 +208,10 @@ const CASES = [
     grid: global05,
     r: [-89.9525, 27.05, -89.95, 27.055] as const,
     target: 0.5,
+    // what msens::cells_in_polygon_grid()'s own clipper computes for the same geometry (fix round
+    // 2). It lands on the OPPOSITE side of the half from this one in every case — which is the
+    // whole argument for the snap: without it the two repos would publish different pct values.
+    rRaw: "0.49999999999875822",
     why: "0.0025 x 0.005 deg in the corner of a cell = exactly 0.5 %. Half-even sends it to 0 and the cell is DROPPED; unsnapped, the raw value sits just above the half and the cell is kept at 1.",
   },
   {
@@ -215,6 +220,7 @@ const CASES = [
     grid: global05,
     r: [-89.9625, 27.05, -89.95, 27.055] as const,
     target: 2.5,
+    rRaw: "2.4999999999989604",
     why: "0.0125 x 0.005 deg = exactly 2.5 %, which half-even rounds DOWN to 2; unsnapped the raw sits above the half and rounds to 3.",
   },
   {
@@ -223,6 +229,7 @@ const CASES = [
     grid: global05,
     r: [-89.955, 27.05, -89.95, 27.0675] as const,
     target: 3.5,
+    rRaw: "3.5000000000004827",
     why: "0.005 x 0.0175 deg = exactly 3.5 %, which half-even rounds UP to 4 — and unsnapped the raw sits just BELOW the half and rounds to 3. The error runs both ways, so the snap is not a one-sided fudge.",
   },
   {
@@ -231,9 +238,39 @@ const CASES = [
     grid: usa05,
     r: [-93.9125, 25.1, -93.9, 25.105] as const,
     target: 2.5,
+    rRaw: null, // not supplied by the R twin in fix round 2; it reproduces `expected` either way
     why: "the same 2.5 % case in the usa05 frame (lon -93.90 = 266.10 and lat 25.10 are both cell boundaries there), where the polygon is ALSO shifted +360 into 141.10-based longitudes before the clip — more inexact arithmetic, same conclusion.",
   },
 ];
+
+describe("every fixture's documented cell_id is a real cell of that fixture", () => {
+  // The R agent reported knife-edge-2p5-usa05.json's `knife_edge.cell_id` as 3567847 against an
+  // `expected` of 3560647. It is not reproducible: both fields read 3567847 here AND in the msens
+  // copy, 1149 * 3103 + 2500 = 3567847 by hand, and 3560647 on usa05 is row 1148 / column 1506,
+  // centred at -143.625/25.225 in the North Pacific — not this Gulf rectangle at all. No code path
+  // can produce a usa05 id from global05's width either: cellIdOf() reads `nc` off the grid spec it
+  // is handed and nothing in src/lib/{geo,grid} contains a grid literal (tests/lib-no-svelte.test.ts
+  // and the tileOf tests cover the same ground for the tile key). This test is the standing guard
+  // the report asked for: a documented id that is not a cell of its own fixture goes red here.
+  const dir = fileURLToPath(new URL("../fixtures/places/", import.meta.url));
+  const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
+
+  for (const name of files) {
+    const fx = JSON.parse(readFileSync(dir + name, "utf8"));
+    if (!fx.knife_edge) continue;
+    it(name, () => {
+      const grid = gridFromBoot(fx.grid);
+      const geom = (fx.geometry ?? fx.polygon) as AreaGeometry;
+      const id = fx.knife_edge.cell_id;
+      // the documented cell must be one the geometry actually touches...
+      expect([...cellFractions(geom, grid).keys()]).toContain(id);
+      // ...and, unless the rule drops it at pct 0, it must be in `expected` as well
+      const ids = (fx.expected as [number, number][]).map((e) => e[0]);
+      if (fx.knife_edge.pct_with_snap > 0) expect(ids).toContain(id);
+      else expect(ids).not.toContain(id);
+    });
+  }
+});
 
 describe("knife-edge fixtures", () => {
   for (const c of CASES) {
@@ -257,6 +294,17 @@ describe("knife-edge fixtures", () => {
       );
     });
 
+    it(`${c.file}: msens lands on the OTHER side of the same half`, () => {
+      if (c.rRaw === null) return; // usa05: the R twin did not publish its raw value
+      const [, f] = entries[0];
+      const mine = f * 100;
+      const theirs = Number(c.rRaw);
+      expect(Math.abs(theirs - c.target)).toBeLessThan(1e-9); // same half...
+      expect(Math.sign(theirs - c.target)).toBe(-Math.sign(mine - c.target)); // ...opposite side
+      // and the snap is what makes the two agree on the published number
+      expect(roundHalfEven(snapNoise(theirs))).toBe(roundHalfEven(snapNoise(mine)));
+    });
+
     if (process.env.KNIFE_EDGE_WRITE) {
       const [cellId, f] = entries[0];
       const raw = f * 100;
@@ -276,10 +324,12 @@ describe("knife-edge fixtures", () => {
               cell_id: cellId,
               exact_pct: c.target,
               raw_pct_unsnapped: raw.toPrecision(17),
+              raw_pct_unsnapped_msens: c.rRaw,
               pct_without_snap: roundHalfEven(raw),
+              pct_without_snap_msens: c.rRaw === null ? null : roundHalfEven(Number(c.rRaw)),
               pct_with_snap: snapped,
               rule: "pct = round_half_even(round(frac * 100, 9)); R: round(round(x, 9))",
-              note: "raw_pct_unsnapped is this clipper's value, for documentation — another implementation will land a few 1e-13 elsewhere. What both must agree on is pct_with_snap.",
+              note: "the two clippers land on OPPOSITE sides of the same half (atlas raw_pct_unsnapped vs msens raw_pct_unsnapped_msens), so pct_without_snap disagrees between the repos and pct_with_snap does not. pct_with_snap is the published number and the only one either side must reproduce.",
             },
           },
           null,
