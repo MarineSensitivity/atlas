@@ -53,6 +53,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* a bare <p> (Shell.svelte's Panel/Sheet body text) carries a UA default `margin-block: 1em` --
+   ~14 px above AND below at this body font size -- that the skeleton's plain placeholder text
+   never had, which is exactly the 34 px panel-frame height drift
+   e2e/shell.cls.spec.ts's geometry-equality gate caught. src/lib/ui/About.svelte already resets
+   its own <p> the same way; this generalizes that reset. */
+p {
+  margin: 0;
+}
+
 a {
   color: var(--text-link);
 }
@@ -259,9 +268,24 @@ a {
   }
 }
 
-.icon {
-  width: 20px;
-  height: 20px;
+/* SKELETON-ONLY decorative icon placeholders. Deliberately NOT named `.icon`: src/lib/ui/Icon.svelte
+   renders its own SVG with a literal `class="icon"` (its own SCOPED style, `.icon.svelte-xxxxx`,
+   sets no width/height of its own -- it relies on the SVG's `width`/`height` attributes for that).
+   A global, UNSCOPED `.icon{width:...}` rule here would match that same class token and OVERRIDE
+   the real icon's own size attributes on every hydrated <Icon>, regardless of its `size` prop --
+   a real bug this file had (every icon rendered at 20x20, not 14/16/18) that
+   e2e/shell.cls.spec.ts's geometry-equality gate caught as an 8 px topbar drift. Each skeleton
+   placeholder below is named and sized for the ONE real icon size it stands in for. */
+.sk-icon-16 {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.sk-icon-tool {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
   flex: none;
 }
 
@@ -412,6 +436,12 @@ a {
 @media (max-width: 899px) {
   .sk-panel {
     width: 100%;
+    /* Sheet.svelte's real `.sheet` has only a TOP border (`border-top: 1px solid ...`), not the
+       desktop Panel's full 1px border on every side -- the extra 1px on the left/right here inset
+       the whole head/body content by 1px, which is exactly the 1px "panel-collapse" x drift
+       e2e/shell.cls.spec.ts's geometry-equality gate caught at the phone viewport. */
+    border: 0;
+    border-top: 1px solid var(--border-control);
     border-radius: var(--radius-card) var(--radius-card) 0 0;
     height: var(--size-sheet-half);
   }
@@ -437,7 +467,12 @@ a {
 @media (max-width: 899px) {
   .sk-panel-head {
     border-bottom: 0;
-    padding: 0 116px var(--space-2) var(--space-4);
+    /* Sheet.svelte's real `.sheet-head` reserves no space for its controls (they sit in normal
+       flex flow via `margin-left: auto`, not absolutely positioned like Panel's) -- the 116px
+       reservation above is a DESKTOP-only, Panel-specific need. Keeping it at phone shifted the
+       controls 100 px right of where Sheet actually renders them (e2e/shell.cls.spec.ts's
+       geometry-equality gate caught this as a "panel-collapse" x mismatch). */
+    padding: 0 var(--space-4) var(--space-2) var(--space-4);
   }
 }
 .sk-panel-title {
@@ -446,7 +481,10 @@ a {
   font-weight: 700;
   letter-spacing: var(--tracking-display);
   margin: 0;
-  line-height: var(--leading-tight);
+  /* NOT an explicit line-height: Panel.svelte's real `.panel-title` (and Sheet's `.sheet-title`)
+     set none either, relying on the DISPLAY FACE's own "normal" line-height (Jost's fonts.css
+     metric overrides give it one taller than `--leading-tight` would) -- hardcoding 1.2 here made
+     the skeleton's title 6 px shorter than the hydrated one (the same gate caught this too). */
 }
 .sk-panel-controls {
   position: absolute;
@@ -504,11 +542,6 @@ a {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-}
-.sk-about-head span.icon {
-  width: 18px;
-  height: 18px;
-  flex: none;
 }
 .sk-about-head h2 {
   flex: 1;

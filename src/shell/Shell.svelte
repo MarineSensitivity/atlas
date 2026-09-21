@@ -215,8 +215,7 @@
     data-control="share"
     onclick={onShare}
   >
-    <Icon name="share" size={18} />
-    Share
+    <Icon name="share" size={18} />Share
   </button>
   <button
     type="button"
@@ -225,8 +224,7 @@
     data-control="report-top"
     onclick={onReport}
   >
-    <Icon name="report" size={18} />
-    Report
+    <Icon name="report" size={18} />Report
   </button>
   <button
     type="button"

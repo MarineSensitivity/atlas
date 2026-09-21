@@ -339,21 +339,45 @@
           data-control="search"
           aria-hidden="true"
         >
-          <span class="icon"></span>
+          <span class="sk-icon-16"></span>
           <span>Search species and places</span>
           <span class="kbd">/</span>
         </div>
 
         <span class="spacer"></span>
 
-        <span id="sk-topbar-actions" aria-hidden="true" style="display: flex; gap: var(--space-1)">
-          <span class="tool topbar-desktop-only" data-tour="share" data-control="share">Share</span>
-          <span class="tool topbar-desktop-only" data-tour="report-top" data-control="report-top"
-            >Report</span
-          >
-          <span class="tool topbar-desktop-only" data-tour="help" data-control="help"></span>
-          <span class="tool" data-tour="theme" data-control="theme"></span>
-        </span>
+        <!--
+          flat siblings of .topbar, exactly matching src/shell/Shell.svelte's Share/Report/Help/
+          theme buttons (no wrapping element -- an extra wrapper here would change how .topbar's
+          own `gap` is distributed and shift everything after it; e2e/shell.cls.spec.ts's
+          geometry-equality gate caught exactly that). Each icon placeholder is 18x18, the exact
+          size Shell.svelte passes to <Icon size={18}/> for these four (--icon class is 20px, sized
+          for the search field's icon instead).
+        -->
+        <span
+          class="tool topbar-desktop-only"
+          aria-hidden="true"
+          data-tour="share"
+          data-control="share"
+          ><span class="sk-icon-tool"></span>Share</span
+        >
+        <span
+          class="tool topbar-desktop-only"
+          aria-hidden="true"
+          data-tour="report-top"
+          data-control="report-top"
+          ><span class="sk-icon-tool"></span>Report</span
+        >
+        <span
+          class="tool topbar-desktop-only"
+          aria-hidden="true"
+          data-tour="help"
+          data-control="help"
+          ><span class="sk-icon-tool"></span
+        ></span>
+        <span class="tool" aria-hidden="true" data-tour="theme" data-control="theme"
+          ><span class="sk-icon-tool"></span
+        ></span>
       </header>
 
       <main class="stage" id="stage">
@@ -401,7 +425,7 @@
         <div class="about-region" id="about-region" data-tour="about" data-control="about">
           <div class="sk-about" aria-hidden="true">
             <div class="sk-about-head">
-              <span class="icon"></span>
+              <span class="sk-icon-tool"></span>
               <h2>About this release</h2>
               <span class="sk-about-tool"></span>
             </div>

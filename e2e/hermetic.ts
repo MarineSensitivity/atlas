@@ -110,3 +110,33 @@ export async function gotoPublicShell(page: Page, path = "/") {
   await routeSealFixture(page);
   await page.goto(path);
 }
+
+/**
+ * Aborts the app's own entry chunk (`./assets/index-<hash>.js`, the built `<script type="module">`
+ * index.html emits) so ONLY the static skeleton + inlined critical CSS ever paints -- no
+ * hydration, ever. Used by both the geometry-equality gate (e2e/shell.cls.spec.ts) and the
+ * no-flash gate (e2e/shell.theme-flash.spec.ts): a real browser-level way to isolate "what does
+ * the skeleton alone look like" from "what does main.ts's `$effect` paper over a few ms later."
+ * Does not block `modulepreload-polyfill-*.js` or `report-*.js` -- only the app entry.
+ */
+export async function blockAppBundle(page: Page) {
+  await page.route(
+    (url) => /\/assets\/index-[^/]*\.js$/.test(url.pathname),
+    (route) => route.abort(),
+  );
+}
+
+/** waits for the REAL Rail component (`.rail`, not the skeleton's `.sk-rail`) to exist -- the
+ * signal that main.ts has cleared the skeleton and Shell.svelte has mounted. */
+export async function waitForHydration(page: Page) {
+  await page.waitForSelector("#rail-region .rail", { state: "attached" });
+}
+
+/** `#rrggbb` -> the exact `rgb(r, g, b)` string `getComputedStyle` returns, for asserting a
+ * computed background/color against a `tokens.css` value without a color-parsing library. */
+export function hexToRgb(hex: string): string {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  if (!m) throw new Error(`not a #rrggbb color: "${hex}"`);
+  const [r, g, b] = m.slice(1).map((h) => parseInt(h, 16));
+  return `rgb(${r}, ${g}, ${b})`;
+}

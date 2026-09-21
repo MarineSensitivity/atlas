@@ -1,3 +1,40 @@
+# atlas 0.7.1
+
+`atlas-3` step 3, fix round 1: the CLS and "no theme flash" gates from 0.7.0 could not actually
+fail (confirmed: an 8 px skeleton offset and the theme-setting line replaced with `void theme;`
+both left every existing shell spec green). Replaced/added the real gates, which then caught four
+genuine bugs the vacuous versions had let through.
+
+- **`e2e/shell.cls.spec.ts`** is now a GEOMETRY-EQUALITY gate: with the app bundle route-aborted
+  (`blockAppBundle`, new in `e2e/hermetic.ts`), it captures the bounding box of every keyed
+  skeleton element and compares it, within 0.5 px, to the same element once real hydration
+  completes — the actual claim this step makes, which the Layout Instability API cannot observe
+  (it only scores nodes that persist across frames; `src/main.ts`'s `replaceChildren()` + `mount()`
+  removes and recreates every one of them). The old PerformanceObserver check is kept as a
+  secondary assertion (it still catches a font-swap shift on nodes that DO persist post-hydration).
+  Found and fixed by writing this gate:
+  - `src/shell/shell.css`'s bare `.icon{width:20px;height:20px}` collided with
+    `src/lib/ui/Icon.svelte`'s own literal `class="icon"` and silently forced EVERY hydrated icon
+    to 20×20 regardless of its `size` prop (14/16/18) — a real visual bug, not just a test gap.
+    Renamed to `.sk-icon-16`/`.sk-icon-tool`, sized per real icon.
+  - The skeleton's Share/Report/Help/theme buttons were wrapped in an extra `<span>` not present
+    in `Shell.svelte`, changing how `.topbar`'s own `gap` distributed and shifting everything
+    after it by 8 px.
+  - A bare `<p>` (the panel/sheet body text) carries a UA `margin-block: 1em` the skeleton's
+    placeholder never had; added a global `p { margin: 0 }` reset.
+  - The skeleton's phone panel header kept the desktop `Panel`'s 116px absolute-control
+    reservation; `Sheet.svelte`'s real header uses plain flex + `margin-left: auto` instead and
+    needs none of it.
+  - The skeleton's phone panel had a full 1px border; `Sheet.svelte`'s real `.sheet` has only
+    `border-top`.
+- **`e2e/shell.theme-flash.spec.ts`** (new): with the app bundle blocked, asserts `data-theme` and
+  the painted background for every `?theme=`/`prefers-color-scheme` combination — the only way to
+  observe the pre-paint script before `Shell.svelte`'s own `$effect` could paper over a broken one.
+- **Budget relaxed** (plan D13, owner: "we don't need to be so tight on the 350 KB budget"): the
+  static critical path budget is now **450 KB gzip** (`CRITICAL_BUDGET_BYTES`,
+  `scripts/size-budget-core.mjs`), up from 350; runtime workers stay at 150 KB gzip. The
+  self-hosted brand fonts stay wired exactly as 0.7.0 shipped them.
+
 # atlas 0.7.0
 
 `atlas-3` step 3: the shell wired into `index.html`. A static skeleton (top bar, five-tool rail,

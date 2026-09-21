@@ -360,28 +360,37 @@ and a page title that tracks the view.
 
 ## 12. What the size budget leaves for fonts and CSS (D13)
 
-The static critical path is **350 KB gzip** and runtime workers get **150 KB gzip** separately
-(`scripts/size-budget.mjs`; D13's working rule until Ben answers). Spike S2 measured maplibre-gl 6.10
+**Relaxed 2026-09-21** (owner: "we don't need to be so tight on the 350 KB budget"): the static
+critical path is **450 KB gzip** and runtime workers get **150 KB gzip** separately
+(`scripts/size-budget.mjs`), 600 KB combined. The original 350 KB cap (atlas-0 Deliverable 4) is
+what the rest of this section's arithmetic was written against; it turned out too tight once
+atlas-3 step 3 actually wired the shell and measured it for real (below), so D13 is no longer "a
+working rule until Ben answers" — it is answered, at 450 KB.
 
-- pmtiles + CSS at **288,149 B gzip**, so **≈ 70,251 B (68.6 KiB)** is left for _everything else on
-  the static path_: the Svelte runtime, the shell, all component CSS and any font in that path.
+Spike S2 measured maplibre-gl 6.10 + pmtiles + CSS at **288,149 B gzip** on its own. atlas-3 step 3's
+shell (index.html's real entry, `npm run build` + `node scripts/size-budget.mjs`) measures:
 
-Working allocation for atlas-3:
+| item (as actually built, atlas-3 step 3)                           | measured (gzip)              |
+| ------------------------------------------------------------------ | ---------------------------- |
+| Svelte 5 runtime + Shell.svelte + shell.css + component CSS        | ~29.8 KB (JS + CSS combined) |
+| self-hosted brand fonts, both faces, both weights (Jost + Carlito) | ~78.5 KB                     |
+| **shell total**                                                    | **~108.3 KB**                |
 
-| item                              | budget (gzip)                 | note                                                                                                                                        |
-| --------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Svelte 5 runtime + shell + state  | ~38 KB                        | atlas-2/3 own this                                                                                                                          |
-| `tokens.css` + component CSS      | **≤ 10 KB**                   | tokens.css is ~2 KB gzip today; the whole design system's CSS must stay inside 10                                                           |
-| icons (inline paths, tree-shaken) | **≤ 3 KB**                    | ~30 names × ~100 B; only imported names reach the bundle, which is why the map is a table of names                                          |
-| display face, 2 weights, subset   | **≤ 20 KB**                   | TeX Gyre Adventor / Jost, Latin-basic subset, WOFF2, `font-display: swap`                                                                   |
-| body face                         | **0 KB in the critical path** | `local()` Calibri, then `system-ui`; Carlito is fetched **after** first paint, and being metric-compatible it swaps without shifting layout |
+288 (maplibre) + 108 (shell) ≈ 396 KB, which left under 54 KB of the OLD 350 KB cap for atlas-4/5's
+own lens code — tight enough that the owner relaxed the cap rather than the shell shrinking further.
+At 450 KB, atlas-4/5 has **≈ 50 KB** of headroom for lens code before hitting the new cap (assuming
+maplibre-gl's measured footprint doesn't grow). The self-hosted fonts stay wired exactly as this
+step measured them (`local()` first, both Jost weights and both Carlito weights preloaded — see
+index.html's own comment on why Carlito needed preloading too, not just the display face); the
+budget question this raised is answered by the relax above, not by a font change.
 
-Note what the checker does and does not see: it counts the entry's JS and CSS from the Vite manifest,
-so a **font binary is not in that number** — but a font referenced by critical CSS still downloads
-before first text paint. That is why the table budgets fonts explicitly instead of leaning on the
-gate. The mockups, their screenshots, the glyph SVGs and this document live under `docs/` and
-`src/lib/brand/`, are not imported by any build entry, and cost the budget nothing (`npm run
-size-budget` confirms it after this change).
+Note what the checker does and does not see: it counts the entry's JS and CSS from the Vite manifest
+(including every font file the manifest's `assets` list associates with the entry, via any
+`@font-face src: url(...)` reachable from the entry's CSS, REGARDLESS of whether `local()` would
+actually resolve first at runtime on a machine that has the licensed face installed) — so this is a
+conservative, worst-case count, not "bytes guaranteed to cross the wire on every visit." The mockups,
+their screenshots, the glyph SVGs and this document live under `docs/` and `src/lib/brand/`, are not
+imported by any build entry, and cost the budget nothing (`npm run size-budget` confirms it).
 
 ## 13. Gates in this step
 
@@ -409,9 +418,10 @@ Settled — the component build takes these as given:
 7. The flower plot has its own bespoke glyph; Layers opens the layers control (§6).
 8. Protection chips always show both statutes, "not applicable" where one does not apply (§5.5).
 9. The seal appears in About, the report header and the collapsible on-map About card (§9).
+10. D13 itself, relaxed 2026-09-21: the static critical path is **450 KB gzip** (was 350), runtime
+    workers stay at 150 KB gzip — see §12 for the measured arithmetic that motivated the relax.
 
 Still open, and not blocking:
 
 - Whether the on-map About card should default to **expanded** on a wide desktop (it defaults to
   collapsed here, so the map keeps the space).
-- D13 itself: 350 + 150 KB is a working rule until the budget question is answered.

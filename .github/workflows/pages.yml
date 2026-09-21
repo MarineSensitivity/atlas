@@ -58,9 +58,10 @@ jobs:
           VITE_SEAL: "1"
           VITE_AGENCY: MMA
 
-      # atlas-0 Deliverable 4 (F3 extended): fails on a >350 KB gzip static critical path, a >150 KB
-      # gzip runtime worker referenced from it (e.g. maplibre-gl's, S2.md), or a lazy-only chunk
-      # (duckdb*/terra-draw*/docx*/shp*/treemap) reachable by static import or by a runtime worker.
+      # atlas-0 Deliverable 4 (F3 extended; budget relaxed 350->450 KB by plan D13, 2026-09-21):
+      # fails on a >450 KB gzip static critical path, a >150 KB gzip runtime worker referenced from
+      # it (e.g. maplibre-gl's, S2.md), or a lazy-only chunk (duckdb*/terra-draw*/docx*/shp*/treemap)
+      # reachable by static import or by a runtime worker.
       - run: node scripts/size-budget.mjs
 
       # atlas-0 review fix round 1, F4: the two lines above prove size-budget.mjs is green against a
