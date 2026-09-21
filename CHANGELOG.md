@@ -89,6 +89,11 @@ merges. Still not wired into `index.html` — the shell is step 3.
 - **`src/lib/ui/Legend.svelte`**: takes `LegendStop[]` (from `raster/ramps.ts`, type-only import)
   as props and renders a gradient bar + tick VALUES -- it defines no ramp of its own; a continuous
   ramp cannot meet 3:1 stop-to-stop (spec.md §8), which is why the ticks label values, not color.
+- **`src/lib/ui/About.svelte`**: the collapsible, opaque on-map card (spec.md §9): the seal renders
+  only when `shouldShowSeal(VITE_SEAL, VITE_AGENCY)` is true (`src/lib/ui/sealVisibility.ts`,
+  unit-tested -- unset/`"0"`/any other `VITE_SEAL` value fails closed), at `--size-seal-min` (72
+  CSS px) with its clear space, `loading="lazy"`, unmodified. The seal's own source URL is NOT
+  published anywhere yet (see this step's report).
 
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
