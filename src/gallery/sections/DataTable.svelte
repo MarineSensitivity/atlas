@@ -109,7 +109,9 @@
 
 <div class="col">
   <h3>Small table (sort a column, filter, arrow-key between cells)</h3>
-  <DataTable {columns} rows={small} getRowId={(r) => r.id} height={260} {onExport} />
+  <div id="dt-small">
+    <DataTable {columns} rows={small} getRowId={(r) => r.id} height={260} {onExport} />
+  </div>
   <p class="note">{lastExport}</p>
 
   <h3 id="dt-big-label">10,000 rows (virtualized)</h3>

@@ -44,6 +44,14 @@ call for (`Flower`, `DataTable`, `Treemap`) and the shared category table they a
   dependency (documented in its own header). `npm run build && node scripts/size-budget.mjs`
   confirms `index.html`'s static graph is unchanged (11.5 KB gzip). Keyboard-reachable, named cells;
   category colors from `categories.ts`; a table equivalent, a text summary, and an empty state.
+- **Gallery + `e2e/gallery.spec.ts` extended** for all three: one section file each
+  (`Categories`, `Flower`, `DataTable`, `Treemap`), axe zero serious/critical in both themes at
+  both widths (already covered by the existing full-page scan), and new keyboard/behavior
+  specs — a header click sets `aria-sort` and it toggles asc → desc → none; arrow keys move the
+  DataTable's roving-tabindex active cell; a numeric column sorts numerically over 10,000 rows;
+  only a bounded row window is ever in the DOM; every Flower petal and Treemap cell is
+  keyboard-reachable and individually named; the Flower table toggle reads off the same numbers
+  as the petals. Screenshots regenerated for both themes at 390 and 1280 px.
 
 `atlas-3` step 2a: the design-system component foundation (Svelte 5 runes, `src/lib/ui/`), the icon
 map generator folded in from the stopped Haiku attempt, self-hosted fallback fonts, and

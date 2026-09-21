@@ -35,7 +35,9 @@
 </script>
 
 <div class="row">
-  <Flower title="Full study area (default) — 8 components" components={eight} />
+  <div id="flower-eight">
+    <Flower title="Full study area (default) — 8 components" components={eight} />
+  </div>
   <Flower title="Cell 12345 — 7 components (v7)" components={seven} />
   <Flower title="Program Area: GEO — one component absent" components={withNoData} />
   <Flower title="Cell 99999 — no data at all" components={allNull} size={150} />
