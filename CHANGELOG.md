@@ -21,6 +21,16 @@ call for (`Flower`, `DataTable`, `Treemap`) and the shared category table they a
   focus + tooltip, a data-table toggle whose `<table>` reads off the SAME `components`/`geometry`
   data as the SVG (so they cannot drift), and an always-available text summary. Colors come from
   `categories.ts`; no color literal anywhere in the component.
+- **`src/lib/ui/DataTable.svelte`**, a virtualized/sortable/filterable grid (species/zone tables),
+  with its sort/filter/window/navigation math in `src/lib/ui/dataTableCore.ts` (pure, unit-tested).
+  Virtualizes: only the rows inside the scrolled viewport (plus overscan) are ever in the DOM, so
+  10,000 rows scroll smoothly. Sorting is stable, numeric columns compare numerically (never as
+  strings — "10" sorts after "9"), and nulls always sort last regardless of direction; per-column
+  filtering matches the FORMATTED display value, not the raw one (documented and regression-tested).
+  `aria-sort` on each header follows a click; keyboard cell navigation (arrow keys, Home/End,
+  PageUp/PageDown) moves a roving-tabindex active cell with a visible focus ring and scrolls it into
+  view. A CSV export hook (`onExport`) emits the current filtered+sorted rows; the component never
+  writes a file. One polite live-region announcement on load and on filter ("1,234 rows").
 
 `atlas-3` step 2a: the design-system component foundation (Svelte 5 runes, `src/lib/ui/`), the icon
 map generator folded in from the stopped Haiku attempt, self-hosted fallback fonts, and
