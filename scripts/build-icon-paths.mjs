@@ -79,4 +79,8 @@ export type IconName = keyof typeof ICON_PATHS;
   console.log(`✓ generated ${OUTPUT_FILE} (${Object.keys(sorted).length} icons)`);
 }
 
-main();
+// Run only when executed directly, not when imported
+import { pathToFileURL } from "node:url";
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

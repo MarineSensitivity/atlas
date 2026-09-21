@@ -106,7 +106,7 @@ export function exportTokens(css) {
 }
 
 /**
- * Main export logic
+ * Main export logic - runs only when script is executed directly
  */
 function main() {
   const css = readFileSync(TOKENS_CSS, "utf8");
@@ -119,4 +119,8 @@ function main() {
   console.log(`✓ exported tokens to ${OUTPUT_FILE}`);
 }
 
-main();
+// Run only when executed directly, not when imported
+import { pathToFileURL } from "node:url";
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}
