@@ -23,3 +23,8 @@ coverage
 # parallel spike-agent worktrees (S1-S4), each a full checkout with its own node_modules — never
 # tracked, linted, formatted or type-checked from root
 .claude/worktrees/
+
+# DuckDB-WASM extension mirror (scripts/fetch-duckdb-extensions.mjs, atlas-2 Step 3): re-fetched from
+# extensions.duckdb.org, not committed — a real build must run the script before `vite build` (see
+# docs/engine.md)
+/public/duckdb-ext/

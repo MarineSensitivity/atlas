@@ -41,6 +41,14 @@ jobs:
 
       - run: npx vitest run
 
+      # atlas-2 Step 3a fix round 1: mirrors DuckDB-WASM's parquet extension (both platforms) into
+      # public/duckdb-ext/ BEFORE the build, so Vite's publicDir copies it into dist/ — without this
+      # step a published site has no same-origin mirror and the first read_parquet() crashes with an
+      # uncatchable WASM error the moment extensions.duckdb.org is unreachable (docs/spikes/S3.md).
+      # Each downloaded file is verified against the pinned sha256/bytes in
+      # scripts/duckdb-extensions.manifest.json; a mismatch fails this step, not silently continues.
+      - run: node scripts/fetch-duckdb-extensions.mjs
+
       - run: npx vite build
 
       # atlas-0 Deliverable 4 (F3 extended): fails on a >350 KB gzip static critical path, a >150 KB
@@ -65,6 +73,10 @@ jobs:
       # plan D2: base: "./" must produce relative asset URLs only, so the same dist/ runs under
       # both /atlas/ and /v9/atlas/.
       - run: node scripts/check-relative-assets.mjs dist
+
+      # atlas-2 Step 3a fix round 1: re-verifies dist/duckdb-ext/ against the same pinned manifest,
+      # against what actually ended up on disk after the build (not just what was downloaded).
+      - run: node scripts/check-duckdb-ext.mjs dist
 
       - uses: actions/upload-artifact@v4
         with:

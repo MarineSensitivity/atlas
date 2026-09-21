@@ -1,0 +1,18 @@
+{
+  "_": "atlas-2 Step 3a fix round 1: the DuckDB-WASM extension mirror is a supply-chain input (fetched from extensions.duckdb.org, a third party), so every mirrored file is pinned here by exact byte size and sha256 -- scripts/fetch-duckdb-extensions.mjs verifies each download against this file and fails on a mismatch or a missing entry; scripts/check-duckdb-ext.mjs re-verifies the same manifest against a real dist/ at build-check time. Re-measured 2026-09-21 (a fresh re-download hashed identically to the committed copy, confirming the CDN serves byte-identical content). Bumping @duckdb/duckdb-wasm means re-deriving engineVersion (src/lib/engine/bundles.ts's DUCKDB_ENGINE_VERSION) and regenerating every entry below.",
+  "engineVersion": "v1.4.3",
+  "files": [
+    {
+      "platform": "wasm_eh",
+      "name": "parquet",
+      "bytes": 3045039,
+      "sha256": "22765c8f7dc741cda2b571a66ac7bb355295d7d69a6c37e5315b265672984f55"
+    },
+    {
+      "platform": "wasm_mvp",
+      "name": "parquet",
+      "bytes": 2867304,
+      "sha256": "0785c6c95d003eff4faa7b3b4b660f02c9c92f6d68d135ddf330d42e3a650600"
+    }
+  ]
+}

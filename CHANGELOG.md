@@ -1,3 +1,70 @@
+# atlas 0.3.0
+
+Plan `atlas-2` Step 3 (Sonnet half): the DuckDB-WASM engine wrapper, the MEMORY `TableStore`, and SQL
+templating. No UI wiring — `src/lib/engine/**` is reachable only via dynamic `import()`, never from
+`index.html`'s static graph (the size-budget forbidden-marker scan stays green). The SQL twins
+(`sql/*.sql` ports of `msens` functions), the OPFS `TableStore`, and the parity harness are the Opus
+half of this step, once the R side lands; `sql/smoke_count.sql` is the one trivial, non-twin template
+this half ships, to prove the templating wiring end to end.
+
+- **`src/lib/engine/bundles.ts`**: self-hosted `mvp`/`eh` DuckDB-WASM bundles via `?url` imports
+  (the measured wiring from `spikes/1/src/bundles.js`/`spikes/3/src/duckdb-setup.ts`), the worker
+  constructed by hand (`new Worker(bundle.mainWorker)`, same-origin — never `duckdb.createWorker()`),
+  and `DUCKDB_ENGINE_VERSION` (`v1.4.3`, the C++ engine baked into the pinned `1.32.0`, keying the
+  extension mirror).
+- **`src/lib/engine/engine.ts`**: the `Engine` wrapper — lazy boot (`scheduleIdleBoot()` via
+  `requestIdleCallback`, or on first `load()`/`exec()`), one connection, EVERY `load()`/`exec()`
+  serialized on one promise chain (`atlas-refs/"calcofi explore review.md"` lesson 2), whole-object
+  `fetch` + `registerFileBuffer` with a 25 MB materialize guard (throws, never silently range-reads),
+  `SET custom_extension_repository` (an absolute, `document.baseURI`-relative URL — a relative string
+  resolves against the DuckDB _worker's_ own location, not the page's, and fails silently) before the
+  first query, and `window.__marks` timing marks. Every failure (a boot crash, a blocked-CDN
+  extension-autoload WASM `RuntimeError`, an HTTP error) normalizes to one `EngineUnavailableError`.
+  Fully dependency-injectable (`createDb`/`fetchImpl`/`store`/`marksSink`) so the chain-ordering and
+  the materialize guard are provable under plain Node/Vitest; the real self-hosted boot is exercised
+  only by `tests/fixtures/engine-e2e`'s Playwright specs (a real `Worker`+WASM needs a real browser).
+- **`src/lib/engine/store/`**: the `TableStore` interface (register by name+digest, idempotent, drop,
+  list, bytes accounting) and its `MemoryTableStore` implementation, left ready for an OPFS second
+  implementation (atlas-2 Step 4, Opus).
+- **`src/lib/engine/sql.ts`**: `{{name}}` template substitution; every value through `lit()` (string,
+  number, null, boolean, arrays) except a fixed `RAW_ALLOWLIST` (`from`, `cols`, `predicate`) that can
+  only hold app-built fragments; `ident()` for the separate, strict-pattern identifier path (e.g. a
+  runtime `manifest.id_field`); an unknown or unfilled placeholder throws; an unlisted RAW key throws
+  immediately, whether or not the template references it.
+- **`scripts/fetch-duckdb-extensions.mjs`** (`npm run duckdb:fetch-ext`): mirrors the `parquet`
+  extension for both platforms (`wasm_mvp`, `wasm_eh`) into gitignored `public/duckdb-ext/`, keyed by
+  the DuckDB engine version — the documented build step a real deploy must run before `vite build` so
+  the mirror ships in `dist/`.
+- **`docs/engine.md`**: measures what atlas-0 didn't — the `mvp` bundle flavour (2,867,304 B, vs `eh`'s
+  3,045,039 B, both self-hosted and working, verified with `extensions.duckdb.org` blocked on
+  chromium/firefox/webkit) and whether a cross-origin `custom_extension_repository` works (yes, subject
+  to ordinary CORS — measured against a local stand-in for the bucket, since the real bucket is
+  read-only for this task), plus the exact user-visible failure text per browser when the mirror is
+  unset and the CDN is blocked.
+- **`tests/fixtures/engine-e2e/`**: a standalone Vite+Playwright fixture booting the real engine
+  against a real browser (port 4391/4392, `npm run e2e:engine`) — the required extension-mirror gate
+  (both platforms × three engines, 37,067-row public parquet, CDN blocked) plus the seeded-fault specs
+  (chain ordering, injection round-trip, unset mirror, cross-origin).
+
+Fix round 1 (review):
+
+- **The 25 MB materialize guard now refuses BEFORE the download, not after.** New
+  `src/lib/engine/materialize.ts`'s `fetchWithSizeGuard()`: an over-guard `Content-Length` aborts
+  the request without ever reading the body; otherwise the body is streamed and capped, aborted the
+  moment the running total crosses the guard (never more than the guard plus one chunk) — catching a
+  LYING `Content-Length` too, not just a missing one. Verified against a real cross-origin `fetch()`
+  in a real browser that the bucket exposes `Content-Length` under CORS (`docs/engine.md`).
+- **The DuckDB-WASM extension mirror is now pinned and CI-verified**, not just downloaded and
+  trusted. New `scripts/duckdb-extensions.manifest.json` commits the exact byte size and sha256 of
+  every mirrored file; `scripts/fetch-duckdb-extensions.mjs` verifies each download against it and
+  refuses to write a mismatch; new `scripts/check-duckdb-ext.mjs` (`npm run check:duckdb-ext`)
+  re-verifies the same manifest against a real `dist/duckdb-ext/` and confirms neither file is
+  reachable from `index.html`'s static import graph. `.github/workflows/pages.yml`'s `checks` job
+  now fetches the mirror before `vite build` and re-checks it after — a published site no longer
+  ships with no mirror at all (previously an omission: CI never ran the fetch step).
+- `docs/engine.md`: the published size the mirror adds (5,912,343 B, both platforms), confirmed
+  outside the size budget by construction (no manifest entry for a `publicDir` copy) and by test.
+
 # atlas 0.2.0
 
 Plan `atlas-2` Step 2: `release/`'s production resolution pipeline and `state/`, the `Sel` object
