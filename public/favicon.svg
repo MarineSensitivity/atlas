@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- placeholder favicon: a plain hexagon in the MMA navy/gold pair. The real mark (seal, wave and
+       hexagon motifs) arrives with the design system in atlas-3 (plan D10, brand build flags). -->
+  <polygon points="16,2 28,9 28,23 16,30 4,23 4,9" fill="#001a57" />
+  <polygon points="16,7 23,11 23,21 16,25 9,21 9,11" fill="#e8c24a" />
+</svg>

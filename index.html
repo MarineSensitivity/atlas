@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>MarineSensitivity Atlas</title>
+    <meta name="description" content="Scores, species, places and reports for U.S. marine areas." />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <!--
+      critical CSS, inlined so the shell paints before any JavaScript bundle loads or parses
+      (plan atlas-0 Deliverable 2). Real design tokens arrive in atlas-3; for now this uses the
+      four MMA hex values directly (ground truth: Gold #E8C24A, Steel #173D6D, Navy #001A57,
+      Crimson #6E110F).
+    -->
+    <style>
+      :root {
+        --mma-gold: #e8c24a;
+        --mma-steel: #173d6d;
+        --mma-navy: #001a57;
+        --mma-crimson: #6e110f;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        color: #101820;
+        background: #fff;
+      }
+      #shell {
+        display: grid;
+        grid-template-columns: 64px 1fr;
+        grid-template-rows: 56px 1fr;
+        grid-template-areas: "topbar topbar" "rail main";
+        height: 100vh;
+        min-height: 100%;
+      }
+      .ms-topbar {
+        grid-area: topbar;
+        background: var(--mma-navy);
+        color: var(--mma-gold);
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0 1rem;
+        font-weight: 600;
+      }
+      .ms-topbar .ms-title {
+        white-space: nowrap;
+      }
+      #version-badge {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .ms-version {
+        font-weight: 400;
+        opacity: 0.85;
+      }
+      .ms-preview-badge {
+        background: var(--mma-crimson);
+        color: #fff;
+        font-size: 0.7rem;
+        letter-spacing: 0.05em;
+        padding: 0.2rem 0.5rem;
+        border-radius: 3px;
+      }
+      .ms-rail {
+        grid-area: rail;
+        background: var(--mma-steel);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5rem;
+        padding-top: 0.75rem;
+      }
+      .ms-rail button {
+        width: 44px;
+        height: 44px;
+        border: none;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--mma-gold);
+        font-size: 0.65rem;
+        cursor: pointer;
+      }
+      .ms-rail button:hover,
+      .ms-rail button:focus-visible {
+        background: rgba(255, 255, 255, 0.2);
+      }
+      #main {
+        grid-area: main;
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(280px, 360px) 1fr;
+        min-width: 0;
+      }
+      #panel {
+        overflow: auto;
+        border-right: 1px solid #d8dde3;
+        padding: 1rem;
+        min-width: 0;
+      }
+      .ms-skel {
+        background: #e5e7eb;
+        border-radius: 4px;
+        height: 1rem;
+        margin-bottom: 0.6rem;
+      }
+      .ms-skel.short {
+        width: 60%;
+      }
+      #map {
+        background: #cfe3f7;
+        min-width: 0;
+      }
+      @media (max-width: 480px) {
+        #shell {
+          grid-template-columns: 1fr;
+          grid-template-rows: 56px auto 1fr;
+          grid-template-areas: "topbar" "rail" "main";
+        }
+        .ms-rail {
+          flex-direction: row;
+          padding: 0.5rem;
+        }
+        #main {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto minmax(200px, 1fr);
+        }
+        #panel {
+          border-right: none;
+          border-bottom: 1px solid #d8dde3;
+        }
+      }
+    </style>
+    <script>
+      window.__t0 = performance.now();
+    </script>
+    <!--
+      early-fetch: kicks off latest.txt, versions.json and session.json before the app bundle even
+      starts parsing (CalCOFI Explorer's index.html:159-163 pattern, atlas-refs/"calcofi explore
+      review.md" §2), then chains {ver}/manifest.json and {ver}/app/boot.json off the resolved
+      version. Everything lands on window.__early as promises; nothing here throws — a missing file
+      (GitHub Pages has no session.json) or a network error is swallowed and resolved to a safe
+      default, never left as an unhandled rejection (the Playwright smoke spec asserts zero console
+      errors).
+
+      This duplicates the logic of src/lib/release/version.ts and src/lib/release/session.ts on
+      purpose: it must run with zero bundle before any `import` is possible, so it cannot pull in the
+      real module. Those two modules are the source of truth and carry the unit tests (path beats
+      query beats latest.txt; `^v[0-9]+[a-z]?$`; 404/network-error = public, only a 200 with
+      `preview: true` = preview) — keep this copy in sync with them by hand.
+    -->
+    <script>
+      (function () {
+        var VERSION_RE = /^v[0-9]+[a-z]?$/;
+        // derived from VERSION_RE, not a second hardcoded literal — see
+        // src/lib/release/version.ts's PATH_VERSION_RE for why (drift).
+        var PATH_VERSION_RE = new RegExp("^/(" + VERSION_RE.source.slice(1, -1) + ")/");
+
+        function versionFromPath(pathname) {
+          var m = PATH_VERSION_RE.exec(pathname);
+          return m ? m[1] : null;
+        }
+        function versionFromQuery(search) {
+          var v = new URLSearchParams(search).get("ver");
+          return v && VERSION_RE.test(v) ? v : null;
+        }
+        function fetchLatest() {
+          return fetch("latest.txt", { cache: "no-cache" })
+            .then(function (r) {
+              if (!r.ok) throw new Error("latest.txt " + r.status);
+              return r.text();
+            })
+            .then(function (t) {
+              t = t.trim();
+              // never stash something that isn't actually a version label — a misconfigured host
+              // returning e.g. its own index.html for a missing latest.txt must not leak into
+              // window.__early.version (see src/lib/release/version.ts's isVersionLabel).
+              if (!VERSION_RE.test(t)) throw new Error("latest.txt is not a version label");
+              return t;
+            });
+        }
+        function fetchJSON(url) {
+          return fetch(url, { cache: "no-cache" }).then(function (r) {
+            if (!r.ok) throw new Error(url + " " + r.status);
+            return r.json();
+          });
+        }
+        function fetchSession() {
+          // same-origin; a 404 (public GitHub Pages: this file never exists) and a network error
+          // both resolve to "public" (plan D6) rather than rejecting. Always normalizes to
+          // { preview: boolean } — never passes the raw parsed body through — so this can't
+          // silently drift from src/lib/release/session.ts's SessionInfo shape (a body of `{}`,
+          // with no `preview` key, must resolve the same way as an explicit `preview: false`).
+          return fetch("session.json", { cache: "no-cache" })
+            .then(function (r) {
+              if (!r.ok) return { preview: false };
+              return r
+                .json()
+                .then(function (body) {
+                  return { preview: !!(body && typeof body === "object" && body.preview === true) };
+                })
+                .catch(function () {
+                  return { preview: false };
+                });
+            })
+            .catch(function () {
+              return { preview: false };
+            });
+        }
+
+        var fromPath = versionFromPath(location.pathname);
+        var fromQuery = fromPath ? null : versionFromQuery(location.search);
+        var version = fromPath
+          ? Promise.resolve(fromPath)
+          : fromQuery
+            ? Promise.resolve(fromQuery)
+            : fetchLatest().catch(function () {
+                return null;
+              });
+
+        var versions = fetchJSON("versions.json").catch(function () {
+          return null;
+        });
+        var session = fetchSession();
+        var manifest = version
+          .then(function (v) {
+            return v ? fetchJSON(v + "/manifest.json") : null;
+          })
+          .catch(function () {
+            return null;
+          });
+        var boot = version
+          .then(function (v) {
+            return v ? fetchJSON(v + "/app/boot.json") : null;
+          })
+          .catch(function () {
+            return null;
+          });
+
+        window.__early = {
+          version: version,
+          versions: versions,
+          session: session,
+          manifest: manifest,
+          boot: boot,
+        };
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="shell">
+      <header class="ms-topbar">
+        <span class="ms-title">MarineSensitivity Atlas</span>
+        <span id="version-badge"></span>
+      </header>
+      <nav class="ms-rail" aria-label="tools">
+        <button type="button" data-control="lens-scores" aria-label="Scores" disabled>
+          Scores
+        </button>
+        <button type="button" data-control="lens-species" aria-label="Species" disabled>
+          Species
+        </button>
+        <button type="button" data-control="lens-places" aria-label="Places" disabled>
+          Places
+        </button>
+        <button type="button" data-control="lens-report" aria-label="Report" disabled>
+          Report
+        </button>
+      </nav>
+      <main id="main">
+        <section id="panel" aria-label="details panel">
+          <div class="ms-skel" aria-hidden="true"></div>
+          <div class="ms-skel" aria-hidden="true"></div>
+          <div class="ms-skel short" aria-hidden="true"></div>
+        </section>
+        <div id="map" role="img" aria-label="map (not yet loaded)"></div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

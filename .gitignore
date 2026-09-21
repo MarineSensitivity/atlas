@@ -1,0 +1,25 @@
+node_modules
+dist
+dist-fixture
+*.local
+.tmp
+
+# vite / vitest / svelte-check
+.vite
+*.tsbuildinfo
+coverage
+
+# playwright
+/playwright-report/
+/test-results/
+/blob-report/
+/playwright/.cache/
+
+# editors, os
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+
+# parallel spike-agent worktrees (S1-S4), each a full checkout with its own node_modules — never
+# tracked, linted, formatted or type-checked from root
+.claude/worktrees/
