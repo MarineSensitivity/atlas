@@ -1,3 +1,4 @@
+import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 
 // atlas-0 Step 4, S2 spike ("first paint without WASM"): its own tiny Vite project, built through
@@ -31,5 +32,16 @@ export default defineConfig({
   build: {
     target: "es2022",
     manifest: true,
+    // fix round 2: two entries -- index.html (the real harness) and fault-worker-url.html (the
+    // committed seeded fault for the vector-feature assertion, built through a REAL vite build +
+    // preview since the worker URL wiring it tests is a build-time resolution, not a runtime
+    // ?seed= toggle). Both must go through an actual build for the fault to be provable the same
+    // way the root's tests/fixtures/size-budget-static-duckdb/ fixture is.
+    rollupOptions: {
+      input: {
+        index: fileURLToPath(new URL("./index.html", import.meta.url)),
+        "fault-worker-url": fileURLToPath(new URL("./fault-worker-url.html", import.meta.url)),
+      },
+    },
   },
 });

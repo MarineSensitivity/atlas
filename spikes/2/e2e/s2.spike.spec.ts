@@ -2,15 +2,22 @@ import { test, expect } from "@playwright/test";
 import { OCEAN_POINTS, readOceanPixel, isPainted } from "./probe";
 
 // atlas-0 Step 4, S2 gate ("2026-09-20 atlas app plan.md" / "atlas-0 scaffold + spikes.md" Step 4 +
-// Review checklist), fix round 1:
+// Review checklist), fix round 2:
 //   - **/*.wasm and **/duckdb* blocked
-//   - the map canvas has painted pixels at two known ocean points (gl.readPixels)
+//   - the map canvas has painted pixels at two known ocean points (gl.readPixels) -- RASTER data
+//   - vector data ALSO renders: after the zones source loads, queryRenderedFeatures on the
+//     zones-line layer returns >= 1 feature (fix round 2: round 1's gate only probed raster ocean
+//     points, so it never noticed the worker silently never parsing a single vector tile -- see
+//     RESULTS.md "fix round 2")
+//   - no response for any maplibre worker/shared-chunk request is a 404 (fix round 2: this is
+//     exactly what a broken worker wiring produces -- the worker's OWN internal import 404s, which
+//     is invisible unless something is actually watching worker/shared asset responses)
 //   - the Program-Area table has 20 rows
 //   - the flower has 7-8 petals
 //   - firstDataFrame <= 2.5s, with zero duckdb/wasm requests before it -- NOT the naive
 //     "first render" mark, which fires on an empty background before any tile exists and so can
 //     never go red (that was fix round 1's finding; see RESULTS.md "fix round 1"). firstDataFrame
-//     is set inside src/main.ts's own "render" handler, re-checked every render tick, the first
+//     is set inside src/app.ts's own "render" handler, re-checked every render tick, the first
 //     time gl.readPixels at BOTH ocean probe points reads back a non-background colour.
 //   - zero DuckDB bytes requested -- read literally as zero REQUESTS to a duckdb*-named URL, not
 //     "zero bytes transferred": a request that gets aborted by the route block below still counts
@@ -18,11 +25,20 @@ import { OCEAN_POINTS, readOceanPixel, isPainted } from "./probe";
 //     seeded-fault spec below make this same assertion fail.
 
 test.describe("S2: first paint without WASM", () => {
-  test("shell paints the map + Program-Area table + flower; firstDataFrame gate", async ({
+  test("shell paints the map + Program-Area table + flower; firstDataFrame + vector gate", async ({
     page,
   }) => {
     const blockedRequests: string[] = [];
     const duckdbRequests: { url: string; at: number }[] = [];
+    // fix round 2: every response for a maplibre worker or shared-chunk asset -- this is how the
+    // round 1 bug (worker's own "./maplibre-gl-shared.mjs" import 404ing) becomes visible to a
+    // gate instead of silently only affecting vector rendering.
+    const workerResponses: { url: string; status: number }[] = [];
+    page.on("response", (res) => {
+      if (/maplibre-gl-(worker|shared)/i.test(res.url())) {
+        workerResponses.push({ url: res.url(), status: res.status() });
+      }
+    });
 
     // the gate's own network block: **/*.wasm and **/duckdb* never reach the network.
     await page.route("**/*.wasm", (route) => {
@@ -89,12 +105,32 @@ test.describe("S2: first paint without WASM", () => {
         true,
       );
     }
+
+    // gate (fix round 2): VECTOR data rendered, not just raster. A worker whose own module init
+    // 404s never parses a single vector tile, while the raster score layer keeps painting fine --
+    // so the raster-only checks above cannot see this class of bug. Record the count (not just
+    // ">0") so the report has a real number, not a boolean.
+    const zonesFeatureCount = await page.evaluate(() => window.__s2.zonesFeatureCount ?? 0);
+    expect(
+      zonesFeatureCount,
+      `zones-line queryRenderedFeatures returned ${zonesFeatureCount} features (expected >= 1)`,
+    ).toBeGreaterThanOrEqual(1);
+
+    // gate (fix round 2): no maplibre worker/shared-chunk request 404'd. This is the direct,
+    // network-level symptom of round 1's `?url`-only worker wiring bug (its own
+    // "./maplibre-gl-shared.mjs" import 404s) -- asserted here so a regression is caught even if
+    // some future change makes the vector-feature count pass for an unrelated reason.
+    const worker404s = workerResponses.filter((r) => r.status === 404);
+    expect(
+      worker404s,
+      `maplibre worker/shared requests that 404'd: ${JSON.stringify(worker404s)}`,
+    ).toEqual([]);
   });
 });
 
 // ── seeded faults (plan Step 4 Review checklist: "a check that cannot fail is not a check") ──────
 //
-// All three blocks below use Playwright's built-in test.fail() so the fault is exercised on every
+// All four blocks below use Playwright's built-in test.fail() so the fault is exercised on every
 // CI run, permanently, without leaving a red build: test.fail() tells Playwright this test is
 // EXPECTED to fail, so a genuine failure inside it is reported as an (expected) pass for the
 // overall run, and -- critically -- if the fault ever stopped tripping the assertion (e.g. someone
@@ -170,5 +206,47 @@ test.describe("seeded fault: S3 + titiler responses delayed 3s", () => {
 
     // same assertion as the real gate above -- this is the one that must fail.
     expect(firstDataFrameMs).toBeLessThanOrEqual(2500);
+  });
+});
+
+test.describe("seeded fault: worker asset loaded via ?url (fix round 2)", () => {
+  test.fail(
+    true,
+    "fix round 2: round 1's `?url`-only worker wiring must make the vector-feature-count gate FAIL",
+  );
+
+  test("fault-worker-url.html trips the zones-feature-count assertion", async ({ page }) => {
+    // src/main-fault-worker-url.ts (built via fault-worker-url.html, a real second vite build
+    // entry -- see vite.config.ts) is byte-for-byte the same app as the real entry EXCEPT its
+    // worker is imported with `?url` alone, which is exactly the wiring round 1's RESULTS.md
+    // reported as "passing". It is not: the worker's own "./maplibre-gl-shared.mjs" import 404s
+    // (asset never emitted under that literal name), so the worker throws during its own module
+    // init and never parses a single vector tile -- while the raster score layer paints fine
+    // regardless, which is why round 1's raster-only pixel gate could not see this.
+    const workerResponses: { url: string; status: number }[] = [];
+    page.on("response", (res) => {
+      if (/maplibre-gl-(worker|shared)/i.test(res.url())) {
+        workerResponses.push({ url: res.url(), status: res.status() });
+      }
+    });
+
+    await page.goto("/fault-worker-url.html");
+    // firstDataFrame (raster) still fires normally for this variant -- only vector data is
+    // affected -- so it's a reliable "enough time has passed" signal without waiting on
+    // zonesPainted/idle, neither of which ever fires here (the zones source never finishes
+    // loading because its worker crashed).
+    await page.waitForFunction(() => window.__s2?.marks?.firstDataFrame !== undefined, {
+      timeout: 10_000,
+    });
+    // give the (broken) worker's 404 a moment to actually land before reading it back.
+    await page.waitForTimeout(500);
+
+    const zonesFeatureCount = await page.evaluate(() => window.__s2.zonesFeatureCount ?? 0);
+    // context for the RESULTS.md report, not part of the assertion that must fail:
+    console.log("fault-worker-url.html: workerResponses =", JSON.stringify(workerResponses));
+    console.log("fault-worker-url.html: zonesFeatureCount =", zonesFeatureCount);
+
+    // same assertion as the real gate above -- this is the one that must fail.
+    expect(zonesFeatureCount).toBeGreaterThanOrEqual(1);
   });
 });
