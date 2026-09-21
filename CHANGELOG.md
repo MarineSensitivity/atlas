@@ -45,6 +45,9 @@ merges. Still not wired into `index.html` — the shell is step 3.
 - **`src/lib/ui/Rail.svelte`**: hosts the tool rail's five controls with roving tabindex
   (`src/lib/ui/roving.ts`, unit-tested), `role="toolbar"` + `aria-orientation` so the SAME
   component serves the desktop vertical rail and the phone horizontal bottom bar (spec.md §5.1).
+- **`src/lib/ui/Pill.svelte`**: one small control for three shapes spec.md §5.3/§5.4 both need --
+  a selectable toggle (`pressed`), a disclosure (`expanded` + `controls`, what a collapsed Panel
+  becomes), or disabled-with-a-reason (dashed border, strike-through, a tooltip).
 
 
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
