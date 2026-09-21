@@ -24,6 +24,7 @@
     "check:relative-assets": "node scripts/check-relative-assets.mjs",
     "contrast": "node scripts/contrast.mjs",
     "check:hex-literals": "node scripts/check-hex-literals.mjs",
+    "build:icons": "node scripts/build-icon-paths.mjs",
     "mockups:shots": "node scripts/mockup-shots.mjs",
     "mockups:axe": "node scripts/axe-mockups.mjs"
   },

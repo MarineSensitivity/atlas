@@ -86,6 +86,18 @@ describe("no hex literal outside tokens.css", () => {
       expect(readFileSync(`src/lib/brand/vendor/${f}`, "utf8")).toMatch(/vendored verbatim from/);
     }
   });
+
+  it("exempts tokens.json but still catches hex literals under src/lib/ui", () => {
+    const d = makeRepo({
+      "src/lib/brand/tokens.css": ":root { --mma-gold: #e8c24a; }",
+      "src/lib/brand/tokens.json":
+        '{"navy": {"--mma-gold": "#e8c24a"}, "paper": {"--mma-gold": "#e8c24a"}}',
+      "src/lib/ui/test.css": ".test { color: #e8c24a; }",
+    });
+    const hits = findHexLiterals(d);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].path).toContain("ui");
+  });
 });
 
 describe("motif opacity is capped at 10 % (guide pp. 9-10)", () => {

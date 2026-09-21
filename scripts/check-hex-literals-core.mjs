@@ -12,8 +12,8 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
-// atlas-3 step 1 surfaces. Step 3 adds "index.html" here when the shell's critical CSS lands.
-export const SCAN_ROOTS = ["src/lib/brand", "docs/design/mockups"];
+// atlas-3 step 2 surfaces. Step 3 adds "index.html" here when the shell's critical CSS lands.
+export const SCAN_ROOTS = ["src/lib/brand", "src/lib/ui", "docs/design/mockups"];
 const SCANNED_EXTENSIONS = new Set([".css", ".html", ".svg", ".ts", ".svelte", ".mjs", ".js"]);
 export const TOKENS_FILE = join("src", "lib", "brand", "tokens.css");
 export const TOKENS_JSON_FILE = join("src", "lib", "brand", "tokens.json");

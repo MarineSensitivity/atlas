@@ -1,0 +1,18 @@
+{
+  "rail-layers": "mdiLayersOutline",
+  "rail-places": "mdiMapMarker",
+  "rail-plot": "mdiChartBar",
+  "rail-table": "mdiTable",
+  "rail-species": "mdiFish",
+  "rail-report": "mdiFileDocument",
+  "rail-help": "mdiHelpCircleOutline",
+  "top-search": "mdiMagnify",
+  "top-share": "mdiShareVariant",
+  "top-help": "mdiHelpCircleOutline",
+  "top-theme": "mdiThemeLightDark",
+  "ui-close": "mdiClose",
+  "ui-chevron-up": "mdiChevronUp",
+  "ui-chevron-down": "mdiChevronDown",
+  "ui-chevron-left": "mdiChevronLeft",
+  "ui-chevron-right": "mdiChevronRight"
+}

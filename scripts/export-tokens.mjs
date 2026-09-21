@@ -64,8 +64,9 @@ function resolveValue(value, props) {
 
 /**
  * Export tokens per theme by merging :root with theme-specific rules.
+ * Exported so tests can regenerate in memory.
  */
-function exportTokens(css) {
+export function exportTokens(css) {
   // Parse :root (shared) properties
   const sharedProps = parseCSSBlock(css, ":root(?!\\[)");
 
