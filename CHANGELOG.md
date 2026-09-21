@@ -104,7 +104,6 @@ merges. Still not wired into `index.html` — the shell is step 3.
   `Modal.svelte` now traps Tab explicitly at its own first/last focusable element as a
   belt-and-suspenders on top of the platform's own containment.
 
-
 `atlas-3` step 1, revised after Ben's mockup review (2026-09-21). Still design-only: nothing is wired
 into the app, `index.html` is untouched and `dist/` is unchanged.
 
