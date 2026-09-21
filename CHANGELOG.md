@@ -1,3 +1,42 @@
+# atlas 0.2.0
+
+Plan `atlas-2` Step 2: `release/`'s production resolution pipeline and `state/`, the `Sel` object
+that is the whole view (master plan D8). No UI in this phase — everything below is data and pure
+functions, importable by the lenses later.
+
+- **`src/lib/release/resolveVer.ts`**: the production version-resolution pipeline — `previewVer()`/
+  `previewUser()` read `session.raw.{ver,user}` (Caddy writes `ver` from the preview host's path);
+  `candidateVer()` makes `session.ver` authoritative in preview mode, ignoring the path AND `?ver=`
+  outright; `resolveVer()` gates the result through the existing `decideAccess()` (access.ts,
+  unchanged) so a label must both match `VERSION_RE` and exist in `versions.json`.
+- **`src/lib/release/preview.ts`**: `previewSwitchUrl()` builds the `/{v}/atlas/...` preview-host URL
+  (path segment replaced, query + hash kept) used both for switching release on the preview host and
+  for `underReviewInfo()`'s "under review" modal data (ver, reason, preview link) on the public host;
+  `sessionExpiryLatch()` raises one "session expired" signal per page load for a same-origin 401 or
+  opaque redirect, never one per request.
+- **`src/lib/release/manifest.ts`** / **`boot.ts`**: `manifest()`/`boot()` consume `window.__early`
+  when present, falling back to a fresh fetch otherwise (`report.html` has no early-fetch script);
+  validated through an injectable validator (`minimalManifestCheck`/`minimalBootCheck` structural
+  checks stand in until msens ships the real JSON Schema — TODO atlas-1, skipped tests name it).
+  `manifestCapability()` defaults every capability to FALSE, including when the whole block is
+  missing (mirrors msens `manifest_can()` exactly; deliberately more lenient than msens's own
+  publish-time `validate_manifest()`, which throws instead).
+- **`src/lib/state/`** (new): one `Sel` object ⇄ URL, exactly per the atlas-2 key table. Query holds
+  short scalars; the hash holds only `#pl` (the place codec, opaque here) and `#t` (report title) —
+  a fragment never reaches a server or analytics. `history.replaceState` only, never `pushState`;
+  every field is written only when it differs from its default (`lens`'s default depends on `sp`,
+  `out`'s on `lens`); `,`/`:` are un-escaped for a readable link; unknown keys are ignored, unknown
+  values clamp to the default, and parsing never throws. Legacy `mdl_key`/`mdl_seq` (→ `sp`, +`in`
+  via an injectable `alias/{xx}.json`-backed lookup, not yet published), `splash=false` (→
+  `tour=off`) and `er_clr` (kept, untouched) are rewritten/tolerated on read. `sel.svelte.ts` is the
+  only file under `src/lib` that uses a Svelte rune — everything else in `state/` is a plain,
+  Node-testable module (guarded by `tests/state/invariants.test.ts`'s repo-wide scan).
+- A seeded-fault URL round-trip property test (`tests/state/roundtrip.property.test.ts`, fixed-seed
+  PRNG, N=300, no new dependency) and source-scan invariant tests cover the gates that have no other
+  executable form under Node (no `pushState`, the hash/query split, the svelte-import boundary,
+  "preview mode has exactly one door" — no `localStorage`, no `location.host` compare anywhere under
+  `src/lib/release`).
+
 # atlas 0.1.1
 
 - **Restricted releases can no longer render on the public host** (plan D6). `versions.json`'s

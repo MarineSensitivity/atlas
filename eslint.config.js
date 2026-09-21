@@ -54,4 +54,18 @@ export default ts.config(
       parserOptions: { extraFileExtensions: [".svelte"] },
     },
   },
+  {
+    // eslint-plugin-svelte's own base config also claims **/*.svelte.ts / **/*.svelte.js (Svelte 5's
+    // "universal reactivity" files, e.g. src/lib/state/sel.svelte.ts) and hands them to
+    // svelte-eslint-parser with no `parserOptions.parser` delegate — which parses Svelte SFC `<script>`
+    // content, not a bare TypeScript module, and fails on ordinary TS (`interface`, `import type`, ...).
+    // These files have no <script> tag at all: runes ($state, ...) are plain function calls
+    // syntactically, so typescript-eslint's own parser handles them with no special support needed.
+    // Placed AFTER the svelte configs (`ts.config()` applies later entries' `languageOptions` on top of
+    // earlier ones for the same file) so it overrides the parser choice for this one glob only.
+    files: ["**/*.svelte.ts", "**/*.svelte.js"],
+    languageOptions: {
+      parser: ts.parser,
+    },
+  },
 );
