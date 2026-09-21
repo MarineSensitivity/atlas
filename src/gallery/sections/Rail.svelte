@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { announce } from "../../lib/ui/announcer";
   import Rail, { type RailItem } from "../../lib/ui/Rail.svelte";
 
   // spec.md §5.1: the same five, in the same order, on every viewport
@@ -18,7 +19,14 @@
   );
 
   let active = $state("layers");
-  let announced = $state("");
+  // visible for review only -- the actual announcement goes through the page's ONE shared
+  // Announcer (mounted once in App.svelte), never a second role="status" region here.
+  let lastAnnounced = $state("");
+
+  function onAnnounce(text: string) {
+    lastAnnounced = text;
+    announce(text);
+  }
 </script>
 
 <div class="demo-row">
@@ -27,12 +35,7 @@
     <figcaption>desktop (vertical), Scores lens</figcaption>
   </figure>
   <figure>
-    <Rail
-      items={speciesItems}
-      {active}
-      onSelect={(name) => (active = name)}
-      onAnnounce={(text) => (announced = text)}
-    />
+    <Rail items={speciesItems} {active} onSelect={(name) => (active = name)} {onAnnounce} />
     <figcaption>desktop (vertical), Species lens -- Flower inactive in place</figcaption>
   </figure>
   <figure>
@@ -46,7 +49,7 @@
   </figure>
 </div>
 
-<p class="live" role="status" aria-live="polite">{announced}</p>
+<p class="live">Last announced: {lastAnnounced || "(nothing yet)"}</p>
 <p class="note">
   Roving tabindex: Tab once into a rail, then arrow keys move between its five controls. Click the
   inactive Flower button in the Species lens above to hear its reason announced.

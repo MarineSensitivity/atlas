@@ -4,16 +4,17 @@
   let toast: ReturnType<typeof Toast> | undefined;
   let count = 0;
 
-  function announce() {
+  function pushToast() {
     count += 1;
     toast?.push(`Species table loaded, ${1234 + count} rows`);
   }
 </script>
 
-<button type="button" class="btn" onclick={announce}>Announce a result</button>
+<button type="button" class="btn" onclick={pushToast}>Announce a result</button>
 <p class="muted">
-  One polite live region (<code>role="status" aria-live="polite"</code>); each message
-  auto-dismisses after 5s or via its own close button.
+  Toast renders only the visible bubble; the announcement itself goes through the page's ONE shared
+  live region (<code>src/lib/ui/announcer.ts</code>). Auto-dismisses after 5s, paused while hovered
+  or focused, or dismissed via its own close button.
 </p>
 
 <Toast bind:this={toast} />

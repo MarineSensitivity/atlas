@@ -28,7 +28,7 @@
  * text    --text-accent     : --surface-panel-basis, --surface-raised
  * text    --text-link       : --surface-panel-basis, --surface-raised
  * text    --text-danger     : --surface-panel-basis, --surface-raised
- * text    --text-on-accent  : --fill-accent
+ * text    --text-on-accent  : --fill-accent, --cat-bird, --cat-coral, --cat-fish, --cat-invertebrate, --cat-mammal, --cat-other, --cat-primprod, --cat-turtle
  * nontext --fill-accent     : --surface-panel-basis, --surface-map
  * nontext --border-control  : --surface-panel-basis, --surface-raised, --surface-map
  * nontext --focus-ring      : --surface-panel-basis, --surface-raised, --surface-map
@@ -233,7 +233,10 @@
   --scrim: #223252;
   --shadow-color: #8595b4;
 
-  --cat-bird: #1c7fb8;
+  /* darkened one step from #1c7fb8 (still the same hue): the original passed its
+     --surface-panel-basis pairing at 3.83:1 but only 4.4:1 against --text-on-accent (white) --
+     Treemap's cell-label text on a bird-category cell -- just short of the 4.5:1 text minimum. */
+  --cat-bird: #166a99;
   --cat-coral: #b34d00;
   --cat-fish: #0060a0;
   --cat-invertebrate: #a3517e;

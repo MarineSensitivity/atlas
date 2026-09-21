@@ -5,6 +5,7 @@
 import { mount } from "svelte";
 import "../lib/brand/tokens.css";
 import "../lib/brand/fonts.css";
+import "../lib/ui/touch-targets.css";
 import App from "./App.svelte";
 
 const target = document.getElementById("app");

@@ -8,6 +8,9 @@ import {
   type DataTableColumn,
   filterRows,
   formatRowCountAnnouncement,
+  gridRowCount,
+  gridRowIndex,
+  HEADER_ROW_COUNT,
   nextCellPosition,
   scrollTopForRow,
   sortRows,
@@ -271,15 +274,43 @@ describe("nextCellPosition: keyboard cell navigation", () => {
 });
 
 describe("formatRowCountAnnouncement", () => {
-  it("formats with a thousands separator, locale-fixed to en-US", () => {
-    expect(formatRowCountAnnouncement(1234)).toBe("1,234 rows");
+  it("names its subject on the initial load, with a thousands separator, locale-fixed to en-US", () => {
+    expect(formatRowCountAnnouncement(1234, "loaded", "Species table")).toBe(
+      "Species table loaded, 1,234 rows",
+    );
   });
 
-  it("singular for exactly 1 row", () => {
-    expect(formatRowCountAnnouncement(1)).toBe("1 row");
+  it("singular for exactly 1 row, loaded", () => {
+    expect(formatRowCountAnnouncement(1, "loaded", "Species table")).toBe(
+      "Species table loaded, 1 row",
+    );
   });
 
-  it("plural for 0 rows", () => {
-    expect(formatRowCountAnnouncement(0)).toBe("0 rows");
+  it("a filter re-announcement does not repeat the subject (the seeded fault: a bare '0 rows')", () => {
+    expect(formatRowCountAnnouncement(0, "filtered", "Species table")).toBe("Filtered to 0 rows");
+  });
+
+  it("singular for exactly 1 row, filtered", () => {
+    expect(formatRowCountAnnouncement(1, "filtered", "Species table")).toBe("Filtered to 1 row");
+  });
+});
+
+describe("gridRowCount / gridRowIndex (SC 1.3.1 / 4.1.2: count and index include BOTH header rows)", () => {
+  it("HEADER_ROW_COUNT is 2 (the label row, then the filter row)", () => {
+    expect(HEADER_ROW_COUNT).toBe(2);
+  });
+
+  it("aria-rowcount is data rows PLUS the two header rows -- the seeded fault: data rows alone", () => {
+    expect(gridRowCount(10_000)).toBe(10_002);
+    expect(gridRowCount(0)).toBe(2); // still both header rows, even with zero data rows
+  });
+
+  it("the first data row's aria-rowindex is 3, after both header rows -- the seeded fault: 1", () => {
+    expect(gridRowIndex(0)).toBe(3);
+  });
+
+  it("aria-rowindex increases one-for-one with the data row index", () => {
+    expect(gridRowIndex(1)).toBe(4);
+    expect(gridRowIndex(9)).toBe(12);
   });
 });

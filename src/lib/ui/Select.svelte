@@ -10,6 +10,7 @@
   // A native <select> underneath (full keyboard/AT support for free) with the chevron as a
   // decorative overlay -- the select itself carries the accessible name, the icon is aria-hidden.
   import Icon from "./Icon.svelte";
+  import { uid } from "./uid";
 
   interface Props {
     options: SelectOption[];
@@ -21,7 +22,17 @@
   }
 
   let { options, value, label, onchange, id }: Props = $props();
-  const selectId = $derived(id ?? `select-${label.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`);
+  // per-INSTANCE, not per-label, when no explicit id is given (SC 4.1.2) -- see HexButton.svelte's
+  // identical fix. Resolved ONCE, a plain const, never re-run on a later render.
+  // svelte-ignore state_referenced_locally
+  const selectId = id ?? uid("select");
+
+  // the innermost open layer handles Esc first: while the native listbox is open, Escape closing
+  // it is the browser's own default action and does not stop the keydown from also bubbling to an
+  // enclosing Panel's Escape-collapses-it handler.
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") event.stopPropagation();
+  }
 </script>
 
 <span class="select-wrap">
@@ -31,6 +42,7 @@
     aria-label={label}
     {value}
     onchange={(e) => onchange?.(e.currentTarget.value)}
+    onkeydown={handleKeydown}
   >
     {#each options as opt (opt.value)}
       <option value={opt.value}>{opt.label}</option>

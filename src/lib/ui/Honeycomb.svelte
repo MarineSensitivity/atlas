@@ -2,18 +2,26 @@
   // atlas-3 spec.md "Motion": the loader is seven hexagons pulsing in sequence; under
   // prefers-reduced-motion it is a static honeycomb (the keyframe animation is disabled by a
   // local @media query -- tokens.css's --motion-* collapse is for control transitions, not a
-  // multi-second looping animation). The status text is always present (aria-live, and visible),
-  // so a screen reader and a reduced-motion viewer both get the same information a sighted,
-  // motion-tolerant viewer gets from the pulse.
+  // multi-second looping animation). The status text is always visible, so a reduced-motion
+  // viewer gets the same information a motion-tolerant one gets from the pulse.
+  //
+  // atlas-3 step 4 fix round 1 (SC 4.1.3): renders no live region of its own -- announces once,
+  // through the ONE shared region (src/lib/ui/announcer.ts), when it first mounts. (A fuller
+  // aria-busy pattern on whatever container this loader appears inside is left for atlas-8.)
+  import { onMount } from "svelte";
+  import { announce } from "./announcer";
+
   interface Props {
     label?: string;
   }
 
   let { label = "Loading…" }: Props = $props();
   const cells = [0, 1, 2, 3, 4, 5, 6];
+
+  onMount(() => announce(label));
 </script>
 
-<div class="honeycomb" role="status" aria-live="polite">
+<div class="honeycomb">
   <div class="hc-grid" aria-hidden="true">
     {#each cells as i (i)}
       <span class="hc-cell" style="animation-delay: {i * 120}ms"></span>

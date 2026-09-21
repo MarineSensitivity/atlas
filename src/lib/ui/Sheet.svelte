@@ -4,7 +4,7 @@
   // touch. Unlike Panel, collapsing to peek does not swap the sheet for a different component: the
   // header (grab handle, title, the three controls) stays visible at every detent, so "collapse"
   // here is itself one of the three detents, not a disclosure to something else.
-  import { onMount, type Snippet } from "svelte";
+  import { onMount, tick, type Snippet } from "svelte";
   import Icon from "./Icon.svelte";
   import {
     DEFAULT_SHEET_DETENT,
@@ -25,6 +25,7 @@
   const bodyId = $derived(`sheet-body-${id}`);
   const titleId = $derived(`sheet-title-${id}`);
   let detent = $state<SheetDetent>(DEFAULT_SHEET_DETENT);
+  let rootEl: HTMLElement | undefined;
 
   function storage(): Storage | null {
     try {
@@ -36,21 +37,33 @@
 
   onMount(() => {
     detent = loadSheetDetent(storage(), id);
+    // Esc-inside-the-sheet-collapses-it is a keyboard shortcut for the whole sheet, wired
+    // imperatively for the same reason Panel.svelte's identical handler is (a template
+    // `onkeydown` on this non-interactive element trips svelte-check's a11y rule).
     const handleKeydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && detent !== "peek") {
+      if (event.key === "Escape" && !event.defaultPrevented && detent !== "peek") {
         event.preventDefault();
-        setDetent("peek");
+        collapseToPeek();
       }
     };
     rootEl?.addEventListener("keydown", handleKeydown);
     return () => rootEl?.removeEventListener("keydown", handleKeydown);
   });
 
-  let rootEl: HTMLElement | undefined;
-
   function setDetent(next: SheetDetent) {
     detent = next;
     saveSheetDetent(storage(), id, next);
+  }
+
+  // SC 2.4.3 (Focus Order): moves focus to the collapse control itself before/after the detent
+  // changes -- without this, Esc left focus on whatever had it inside the now-hidden body (peek
+  // hides .sheet-body via `display: none`), which strands it on an element no longer in the
+  // accessibility tree, and the next Tab press starts from nowhere predictable. Mirrors
+  // Panel.svelte's collapse() moving focus to its own control 1.
+  async function collapseToPeek() {
+    setDetent("peek");
+    await tick();
+    rootEl?.querySelector<HTMLButtonElement>('[data-sheet-control="collapse"]')?.focus();
   }
 </script>
 
@@ -61,11 +74,11 @@
     <div class="panel-controls" role="group" aria-label="Sheet size">
       <button
         type="button"
-        aria-pressed="false"
+        data-sheet-control="collapse"
         aria-expanded={detent !== "peek"}
         aria-controls={bodyId}
         aria-label="Collapse to a peek"
-        onclick={() => setDetent("peek")}
+        onclick={collapseToPeek}
       >
         <Icon name="collapseDown" size={18} />
       </button>

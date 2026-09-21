@@ -37,9 +37,11 @@
   </figure>
 </div>
 
-{#if expanded}
-  <div id="pill-demo-body" class="disclosure-body">The panel's body, revealed.</div>
-{/if}
+<!-- always rendered (never {#if expanded}), toggled with `hidden` -- the disclosure Pill's own
+     aria-controls must reference an element that actually EXISTS in the DOM (SC 4.1.2). -->
+<div id="pill-demo-body" class="disclosure-body" hidden={!expanded}>
+  The panel's body, revealed.
+</div>
 
 <style>
   .row {

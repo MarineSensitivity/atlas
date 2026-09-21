@@ -4,6 +4,7 @@
   // tooltip carries them, so `label` is both the accessible name AND the tooltip text.
   import Icon from "./Icon.svelte";
   import type { IconName } from "./icon-paths";
+  import { uid } from "./uid";
 
   interface Props {
     icon: IconName;
@@ -35,7 +36,35 @@
 
   let showTooltip = $state(false);
   const tooltipText = $derived(inactive && inactiveReason ? inactiveReason : label);
-  const tooltipId = $derived(`hexbtn-tip-${label.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`);
+  // per-INSTANCE, not per-label (SC 4.1.2): two HexButtons both labelled "Layers" must not share a
+  // tooltip id, or the second one's aria-describedby resolves to the first's tooltip content.
+  const tooltipId = uid("hexbtn-tip");
+
+  // SC 1.4.13 (Content on Hover or Focus): a tooltip a pointer reveals must stay up long enough
+  // for the pointer to reach IT, even across the gap between the button and the absolutely
+  // positioned tooltip (the button's own mouseleave fires before the pointer arrives there) --
+  // hence the short close delay, cancelled if either element reports the pointer is still over
+  // it. Esc dismisses without moving focus (does not blur the button), and stops the keydown from
+  // also being read as "collapse the enclosing panel" (the innermost open layer handles Esc first).
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function showNow() {
+    clearTimeout(closeTimer);
+    showTooltip = true;
+  }
+
+  function scheduleHide() {
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => (showTooltip = false), 150);
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape" && showTooltip) {
+      event.stopPropagation();
+      clearTimeout(closeTimer);
+      showTooltip = false;
+    }
+  }
 
   function handleClick() {
     if (inactive) {
@@ -56,14 +85,22 @@
     aria-describedby={tooltipId}
     {tabindex}
     onclick={handleClick}
-    onfocus={() => (showTooltip = true)}
-    onblur={() => (showTooltip = false)}
-    onmouseenter={() => (showTooltip = true)}
-    onmouseleave={() => (showTooltip = false)}
+    onkeydown={handleKeydown}
+    onfocus={showNow}
+    onblur={scheduleHide}
+    onmouseenter={showNow}
+    onmouseleave={scheduleHide}
   >
     <Icon name={icon} size={20} class={inactive ? "hexbtn-icon-inactive" : ""} />
   </button>
-  <span class="tooltip" id={tooltipId} role="tooltip" hidden={!showTooltip}>{tooltipText}</span>
+  <span
+    class="tooltip"
+    id={tooltipId}
+    role="tooltip"
+    hidden={!showTooltip}
+    onmouseenter={showNow}
+    onmouseleave={scheduleHide}>{tooltipText}</span
+  >
 </span>
 
 <style>
@@ -147,7 +184,36 @@
     font-size: var(--text-sm);
     white-space: nowrap;
     box-shadow: var(--elev-2);
-    pointer-events: none;
+    /* hoverable (SC 1.4.13): the pointer must be able to reach and rest on the tooltip itself
+       across the gap left of it -- pointer-events was none before, which made that impossible */
     z-index: 10;
+  }
+
+  /* SC 1.4.1/1.4.11: forced-colors mode (Windows High Contrast) strips backgrounds and non-text
+     colors down to a handful of system keywords -- without an explicit fallback, the idle,
+     pressed and inactive FACES all render identically (ButtonFace), erasing which tool is active
+     and which is disabled. System colors here, not the brand tokens (which forced-colors ignores
+     anyway): ButtonFace/ButtonText/ButtonBorder for the idle face+glyph+edge, Highlight/
+     HighlightText for the pressed state (the same pair the OS itself uses for a selected control),
+     GrayText for the inactive glyph. */
+  @media (forced-colors: active) {
+    .hexbtn::before {
+      background: ButtonBorder;
+    }
+    .hexbtn::after {
+      background: ButtonFace;
+    }
+    .hexbtn {
+      color: ButtonText;
+    }
+    .hexbtn[aria-pressed="true"]::after {
+      background: Highlight;
+    }
+    .hexbtn[aria-pressed="true"] :global(.icon) {
+      color: HighlightText;
+    }
+    .hexbtn :global(.hexbtn-icon-inactive) {
+      color: GrayText;
+    }
   }
 </style>

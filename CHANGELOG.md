@@ -1,3 +1,44 @@
+# atlas 0.7.1
+
+`atlas-3` step 4, fix round 1: a manual (Opus) accessibility walk of the gallery by keyboard and
+accessibility tree found 13 defects axe's serious/critical filter missed (Section 508 requires
+fixing these before the lenses build on these components). All 13 are fixed:
+
+- **`HexButton`/`Pill`/`Modal`/`Accordion`/`Popover`/`About`**: tooltip/panel ids are per-instance
+  (`uid()`), never derived from a label/prop that can repeat — fixes duplicate ids across multiple
+  same-labelled instances (SC 4.1.2). `HexButton`/`Pill` tooltips are hoverable and Esc-dismissible
+  without moving focus (SC 1.4.13). `Accordion`'s body and `Popover`'s floating content are now
+  always rendered (toggled via `hidden`) instead of removed from the DOM, so their
+  `aria-controls`/`aria-describedby` targets always exist.
+- **`HexButton`/`Switch`/`Segmented`/`Chip`/`Legend`**: a `forced-colors: active` fallback keeps
+  idle/pressed/inactive and selected/unselected states visually distinct under Windows High
+  Contrast (SC 1.4.1/1.4.11); `Legend`'s gradient itself is preserved (`forced-color-adjust: none`).
+- **`Flower`/`Treemap`**: the SVG root is `role="group"` (never `role="img"`, which hid every
+  child); each petal/cell keeps its own `role="img"` + computed name (SC 1.1.1/4.1.2). `Flower`'s
+  text summary is now built from the petals actually drawn, not the raw component count (fixes a
+  summary/chart count mismatch); `computeFlowerGeometry()` now refuses two components that resolve
+  to the same category.
+- **`DataTable`**: takes a required `label` (the grid's accessible name); `aria-rowcount`/
+  `aria-rowindex` now account for both header rows (SC 1.3.1/4.1.2). A clipped cell's full value is
+  reachable via a hover/focus overlay (SC 1.4.4/1.4.12), and the roving-tabindex "active" cell is
+  now visually distinct from a real `:focus-visible` ring.
+- **`Sheet`**: Esc-to-peek moves focus to its own collapse control, never `<body>` (SC 2.4.3).
+- **`Panel`/`About`**: no longer force a fixed width past 320px viewports (SC 1.4.10); `Panel`'s
+  Escape handler now defers to a nested open layer (a `Popover`, a `Select`) that already handled
+  the same keydown.
+- **`Toast`**: auto-dismiss pauses on hover/focus and resumes with the time actually left (SC
+  2.2.1).
+- **`src/lib/ui/announcer.ts` + `Announcer.svelte`**: the ONE shared polite live region — every
+  component calls `announce(text)` instead of rendering its own `role="status"` (SC 4.1.3); six
+  concurrent regions collapse to one.
+- **`src/lib/ui/touch-targets.css`**: a shared 24px (any pointer) / 44px (coarse pointer) floor for
+  every previously-undersized control (SC 2.5.8).
+- Fixed a real WCAG contrast failure found while triaging axe's `incomplete` findings: paper
+  theme's `--cat-bird` measured 4.4:1 against white label text (below 4.5:1 AA); darkened to
+  `#166a99`.
+- `e2e/gallery.spec.ts`'s axe check now also fails on any untriaged `incomplete` finding, not just
+  serious/critical violations.
+
 # atlas 0.7.0
 
 `atlas-2` step 3b (Opus half): the `sql/*.sql` twins of msens's scoring and species functions, the

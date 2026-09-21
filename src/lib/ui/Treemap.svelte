@@ -140,11 +140,14 @@
           <!-- each cell is its own focusable, individually-named data point (spec.md §11:
                "keyboard reachable cells with accessible names"); an SVG <g> has no native
                interactive role, so svelte-check's a11y rule does not recognize tabindex here as
-               the correct pattern -- there is no more accurate native element or role to reach for. -->
+               the correct pattern -- there is no more accurate native element or role to reach for.
+               role="img" is required, not decorative: aria-label on an element with no role at
+               all is prohibited (axe aria-prohibited-attr) -- a <g> with no role has none. -->
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <g
             class="cell"
             tabindex={showTable ? -1 : 0}
+            role="img"
             aria-label={`${c.leaf.category.label}: ${formatValue(c.leaf.value)} (${pctOf(c.leaf.value)}%)`}
             transform={`translate(${c.rect.x}, ${c.rect.y})`}
           >

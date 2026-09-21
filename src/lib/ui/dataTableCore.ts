@@ -205,8 +205,39 @@ export function nextCellPosition(
   }
 }
 
-/** the live-region text for a row count ("1,234 rows"), locale-fixed to "en-US" so the announced
- * text (and its tests) never depend on the runtime's locale. */
-export function formatRowCountAnnouncement(count: number): string {
-  return `${count.toLocaleString("en-US")} row${count === 1 ? "" : "s"}`;
+// atlas-3 step 4 fix round 1 (SC 1.3.1 / 4.1.2): the grid has TWO header rows in the DOM (the
+// sortable column-label row, then the per-column filter row) -- aria-rowcount/aria-rowindex must
+// count both, or a screen reader's row-position announcement ("row 1 of 10,000") is off by two
+// for every data row and never accounts for the headers at all. The seeded fault this replaces:
+// aria-rowcount was `sortedRows.length` (data rows only) and the first data row's aria-rowindex
+// was 1 (as if it were the very first row in the grid, ahead of both header rows).
+export const HEADER_ROW_COUNT = 2;
+
+/** the grid's aria-rowcount: every header row plus every (filtered) data row. */
+export function gridRowCount(dataRowCount: number): number {
+  return dataRowCount + HEADER_ROW_COUNT;
+}
+
+/** a data row's aria-rowindex (1-based, header rows first): data row 0 is index 3 (1: the label
+ * row, 2: the filter row, 3: the first data row). */
+export function gridRowIndex(dataRowIndex: number): number {
+  return dataRowIndex + HEADER_ROW_COUNT + 1;
+}
+
+/**
+ * The text `announce()` (src/lib/ui/announcer.ts) is given for a row count, locale-fixed to
+ * "en-US" so it (and its tests) never depend on the runtime's locale. Names its SUBJECT on the
+ * initial load ("Species table loaded, 1,234 rows") -- with several tables and other live
+ * components sharing ONE region (spec.md §11), a bare "0 rows" is meaningless without knowing
+ * which table. A later filter re-announces without repeating the subject ("Filtered to 0 rows"),
+ * matching how a live region is read: the FIRST announcement after mount is the one moment a
+ * listener has no other context for what just finished loading.
+ */
+export function formatRowCountAnnouncement(
+  count: number,
+  mode: "loaded" | "filtered",
+  subject: string,
+): string {
+  const rows = `${count.toLocaleString("en-US")} row${count === 1 ? "" : "s"}`;
+  return mode === "loaded" ? `${subject} loaded, ${rows}` : `Filtered to ${rows}`;
 }

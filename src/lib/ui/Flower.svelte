@@ -17,7 +17,11 @@
   // chart is showing), so `aria-describedby` always resolves to real content regardless of the
   // toggle -- geometry/rules live in flowerGeometry.ts (computeFlowerGeometry), unit-tested there.
   import { categoryFor } from "./categories";
-  import { computeFlowerGeometry, type FlowerComponentInput } from "./flowerGeometry";
+  import {
+    computeFlowerGeometry,
+    describeFlowerSummary,
+    type FlowerComponentInput,
+  } from "./flowerGeometry";
 
   interface Props {
     /** flower_panel_title equivalent: "Cell 123", a zone name, or "Full study area (default)" */
@@ -41,19 +45,11 @@
 
   let showTable = $state(false);
 
-  function formatScore(score: number | null): string {
-    return score === null ? "no data" : String(score);
-  }
-
-  const summaryText = $derived.by(() => {
-    const meanText = roundedCenter !== null ? String(roundedCenter) : "no data";
-    const parts = components.map((c) => `${categoryFor(c.key).label} ${formatScore(c.score)}`);
-    const n = components.length;
-    return (
-      `${title}. Composite mean ${meanText} across ${n} component${n === 1 ? "" : "s"}: ` +
-      `${parts.join(", ")}. See the component table below for exact values.`
-    );
-  });
+  // built from the SAME geometry the SVG draws (describeFlowerSummary), never re-derived from the
+  // raw `components` prop here -- the seeded fault this closes: the summary's "N components" used
+  // to count every input including ones with no score, disagreeing with how many petals the ring
+  // actually drew.
+  const summaryText = $derived(describeFlowerSummary(title, geometry));
 </script>
 
 <figure class="flower" aria-describedby={summaryId}>
@@ -75,21 +71,28 @@
       viewBox="0 0 200 200"
       width={size}
       height={size}
-      role="img"
+      role="group"
       aria-label={`Composite mean ${roundedCenter !== null ? roundedCenter : "no data"}`}
       aria-hidden={showTable ? "true" : undefined}
     >
+      <!-- role="group" (never "img") on the SVG above: an "img" role makes its whole subtree
+           presentational, which is exactly what swallowed each petal's own name (axe
+           aria-prohibited-attr: aria-label on a role-less <path> is prohibited in the first
+           place, but even fixing that alone would still leave every petal unreachable as long as
+           the ancestor kept role="img"). Each petal below gets its OWN role="img" (a single
+           static shape with one name, not a widget) so its aria-label is valid AND individually
+           exposed in the accessibility tree. -->
       {#each geometry.petals as p (p.key)}
-        <!-- each petal is its own focusable, individually-labelled data point (spec.md §11:
-             "per-petal tooltip and keyboard focus"); a <path> has no native interactive role, so
-             svelte-check's a11y rule does not recognize tabindex+aria-label as the correct pattern
-             here -- there is no more accurate native element or role to reach for. -->
+        <!-- a <path> has no native interactive role, so svelte-check's a11y rule does not
+             recognize tabindex+role="img"+aria-label as the correct pattern here -- there is no
+             more accurate native element or role to reach for. -->
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <path
           d={p.path}
           class="petal"
           style={`fill: var(${p.category.color})`}
           tabindex={showTable ? -1 : 0}
+          role="img"
           aria-label={`${p.category.label}: ${p.score}`}
         >
           <title>{`${p.category.label}: ${p.score}`}</title>
@@ -171,15 +174,12 @@
     height: auto;
   }
 
+  /* full opacity: scripts/contrast.mjs measures each --cat-* token AS COMMITTED in tokens.css --
+     compositing it at 0.85 here over --surface-panel-basis after the fact would have shipped a
+     color the gate never actually checked. Ship the measured color. */
   .petal {
     stroke: var(--surface-panel);
     stroke-width: 1;
-    opacity: 0.85;
-  }
-
-  .petal:hover,
-  .petal:focus-visible {
-    opacity: 1;
   }
 
   .petal:focus-visible {
