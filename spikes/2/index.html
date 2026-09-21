@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>atlas spike 2 — first paint without WASM</title>
+    <style>
+      /* atlas-0 Step 4, S2: minimal inline CSS only -- this harness is a spike, not the app shell
+         (that's Deliverable 2, a different file). four MMA hexes not needed here; kept close to
+         the app's dark map background so the pixel probe's "not background" check is meaningful. */
+      html, body { margin: 0; height: 100%; background: #0b2436; color: #e8f1f2; font-family: system-ui, sans-serif; }
+      #map { position: absolute; inset: 0; }
+      #panel { position: absolute; top: 8px; right: 8px; width: 300px; max-height: calc(100% - 16px);
+        overflow: auto; background: rgba(11, 36, 54, 0.92); border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 6px; padding: 10px; box-sizing: border-box; font-size: 12px; }
+      #panel h2 { font-size: 12px; margin: 4px 0; text-transform: uppercase; letter-spacing: 0.04em; }
+      table { width: 100%; border-collapse: collapse; }
+      td, th { padding: 2px 4px; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+      #flower { width: 100%; height: 220px; }
+    </style>
+  </head>
+  <body>
+    <div id="map" data-control="map"></div>
+    <div id="panel">
+      <h2>Program Areas</h2>
+      <table id="program-area-table" data-control="program-area-table">
+        <thead><tr><th>Key</th><th>Score</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <h2>Flower (<span id="flower-zone"></span>)</h2>
+      <svg id="flower" data-control="flower" viewBox="0 0 220 220"></svg>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
