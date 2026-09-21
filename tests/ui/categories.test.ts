@@ -1,0 +1,120 @@
+// atlas-3 step 2b: categories.ts is the one place a species category resolves to a color TOKEN.
+// The seeded fault this gate exists to catch: `primprod` falling back to grey (NO_DATA_CATEGORY) --
+// see parity scores app.md:826-830 and report pipeline spec.md:186-187 for why that fault is real
+// (v8's "primary producer" flower component is not in msens' hard-coded hue_pal(8) name vector).
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import {
+  CATEGORIES,
+  CATEGORY_KEYS,
+  categoryFor,
+  categoryKeyFor,
+  NO_DATA_CATEGORY,
+  type CategoryKey,
+} from "../../src/lib/ui/categories";
+
+// the exact eight names parity scores app.md:827-830 quotes from msens/R/viz.R:757-759
+// (`scales::hue_pal()(8)` fixed to `c("invertebrate","mammal","other","primprod","turtle","bird",
+// "coral","fish")`) -- every one of those must have a row in CATEGORIES.
+const PARITY_DOC_KEYS: CategoryKey[] = [
+  "invertebrate",
+  "mammal",
+  "other",
+  "primprod",
+  "turtle",
+  "bird",
+  "coral",
+  "fish",
+];
+
+describe("CATEGORIES: one row per species category", () => {
+  it("has exactly eight rows", () => {
+    expect(CATEGORIES).toHaveLength(8);
+  });
+
+  it("has a row for every category key the parity doc lists", () => {
+    for (const key of PARITY_DOC_KEYS) {
+      const row = CATEGORIES.find((c) => c.key === key);
+      expect(row, `no CATEGORIES row for "${key}"`).toBeDefined();
+    }
+  });
+
+  it("CATEGORY_KEYS matches CATEGORIES exactly, order included (it is a Map key list)", () => {
+    expect(CATEGORY_KEYS).toEqual(CATEGORIES.map((c) => c.key));
+  });
+
+  it("every row's key, label, icon and color are the documented shape", () => {
+    for (const row of CATEGORIES) {
+      expect(typeof row.key).toBe("string");
+      expect(row.label.length).toBeGreaterThan(0);
+      expect(row.icon === null || typeof row.icon === "string").toBe(true);
+      expect(row.color).toMatch(/^--cat-[a-z]+$/);
+    }
+  });
+
+  it("every row's color is a DISTINCT custom-property NAME, never a resolved hex value", () => {
+    const colors = CATEGORIES.map((c) => c.color);
+    expect(new Set(colors).size).toBe(colors.length);
+    for (const c of colors) expect(c).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+  });
+
+  it("every color token this module names actually exists in tokens.css, with a contrast pair", () => {
+    const css = readFileSync("src/lib/brand/tokens.css", "utf8");
+    for (const row of CATEGORIES) {
+      // declared as a real custom property in the navy theme block (not just mentioned in a comment)
+      expect(css, `${row.color} not declared in tokens.css`).toMatch(
+        new RegExp(`\\n\\s*${row.color}:\\s*#`),
+      );
+      // and carries a @contrast pair, so scripts/contrast.mjs actually checks it
+      expect(css, `${row.color} has no @contrast pair`).toMatch(
+        new RegExp(`nontext ${row.color}\\s*:`),
+      );
+    }
+  });
+});
+
+describe("categoryKeyFor / categoryFor: the two primary-producer spellings", () => {
+  it("'primprod' resolves to the primprod category", () => {
+    expect(categoryKeyFor("primprod")).toBe("primprod");
+  });
+
+  it("'primary producer' (the v8/v9 flower component label) resolves to the SAME category as 'primprod'", () => {
+    expect(categoryKeyFor("primary producer")).toBe(categoryKeyFor("primprod"));
+    expect(categoryKeyFor("primary producer")).toBe("primprod");
+  });
+
+  it("both spellings resolve to the same NON-GREY token (the seeded fault: falling back to grey)", () => {
+    const a = categoryFor("primprod");
+    const b = categoryFor("primary producer");
+    expect(a.color).toBe(b.color);
+    expect(a.color).toBe("--cat-primprod");
+    expect(a.color).not.toBe(NO_DATA_CATEGORY.color); // must not be the grey "not reportable" token
+  });
+
+  it("is case- and whitespace-insensitive", () => {
+    expect(categoryKeyFor("  Primary Producer  ")).toBe("primprod");
+    expect(categoryKeyFor("PRIMPROD")).toBe("primprod");
+  });
+
+  it("also recognizes taxa.R's underscore spelling ('primary_producer')", () => {
+    expect(categoryKeyFor("primary_producer")).toBe("primprod");
+  });
+
+  it("recognizes every other category name unchanged", () => {
+    for (const key of CATEGORY_KEYS) {
+      if (key === "primprod") continue;
+      expect(categoryKeyFor(key)).toBe(key);
+    }
+  });
+
+  it("an unrecognized string falls back to NO_DATA_CATEGORY, not silently to a real category", () => {
+    expect(categoryFor("reptile")).toEqual(NO_DATA_CATEGORY);
+    expect(categoryFor("")).toEqual(NO_DATA_CATEGORY);
+    expect(categoryKeyFor("reptile")).toBeNull();
+  });
+
+  it("NO_DATA_CATEGORY uses the --cat-nodata token, distinct from every real category", () => {
+    expect(NO_DATA_CATEGORY.color).toBe("--cat-nodata");
+    expect(CATEGORIES.map((c) => c.color)).not.toContain(NO_DATA_CATEGORY.color);
+  });
+});

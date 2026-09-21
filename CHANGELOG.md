@@ -1,4 +1,17 @@
-# atlas 0.5.0
+# atlas 0.6.0
+
+`atlas-3` step 2b: the "data half" — the three data-driven components spec.md and the parity docs
+call for (`Flower`, `DataTable`, `Treemap`) and the shared category table they all read colors from.
+
+- **`src/lib/ui/categories.ts`**: ONE table (key, label, icon, color TOKEN) for the eight species
+  categories, consumed by `Flower`, `Treemap` and (later) the legend/report — colors are `--cat-*`
+  custom-property NAMES from `tokens.css`, never resolved literals. `categoryFor()`/`categoryKeyFor()`
+  normalize the real data's several spellings of the same category to one token — in particular the
+  v8/v9 flower's "primary producer" component (`str_replace("_"," ")` of `extrisk_primary_producer`)
+  and `msens::sp_cat_from_taxonomy()`'s `"primary_producer"` both resolve to the SAME `--cat-primprod`
+  token as `"primprod"` itself, fixing the grey/NA petal `parity scores app.md:826-830` documents in
+  the old app. An unrecognized category falls back to a distinct `NO_DATA_CATEGORY` (`--cat-nodata`),
+  never silently to a real category.
 
 `atlas-3` step 2a: the design-system component foundation (Svelte 5 runes, `src/lib/ui/`), the icon
 map generator folded in from the stopped Haiku attempt, self-hosted fallback fonts, and
