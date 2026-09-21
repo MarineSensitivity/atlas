@@ -265,3 +265,179 @@ describe("createAnalytics — the queued row's page never carries the hash", () 
     expect(row.page).not.toContain("secret");
   });
 });
+
+// Fix round 1: gtag.js's OWN automatic page_view (fired by a bare `gtag("config", ...)`) reads the
+// live page location internally — fragment and all — unless the config call explicitly disables it
+// and every hit carries its own explicit page_location. These four tests are the coordinator's named
+// seeded faults; each is written so reverting the corresponding line in analytics.ts turns it red
+// (verified by hand: commenting out `send_page_view: false` fails test 2, deleting the
+// `page_location`/`page_title` fields from the config call fails test 1, deleting them from track()'s
+// gaParams fails test 3, and making page_title read a real `document.title` fails test 4).
+describe("createAnalytics — privacy fix round 1: no hit ever falls back to gtag.js's own defaults", () => {
+  it("seeded fault: the config call carries an explicit, non-empty page_location", () => {
+    const { gtag, calls } = fakeGtag();
+    register(
+      createAnalytics({
+        appVersion: "v1",
+        preview: false,
+        transport: fakeTransport().transport,
+        gtag,
+        isWebdriver: () => false,
+        location: () => LOC,
+        clientStore: null,
+        sessionStore: null,
+      }),
+    );
+    const configCall = calls.find((c) => c[0] === "config");
+    const configParams = configCall?.[2] as Record<string, unknown>;
+    expect(configParams.page_location).toBe("https://marinesensitivity.org/atlas/?ver=v9");
+    expect(configParams.page_location).toBeTruthy();
+  });
+
+  it("seeded fault: the config call sets send_page_view: false (suppresses gtag.js's own automatic hit)", () => {
+    const { gtag, calls } = fakeGtag();
+    register(
+      createAnalytics({
+        appVersion: "v1",
+        preview: false,
+        transport: fakeTransport().transport,
+        gtag,
+        isWebdriver: () => false,
+        location: () => LOC,
+        clientStore: null,
+        sessionStore: null,
+      }),
+    );
+    const configCall = calls.find((c) => c[0] === "config");
+    expect((configCall?.[2] as Record<string, unknown>).send_page_view).toBe(false);
+  });
+
+  it("fires our OWN page_view event (replacing the suppressed automatic one) with an explicit page_location", () => {
+    const { gtag, calls } = fakeGtag();
+    register(
+      createAnalytics({
+        appVersion: "v1",
+        preview: false,
+        transport: fakeTransport().transport,
+        gtag,
+        isWebdriver: () => false,
+        location: () => LOC,
+        clientStore: null,
+        sessionStore: null,
+      }),
+    );
+    const pageViewCall = calls.find((c) => c[0] === "event" && c[1] === "page_view");
+    expect(pageViewCall).toBeDefined();
+    const params = pageViewCall?.[2] as Record<string, unknown>;
+    expect(params.page_location).toBe("https://marinesensitivity.org/atlas/?ver=v9");
+  });
+
+  it("seeded fault: EVERY track()-driven event carries an explicit page_location, never left implicit", () => {
+    const { gtag, calls } = fakeGtag();
+    const a = register(
+      createAnalytics({
+        appVersion: "v1",
+        preview: false,
+        transport: fakeTransport().transport,
+        gtag,
+        isWebdriver: () => false,
+        location: () => LOC,
+        clientStore: null,
+        sessionStore: null,
+      }),
+    );
+    a.track("open_about", {});
+    const customEventCall = calls.find((c) => c[0] === "event" && c[1] === "open_about");
+    expect(customEventCall).toBeDefined();
+    const params = customEventCall?.[2] as Record<string, unknown>;
+    expect(params.page_location).toBe("https://marinesensitivity.org/atlas/?ver=v9");
+    expect(params.page_title).toBeTruthy();
+  });
+
+  it("seeded fault: page_title is a fixed label, NEVER a live document title — even a hostile one", () => {
+    // simulate a stray part of the app having stashed the report title (from #t=) onto the real
+    // document.title global; page_title must be unaffected because this module never reads it.
+    const fakeDocument = { title: "#t=secret-report-title" };
+    (globalThis as unknown as { document: unknown }).document = fakeDocument;
+    try {
+      const { gtag, calls } = fakeGtag();
+      const a = register(
+        createAnalytics({
+          appVersion: "v1",
+          preview: false,
+          transport: fakeTransport().transport,
+          gtag,
+          isWebdriver: () => false,
+          location: () => LOC,
+          clientStore: null,
+          sessionStore: null,
+        }),
+      );
+      a.track("open_about", {});
+      for (const call of calls) {
+        const params = call[call.length - 1];
+        if (params && typeof params === "object") {
+          expect(JSON.stringify(params)).not.toContain("secret-report-title");
+        }
+      }
+    } finally {
+      delete (globalThis as unknown as { document?: unknown }).document;
+    }
+  });
+
+  it("updateLocation() refreshes page_location on every later gtag call and Sheet row, without ever reading a live location itself", () => {
+    const { transport, sent } = fakeTransport();
+    const { gtag, calls } = fakeGtag();
+    const a = register(
+      createAnalytics({
+        appVersion: "v1",
+        preview: false,
+        logUrl: "https://log.example.test/exec",
+        transport,
+        gtag,
+        isWebdriver: () => false,
+        location: () => LOC,
+        clientStore: null,
+        sessionStore: null,
+      }),
+    );
+    a.updateLocation({
+      origin: "https://marinesensitivity.org",
+      pathname: "/atlas/",
+      search: "?ver=v9&lens=species",
+    });
+
+    const setCall = calls.find((c) => c[0] === "set");
+    expect((setCall?.[1] as Record<string, unknown>).page_location).toBe(
+      "https://marinesensitivity.org/atlas/?ver=v9&lens=species",
+    );
+
+    a.track("open_about", {});
+    const eventCall = calls.find((c) => c[0] === "event" && c[1] === "open_about");
+    expect((eventCall?.[2] as Record<string, unknown>).page_location).toBe(
+      "https://marinesensitivity.org/atlas/?ver=v9&lens=species",
+    );
+
+    a.flush();
+    const row = JSON.parse(sent[0].body).rows[0];
+    expect(row.page).toBe("/atlas/?ver=v9&lens=species");
+  });
+
+  it("updateLocation() is a no-op leg-wise for a webdriver session (still tracks the new location, never calls gtag)", () => {
+    const { gtag, calls } = fakeGtag();
+    const a = register(
+      createAnalytics({
+        appVersion: "v1",
+        preview: false,
+        transport: fakeTransport().transport,
+        gtag,
+        isWebdriver: () => true,
+        location: () => LOC,
+        clientStore: null,
+        sessionStore: null,
+      }),
+    );
+    a.updateLocation({ origin: "https://x.test", pathname: "/atlas/", search: "?ver=v10" });
+    expect(calls).toEqual([]);
+  });
+});

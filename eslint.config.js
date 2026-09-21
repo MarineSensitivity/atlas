@@ -17,6 +17,7 @@ export default ts.config(
       "test-results",
       "node_modules",
       "tests/fixtures/**/dist", // built fixture output, not source
+      "e2e/fixtures/**/dist", // same — e2e/fixtures/analytics-privacy/'s built output
       ".tmp", // sandbox-only TMPDIR override, gitignored
       "spikes", // S1-S4 spike harnesses (each its own package.json); root config must not lint them
       ".claude/worktrees", // parallel spike-agent worktrees, each a full checkout with own node_modules

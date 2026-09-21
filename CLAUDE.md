@@ -100,6 +100,14 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
   `map.setStyle(composed, { diff: true })`. Never `addLayer()` piecemeal after `load` — layers added
   that way can silently vanish across a later style swap (`atlas-refs/"calcofi explore review.md"`
   §5, lesson 3).
+- **Analytics never leaks the URL fragment, and code alone cannot guarantee that.** Every hit
+  `src/lib/analytics/` builds carries an explicit `page_location`/`page_title`, never the live page's
+  own href/fragment or document title (`send_page_view: false` on the GA4 config call; see
+  `analytics.ts`'s module header). But GA4's own **Enhanced Measurement → "Page changes based on
+  browser history events"** setting, if left on, makes gtag.js independently re-read the live URL on
+  every `history.replaceState` — bypassing all of that. See `docs/analytics.md` for why this must stay
+  off for `G-9HW6L751XG`, how to verify it in the network panel, and the gates that do cover the
+  code side (`tests/analytics/noRawLocation.wiring.test.ts`, `e2e/analytics-privacy.spec.ts`).
 - **The spike pins: `@duckdb/duckdb-wasm` at exactly `1.32.0`, `maplibre-gl` at `^6.10.0`, and the
   three upload parsers at exactly `shpjs@6.2.0`, `@tmcw/togeojson@7.1.2`, `flatgeobuf@4.4.0`.**
   Decided by spikes S1, S2 and S4; the evidence is in `docs/spikes/S1.md`, `S2.md`, `S4.md` (each

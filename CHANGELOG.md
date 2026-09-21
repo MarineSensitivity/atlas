@@ -110,6 +110,33 @@ static graph and size budget are unchanged.
   since Node itself now ships working globals for those two — so no test in this repo ever makes a
   real network call.
 
+Fix round 1 (review, real defect): a privacy leak in `analytics/`.
+
+- **`gtag("config", ...)` alone was not enough to keep a place's geometry / the report title out of
+  GA4.** With no `send_page_view: false`, gtag.js fires its OWN automatic `page_view` whose
+  `page_location` it fills in internally from the live page location — fragment included — no
+  matter what this app's own events did. Fixed: every `config` call now sets
+  `send_page_view: false` and carries an explicit, sanitized `page_location`/`page_title`; the app
+  fires its own `page_view` event immediately after with the same sanitized fields; every
+  `track()`-driven event carries them too, so nothing ever falls back to a gtag.js default.
+  `page_title` is a fixed label (`"Atlas"` / `"Atlas (preview)"`, `pageLocation.ts`'s
+  `buildPageTitle()`) — never the live document title.
+- **New `Analytics.updateLocation(loc)`**: the state layer (owns `history.replaceState`) calls this
+  after every URL change so the sanitized fields stay current across an SPA navigation without
+  `analytics/` ever reading a live location itself.
+- **`tests/analytics/noRawLocation.wiring.test.ts`** (new): source-scans `src/lib/analytics/**` —
+  code AND comments — for the live page location's `href`/fragment fields or the document's own
+  URL/location globals; zero occurrences allowed anywhere in the directory.
+- **`docs/analytics.md`** (new) documents the one thing no code here can enforce: GA4's Enhanced
+  Measurement "page changes based on browser history events" property setting must stay OFF for
+  `G-9HW6L751XG`, plus how to verify it in the network panel.
+- **`e2e/fixtures/analytics-privacy/`** (new, own scoped Playwright config, `npm run
+e2e:analytics-privacy`, port 4382): a real browser, real DOM, real `location` (navigated with
+  `#pl=g1.test.AAAA&t=secret` already in the URL) exercising this module's guarded defaults for the
+  first time outside an injected fake — asserts no request or `gtag()` call ever carries the
+  fragment's data. Root `playwright.config.ts` gained a `testIgnore: ["fixtures/**"]` so `npm run
+e2e` doesn't also try (and fail) to run this fixture's spec against the main app's server.
+
 # atlas 0.1.1
 
 - **Restricted releases can no longer render on the public host** (plan D6). `versions.json`'s

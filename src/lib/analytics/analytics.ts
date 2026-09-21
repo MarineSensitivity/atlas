@@ -7,10 +7,30 @@
 //
 // Differences from the R original, both required by atlas's URL-as-state design (plan D8):
 //   1. `page_location`/the Sheet's `page` column are REBUILT via pageLocation.ts, never read off
-//      `location.href`/`location.pathname + location.search` directly — GA4's own auto-captured
-//      `page_location` includes the hash, and the hash carries place geometry and the report title.
+//      the live page location's own href/pathname+search fields directly.
 //   2. `navigator.webdriver` sessions are excluded ENTIRELY (no GA4 config call, no queued row) —
 //      the Shiny apps have no analogous concept; this keeps Playwright/CI runs out of both legs.
+//
+// FIX ROUND 1 (privacy leak, real defect): setting a sanitized `page_location` on OUR OWN events was
+// not enough. `gtag("config", ID, {...})` with no `send_page_view: false` fires gtag.js's OWN
+// automatic page_view, whose `page_location` field gtag.js fills in internally from the live page
+// location's href — INCLUDING the fragment — unless told otherwise. The fix has four parts, all
+// below: (a) `send_page_view: false` on every config call, so that automatic hit never fires; (b) we
+// fire our OWN `page_view` event immediately after, carrying our sanitized fields; (c) `page_location`
+// (and `page_title`, which is a fixed string, never the live document title — see pageLocation.ts's
+// `buildPageTitle`) is attached EXPLICITLY to every single gtag call this module makes — config,
+// page_view, and every `track()`-driven event — so nothing ever falls back to gtag.js's own default;
+// (d) `updateLocation()` lets the state layer (which owns `history.replaceState`, see
+// src/lib/state/) tell this module the URL changed, so those explicit fields stay current across an
+// SPA navigation without this module ever reading the live location itself. See docs/analytics.md
+// for the one thing code here cannot enforce: GA4's "Enhanced Measurement: page changes based on
+// browser history events" property setting, which — if left ON — makes gtag.js re-read the live
+// page location on its own for `pushState`/`replaceState`/`popstate`, bypassing all of the above.
+//
+// tests/analytics/noRawLocation.wiring.test.ts source-scans this whole directory for the live page
+// location's `href`/hash-fragment fields and for the document's own URL/location globals — nothing
+// under src/lib/analytics may reference any of them, by name, anywhere, including in a comment (which
+// is why this file's prose above spells them out instead of writing the literal dotted form).
 //
 // OUT OF SCOPE here: inserting the `<script async src="https://www.googletagmanager.com/gtag/js?...">`
 // loader tag. That is wiring into a real page (this phase ships "plain TypeScript modules ... nothing
@@ -22,7 +42,12 @@ import { EVENT_NAMES, type EventName, type EventParamsMap } from "./events";
 import { hasBrowserGlobals } from "./env";
 import { GA_MAX_PARAM_CHARS, msEvent } from "./msEvent";
 import { sanitizeParams } from "./sanitize";
-import { buildPagePath, type LocationLike } from "./pageLocation";
+import {
+  buildPageLocation,
+  buildPagePath,
+  buildPageTitle,
+  type LocationLike,
+} from "./pageLocation";
 import { createBrowserTransport, noopTransport, type Transport } from "./transport";
 
 /** the production GA4 measurement ID (one id across every MarineSensitivity product; see
@@ -63,7 +88,9 @@ export interface AnalyticsOptions {
   clientStore?: KeyValueStore | null;
   /** defaults to `window.sessionStorage`, guarded. */
   sessionStore?: KeyValueStore | null;
-  /** defaults to reading the real `location`, guarded for Node (returns empty strings). */
+  /** the INITIAL location only, read once at construction; defaults to a guarded reader (returns
+   * empty strings under Node). Call the returned `Analytics`'s `updateLocation()` after every
+   * `history.replaceState` to keep it current — this module never re-reads it on its own. */
   location?: () => LocationLike;
   /** injected GA4 sink; defaults to installing `window.dataLayer`/`window.gtag` the same way
    * `ga_js()`'s inline script does, guarded to a no-op under Node. */
@@ -77,6 +104,13 @@ export interface AnalyticsOptions {
 
 export interface Analytics {
   track<E extends EventName>(event: E, params: EventParamsMap[E]): void;
+  /** call this right after `history.replaceState` changes the URL (the state layer's job — see
+   * src/lib/state/ — never this module's: it holds only what it is explicitly given). Updates the
+   * sanitized `page_location`/`page_title` fields attached to every subsequent gtag call and Sheet
+   * row, and refreshes gtag's own persistent per-hit fields via `gtag("set", ...)` so nothing —
+   * including a later automatic hit gtag.js might fire on its own — falls back to a stale or live
+   * value. A no-op for a `navigator.webdriver` session, same as `track()`. */
+  updateLocation(loc: LocationLike): void;
   /** flushes the queued Sheet-log rows immediately (normally called on the batch/interval/visibility
    * triggers below); a no-op when the queue is empty or `logUrl` is unset. */
   flush(): void;
@@ -171,7 +205,6 @@ export function createAnalytics(opts: AnalyticsOptions): Analytics {
   const logUrl = opts.logUrl ?? "";
   const transport = opts.transport ?? (logUrl ? createBrowserTransport() : noopTransport());
   const now = opts.now ?? Date.now;
-  const getLocation = opts.location ?? defaultLocation;
   const gtag = opts.gtag ?? defaultGtag();
   const batchSize = opts.batchSize ?? DEFAULT_BATCH;
   const flushIntervalMs = opts.flushIntervalMs ?? DEFAULT_INTERVAL_MS;
@@ -182,6 +215,16 @@ export function createAnalytics(opts: AnalyticsOptions): Analytics {
     "sessionStore" in opts ? opts.sessionStore! : defaultStore((w) => w.sessionStorage);
   const clientId = stored(clientStore, "msens_client_id");
   const sessionId = stored(sessionStoreOpt, "msens_session_id");
+
+  // FIX ROUND 1: the ONE place this module holds "where we are" — set once at construction from the
+  // injected/guarded initial reader, updated ONLY through updateLocation() thereafter. Every gtag
+  // call and every Sheet row reads the SANITIZED strings derived from this, never the live location
+  // itself (see the module header and pageLocation.ts).
+  let currentLocation: LocationLike = (opts.location ?? defaultLocation)();
+  const pageTitle = buildPageTitle(opts.preview);
+  function pageLocationStr(): string {
+    return buildPageLocation(currentLocation);
+  }
 
   let queue: Record<string, unknown>[] = [];
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -207,11 +250,43 @@ export function createAnalytics(opts: AnalyticsOptions): Analytics {
       (opts.addVisibilityListener ?? defaultVisibilityListener)(flush) ?? undefined;
     try {
       gtag("js", new Date(now()));
+      // FIX ROUND 1 (privacy leak): `send_page_view: false` stops gtag.js firing its OWN automatic
+      // page_view here — that automatic hit fills in its `page_location` from the live page location
+      // internally, fragment and all, and no per-call override on THIS config call can be trusted to
+      // reliably suppress that for every gtag.js version. We fire our own page_view immediately below
+      // instead, with explicit, sanitized fields. `page_location`/`page_title` are ALSO passed here
+      // (not just on the page_view) because gtag.js treats a config call's fields as the persistent
+      // per-hit defaults for every later hit under this measurement id — setting them here is the
+      // first line of defense; every individual event call below repeats them as a second line, so
+      // nothing ever depends on that persistent-field behavior alone.
       gtag("config", measurementId, {
         content_group: contentGroup,
         app_name: APP_NAME,
         app_version: opts.appVersion,
+        page_location: pageLocationStr(),
+        page_title: pageTitle,
+        send_page_view: false,
       });
+      gtag("event", "page_view", {
+        content_group: contentGroup,
+        app_name: APP_NAME,
+        app_version: opts.appVersion,
+        page_location: pageLocationStr(),
+        page_title: pageTitle,
+      });
+    } catch {
+      /* GA must never break the app */
+    }
+  }
+
+  function updateLocation(loc: LocationLike): void {
+    currentLocation = loc;
+    if (webdriver) return;
+    try {
+      // refreshes gtag.js's own persistent per-hit fields too (defense in depth beyond the explicit
+      // per-event fields below — see docs/analytics.md for the one thing this still cannot force:
+      // GA4's Enhanced Measurement history-based page view setting, which must be OFF).
+      gtag("set", { page_location: pageLocationStr(), page_title: pageTitle });
     } catch {
       /* GA must never break the app */
     }
@@ -229,6 +304,9 @@ export function createAnalytics(opts: AnalyticsOptions): Analytics {
         content_group: contentGroup,
         app_name: APP_NAME,
         app_version: opts.appVersion,
+        // FIX ROUND 1: explicit on EVERY event, never left for gtag.js to fill in on its own.
+        page_location: pageLocationStr(),
+        page_title: pageTitle,
       };
       for (const [k, v] of Object.entries(payload.params)) {
         gaParams[k] = v.length > GA_MAX_PARAM_CHARS ? v.slice(0, GA_MAX_PARAM_CHARS) : v;
@@ -239,7 +317,6 @@ export function createAnalytics(opts: AnalyticsOptions): Analytics {
     }
 
     if (!logUrl) return;
-    const loc = getLocation();
     queue.push({
       timestamp: new Date(now()).toISOString(),
       ip: "", // no server leg in a static app; kept for LOG_HEADER column parity
@@ -254,7 +331,7 @@ export function createAnalytics(opts: AnalyticsOptions): Analytics {
       app: APP_NAME,
       client_id: clientId,
       session_id: sessionId,
-      page: buildPagePath(loc),
+      page: buildPagePath(currentLocation),
       referrer: defaultReferrer(),
       user_agent: defaultUserAgent(),
     });
@@ -266,5 +343,5 @@ export function createAnalytics(opts: AnalyticsOptions): Analytics {
     removeVisibility?.();
   }
 
-  return { track, flush, destroy };
+  return { track, updateLocation, flush, destroy };
 }
