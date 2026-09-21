@@ -72,8 +72,11 @@
     persist({ ...geometry, detent });
   }
 
+  // the innermost open layer handles Esc first: if some other open layer (a Select, a Popover)
+  // already handled this SAME keydown and called preventDefault() on it, this panel must not
+  // ALSO react to it and collapse underneath whatever the user actually meant to close.
   function handleKeydown(event: KeyboardEvent) {
-    if (event.key === "Escape" && !geometry.collapsed) {
+    if (event.key === "Escape" && !event.defaultPrevented && !geometry.collapsed) {
       event.preventDefault();
       collapse();
     }
@@ -91,7 +94,6 @@
           <button
             type="button"
             data-panel-control="collapse"
-            aria-pressed="false"
             aria-expanded="true"
             aria-controls={bodyId}
             aria-label="Collapse to a pill"
@@ -117,7 +119,18 @@
           </button>
         </div>
       </div>
-      <div class="panel-body" id={bodyId} class:panel-body--full={geometry.detent === "full"}>
+      <!-- tabindex="0": a scrollable region with no focusable child of its own must still be
+           reachable by keyboard (axe scrollable-region-focusable), the same fix Sheet.svelte's
+           own body already carries; svelte-check's a11y rule does not know that exception. -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div
+        class="panel-body"
+        id={bodyId}
+        class:panel-body--full={geometry.detent === "full"}
+        role="region"
+        aria-label="{title} details"
+        tabindex="0"
+      >
         {@render children()}
       </div>
     </section>
@@ -126,7 +139,11 @@
 
 <style>
   .panel {
-    width: var(--size-panel);
+    /* SC 1.4.10 (Reflow): --size-panel (380px) as a fixed width overflowed the viewport at 320px
+       CSS width -- max plus 100% lets it shrink on a narrow viewport instead of forcing
+       horizontal scroll. */
+    width: 100%;
+    max-width: var(--size-panel);
   }
 
   .panel-surface {
