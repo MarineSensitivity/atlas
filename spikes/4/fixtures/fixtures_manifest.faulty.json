@@ -50,6 +50,15 @@
     ],
     "wgs84_ground_truth_bbox": [500000, 4300000, 520000, 4320000]
   },
+  "utm_zone_noprj": {
+    "description": "same rectangle as utm_zone, same shapefile parts, .prj DELIBERATELY removed before zipping",
+    "geometry_type": "Polygon",
+    "crs": "none (no .prj in the zip)",
+    "formats": "zip",
+    "vertex_count": 5,
+    "bbox_utm_metres": [500000, 4300000, 520000, 4320000],
+    "wgs84_ground_truth_bbox": [-123, 38.848590867207, -122.768937494255, 39.029047287731]
+  },
   "coastline_40k": {
     "description": "synthetic wiggly LineString, exactly 40000 vertices, deterministic formula (not real coastline data)",
     "geometry_type": "LineString",

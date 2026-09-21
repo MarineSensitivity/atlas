@@ -5,9 +5,13 @@
 # part (b)'s DuckDB-WASM `spatial` extension / ST_Read test. Also writes fixtures_manifest.json:
 # the ground-truth vertex counts, bboxes, ring orientation and (for the UTM case) the exact
 # WGS84 reprojection, computed once here via GDAL/PROJ so the Playwright spec has something
-# independent to compare parser output against. Deterministic (no randomness) so re-running this
-# script reproduces byte-identical fixtures. Geometry is entirely synthetic (plausible coordinates
-# picked by hand); nothing here is real survey/coastline data and nothing is uploaded anywhere.
+# independent to compare parser output against. Deterministic (no randomness in the geometry or
+# in fixtures_manifest.json — verified by diffing the extracted content of a re-run's .zip/.gpkg
+# against a prior run, byte-identical); the raw .zip/.gpkg CONTAINER bytes themselves can still
+# differ run-to-run (zip and SQLite/GeoPackage both embed a last-modified timestamp), which is
+# fine — content, not container bytes, is what every test here actually checks. Geometry is
+# entirely synthetic (plausible coordinates picked by hand); nothing here is real survey/coastline
+# data and nothing is uploaded anywhere.
 #
 # usage: Rscript fixtures/generate_fixtures.R   (run from spikes/4/, or anywhere — paths below
 # are relative to this script's own location)
@@ -57,6 +61,23 @@ write_zip_shapefile <- function(sfobj, out_zip, layer_name) {
   # appear to be a file or directory" warning seen on a first pass of this script.
   st_write(sfobj, shp_path, layer = layer_name, driver = "ESRI Shapefile", quiet = TRUE)
   parts <- list.files(td, full.names = TRUE)
+  if (file.exists(out_zip)) unlink(out_zip)
+  old <- setwd(td)
+  on.exit(setwd(old), add = TRUE)
+  system2("zip", c("-j", "-q", shQuote(file.path(old, out_zip)), basename(parts)))
+}
+
+# FIX ROUND 1, item 2: the SAME shapefile parts as write_zip_shapefile(), but with the .prj
+# component dropped before zipping -- proof, on the PARSER side, that "the .prj is ignored"
+# reproduces from a real file a reader would actually be handed (not just a hand-edited
+# expectation). shpjs has no CRS to reproject with here, by construction.
+write_zip_shapefile_no_prj <- function(sfobj, out_zip, layer_name) {
+  td <- tempfile("shp_noprj_")
+  dir.create(td)
+  shp_path <- file.path(td, paste0(layer_name, ".shp"))
+  st_write(sfobj, shp_path, layer = layer_name, driver = "ESRI Shapefile", quiet = TRUE)
+  parts <- list.files(td, full.names = TRUE)
+  parts <- parts[!grepl("\\.prj$", parts, ignore.case = TRUE)] # the one deliberate omission
   if (file.exists(out_zip)) unlink(out_zip)
   old <- setwd(td)
   on.exit(setwd(old), add = TRUE)
@@ -188,6 +209,11 @@ manifest <- list()
   write_gpkg(sfobj, sprintf("%s.gpkg", id), id)
   write_wkt(sfobj, sprintf("%s.wkt", id)) # raw UTM metres, on purpose — no CRS tag in plain WKT
 
+  # fix round 1, item 2: the same shapefile with its .prj removed -- e2e/utm-noprj.fail.spec.ts
+  # (test.fail()) proves shpjs is given zero CRS to reproject with, on a real file, not just a
+  # rewritten expectation.
+  write_zip_shapefile_no_prj(sfobj, sprintf("%s_noprj.zip", id), id)
+
   # ground truth: reproject the same 4 corners to WGS84 via GDAL/PROJ, once, here.
   poly_wgs84 <- st_transform(sfobj, 4326)
   ring_wgs84 <- st_coordinates(st_geometry(poly_wgs84)[[1]])[, c("X", "Y")]
@@ -202,6 +228,19 @@ manifest <- list()
     first_ring_signed_area_utm = signed_area(ring_utm),
     first_ring_orientation_utm = orientation_of(ring_utm),
     wgs84_ground_truth_ring = unname(split(ring_wgs84, row(ring_wgs84))),
+    wgs84_ground_truth_bbox = c(
+      xmin = min(ring_wgs84[, 1]), ymin = min(ring_wgs84[, 2]),
+      xmax = max(ring_wgs84[, 1]), ymax = max(ring_wgs84[, 2])
+    )
+  )
+
+  manifest[["utm_zone_noprj"]] <- list(
+    description = "same rectangle as utm_zone, same shapefile parts, .prj DELIBERATELY removed before zipping",
+    geometry_type = "Polygon",
+    crs = "none (no .prj in the zip)",
+    formats = c("zip"),
+    vertex_count = nrow(ring_utm),
+    bbox_utm_metres = c(xmin = 500000, ymin = 4300000, xmax = 520000, ymax = 4320000),
     wgs84_ground_truth_bbox = c(
       xmin = min(ring_wgs84[, 1]), ymin = min(ring_wgs84[, 2]),
       xmax = max(ring_wgs84[, 1]), ymax = max(ring_wgs84[, 2])

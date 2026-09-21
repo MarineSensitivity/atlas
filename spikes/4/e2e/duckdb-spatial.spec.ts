@@ -1,13 +1,34 @@
 // atlas-0 S4 spike, part (b) — does duckdb-wasm's `spatial` extension load, and does `ST_Read`
-// work on a registered .gpkg, on BOTH @duckdb/duckdb-wasm 1.32.0 and the current `next` dist-tag?
-// Measurement-only: both "yes" and "no" are valid outcomes here (S1 decides the actual pin), so
-// these tests assert structure (the harness ran and returned a well-formed result), not a
-// particular yes/no — the actual answer is recorded verbatim in RESULTS.md from the console.log
-// lines and from bytes fetched, per fixture per version.
+// on a registered .gpkg return the right feature count / bbox / vertex count, on BOTH
+// @duckdb/duckdb-wasm 1.32.0 and the current `next` dist-tag, for each of the five fixtures?
+//
+// Fix round 1: the earlier version of this spec asserted structure only ("did the harness return
+// something well-formed") because `instantiate()` hung on every cell. Root cause fixed in
+// src/duckdb-gpkg-test.ts (a plain `new Worker(url)`, not duckdb-wasm's `createWorker()` helper —
+// see that file's header comment). Every cell now asserts the REAL outcome against
+// fixtures_manifest.json ground truth, same as e2e/correctness.spec.ts. Every stage inside
+// runGpkgTest already carries its own hard timeout (src/duckdb-gpkg-test.ts's `withTimeout`);
+// this spec's own (Playwright) per-test timeout (playwright.config.ts) is the second, outer hard
+// timeout — either one turns a hang into a recorded, exact-stage failure, never a stall.
 import { test, expect } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const manifest = JSON.parse(readFileSync(path.join(here, "..", "fixtures", "fixtures_manifest.json"), "utf8"));
 
 const FIXTURES = ["gulf_rectangle", "aleutian_dateline", "multipolygon", "utm_zone", "coastline_40k"] as const;
 const VERSIONS = ["1.32.0", "next"] as const;
+
+// which manifest field is the expected bbox for ST_Read's raw (never-reprojected — see
+// correctness.spec.ts's utm_zone/flatgeobuf case for the same point) output, per fixture.
+function expectedBboxFor(fixture: string): number[] {
+  const m = manifest[fixture];
+  if (fixture === "aleutian_dateline") return m.naive_bbox_raw_coords;
+  if (fixture === "utm_zone") return m.bbox_utm_metres;
+  return m.bbox;
+}
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
@@ -36,13 +57,22 @@ for (const version of VERSIONS) {
 
       console.log(`duckdb ${version} / ${fixture}.gpkg: totalNetworkBytes=${totalNetworkBytes}`, JSON.stringify(r));
       console.log(`  per-url bytes:`, JSON.stringify(perUrl));
+      if (r.workerErrors.length) console.log(`  worker errors:`, JSON.stringify(r.workerErrors));
 
-      // structural assertions only — the actual spatialInstallLoadOk / rowCount / errorText yes-or-no
-      // is the finding, recorded in RESULTS.md, not asserted here.
-      expect(typeof r.spatialInstallLoadOk).toBe("boolean");
-      expect(r.errorText === null || typeof r.errorText === "string").toBe(true);
-      if (r.spatialInstallLoadOk && r.errorText === null) {
-        expect(r.rowCount, `${version}/${fixture} ST_Read row count`).toBe(1);
+      // hard requirement (fix round 1): the extension must actually load and ST_Read must return
+      // the real feature count/bbox/vertex count — no more "structure only" pass.
+      expect(r.errorText, `${version}/${fixture} errorText`).toBeNull();
+      expect(r.spatialInstallLoadOk, `${version}/${fixture} spatialInstallLoadOk`).toBe(true);
+      expect(r.rowCount, `${version}/${fixture} ST_Read row count`).toBe(1);
+
+      const m = manifest[fixture];
+      expect(r.vertexCount, `${version}/${fixture} ST_Read vertex count`).toBe(m.vertex_count);
+      const expectedBbox = expectedBboxFor(fixture);
+      for (let i = 0; i < 4; i++) {
+        expect(
+          Math.abs(r.bbox[i] - expectedBbox[i]),
+          `${version}/${fixture} bbox[${i}] got ${r.bbox[i]} expected ${expectedBbox[i]}`,
+        ).toBeLessThan(1e-6);
       }
     });
   }

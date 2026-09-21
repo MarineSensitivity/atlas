@@ -11,10 +11,10 @@ export default defineConfig({
   retries: 0,
   reporter: "list",
   // generous: duckdb-spatial.spec.ts's per-stage timeouts (src/duckdb-gpkg-test.ts) sum to up to
-  // ~220s worst case (one 120s "instantiate" allowance + five 20s stages) — this outer test
+  // ~140s worst case (one 60s "instantiate" allowance + four 20s stages) — this outer test
   // timeout needs room for that internal accounting to actually surface a "which stage" error
   // instead of Playwright's own timeout masking it.
-  timeout: 240_000,
+  timeout: 150_000,
   use: {
     baseURL: "http://localhost:4314/",
     trace: "retain-on-failure",

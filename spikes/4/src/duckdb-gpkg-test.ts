@@ -5,17 +5,24 @@
 // per-version branching has to happen at the module level, not inside this shared function) and
 // call into this one implementation. Measurement-only: records what happened, states no verdict.
 //
-// Every awaited step is wrapped in a per-stage timeout (STAGE_TIMEOUT_MS). First run without this
-// (see RESULTS.md) hung past Playwright's whole-test timeout with zero diagnostic output on every
-// single fixture/version, on this machine — wrapping each stage turns "the whole test silently
-// hangs" into "stage X did not resolve within N ms", which is itself the measurement when that is
-// what happens.
+// FIX ROUND 1 root cause: the first version of this file called `duckdbMod.createWorker(url)` —
+// duckdb-wasm's own helper, which does `fetch(url)` -> `blob()` -> `new Worker(URL.createObjectURL(blob))`.
+// That produces a REAL worker (confirmed: the blob's byte count exactly matched the real worker
+// file), so `instantiate()`'s hang was never "the worker never started" in the sense of a 404 —
+// it was that nothing was listening for a worker-side error, so a failure inside that
+// blob-sourced worker (whose `self.location` is a `blob:` URL, not the original http(s) URL) was
+// silently swallowed and the pending RPC just never resolved. S1's proven-working harness
+// (spikes/1/src/bundles.js, read-only reference) never calls `createWorker()` — it does
+// `new Worker(bundle.mainWorker)` directly, a real same-origin http(s) URL, which is what this
+// file now does too. `worker.onerror`/`onmessageerror` are wired BEFORE the worker is handed to
+// `AsyncDuckDB` so a failure is visible instead of silent, on the (unlikely, now) chance one still
+// occurs. See RESULTS.md for the before/after evidence under both `vite dev` and `vite build`+`preview`.
 
 const DEFAULT_STAGE_TIMEOUT_MS = 20_000;
-// `instantiate` compiles the ~35-40MB duckdb-*.wasm binary — a first, uncached run of that
-// compile step measured well past 20s in this sandbox (see RESULTS.md), so it gets a much longer
-// allowance than every other stage; a real hang elsewhere still gets caught at 20s.
-const STAGE_TIMEOUT_MS: Record<string, number> = { instantiate: 120_000 };
+// `instantiate` compiles the ~35-40MB duckdb-*.wasm binary — give it more room than the other
+// (fast, local) stages even though it now resolves in well under a second (see RESULTS.md); a
+// real hang elsewhere still gets caught at 20s.
+const STAGE_TIMEOUT_MS: Record<string, number> = { instantiate: 60_000 };
 function stageTimeoutMs(stage: string): number {
   return STAGE_TIMEOUT_MS[stage] ?? DEFAULT_STAGE_TIMEOUT_MS;
 }
@@ -48,8 +55,20 @@ export interface GpkgTestResult {
   bundleUsed: string;
   lastStageReached: string;
   spatialInstallLoadOk: boolean;
+  spatialLoadMs: number | null;
+  // from duckdb_extensions() right after LOAD — DuckDB's own record of what it did, which is more
+  // reliable than sniffing network traffic: a dedicated Worker's own `fetch()` calls (which is how
+  // duckdb-wasm actually retrieves both the main wasm module AND the spatial extension binary) are
+  // NOT visible to Playwright's page.on("response") — confirmed empirically here: even the ~35-40MB
+  // main wasm binary, which unquestionably WAS fetched (instantiate succeeded), never appeared in
+  // that listener. So "how many bytes / from which URL" for the extension is answered from inside
+  // DuckDB itself, not from network capture.
+  extensionInfo: { installed: boolean; loaded: boolean; installPath: string | null } | null;
   rowCount: number | null;
+  bbox: [number, number, number, number] | null;
+  vertexCount: number | null;
   errorText: string | null;
+  workerErrors: string[];
   bytesFetchedGpkg: number;
 }
 
@@ -62,9 +81,14 @@ export async function runGpkgTest(
   let bundleUsed = "unknown";
   let lastStageReached = "start";
   let spatialInstallLoadOk = false;
+  let spatialLoadMs: number | null = null;
+  let extensionInfo: GpkgTestResult["extensionInfo"] = null;
   let rowCount: number | null = null;
+  let bbox: [number, number, number, number] | null = null;
+  let vertexCount: number | null = null;
   let errorText: string | null = null;
   let bytesFetchedGpkg = 0;
+  const workerErrors: string[] = [];
   let db: any = null;
   let conn: any = null;
 
@@ -73,8 +97,18 @@ export async function runGpkgTest(
     const bundle = await withTimeout(duckdbMod.selectBundle(bundles), stageTimeoutMs(lastStageReached), lastStageReached);
     bundleUsed = bundle.mainModule === bundles.eh.mainModule ? "eh" : "mvp";
 
-    lastStageReached = "createWorker";
-    const worker = await withTimeout(duckdbMod.createWorker(bundle.mainWorker), stageTimeoutMs(lastStageReached), lastStageReached);
+    // fix round 1: a plain, same-origin Worker — NOT duckdbMod.createWorker(), which fetches the
+    // script into a Blob first (see the file-header comment for why that silently hangs
+    // instantiate() instead of erroring). This mirrors S1's proven-working
+    // spikes/1/src/bundles.js createDb().
+    lastStageReached = "new Worker";
+    const worker = new Worker(bundle.mainWorker);
+    worker.addEventListener("error", (e: ErrorEvent) => {
+      workerErrors.push(`worker error: ${e.message ?? "(no message)"} at ${e.filename ?? "?"}:${e.lineno ?? "?"}`);
+    });
+    worker.addEventListener("messageerror", (e: MessageEvent) => {
+      workerErrors.push(`worker messageerror: ${String(e.data)}`);
+    });
 
     const logger = new duckdbMod.ConsoleLogger(duckdbMod.LogLevel.WARNING);
     db = new duckdbMod.AsyncDuckDB(logger, worker);
@@ -86,9 +120,27 @@ export async function runGpkgTest(
     conn = await withTimeout(db.connect(), stageTimeoutMs(lastStageReached), lastStageReached);
 
     lastStageReached = "install_load_spatial";
+    const spatialT0 = performance.now();
     try {
       await withTimeout(conn.query(`INSTALL spatial; LOAD spatial;`), stageTimeoutMs(lastStageReached), lastStageReached);
       spatialInstallLoadOk = true;
+      spatialLoadMs = performance.now() - spatialT0;
+
+      lastStageReached = "duckdb_extensions_introspect";
+      const extRes = await withTimeout(
+        conn.query(`SELECT installed, loaded, install_path FROM duckdb_extensions() WHERE extension_name = 'spatial'`),
+        stageTimeoutMs(lastStageReached),
+        lastStageReached,
+      );
+      const extRow = extRes.toArray()[0];
+      const extJson = typeof extRow?.toJSON === "function" ? extRow.toJSON() : extRow;
+      if (extJson) {
+        extensionInfo = {
+          installed: Boolean(extJson.installed),
+          loaded: Boolean(extJson.loaded),
+          installPath: extJson.install_path ?? null,
+        };
+      }
     } catch (e: any) {
       errorText = `INSTALL/LOAD spatial failed at stage "${lastStageReached}": ${e?.message ?? String(e)}`;
     }
@@ -106,14 +158,20 @@ export async function runGpkgTest(
       lastStageReached = "ST_Read";
       try {
         const result = await withTimeout(
-          conn.query(`SELECT count(*) AS n FROM ST_Read('${fileName}')`),
+          conn.query(
+            `SELECT count(*) AS n, min(ST_XMin(geom)) AS xmin, min(ST_YMin(geom)) AS ymin, ` +
+              `max(ST_XMax(geom)) AS xmax, max(ST_YMax(geom)) AS ymax, ` +
+              `sum(ST_NPoints(geom)) AS vtx FROM ST_Read('${fileName}')`,
+          ),
           stageTimeoutMs(lastStageReached),
           lastStageReached,
         );
         const rows = result.toArray();
         const first = rows[0];
-        const n = typeof first?.toJSON === "function" ? first.toJSON().n : first?.n;
-        rowCount = Number(n);
+        const row = typeof first?.toJSON === "function" ? first.toJSON() : first;
+        rowCount = Number(row.n);
+        bbox = [Number(row.xmin), Number(row.ymin), Number(row.xmax), Number(row.ymax)];
+        vertexCount = Number(row.vtx);
       } catch (e: any) {
         errorText = `ST_Read failed at stage "${lastStageReached}": ${e?.message ?? String(e)}`;
       }
@@ -129,5 +187,18 @@ export async function runGpkgTest(
     }
   }
 
-  return { versionLabel, bundleUsed, lastStageReached, spatialInstallLoadOk, rowCount, errorText, bytesFetchedGpkg };
+  return {
+    versionLabel,
+    bundleUsed,
+    lastStageReached,
+    spatialInstallLoadOk,
+    spatialLoadMs,
+    extensionInfo,
+    rowCount,
+    bbox,
+    vertexCount,
+    errorText,
+    workerErrors,
+    bytesFetchedGpkg,
+  };
 }
