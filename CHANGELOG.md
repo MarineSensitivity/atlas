@@ -12,6 +12,15 @@ call for (`Flower`, `DataTable`, `Treemap`) and the shared category table they a
   token as `"primprod"` itself, fixing the grey/NA petal `parity scores app.md:826-830` documents in
   the old app. An unrecognized category falls back to a distinct `NO_DATA_CATEGORY` (`--cat-nodata`),
   never silently to a real category.
+- **`src/lib/ui/Flower.svelte`** (SVG polar plot of component scores), with its geometry in
+  `src/lib/ui/flowerGeometry.ts` (`computeFlowerGeometry`, pure and unit-tested): EQUAL angular
+  width per component regardless of score or count (7 on v7, 8 on v8/v9); centre = the mean of the
+  NON-null components only (`msens::ggplot_flower()`'s `weighted.mean(..., na.rm = TRUE)` with all
+  weights 1); a component with no value draws NO petal and keeps its angular slot ("absent is not
+  zero" — a real score of 0 still draws a degenerate petal and stays reachable). Per-petal keyboard
+  focus + tooltip, a data-table toggle whose `<table>` reads off the SAME `components`/`geometry`
+  data as the SVG (so they cannot drift), and an always-available text summary. Colors come from
+  `categories.ts`; no color literal anywhere in the component.
 
 `atlas-3` step 2a: the design-system component foundation (Svelte 5 runes, `src/lib/ui/`), the icon
 map generator folded in from the stopped Haiku attempt, self-hosted fallback fonts, and
