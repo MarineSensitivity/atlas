@@ -28,6 +28,7 @@ import {
   type Position,
 } from "./types";
 import { douglasPeucker, ringIsSimple } from "./simplify";
+import { MAX_LON_STEP, wrappedEdge } from "./unwrap";
 
 export const MAGIC = 0x10;
 export const CODEC = "g1";
@@ -229,9 +230,34 @@ export function deltaStream(q: QuantGeometry): number[] {
   return out;
 }
 
+/**
+ * `g1` only ever stores UNWRAPPED rings (plan D8 addendum), so the encode path REFUSES a ring that
+ * still steps more than 180 deg in longitude rather than storing it and letting the recipient's
+ * coverage read the 359.8 deg complement of what the sender drew.
+ *
+ * The caller's fix is `normalizeForAnalysis()` from ./unwrap.ts, named in the message: unwrapping
+ * is one explicit shared rule that runs at the input boundary, never quietly inside a codec.
+ */
+function refuseWrapped(geom: AreaGeometry): void {
+  polygonsOf(geom).forEach((rings, p) =>
+    rings.forEach((ring, r) => {
+      const k = wrappedEdge(ring);
+      if (k < 0) return;
+      fail(
+        "wrapped",
+        `polygon ${p} ring ${r} steps ${(ring[k][0] - ring[k - 1][0]).toFixed(4)} deg of longitude ` +
+          `between vertices ${k - 1} and ${k} (${ring[k - 1][0]} -> ${ring[k][0]}), more than the ` +
+          `${MAX_LON_STEP} deg limit: g1 stores unwrapped longitudes only. ` +
+          `Run normalizeForAnalysis() from geo/unwrap.ts on this geometry first.`,
+      );
+    }),
+  );
+}
+
 export function encodeGeometry(geom: AreaGeometry, precision = choosePrecision(geom)): Uint8Array {
   if (!Number.isInteger(precision) || precision < 1 || precision > 9)
     fail("precision", `precision must be an integer 1-9, got ${precision}`);
+  refuseWrapped(geom);
   const q = quantizeGeometry(geom, precision);
   if (!q.length) fail("empty", "a place needs at least one polygon");
   const out: number[] = [MAGIC, precision];

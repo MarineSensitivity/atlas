@@ -8,11 +8,17 @@
 // way msens aggregates per-feature fractions with `pmin(fraction, 1)` (calc.R:97-102); finally
 // `pct = roundHalfEven(frac * 100)` — R's round(), half to even — and cells at 0 are dropped.
 //
-// Frames (atlas-2): a place's longitudes are UNWRAPPED (the codec stores a Bering polygon as
-// 170..190), so the columns are computed in continuous index space and then, on a grid whose
-// columns span the globe (global05), wrapped modulo `nc`. usa05 is only 155.15 deg wide and is NOT
-// wrappable: a polygon is shifted into its 141.10 frame and anything still off the grid is dropped
-// — a modulo there would move the Atlantic into the Pacific.
+// Frames (atlas-2, plan D8 addendum): a place's longitudes are UNWRAPPED (the codec stores a Bering
+// polygon as 170..190) — geo/unwrap.ts is the one rule that puts them that way, it runs at the
+// INPUT boundary, and it is deliberately NOT called from here. This file reads coordinates
+// literally and guesses nothing about the antimeridian.
+//
+// What it does do is the arithmetic each grid's own definition requires, per vertex, the twin of
+// msens `.frame_ring()` (place.R:130-133): on global05 (7200 x 0.05 = 360, a grid that closes in
+// longitude) coordinates are left ALONE and an out-of-range COLUMN folds modulo `nc`, so 180.1
+// lands in column 1; on usa05 (`lon360`, a 155.15 deg window from 141.10 E) each vertex is shifted
+// into that frame, because -90 simply IS 270 there, and a column still outside 1..nc is DROPPED —
+// a modulo there would move the Atlantic into the Pacific.
 import { roundHalfEven, snapNoise } from "./round";
 import { polygonsOf, type AreaGeometry, type Position, type Ring } from "./types";
 import { gridSpansGlobe, type GridSpec } from "../grid/grid";
@@ -63,22 +69,35 @@ interface Seg {
 function accumulate(rings: Ring[], grid: GridSpec, frac: Map<number, number>): void {
   if (!rings.length || rings[0].length < 4) return;
 
-  // bring the polygon into the grid's own longitude frame: shift by whole turns until its
-  // westernmost vertex sits in [xmin, xmin + 360). usa05 then sees the Gulf at 269.95, and
-  // global05 sees a -180.05 vertex as 179.95 — in both cases the polygon stays CONTIGUOUS,
-  // which is the whole point of storing longitudes unwrapped.
-  let minLon = Infinity;
-  for (const r of rings) for (const p of r) if (p[0] < minLon) minLon = p[0];
-  let shift = 0;
-  while (minLon + shift < grid.xmin) shift += 360;
-  while (minLon + shift >= grid.xmin + 360) shift -= 360;
-
+  // bring each vertex into the grid's own longitude frame — PER VERTEX, never looking at its
+  // neighbours, so this is not an unwrap and cannot act as one by accident. usa05 then sees the
+  // Gulf at 270; global05 is left alone (its columns fold instead, see cellIdOf). Byte for byte
+  // msens `.frame_ring()`: `xmin + ((lon - xmin) %% 360)`, R's floor-division modulus.
+  //
+  // Because usa05's frame is cut at 141.10 E rather than at 180, a ring written WRAPPED across the
+  // antimeridian comes out contiguous here anyway (4 cells), while on global05 it comes out as the
+  // 359.8 deg complement (7,196). That is not a hidden antimeridian rule — it is where the two
+  // frames happen to be cut — and it is exactly why wrapped input is out of contract and must go
+  // through `normalizeForAnalysis()` first. A ring straddling xmin itself (140 -> 142 on usa05) is
+  // torn by the same per-vertex rule, on both sides, for the same reason.
+  //
+  // The frame branch is taken ONCE per polygon, not once per vertex, and framing is fused into the
+  // conversion to index space: a Program Area is 63,417 vertices, and routing each of them through
+  // a conditionally-shaped closure measured 4.5 s where this measures ~150 ms.
+  //
   // continuous cell-index space: x = column coordinate (cell j spans [j, j+1)), y = row coordinate
   // downwards from ymax. One cell is exactly 1 x 1 here, so a clipped area IS the fraction.
-  const cx = (lon: number) => (lon + shift - grid.xmin) / grid.resx;
-  const cy = (lat: number) => (grid.ymax - lat) / grid.resy;
-
-  const idx: Position[][] = rings.map((r) => r.map(([lon, lat]) => [cx(lon), cy(lat)] as Position));
+  const { xmin, ymax, resx, resy } = grid;
+  const idx: Position[][] = grid.lon360
+    ? rings.map((r) =>
+        r.map(
+          ([lon, lat]) =>
+            [(xmin + rmod(lon - xmin, 360) - xmin) / resx, (ymax - lat) / resy] as Position,
+        ),
+      )
+    : rings.map((r) =>
+        r.map(([lon, lat]) => [(lon - xmin) / resx, (ymax - lat) / resy] as Position),
+      );
   const segs: Seg[] = [];
   let x0 = Infinity,
     x1 = -Infinity,
@@ -154,6 +173,20 @@ function accumulate(rings: Ring[], grid: GridSpec, frac: Map<number, number>): v
       if (f > 0) add(i, j, Math.min(f, 1));
     }
   }
+}
+
+/**
+ * R's `%%` on doubles (R's arithmetic.c `myfmod`), which is floor division and NOT C's `fmod`:
+ * `x - floor(x/y)*y`, then one guard pass in case that lands exactly on `y`.
+ *
+ * The distinction is not pedantry. `((x % 360) + 360) % 360` would answer 38.80000000000001 where R
+ * answers 38.8 for a positive `x`, because the add-then-subtract of a whole turn is not exact in
+ * binary — a 1.4e-14 deg disagreement is enough to move a knife-edge cell across a half.
+ */
+function rmod(x: number, y: number): number {
+  const t = x - Math.floor(x / y) * y;
+  const q = Math.floor(t / y);
+  return q === 0 ? t : t - q * y;
 }
 
 /** cell id from a 0-based (row, column) index pair, or null when it is off this grid. */

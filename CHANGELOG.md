@@ -1,3 +1,44 @@
+# atlas 0.2.1
+
+Plan `atlas-2` Step 1 close-out: the master plan's **D8 addendum** (orchestrator ruling,
+2026-09-21) implemented on the TypeScript side — both coverage twins read coordinates LITERALLY and
+unwrapping is one explicit shared rule with its own fixtures.
+
+- **`src/lib/geo/unwrap.ts`** (new, plain module, no svelte): `unwrapRing()` / `unwrapPolygon()`,
+  the twin of `msens::unwrap_ring()` / `unwrap_polygon()`. Walking a ring, an edge stepping more
+  than 180 deg of longitude carries -/+360 ONWARD; the first vertex never moves, so a ring keeps the
+  frame it arrived in. Every ring is unwrapped independently — that is what keeps a hole with its
+  outer ring and stops one multipolygon part dragging its neighbour across the line.
+  `normalizeForAnalysis()` is the one entry point callers at an input boundary use; atlas-6's
+  remaining normalizer steps (reject projected coordinates, RFC 7946 rewind, dateline-aware bbox)
+  compose into it rather than into each caller. It is deliberately NOT called inside `coverage.ts`.
+- **`encodeGeometry()` now REFUSES a ring that still has a > 180 deg longitude step**
+  (`PlaceCodecError` code `wrapped`, message naming the vertices and `normalizeForAnalysis()`):
+  `g1` only ever stores unwrapped rings, so a wrapped one must be normalized, never silently
+  carried into a link as the sender's 359.8 deg complement.
+- **`coverage.ts` frames a `lon360` grid's coordinates PER VERTEX**, the twin of msens
+  `.frame_ring()` — `xmin + ((lon - xmin) %% 360)`, with R's floor-division modulus rather than
+  `fmod` — instead of shifting the whole polygon by the turns its westernmost vertex needed. The
+  two rules agree on every unwrapped fixture and differ everywhere else: on a WRAPPED box read
+  literally, usa05 now answers 4 cells as R does (the whole-polygon shift answered 2,323), and a
+  ring crossing usa05's own 141.10 E seam is torn open identically on both sides (3,085 cells)
+  instead of vanishing. `global05` coordinates are still left alone and its COLUMNS fold modulo
+  `nc`. Framing and the conversion to index space are now one loop: composing them as closures cost
+  the 63,417-vertex Program Area 4.5 s against 125 ms.
+- **Ten shared `normalize-*` coverage fixtures**, each carrying the wrapped ring, the unwrapped
+  ring, the cells and `cells_if_read_literally`; the two antimeridian fixtures were re-adopted
+  rewritten unwrapped. The loader asserts all three things per fixture, so unwrapping moving inside
+  coverage cannot pass. `tests/geo/disputed.ts` and its mechanism are **deleted**: there is no
+  disagreement with msens left.
+- **Three of those fixtures were written here and are owed to msens** (listed under
+  `owed_to_msens` in `tests/fixtures/places.sha256.json`):
+  `normalize-threshold-wide-segment-global05` (a genuine 120 deg segment that must NOT unwrap) and
+  `normalize-threshold-200-jump-global05` (a 200 deg raw step that MUST) pin the number 180, which
+  until now no fixture in either language pinned — msens stays green with its threshold set to 90
+  and to 270 — and `normalize-seam-141-usa05` pins the per-vertex frame shift.
+- **`raster/ramps.ts`** imports `roundHalfEven` from `geo/round.ts`; its private copy and the TODO
+  are gone. `geo/round.ts` is now the one copy of R's `round()` in this repo.
+
 # atlas 0.2.0
 
 Plan `atlas-2` Step 2: `release/`'s production resolution pipeline and `state/`, the `Sel` object
