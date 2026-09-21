@@ -13,12 +13,12 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
-    baseURL: "http://localhost:4173/",
+    baseURL: "http://localhost:4331/",
     trace: "on-first-retry",
   },
   webServer: {
-    command: "npm run build && npm run preview -- --port 4173 --strictPort",
-    url: "http://localhost:4173/",
+    command: "npm run build && npm run preview -- --port 4331 --strictPort",
+    url: "http://localhost:4331/",
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
   },
