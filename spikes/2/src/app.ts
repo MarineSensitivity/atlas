@@ -73,31 +73,37 @@ declare global {
 
 const BLANK_STYLE: StyleSpecification = { version: 8, sources: {}, layers: [] };
 
-function composeStyle(boot: Boot): StyleSpecification {
-  const cogUrl = encodeURIComponent(boot.score.cog);
-  const scoreTile =
-    `${TITILER}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}?url=${cogUrl}` +
-    `&rescale=${boot.score.rescale_min},${boot.score.rescale_max}&colormap_name=${boot.score.colormap}`;
-  return {
-    version: 8,
-    sources: {
-      score: { type: "raster", tiles: [scoreTile], tileSize: 256 },
-      zones: { type: "vector", url: `pmtiles://${boot.zones.pmtiles}` },
-    },
-    layers: [
-      { id: "bg", type: "background", paint: { "background-color": "#0b2436" } },
-      { id: "score", type: "raster", source: "score" },
-      {
-        id: "zones-line",
-        type: "line",
-        source: "zones",
-        // the pmtiles archive's vector_layers metadata names this layer "programarea" (checked
-        // with the `pmtiles` JS SDK against the published archive, tippecanoe -l programarea).
-        "source-layer": "programarea",
-        paint: { "line-color": "#e8f1f2", "line-width": 1 },
-      },
-    ],
+// S2 review fix round 1 (Opus finding F5): the maplibre-gl 6.10 PIN rests on the worker correctly
+// parsing VECTOR tiles -- that has nothing to do with titiler/raster at all (vector tiles come
+// entirely from S3 pmtiles). `includeRaster: false` composes a style with ONLY the zones vector
+// source/layer -- no "score" source, so the browser never issues a single titiler request -- so
+// the part of the gate the pin rests on can be verified with S3 alone, independent of titiler's
+// availability. Used by `?seed=vector-only` (see runApp() below) and by e2e's VECTOR GATE.
+function composeStyle(boot: Boot, opts: { includeRaster: boolean } = { includeRaster: true }): StyleSpecification {
+  const sources: StyleSpecification["sources"] = {
+    zones: { type: "vector", url: `pmtiles://${boot.zones.pmtiles}` },
   };
+  const layers: StyleSpecification["layers"] = [
+    { id: "bg", type: "background", paint: { "background-color": "#0b2436" } },
+  ];
+  if (opts.includeRaster) {
+    const cogUrl = encodeURIComponent(boot.score.cog);
+    const scoreTile =
+      `${TITILER}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}?url=${cogUrl}` +
+      `&rescale=${boot.score.rescale_min},${boot.score.rescale_max}&colormap_name=${boot.score.colormap}`;
+    sources.score = { type: "raster", tiles: [scoreTile], tileSize: 256 };
+    layers.push({ id: "score", type: "raster", source: "score" });
+  }
+  layers.push({
+    id: "zones-line",
+    type: "line",
+    source: "zones",
+    // the pmtiles archive's vector_layers metadata names this layer "programarea" (checked
+    // with the `pmtiles` JS SDK against the published archive, tippecanoe -l programarea).
+    "source-layer": "programarea",
+    paint: { "line-color": "#e8f1f2", "line-width": 1 },
+  });
+  return { version: 8, sources, layers };
 }
 
 function renderProgramAreaTable(rows: ProgramArea[]): void {
@@ -193,7 +199,13 @@ export function runApp(workerUrl: string): void {
 
     // seeded fault (b) (plan Step 4 Review checklist): "an unpainted canvas (style with no layers)
     // must make the pixel probe FAIL." ?seed=blank-style skips the composed style entirely.
-    const composed = window.__s2.seed === "blank-style" ? BLANK_STYLE : composeStyle(bootData);
+    // ?seed=vector-only (fix round 1, F5): no raster source at all -- see composeStyle() above.
+    const composed =
+      window.__s2.seed === "blank-style"
+        ? BLANK_STYLE
+        : window.__s2.seed === "vector-only"
+          ? composeStyle(bootData, { includeRaster: false })
+          : composeStyle(bootData);
 
     const map = new MapLibreMap({
       container: "map",
@@ -237,6 +249,19 @@ export function runApp(workerUrl: string): void {
     //     the assertion that never fires when the worker's own module import 404s (the `?url`
     //     wiring), because a worker that throws during init never parses a vector tile, ever.
     //   - idle: MapLibre's own "idle" event (fires once tiles/placement settle).
+    // S2 review fix round 1 (Opus finding F5): `?seed=vector-only` has no raster source at all, so
+    // firstDataFrame can NEVER latch (there is nothing to paint at the ocean points but the plain
+    // background); the `?url`-worker fault has a real "zones" source that never resolves (the
+    // worker crashed), so zonesPainted can NEVER latch either. Without a cutoff, either case leaves
+    // this handler doing a `gl.readPixels` pair AND a `queryRenderedFeatures` call on every single
+    // render tick for the page's entire lifetime -- found by running this harness: the resulting
+    // GPU-readback pressure ("GPU stall due to ReadPixels" in the console under headless
+    // Chromium+swiftshader) was severe enough, sustained over Playwright's default 30s test
+    // timeout, to make even `page.waitForTimeout()` calls unreliable. `RENDER_CHECK_BUDGET_MS`
+    // bounds the cost: past this much wall-clock time since scriptStart, stop doing the per-tick
+    // checks (and unsubscribe) regardless of whether either mark was ever reached -- a variant that
+    // genuinely can't settle now costs a bounded amount of GPU work, not an unbounded amount.
+    const RENDER_CHECK_BUDGET_MS = 5000;
     let firstAnyRenderMarked = false;
     let firstDataFrameMarked = false;
     let zonesPaintedMarked = false;
@@ -245,14 +270,15 @@ export function runApp(workerUrl: string): void {
         mark("firstAnyRender");
         firstAnyRenderMarked = true;
       }
-      if (!firstDataFrameMarked) {
+      const withinBudget = performance.now() - window.__s2.marks.scriptStart <= RENDER_CHECK_BUDGET_MS;
+      if (!firstDataFrameMarked && withinBudget) {
         const allPainted = bootData.oceanProbePoints.every((pt) => isPointPainted(map, pt.lon, pt.lat));
         if (allPainted) {
           mark("firstDataFrame");
           firstDataFrameMarked = true;
         }
       }
-      if (!zonesPaintedMarked && map.getSource("zones")) {
+      if (!zonesPaintedMarked && withinBudget && map.getSource("zones")) {
         // getSource() guard above: the ?seed=blank-style variant has no "zones" source at all,
         // and isSourceLoaded()/queryRenderedFeatures() on a nonexistent source/layer is not
         // something to rely on across versions -- this mark simply never fires for that seed,
@@ -265,7 +291,9 @@ export function runApp(workerUrl: string): void {
           zonesPaintedMarked = true;
         }
       }
-      if (firstDataFrameMarked && zonesPaintedMarked) map.off("render", onRender);
+      const firstDataFrameSettled = firstDataFrameMarked || !withinBudget;
+      const zonesSettled = zonesPaintedMarked || !withinBudget;
+      if (firstDataFrameSettled && zonesSettled) map.off("render", onRender);
     }
     map.on("render", onRender);
     map.once("idle", () => mark("idle"));
