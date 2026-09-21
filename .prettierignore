@@ -6,3 +6,8 @@ test-results
 node_modules
 spikes
 .claude/worktrees
+
+# Cross-repo artifacts: every file here is byte-identical to msens
+# inst/fixtures/places/, and tests/fixtures/places.sha256.json pins that. Reformatting one would
+# break the comparison in the other repo, so prettier must not touch this directory.
+tests/fixtures/places

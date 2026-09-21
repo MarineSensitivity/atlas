@@ -126,6 +126,50 @@ surface for Ben's mockup checkpoint.
 - **axe (WCAG 2.0/2.1 A + AA) over all six screens: 0 critical, 0 serious, 0 moderate, 0 minor.**
   New dev dependency `@axe-core/playwright` pinned at exactly `4.13.0`.
 
+Core geometry runtime (plan phase `atlas-2`, Step 1). Plain TypeScript under `src/lib`, no Svelte
+import anywhere in it, so every rule below is callable from a test — and from `scripts/parity/`
+later — under plain Node.
+
+- **`src/lib/geo/placeCodec.ts` — the `g1` place codec** (plan D8): places live in the URL hash as
+  `g1.<name>.<base64url>` (delta + zigzag varints, 0x10 magic, precision 3, or 4 for a place under
+  half a degree), `z.<set>.<keys>` for a published zone, or `u.<name>.<sha256_8>` when a geometry is
+  too large to carry. Longitudes are stored **unwrapped**, so a Bering place runs 170...190 and no
+  decoder has to guess at the antimeridian. **Every analysis runs on `decode(encode(geometry))`**
+  (`roundTrip()`), so a shared link reproduces the sender's numbers exactly. `fitPlacesToUrl()`
+  applies the budget ladder: silent to 2,000 characters, a "long link" note to 8,000, then
+  Douglas-Peucker from 0.001 deg doubling to 0.02 deg — each rung taken only while the area moves by
+  <= 1 % and every ring stays simple — and finally the `u.` form. A 30-vertex place costs 104
+  characters. The shared vectors are `tests/fixtures/place_codec.json`, which msens carries
+  byte-identically as `inst/fixtures/place_codec.json`.
+- **`src/lib/grid/grid.ts` — both cell grids**, ported from `msens/R/grid.R`
+  (`cellFromLonLat`, `cellLonLat`, `lonSpan`, `lonSpanAgg`, `bboxSpansGlobe`) plus `tileOf()` from
+  `msens/R/cell_model.R`. The geometry always comes from a `boot.grid`-shaped object and the module
+  contains no grid constants at all: `usa05` (3103 x 2006 from 141.10 E on a 0-360 frame) and
+  `global05` (7200 x 3600 from -180) disagree about what a `cell_id` means, and a hardcoded `nc`
+  is how v7 ids get painted on v8's grid.
+- **`src/lib/geo/coverage.ts` — `cellsInPolygon()`**, the twin of `msens::cells_in_polygon_grid()`:
+  planar in degrees, interior cells by scanline, boundary cells by clipping the polygon (outer minus
+  holes) to the cell square, multipolygon parts summed and capped at 1, `pct` rounded R's way (half
+  to **even**, after a 1e-9 snap so a 0.5 % sliver is not decided by float noise) and cells at 0
+  dropped. Columns wrap modulo `nc` on `global05` and shift into the 141.10 frame on `usa05`.
+  Measured: a 74,024-cell place in 45 ms (target: 150 ms). `cellFractions()` exposes the same cells
+  with their unrounded fraction.
+- **The msens fixtures are adopted, byte for byte.** Nine files written by the R twin — including
+  `programarea_gaa.json`, the traced GAA Program Area (63,417 vertices, 14,238 cells) — now live in
+  `tests/fixtures/places/`, and `tests/fixtures/places.sha256.json` pins each one's sha256 so a
+  fixture edited in either repo is visible here. Seven reproduce exactly. The two antimeridian
+  fixtures write their ring **wrapped** (`179.9 -> -179.9`), which read literally (RFC 7946, and
+  plan D8's unwrapped storage) is the 359.8-degree complement of the intended box; the very same box
+  written unwrapped (`179.9 -> 180.1`) reproduces the msens answer cell for cell on both grids, so
+  the difference is one of input convention and neither side has been changed to hide it.
+- **The 1e-9 snap in front of that rounding is now proven, not asserted.** A sweep over exact-half
+  rectangles across the Gulf finds that **4,522 of 8,640 on `global05` and 4,002 of 8,640 on
+  `usa05`** round the wrong way if the raw `frac * 100` is rounded as it arrives — so
+  `tests/fixtures/places/knife-edge-{0p5,2p5,3p5}-global05.json` and `knife-edge-2p5-usa05.json`
+  pin four of them (each records its raw value to 17 digits and the pct with and against the snap),
+  and removing the snap turns all four red. The error runs both ways: the 3.5 % case rounds _down_
+  to 3 unsnapped where the rule says 4.
+
 # atlas 0.1.1
 
 - **Restricted releases can no longer render on the public host** (plan D6). `versions.json`'s
