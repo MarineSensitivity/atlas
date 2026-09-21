@@ -83,4 +83,23 @@ describe("MemoryTableStore", () => {
   it("kind is 'memory'", () => {
     expect(new MemoryTableStore(stubDb()).kind).toBe("memory");
   });
+  // atlas-2 Step 4 REGRESSION (named after the bug): duckdb-wasm's real `registerFileBuffer`
+  // TRANSFERS the buffer into the worker, detaching it on this side, so `buffer.byteLength` read
+  // AFTER the call is 0. Step 3's stub just stored the array, so `bytes` looked right here while
+  // being 0 in every real browser -- which silently turned the OPFS tier's LRU budget (which
+  // compares these numbers) into a no-op. The size must be measured BEFORE registering.
+  it("records the real size even though registerFileBuffer detaches the buffer", async () => {
+    const detachingDb: DuckDBFileHandle = {
+      registerFileBuffer: async (_name, buffer) => {
+        structuredClone(buffer.buffer, { transfer: [buffer.buffer] });
+      },
+      dropFile: async () => null,
+    };
+    const store = new MemoryTableStore(detachingDb);
+    const buf = new Uint8Array(1024);
+    await store.register("taxon", "d", buf);
+    expect(buf.byteLength, "the fake really detached it").toBe(0);
+    expect(store.get("taxon")?.bytes).toBe(1024);
+    expect(store.bytesUsed()).toBe(1024);
+  });
 });

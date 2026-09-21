@@ -36,8 +36,14 @@ export class MemoryTableStore implements TableStore {
     }
     if (existing) await this.drop(name); // a different digest replaces the stale registration
 
+    // MEASURE BEFORE REGISTERING (atlas-2 Step 4 regression): duckdb-wasm's `registerFileBuffer`
+    // TRANSFERS the buffer into the worker, which DETACHES it -- `buffer.byteLength` afterwards is
+    // 0, not the size. Read against a stub that merely stores the array this is invisible, which is
+    // why it survived Step 3; against a real DuckDB every `bytes` was 0 and the OPFS tier's LRU
+    // budget therefore thought nothing ever cost anything.
+    const bytes = buffer.byteLength;
     await this.#db.registerFileBuffer(name, buffer);
-    this.#entries.set(name, { name, digest, bytes: buffer.byteLength, lastUsedMs: nowMs() });
+    this.#entries.set(name, { name, digest, bytes, lastUsedMs: nowMs() });
     return { from: `read_parquet(${lit(name)})` };
   }
 
@@ -45,6 +51,11 @@ export class MemoryTableStore implements TableStore {
     const e = this.#entries.get(name);
     if (!e) return false;
     return digest === undefined || e.digest === digest;
+  }
+
+  async touch(name: string): Promise<void> {
+    const e = this.#entries.get(name);
+    if (e) e.lastUsedMs = nowMs();
   }
 
   get(name: string): TableEntry | undefined {

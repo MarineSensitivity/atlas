@@ -1,3 +1,48 @@
+# atlas 0.7.3
+
+`atlas-2` step 4: the **OPFS `TableStore`** (plan D3 tier 2), behind the interface `memoryStore.ts`
+already implements, plus `docs/spikes/S1.md`'s persistence spec promoted from the spike harness to
+the real store. No UI and no app wiring yet — every module is importable and tested.
+
+- **`src/lib/engine/store/opfsBackend.ts`** — one entry point, `openTableStoreBackend()`, returning
+  the `createDb`/`store` callbacks `Engine` takes. File
+  `opfs://atlas/{ver}.s{schema}.d{duckdb}.duckdb`; stale-suffix files for the same release deleted
+  at boot; the Web Lock (`atlas-opfs-{ver}`, always `{ ifAvailable: true }`) held for the handle's
+  whole lifetime and released on close — and by the browser on an abrupt tab close.
+  `_meta(name, digest, bytes, last_used)` is read on a short-lived connection at session start and
+  reconciled against `boot.tables[*].digest`: a table whose digest moved is dropped, so exactly
+  that table re-materializes. `CHECKPOINT` after every write and on `visibilitychange → hidden`.
+- **The tab without the lock runs on the memory store, transparently** — no event, no error, and it
+  never opens the OPFS file at all. It takes over on a later page load once the lock is free.
+- **Every OPFS failure falls back to memory for the session** and emits `opfs_fallback{reason}`
+  through an **injected** sink (this tier does not import `analytics/`). A failure at open — a
+  corrupted file, a revoked handle, a quota error — closes the handle, deletes the file _and its
+  WAL_, releases the lock and continues on a fresh in-memory DuckDB. With storage denied nothing
+  user-visible changes.
+- **Budget `min(300 MB, 20 % of navigator.storage.estimate().quota)` across releases**, evicting
+  least-recently-used `cell_tile`/`cell_model_tile` tables first and then whole stale versions'
+  files. The small whole-object tables are never evicted. A `localStorage` registry carries other
+  releases' sizes and last use so the budget can span versions without opening their files.
+- **New exported functions, no UI:** `keepDataOnDevice()` / `setKeepDataOnDevice()` +
+  `KEEP_DATA_KEY` ("keep data on this device", default on; off means memory only _and_ existing
+  files deleted), `purgeRestricted(versions)` for the preview host's Sign out (deletes only the
+  named releases' files), and `purgeAllStoredData()`.
+- **`TableStore` gains `touch(name)`**, and `EngineOptions.store` gains a second `RawSql` argument
+  (a store's own DDL must not re-enter `Engine`'s public promise chain).
+- New gate `npm run e2e:opfs` (`tests/fixtures/opfs-e2e/`, port 4451, chromium + firefox + webkit,
+  a real persistent profile, `extensions.duckdb.org` blocked throughout) and its committed seeded
+  faults. `docs/engine.md` gains the measured fallback matrix, which **corrects `S1.md` on WebKit**.
+
+Three bugs this step found and fixed, each with a named regression test:
+
+- **`MemoryTableStore` recorded every table as 0 bytes.** `registerFileBuffer` _transfers_ the
+  buffer, so reading `byteLength` after the call sees a detached array. Invisible against a stub,
+  wrong in every real browser — and it would have made the new LRU budget a no-op.
+- **A cache hit never counted as a use.** `Engine#load` short-circuits on `has(name, digest)`, so
+  `last_used` only ever moved on a registration and the LRU would have evicted the hottest tile.
+- **A failed open leaked its worker,** so the file's sync access handle was never released and the
+  corrupted-file "self-heal" deleted nothing.
+
 # atlas 0.7.1
 
 `atlas-3` step 4, fix round 1: a manual (Opus) accessibility walk of the gallery by keyboard and

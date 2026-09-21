@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>atlas-2 step 4 — OPFS store harness</title>
+  </head>
+  <body>
+    <h1>OPFS store harness</h1>
+    <p>
+      Not part of the shipped app. Drives the real
+      <code>src/lib/engine/store/*</code> against a real DuckDB-WASM and a real OPFS; the Playwright
+      specs in <code>e2e/</code> call <code>window.__opfsTest</code>.
+    </p>
+    <pre id="log"></pre>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

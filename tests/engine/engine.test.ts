@@ -181,6 +181,22 @@ describe("Engine#load — materialize-then-query", () => {
     expect(h.registerFileBuffer).toHaveBeenCalledTimes(1);
   });
 
+  // atlas-2 Step 4: a cache HIT is still a USE. Without this the OPFS tier's `last_used` would only
+  // ever move on a registration, so its LRU would evict by registration order and discard the
+  // hottest tile in the working set (caught by the eviction gate's first real-browser run).
+  it("a cache hit touches the store instead of leaving last_used where it was", async () => {
+    const h = fakeHandle();
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(new Uint8Array([1, 2, 3])));
+    const engine = new Engine({ createDb: h.createDb, extensionRepository: null, fetchImpl });
+
+    await engine.load("taxon", "https://example.test/taxon.parquet", "digest-1");
+    const first = engine.store!.get("taxon")!.lastUsedMs;
+    await new Promise((r) => setTimeout(r, 2));
+    await engine.load("taxon", "https://example.test/taxon.parquet", "digest-1");
+    expect(engine.store!.get("taxon")!.lastUsedMs).toBeGreaterThan(first);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   // seeded fault: an object over the 25 MB guard must be refused, not silently materialized.
   it("refuses (throws) to materialize an object over the 25 MB guard", async () => {
     const oversized = new Uint8Array(MATERIALIZE_MAX_BYTES + 1);
