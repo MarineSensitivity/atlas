@@ -10,13 +10,19 @@
 // runGpkgTest already carries its own hard timeout (src/duckdb-gpkg-test.ts's `withTimeout`);
 // this spec's own (Playwright) per-test timeout (playwright.config.ts) is the second, outer hard
 // timeout — either one turns a hang into a recorded, exact-stage failure, never a stall.
+//
+// Fix round 2, item 2: SPIKE4_MANIFEST now honoured here too (previously hardcoded to the true
+// manifest, so a SPIKE4_MANIFEST=fixtures_manifest.faulty.json run silently kept reading the true
+// one and every cell stayed green — a gate with no red is not a gate). Same env var, same default,
+// as e2e/correctness.spec.ts.
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const manifest = JSON.parse(readFileSync(path.join(here, "..", "fixtures", "fixtures_manifest.json"), "utf8"));
+const manifestFile = process.env.SPIKE4_MANIFEST ?? "fixtures_manifest.json";
+const manifest = JSON.parse(readFileSync(path.join(here, "..", "fixtures", manifestFile), "utf8"));
 
 const FIXTURES = ["gulf_rectangle", "aleutian_dateline", "multipolygon", "utm_zone", "coastline_40k"] as const;
 const VERSIONS = ["1.32.0", "next"] as const;

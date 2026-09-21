@@ -27,9 +27,9 @@ async function parseWkt(wktUrl: string) {
   return fn(wktUrl);
 }
 
-async function testGpkg(version: "1.32.0" | "next", gpkgUrl: string) {
+async function testGpkg(version: "1.32.0" | "next", gpkgUrl: string, customExtensionRepository?: string) {
   const mod = version === "1.32.0" ? await import("./duckdb-1-32-0") : await import("./duckdb-next");
-  return mod.testGpkg(gpkgUrl);
+  return mod.testGpkg(gpkgUrl, customExtensionRepository);
 }
 
 declare global {

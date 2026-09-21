@@ -6,3 +6,8 @@
 /test-results/
 /blob-report/
 /playwright/.cache/
+
+# fix round 2, item 1: a local same-origin copy of the real spatial extension binaries
+# (~22-23 MB each), fetched on demand by scripts/fetch-extension-cache.mjs for the
+# custom_extension_repository experiment — never committed (real, large, third-party binaries).
+/fixtures/.ext-cache/

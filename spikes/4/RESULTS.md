@@ -4,11 +4,22 @@ Measurements only. No verdict, no format-list recommendation (atlas-6 decides th
 data). Everything below is a real, captured run on this machine — commands, output and numbers
 are pasted verbatim except where noted "(trimmed)".
 
-**Fix round 1 (this revision):** part (b) below was rewritten after finding and fixing an actual
-bug in this harness, not the environment — see "Root cause" under part (b). All part (b) cells are
-now measured, not inferred. Also added `utm_zone_noprj.zip` (the same shapefile with its `.prj`
-removed) and a parser-side "`.prj` dropped" proof (`e2e/utm-noprj.fail.spec.ts`) alongside the
-existing expectation-side seeded fault.
+**Fix round 1:** part (b) was rewritten after finding and fixing an actual bug in this harness, not
+the environment — see "Root cause" under part (b). Also added `utm_zone_noprj.zip` (the same
+shapefile with its `.prj` removed) and a parser-side "`.prj` dropped" proof
+(`e2e/utm-noprj.fail.spec.ts`) alongside the existing expectation-side seeded fault.
+
+**Fix round 2 (this revision):** round 1's "spatial is statically compiled into duckdb-*.wasm, no
+network cost" claim was **wrong**, and is retracted below with the falsifying measurement in
+place: `e2e/duckdb-network.spec.ts` properly observes worker network traffic (`page.on("response")`
+*does* see a dedicated Worker's own `fetch()` calls — round 1's claim that it couldn't was itself
+wrong, an artifact of a listener that silently swallowed specific responses) and shows `spatial` is
+in fact downloaded, every time, from `https://extensions.duckdb.org/v<core-version>/wasm_eh/
+spatial.duckdb_extension.wasm` — ~22.4–22.5 MB. A blocked-network gate with a worker-fetch control
+now backs this up: `LOAD spatial` fails when every non-localhost host is blocked, with the control
+proving the block reaches worker fetches. Also: `e2e/duckdb-spatial.spec.ts` now honours
+`SPIKE4_MANIFEST` (round 1 left it hardcoded to the true manifest, so the seeded-fault run showed
+no red at all for it — see "item 2" under part (b)).
 
 ## Versions (captured 2026-09-21)
 
@@ -59,6 +70,9 @@ SPIKE4_MANIFEST=fixtures_manifest.faulty.json TMPDIR=<writable-dir> npx playwrig
 # part (b): duckdb-wasm spatial + ST_Read (build+preview path — the one that must work)
 TMPDIR=<writable-dir> npx playwright test e2e/duckdb-spatial.spec.ts --reporter=list
 
+# part (b), seeded-fault (fix round 2, item 2 — now honours SPIKE4_MANIFEST)
+SPIKE4_MANIFEST=fixtures_manifest.faulty.json TMPDIR=<writable-dir> npx playwright test e2e/duckdb-spatial.spec.ts --reporter=list
+
 # part (b), dev-mode comparison: start vite dev manually, then let Playwright's
 # webServer.reuseExistingServer pick it up instead of running "build && preview"
 TMPDIR=<writable-dir> npx vite dev --port 4314 --strictPort &
@@ -66,6 +80,12 @@ TMPDIR=<writable-dir> npx playwright test e2e/duckdb-spatial.spec.ts -g "1.32.0:
 
 # fix round 1, item 2: the .prj-dropped fixture, parser-side proof (test.fail())
 TMPDIR=<writable-dir> npx playwright test e2e/utm-noprj.fail.spec.ts --reporter=list
+
+# fix round 2, item 1: real worker network observation + the blocked-network gate + control,
+# reload behavior, and the custom_extension_repository experiment
+node scripts/fetch-extension-cache.mjs   # populates the gitignored fixtures/.ext-cache/ used by
+                                          # the custom_extension_repository test below
+TMPDIR=<writable-dir> npx playwright test e2e/duckdb-network.spec.ts --reporter=list
 ```
 
 `TMPDIR` had to be overridden to a writable directory inside the worktree — the default
@@ -368,13 +388,18 @@ The precise failure mode was never fully isolated beyond "the blob-sourced worke
 main thread never completed" (no `worker.onerror`/`onmessageerror` fired even once it was wired
 up post-fix, since post-fix there is no failure to observe) — but the fix (matching S1's own
 working wiring exactly) is what matters here, and it is now confirmed on **both** `vite dev` and
-`vite build`+`preview` (see "dev vs. build" below). One earlier claim from before this fix is
-retracted, not repeated: "the `.wasm` file is never fetched" was based on `page.on("response")`
-showing 0 bytes for it — but that same listener *also* shows 0 bytes for the wasm binary on every
-SUCCESSFUL run below (confirmed instantiate succeeds, yet the ~35 MB `.wasm` never appears in that
-listener either). A dedicated Worker's own `fetch()` calls are simply not visible to
-`page.on("response")` in this Playwright version, success or failure — that was a measurement gap
-in the previous round, not evidence about the hang's cause.
+`vite build`+`preview` (see "dev vs. build" below).
+
+**Correction (fix round 2):** round 1 also claimed here that "the `.wasm` file is never fetched"
+based on `page.on("response")` showing 0 bytes for it, and concluded a dedicated Worker's own
+`fetch()` calls are categorically invisible to that listener. **That conclusion was wrong.**
+`e2e/duckdb-network.spec.ts` (fix round 2) wires the exact same kind of listener correctly (reading
+`response.headers()` instead of `await response.body()` inside a bare `try/catch` that was
+silently swallowing failures) and it plainly *does* see worker-initiated fetches — confirmed first
+with a throwaway diagnostic (a worker doing `fetch('https://extensions.duckdb.org/', {mode:
+'no-cors'})` appeared in both `page.on("request")` and `page.on("response")`), then for real: see
+"does INSTALL/LOAD spatial succeed" below, which replaces round 1's "statically compiled in, no
+network cost" conclusion (also wrong) with a directly measured answer.
 
 ### Dev vs. build (both work with the fix)
 
@@ -435,19 +460,12 @@ once at the top; `errorText` was `null` and `spatialInstallLoadOk`/`workerErrors
 | `rowCount` / `vertexCount` / `bbox` | exact match to `fixtures_manifest.json` for all 5 fixtures | same |
 | `workerErrors` | `[]` every cell | `[]` every cell |
 | bytes fetched for the `.gpkg` (main-thread `fetch`, directly measured) | 98,304 B (4 fixtures) / 737,280 B (`coastline_40k`) | same |
-| bytes fetched for the spatial extension **from a separate URL** | **none — see below** | **none — see below** |
+| bytes fetched for the spatial extension **from a separate URL** | **~22.4 MB — see below, item 1** | **~22.5 MB — see below, item 1** |
 
 **"does `INSTALL spatial; LOAD spatial;` succeed (from which URL, how many bytes, how long)":**
-succeeds on both versions, every fixture, in 1.18–2.41 seconds. "From which URL / how many bytes"
-is answered by asking DuckDB itself (`SELECT installed, loaded, install_path FROM
-duckdb_extensions() WHERE extension_name='spatial'`), which is more reliable than sniffing network
-traffic (see the retracted claim above): `installed=false`, `loaded=true`, `install_path=""` on
-every single cell, both versions. Read together, this means the `spatial` extension is **statically
-built into this build's `duckdb-*.wasm` binary already** — `LOAD spatial` activates code already
-present in the module that was just instantiated; there is no separate extension file fetched from
-any URL, no separate byte count to report beyond the main `duckdb-*.wasm` binary's own size
-(measured in part (a): ~34–41 MB raw per bundle). The 1.2–2.4 second `spatialLoadMs` is DuckDB-side
-registration/initialization time, not network time.
+succeeds on both versions, every fixture, in 1.18–2.41 seconds — but (fix round 2) it succeeds
+*because it downloads the extension over the network every time*, not because it's statically
+compiled in. See item 1 below for the real answer, with hosts, bytes and ms.
 
 **"does `ST_Read` on a registered `.gpkg` return the right feature count, bbox and vertex count for
 each of the five fixtures":** yes, exactly, for all 5 fixtures on both versions (`rowCount=1`
@@ -456,3 +474,192 @@ everywhere — each fixture is a single-feature file; `bbox`/`vertexCount` match
 flatgeobuf's from part (a): `utm_zone.gpkg` comes back as raw UTM metres (`[500000, 4300000,
 520000, 4320000]`), not reprojected to WGS84 — `ST_Read` (via GDAL under the hood) preserves the
 source CRS, same as every non-shpjs reader in this spike.
+
+## Fix round 2, item 1 — is `spatial` really "built in"? (falsified — it is downloaded)
+
+`e2e/duckdb-network.spec.ts`. Harness (`src/duckdb-gpkg-test.ts`) gained an optional
+`customExtensionRepository` parameter (threaded through `src/duckdb-{1-32-0,next}.ts` and
+`src/main.ts`'s `window.__spike4.testGpkg`) for the `SET custom_extension_repository=...;`
+experiment below; nothing else about the harness changed.
+
+### (a) Real network observed during INSTALL/LOAD spatial + ST_Read, both versions, unblocked
+
+`page.on("response")` (host/status/content-length) + `page.on("requestfinished")` →
+`request.timing()` (ms), filtered to non-`localhost` hosts — confirmed working via a throwaway
+diagnostic first (see "Root cause" correction above), then run for real:
+
+```
+$ TMPDIR=<writable-dir> npx playwright test e2e/duckdb-network.spec.ts --reporter=list -g "network observed"
+network(unblocked)/1.32.0: {"spatialInstallLoadOk":true,"spatialLoadMs":1330.5, ...}
+  non-localhost hosts touched: 1
+    - https://extensions.duckdb.org/v1.4.3/wasm_eh/spatial.duckdb_extension.wasm status=200 content-length=null ms=895.5
+  ✓ network observed (unblocked), 1.32.0: INSTALL/LOAD spatial + ST_Read(gulf_rectangle.gpkg)
+network(unblocked)/next: {"spatialInstallLoadOk":true,"spatialLoadMs":1200.8, ...}
+  non-localhost hosts touched: 1
+    - https://extensions.duckdb.org/v1.5.5/wasm_eh/spatial.duckdb_extension.wasm status=200 content-length=null ms=769.2
+  ✓ network observed (unblocked), next: INSTALL/LOAD spatial + ST_Read(gulf_rectangle.gpkg)
+```
+
+`content-length` came back `null` (the server doesn't send that header — likely chunked); exact
+bytes measured two independent ways instead: `curl -sSL -o /dev/null -w '%{size_download}'` against
+the same URLs, and `scripts/fetch-extension-cache.mjs` actually writing the downloaded bytes to
+disk — both agree exactly:
+
+| duckdb-wasm version | DuckDB core version (from the URL) | host | path | bytes | ms (unblocked, `requestfinished` timing) |
+| --- | --- | --- | --- | --- | --- |
+| 1.32.0 | v1.4.3 | extensions.duckdb.org | `/v1.4.3/wasm_eh/spatial.duckdb_extension.wasm` | **23,469,719 B** (~22.4 MB) | 821–1,554 (4 runs) |
+| next (1.33.1-dev64.0) | v1.5.5 | extensions.duckdb.org | `/v1.5.5/wasm_eh/spatial.duckdb_extension.wasm` | **23,602,613 B** (~22.5 MB) | 769–1,328 (2 runs) |
+
+Both bigger than S3's measured 3.05 MB parquet extension download, as the coordinator's message
+anticipated. This is a single host (`extensions.duckdb.org`) and a single request per version per
+fresh page load; no other non-localhost host was touched during `INSTALL`/`LOAD`/`ST_Read` in any
+run.
+
+### (b) The blocked-network gate, with control
+
+`page.route("**/*", ...)` aborts every request whose hostname isn't `localhost`/`127.0.0.1`.
+Before each blocked cell, a worker-initiated `fetch()` to the same real host
+(`https://extensions.duckdb.org/`, `{mode:'no-cors'}`) is run as a **control** — it must itself
+fail under the block, proving the block was live for *that* test, not just in principle:
+
+```
+$ TMPDIR=<writable-dir> npx playwright test e2e/duckdb-network.spec.ts --reporter=list -g "BLOCKED"
+blocked/1.32.0 control probe (worker fetch to https://extensions.duckdb.org/): {"ok":false,"error":"Failed to fetch"}
+blocked/1.32.0 result: {"spatialInstallLoadOk":false,"spatialLoadMs":null,"errorText":"INSTALL/LOAD spatial failed at stage \"install_load_spatial\": Failed to execute 'send' on 'XMLHttpRequest': Failed to load 'https://extensions.duckdb.org/v1.4.3/wasm_eh/spatial.duckdb_extension.wasm'.","bytesFetchedGpkg":0}
+  aborted (non-localhost) requests: ["https://extensions.duckdb.org/","https://extensions.duckdb.org/v1.4.3/wasm_eh/spatial.duckdb_extension.wasm"]
+  ✓ BLOCKED, 1.32.0: all non-localhost hosts blocked during INSTALL/LOAD spatial + ST_Read
+
+blocked/next control probe (worker fetch to https://extensions.duckdb.org/): {"ok":false,"error":"Failed to fetch"}
+blocked/next result: {"spatialInstallLoadOk":false,"spatialLoadMs":null,"errorText":"INSTALL/LOAD spatial failed at stage \"install_load_spatial\": Failed to execute 'send' on 'XMLHttpRequest': Failed to load 'https://extensions.duckdb.org/v1.5.5/wasm_eh/spatial.duckdb_extension.wasm'.","bytesFetchedGpkg":0}
+  aborted (non-localhost) requests: ["https://extensions.duckdb.org/","https://extensions.duckdb.org/v1.5.5/wasm_eh/spatial.duckdb_extension.wasm"]
+  ✓ BLOCKED, next: all non-localhost hosts blocked during INSTALL/LOAD spatial + ST_Read
+
+2 passed
+```
+
+**Answer: `LOAD spatial` FAILS with every non-localhost host blocked, on both versions**, with the
+control confirmed failing first each time. Exact error text (both versions, only the URL differs):
+`INSTALL/LOAD spatial failed at stage "install_load_spatial": Failed to execute 'send' on
+'XMLHttpRequest': Failed to load 'https://extensions.duckdb.org/v<core-version>/wasm_eh/
+spatial.duckdb_extension.wasm'.` — DuckDB-wasm's extension loader uses a **synchronous
+XMLHttpRequest** inside the worker (not `fetch()`) for this specific request, per the error text.
+The gate is asserted, not just logged: `e2e/duckdb-network.spec.ts` requires
+`spatialInstallLoadOk === false`, `errorText` containing `"Failed to load"`, and the extension URL
+present in the aborted list — so a future duckdb-wasm build that genuinely bundles `spatial`
+statically would make this assertion fail loudly, not pass on unread text.
+
+### (c) Does a page reload re-download the extension?
+
+Same page, `page.reload()` between two `testGpkg("1.32.0", ...)` calls, non-localhost network
+tracked across both:
+
+```
+reload-test first load: spatialInstallLoadOk=true [{"url":".../spatial.duckdb_extension.wasm","status":200,"ms":814–1584 (2 runs)}]
+reload-test after page.reload(): spatialInstallLoadOk=true [{"url":".../spatial.duckdb_extension.wasm","status":200,"ms":50–53 (2 runs)}]
+```
+
+A request to the same URL fires again after reload (still shows up as a `response` event, status
+200) but returns in **~50 ms instead of ~800–1,580 ms** — consistent with the browser's HTTP cache
+serving it rather than a fresh ~22 MB download over the real network (a genuine 22 MB fetch to a
+real external host in 50 ms is not physically plausible on this connection; the ~16–30× speedup is
+the signal, not a directly-observed "fromCache" flag, which Playwright's `Response` does not
+expose). Not independently confirmed whether this is disk cache, memory cache, or DuckDB-wasm's own
+in-worker state — only that the *network* cost of a second load is negligible compared to the
+first.
+
+### (d) `SET custom_extension_repository` to a same-origin copy, with the block on
+
+`scripts/fetch-extension-cache.mjs` (committed script; the binaries it downloads are NOT committed
+— `fixtures/.ext-cache/` is gitignored) fetches both real extension files once, to
+`fixtures/.ext-cache/v<core-version>/wasm_eh/spatial.duckdb_extension.wasm`, mirroring the exact
+relative path DuckDB requests — `vite preview`'s `publicDir` (`fixtures/`) then serves them back at
+that same path (confirmed via `curl -sI http://localhost:4314/.ext-cache/v1.4.3/wasm_eh/
+spatial.duckdb_extension.wasm` → `200`, `Content-Length: 23469719`, exact match to the downloaded
+size). With the same non-localhost block active (control probe still fails first), `testGpkg`
+called with `customExtensionRepository="http://localhost:4314/.ext-cache"`:
+
+```
+$ TMPDIR=<writable-dir> npx playwright test e2e/duckdb-network.spec.ts --reporter=list -g "custom_extension_repository"
+custom_extension_repository/1.32.0 result: {"spatialInstallLoadOk":true,"spatialLoadMs":449.8,"rowCount":1,"bbox":[-93.5,26.5,-88.5,29.5],"vertexCount":5,"errorText":null}
+  aborted (non-localhost) requests: ["https://extensions.duckdb.org/"]   (only the control probe — the real extension request never left localhost)
+custom_extension_repository/1.32.0: LOAD spatial SUCCEEDED from a same-origin repository with the network block on
+  ✓ custom_extension_repository, 1.32.0: does a same-origin copy work with the network block on?
+```
+
+**Yes — a same-origin copy works, even with every non-localhost host blocked**: `LOAD spatial`
+succeeds (`spatialLoadMs` 449.8 ms, faster than the real network fetch, consistent with a
+localhost-served ~22 MB file), and `ST_Read` still returns the correct `rowCount`/`bbox`/
+`vertexCount`. Only tested on 1.32.0 (the mechanism is generic — `SET custom_extension_repository`
+is a DuckDB SQL setting, not version-specific — so this was not repeated for `next`).
+
+### Item 1 summary — the number atlas-6 needs
+
+**Bytes and hosts touched the first time a `.gpkg` is dropped**, both versions, one host
+(`extensions.duckdb.org`), one file:
+
+| | 1.32.0 | next |
+| --- | --- | --- |
+| host | extensions.duckdb.org | extensions.duckdb.org |
+| path | /v1.4.3/wasm_eh/spatial.duckdb_extension.wasm | /v1.5.5/wasm_eh/spatial.duckdb_extension.wasm |
+| bytes | 23,469,719 (~22.4 MB) | 23,602,613 (~22.5 MB) |
+| ms (cold) | 821–1,554 | 769–1,328 |
+| ms (page reload, same session) | ~50 | not separately measured |
+| blocked → `LOAD spatial` | FAILS (`Failed to load ...`) | FAILS (`Failed to load ...`) |
+| blocked + `custom_extension_repository` → same-origin copy | SUCCEEDS (1.32.0 tested) | not separately measured |
+
+## Fix round 2, item 2 — `duckdb-spatial.spec.ts` now honours `SPIKE4_MANIFEST`
+
+Round 1's `e2e/duckdb-spatial.spec.ts` hardcoded `fixtures_manifest.json` regardless of
+`SPIKE4_MANIFEST`, so a `SPIKE4_MANIFEST=fixtures_manifest.faulty.json` run silently kept reading
+the true manifest and every cell (including `gulf_rectangle`) stayed green — a gate with no red is
+not a gate. Fixed to read `process.env.SPIKE4_MANIFEST ?? "fixtures_manifest.json"`, exactly like
+`e2e/correctness.spec.ts` already did.
+
+```
+$ SPIKE4_MANIFEST=fixtures_manifest.faulty.json TMPDIR=<writable-dir> npx playwright test e2e/duckdb-spatial.spec.ts --reporter=list
+Running 10 tests using 1 worker
+...
+  ✘   1 [chromium] › e2e/duckdb-spatial.spec.ts:46:5 › duckdb-wasm 1.32.0: spatial + ST_Read(gulf_rectangle.gpkg)
+...
+  ✘   6 [chromium] › e2e/duckdb-spatial.spec.ts:46:5 › duckdb-wasm next: spatial + ST_Read(gulf_rectangle.gpkg)
+...
+  1) [chromium] › e2e/duckdb-spatial.spec.ts:46:5 › duckdb-wasm 1.32.0: spatial + ST_Read(gulf_rectangle.gpkg)
+    Error: 1.32.0/gulf_rectangle ST_Read vertex count
+    expect(received).toBe(expected) // Object.is equality
+    Expected: 6
+    Received: 5
+      75 |       expect(r.vertexCount, `${version}/${fixture} ST_Read vertex count`).toBe(m.vertex_count);
+
+  2) [chromium] › e2e/duckdb-spatial.spec.ts:46:5 › duckdb-wasm next: spatial + ST_Read(gulf_rectangle.gpkg)
+    Error: next/gulf_rectangle ST_Read vertex count
+    Expected: 6
+    Received: 5
+
+  2 failed
+    [chromium] › e2e/duckdb-spatial.spec.ts:46:5 › duckdb-wasm 1.32.0: spatial + ST_Read(gulf_rectangle.gpkg)
+    [chromium] › e2e/duckdb-spatial.spec.ts:46:5 › duckdb-wasm next: spatial + ST_Read(gulf_rectangle.gpkg)
+  8 passed (25.0s)
+$ echo $?
+1
+```
+
+**`gulf_rectangle` now goes red on both versions** (`vertexCount` 5 vs. the faulty manifest's 6),
+exit code 1 — the committed proof this gate can fail. The other 8 cells (fixtures the faulty
+manifest didn't touch) stay green, same as `correctness.spec.ts`'s seeded-fault run.
+
+## Final full-suite check (all specs together, true manifest)
+
+```
+$ TMPDIR=<writable-dir> npx playwright test --reporter=list
+Running 36 tests using 4 workers
+...
+36 passed (22.7s)
+$ echo $?
+0
+```
+
+36 = 19 (`correctness.spec.ts`) + 1 (`utm-noprj.fail.spec.ts`, expected-fail counts as passed) + 10
+(`duckdb-spatial.spec.ts`) + 6 (`duckdb-network.spec.ts`: 2 unblocked + 2 blocked + 1 reload + 1
+`custom_extension_repository`). Exit 0 against the true manifest;
+`SPIKE4_MANIFEST=fixtures_manifest.faulty.json` against `correctness.spec.ts` and
+`duckdb-spatial.spec.ts` each exits 1 (5 and 2 failures respectively) — both shown verbatim above.

@@ -12,7 +12,7 @@ import { runGpkgTest, type GpkgTestResult } from "./duckdb-gpkg-test";
 // captured once from `npm view @duckdb/duckdb-wasm@next version` at fixture-build time (2026-09-21).
 const VERSION_LABEL = "1.33.1-dev64.0";
 
-export async function testGpkg(gpkgUrl: string): Promise<GpkgTestResult> {
+export async function testGpkg(gpkgUrl: string, customExtensionRepository?: string): Promise<GpkgTestResult> {
   return runGpkgTest(
     duckdb,
     {
@@ -21,5 +21,6 @@ export async function testGpkg(gpkgUrl: string): Promise<GpkgTestResult> {
     },
     gpkgUrl,
     VERSION_LABEL,
+    customExtensionRepository,
   );
 }

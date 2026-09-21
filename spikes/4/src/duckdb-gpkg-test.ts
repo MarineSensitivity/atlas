@@ -56,13 +56,16 @@ export interface GpkgTestResult {
   lastStageReached: string;
   spatialInstallLoadOk: boolean;
   spatialLoadMs: number | null;
-  // from duckdb_extensions() right after LOAD — DuckDB's own record of what it did, which is more
-  // reliable than sniffing network traffic: a dedicated Worker's own `fetch()` calls (which is how
-  // duckdb-wasm actually retrieves both the main wasm module AND the spatial extension binary) are
-  // NOT visible to Playwright's page.on("response") — confirmed empirically here: even the ~35-40MB
-  // main wasm binary, which unquestionably WAS fetched (instantiate succeeded), never appeared in
-  // that listener. So "how many bytes / from which URL" for the extension is answered from inside
-  // DuckDB itself, not from network capture.
+  // from duckdb_extensions() right after LOAD — DuckDB's own record. FIX ROUND 1 claimed this was
+  // "more reliable than sniffing network traffic" because page.on("response") supposedly can't
+  // see a dedicated Worker's own fetch() calls. FIX ROUND 2 correction: that was wrong — a
+  // properly wired page.on("response")/page.on("request") DOES see worker fetches (the earlier
+  // listener's `await resp.body()` inside a bare try/catch was silently swallowing these specific
+  // responses). Real measurement (e2e/duckdb-network.spec.ts) shows `spatial` IS fetched, every
+  // time, from https://extensions.duckdb.org/v<core-version>/wasm_eh/spatial.duckdb_extension.wasm
+  // — ~22-23 MB — see RESULTS.md. duckdb_extensions()'s `installed` column read false even for
+  // that successful network install, so it is not a reliable signal for the wasm build; kept below
+  // for reference only, not trusted alone.
   extensionInfo: { installed: boolean; loaded: boolean; installPath: string | null } | null;
   rowCount: number | null;
   bbox: [number, number, number, number] | null;
@@ -77,6 +80,10 @@ export async function runGpkgTest(
   bundles: DuckDBBundleUrls,
   gpkgUrl: string,
   versionLabel: string,
+  // fix round 2, item 1: when set, `SET custom_extension_repository='<url>';` runs before
+  // INSTALL/LOAD spatial — the `custom_extension_repository` experiment (does a same-origin copy
+  // work with every non-localhost host blocked?), driven by e2e/duckdb-network.spec.ts.
+  customExtensionRepository?: string,
 ): Promise<GpkgTestResult> {
   let bundleUsed = "unknown";
   let lastStageReached = "start";
@@ -118,6 +125,15 @@ export async function runGpkgTest(
 
     lastStageReached = "connect";
     conn = await withTimeout(db.connect(), stageTimeoutMs(lastStageReached), lastStageReached);
+
+    if (customExtensionRepository) {
+      lastStageReached = "set_custom_extension_repository";
+      await withTimeout(
+        conn.query(`SET custom_extension_repository='${customExtensionRepository}';`),
+        stageTimeoutMs(lastStageReached),
+        lastStageReached,
+      );
+    }
 
     lastStageReached = "install_load_spatial";
     const spatialT0 = performance.now();
