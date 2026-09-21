@@ -3,19 +3,99 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>MarineSensitivity Atlas</title>
+    <title>Scores · MarineSensitivity Atlas</title>
     <meta name="description" content="Scores, species, places and reports for U.S. marine areas." />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+
     <!--
-      critical CSS, inlined so the shell paints before any JavaScript bundle loads or parses
-      (plan atlas-0 Deliverable 2). Real design tokens arrive in atlas-3; for now this uses the
-      four MMA hex values directly (ground truth: Gold #E8C24A, Steel #173D6D, Navy #001A57,
-      Crimson #6E110F).
+      atlas-3 step 3: fonts. The ONE display weight the first frame needs (headlines are never
+      lighter than Bold, guide p. 5) is preloaded -- the budget has room (spec.md §12: the display
+      face's 2-weight budget is <= 20 KB gzip; this one file is ~10 KB).
+
+      Measured fix (e2e/shell.cls.spec.ts caught it): the body face (Carlito) also needs preloading,
+      not just the display face. `font-display: swap` shows the fallback for however long the
+      request takes, however short -- fonts.css's metric overrides make that fallback match
+      Carlito's OWN box model closely, but not perfectly, on every platform (they are tuned to
+      Arial, which is what `sans-serif` resolves to on Windows and Linux/Liberation Sans, but not
+      quite what it resolves to on macOS). Preloading both weights wins the race often enough that
+      the browser already has Carlito by the time it paints, so the mismatched fallback is never
+      actually painted at all -- measured CLS = 0 with this in place, nonzero without it. The
+      lens switch's PRESSED state is bold body text (Segmented.svelte, untouched here), which is
+      why Bold matters in the first frame too, not just Regular.
     -->
-    <style>:root{--mma-gold:#e8c24a;--mma-steel:#173d6d;--mma-navy:#001a57;--mma-crimson:#6e110f}*{box-sizing:border-box}html,body{height:100%;margin:0}body{color:#101820;background:#fff;font-family:system-ui,-apple-system,Segoe UI,sans-serif}#shell{grid-template:"topbar topbar"56px"rail main"1fr/64px 1fr;height:100vh;min-height:100%;display:grid}.ms-topbar{background:var(--mma-navy);color:var(--mma-gold);grid-area:topbar;align-items:center;gap:.75rem;padding:0 1rem;font-weight:600;display:flex}.ms-topbar .ms-title{white-space:nowrap}#version-badge{align-items:center;gap:.5rem;margin-left:auto;display:flex}.ms-version{opacity:.85;font-weight:400}.ms-preview-badge{background:var(--mma-crimson);color:#fff;letter-spacing:.05em;border-radius:3px;padding:.2rem .5rem;font-size:.7rem}.ms-rail{background:var(--mma-steel);flex-direction:column;grid-area:rail;align-items:center;gap:.5rem;padding-top:.75rem;display:flex}.ms-rail button{width:44px;height:44px;color:var(--mma-gold);cursor:pointer;background:#ffffff14;border:none;border-radius:6px;font-size:.65rem}.ms-rail button:hover,.ms-rail button:focus-visible{background:#fff3}#main{grid-area:main;grid-template-columns:minmax(280px,360px) 1fr;min-width:0;display:grid;position:relative}#panel{border-right:1px solid #d8dde3;min-width:0;padding:1rem;overflow:auto}.ms-skel{background:#e5e7eb;border-radius:4px;height:1rem;margin-bottom:.6rem}.ms-skel.short{width:60%}#map{background:#cfe3f7;min-width:0}@media (max-width:480px){#shell{grid-template:"topbar"56px"rail""main"1fr/1fr}.ms-rail{flex-direction:row;padding:.5rem}#main{grid-template-rows:auto minmax(200px,1fr);grid-template-columns:1fr}#panel{border-bottom:1px solid #d8dde3;border-right:none}}</style>
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="./assets/jost-bold-latin-DMt_xNXo.woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="./assets/carlito-regular-latin-DH4QlA0U.woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="./assets/carlito-bold-latin-DQymq_-8.woff2"
+      crossorigin
+    />
+
+    <!--
+      critical CSS, inlined so the shell paints before any JavaScript bundle loads or parses (plan
+      atlas-0 Deliverable 2, carried into atlas-3 step 3). `@import` pulls in src/shell/shell.css
+      (which itself imports src/lib/brand/tokens.css) -- Vite's html-inline-proxy resolves BOTH
+      imports and inlines the resolved CSS text directly into this tag, in dev and in build alike
+      (see vite.config.ts's comment on the html/css pipeline). That is the "build step that copies
+      [token values] from tokens.css" the review checklist asks for: nobody types a token value by
+      hand here, the bundler copies it -- tests/check-inlined-tokens.test.ts proves the copy is
+      faithful, and it is proven able to fail with a seeded, mutated fixture.
+
+      shell.css is the SAME file src/shell/Shell.svelte imports for the hydrated app's own layout,
+      so the skeleton below and the real shell read identical geometry -- no second, hand-typed
+      copy of any size/spacing value to drift between them (the CLS gate,
+      e2e/shell.cls.spec.ts, is what actually proves it, at both viewports and both themes).
+    -->
+    <style>:root{--mma-gold:#e8c24a;--mma-steel:#173d6d;--mma-navy:#001a57;--mma-crimson:#6e110f;--font-display:"Century Gothic", CenturyGothic, "TeX Gyre Adventor", "URW Gothic", Jost, sans-serif;--font-body:Calibri, Carlito, "Segoe UI", system-ui, sans-serif;--font-mono:ui-monospace, SFMono-Regular, Menlo, monospace;--text-xs:12px;--text-sm:13px;--text-md:14px;--text-lg:16px;--text-xl:20px;--text-2xl:28px;--leading-tight:1.2;--leading-normal:1.5;--tracking-display:.01em;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:24px;--space-6:32px;--size-topbar:48px;--size-rail:56px;--size-touch:44px;--size-seal-min:72px;--size-panel:380px;--size-sheet-peek:96px;--size-sheet-half:46svh;--radius-card:12px;--radius-control:8px;--radius-pill:999px;--glass-opacity:88%;--glass-blur:10px;--elev-1:0 1px 2px var(--shadow-color);--elev-2:0 4px 12px var(--shadow-color);--elev-3:0 12px 32px var(--shadow-color);--motif-hex-opacity:.1;--motif-wave-opacity:.1;--motif-hex-size:56px;--motif-wave-height:10px;--motion-fast:.15s;--motion-panel:.2s;--ease-out:cubic-bezier(.2, .8, .2, 1)}@media (prefers-reduced-motion:reduce){:root{--motion-fast:0s;--motion-panel:0s}}:root,:root[data-theme=navy]{--lightningcss-light: ;--lightningcss-dark:initial;color-scheme:dark;--surface-map:#0b1635;--surface-panel:#142446;--surface-panel-basis:#303e55;--surface-raised:#1c2f57;--surface-seal-plate:#fff;--surface-sunken:#0a1533;--text-primary:#fff;--text-secondary:#c7d2e8;--text-accent:var(--mma-gold);--text-link:#9cc8f2;--text-danger:#ff9c94;--text-on-accent:var(--mma-navy);--fill-accent:var(--mma-gold);--fill-control:#23375f;--fill-track:#2c4272;--border-control:#8494bd;--divider:#2a3d68;--focus-ring:var(--mma-gold);--icon-muted:#aab8d8;--icon-inactive:#98a3bd;--motif-color:var(--mma-gold);--scrim:#04091c;--shadow-color:#02060f;--cat-bird:#7cc7f0;--cat-coral:#f08a3c;--cat-fish:#5aa9e6;--cat-invertebrate:#e79ec4;--cat-mammal:#f0b33c;--cat-other:#b6bfd0;--cat-primprod:#4cc9a0;--cat-turtle:#ede06a;--cat-nodata:#9aa6c2;--ramp-score-0:#3288bd;--ramp-score-1:#99d594;--ramp-score-2:#ffffbf;--ramp-score-3:#fc8d59;--ramp-score-4:#d53e4f}:root[data-theme=paper]{--lightningcss-light:initial;--lightningcss-dark: ;color-scheme:light;--surface-map:#eaeef3;--surface-panel:#fff;--surface-panel-basis:#e6f1f7;--surface-raised:#fff;--surface-seal-plate:#fff;--surface-sunken:#f2f5f9;--text-primary:var(--mma-navy);--text-secondary:#3d4c74;--text-accent:var(--mma-steel);--text-link:#15467f;--text-danger:var(--mma-crimson);--text-on-accent:#fff;--fill-accent:var(--mma-steel);--fill-control:#eef2f8;--fill-track:#dde5f0;--border-control:#5d6d92;--divider:#d7dfec;--focus-ring:var(--mma-steel);--icon-muted:#56658a;--icon-inactive:#6b7793;--motif-color:var(--mma-steel);--scrim:#223252;--shadow-color:#8595b4;--cat-bird:#166a99;--cat-coral:#b34d00;--cat-fish:#0060a0;--cat-invertebrate:#a3517e;--cat-mammal:#8a5e00;--cat-other:#5b6472;--cat-primprod:#00765a;--cat-turtle:#726b00;--cat-nodata:#6b7488;--ramp-score-0:#3288bd;--ramp-score-1:#99d594;--ramp-score-2:#ffffbf;--ramp-score-3:#fc8d59;--ramp-score-4:#d53e4f}@font-face{font-family:Century Gothic;src:local(Century Gothic),local(CenturyGothic);font-weight:400;font-style:normal;font-display:swap}@font-face{font-family:Century Gothic;src:local(Century Gothic Bold),local(CenturyGothic-Bold),local(Century Gothic);font-weight:700;font-style:normal;font-display:swap}@font-face{font-family:Calibri;src:local(Calibri),local(Calibri Regular);font-weight:400;font-style:normal;font-display:swap}@font-face{font-family:Calibri;src:local(Calibri Bold);font-weight:700;font-style:normal;font-display:swap}@font-face{font-family:Jost;src:local(Jost),url(./assets/jost-regular-latin-BfL1_Gmd.woff2)format("woff2");font-weight:400;font-style:normal;font-display:swap;size-adjust:80.84%;ascent-override:132.35%;descent-override:46.39%;line-gap-override:4.05%}@font-face{font-family:Jost;src:local(Jost Bold),url(./assets/jost-bold-latin-DMt_xNXo.woff2)format("woff2");font-weight:700;font-style:normal;font-display:swap;size-adjust:80.84%;ascent-override:132.35%;descent-override:46.39%;line-gap-override:4.05%}@font-face{font-family:Carlito;src:local(Carlito),url(./assets/carlito-regular-latin-DH4QlA0U.woff2)format("woff2");font-weight:400;font-style:normal;font-display:swap;size-adjust:86.26%;ascent-override:110.38%;descent-override:31.13%;line-gap-override:3.79%}@font-face{font-family:Carlito;src:local(Carlito Bold),url(./assets/carlito-bold-latin-DQymq_-8.woff2)format("woff2");font-weight:700;font-style:normal;font-display:swap;size-adjust:86.26%;ascent-override:110.38%;descent-override:31.13%;line-gap-override:3.79%}.popover-trigger,.chip-dismiss,.toast-dismiss,.switch,.seg button,.pill,button.chip,.sort-btn,.filter-field{min-width:24px;min-height:24px}@media (pointer:coarse){.popover-trigger,.chip-dismiss,.toast-dismiss,.switch,.seg button,.pill,button.chip,.sort-btn,.filter-field{min-width:var(--size-touch);min-height:var(--size-touch)}}*,:before,:after{box-sizing:border-box}html,body{height:100%}body{font-family:var(--font-body);font-size:var(--text-md);line-height:var(--leading-normal);color:var(--text-primary);background:var(--surface-map);-webkit-font-smoothing:antialiased;margin:0}p{margin:0}a{color:var(--text-link)}:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px;border-radius:var(--radius-control)}.visually-hidden{clip-path:inset(50%);white-space:nowrap;width:1px;height:1px;position:absolute;overflow:hidden}.skip-link{left:var(--space-2);top:calc(var(--space-2) * -6);z-index:60;padding:var(--space-2) var(--space-3);border-radius:var(--radius-control);background:var(--surface-raised);color:var(--text-primary);position:absolute}.skip-link:focus{top:var(--space-2)}.app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--size-topbar) 1fr;height:100vh;height:100dvh;display:grid;overflow:hidden}.stage{min-height:0;position:relative;overflow:hidden}.map{background:var(--surface-map);position:absolute;inset:0}.topbar{z-index:20;align-items:center;gap:var(--space-3);padding:0 var(--space-3);height:var(--size-topbar);background:color-mix(in srgb, var(--surface-panel) var(--glass-opacity), transparent);-webkit-backdrop-filter:blur(var(--glass-blur));backdrop-filter:blur(var(--glass-blur));box-shadow:var(--elev-1);flex-wrap:nowrap;display:flex;position:relative}.topbar:after{content:"";left:0;right:0;bottom:calc(var(--motif-wave-height) * -1);height:var(--motif-wave-height);background:var(--motif-color);opacity:var(--motif-wave-opacity);pointer-events:none;position:absolute;-webkit-mask:url("data:image/svg+xml,%3c!--%20MMA%20wave%20element%20(guide%20p.%2010),%20redrawn%20as%20a%20tileable%20edge.%20One%20`currentColor`,%20no%20literal%20color:%20used%20as%20a%20CSS%20mask%20(tint%20from%20--motif-color,%20opacity%20from%20--motif-wave-opacity,%20capped%20at%2010%20%25).%20It%20draws%20the%20top%20bar's%20lower%20edge,%20the%20bottom%20sheet's%20upper%20edge,%20modal%20dividers%20and%20the%20report%20header/footer%20—%20never%20behind%20a%20block%20of%20body%20text.%20Tile:%20120%20×%2012.%20--%3e%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20120%2012'%20width='120'%20height='12'%20preserveAspectRatio='none'%20aria-hidden='true'%20focusable='false'%3e%3cpath%20fill='currentColor'%20d='M0%2012%20V7%20q15%20-7%2030%200%20t30%200%20t30%200%20t30%200%20V12%20Z'/%3e%3cpath%20fill='currentColor'%20opacity='0.55'%20d='M0%2012%20V9%20q15%20-5%2030%200%20t30%200%20t30%200%20t30%200%20V12%20Z'/%3e%3c/svg%3e") 50%/auto 100% repeat-x;mask:url("data:image/svg+xml,%3c!--%20MMA%20wave%20element%20(guide%20p.%2010),%20redrawn%20as%20a%20tileable%20edge.%20One%20`currentColor`,%20no%20literal%20color:%20used%20as%20a%20CSS%20mask%20(tint%20from%20--motif-color,%20opacity%20from%20--motif-wave-opacity,%20capped%20at%2010%20%25).%20It%20draws%20the%20top%20bar's%20lower%20edge,%20the%20bottom%20sheet's%20upper%20edge,%20modal%20dividers%20and%20the%20report%20header/footer%20—%20never%20behind%20a%20block%20of%20body%20text.%20Tile:%20120%20×%2012.%20--%3e%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20120%2012'%20width='120'%20height='12'%20preserveAspectRatio='none'%20aria-hidden='true'%20focusable='false'%3e%3cpath%20fill='currentColor'%20d='M0%2012%20V7%20q15%20-7%2030%200%20t30%200%20t30%200%20t30%200%20V12%20Z'/%3e%3cpath%20fill='currentColor'%20opacity='0.55'%20d='M0%2012%20V9%20q15%20-5%2030%200%20t30%200%20t30%200%20t30%200%20V12%20Z'/%3e%3c/svg%3e") 50%/auto 100% repeat-x}.mark{flex:none;width:28px;height:28px;display:block}:root:not([data-theme=paper]) .mark--paper,:root[data-theme=paper] .mark--navy{display:none}.brand-title{font-family:var(--font-display);font-size:var(--text-lg);letter-spacing:var(--tracking-display);white-space:nowrap;flex:none;margin:0;font-weight:700}.spacer{flex:1}button.chip{align-items:center;gap:var(--space-1);min-width:84px;height:28px;padding:0 var(--space-3);border:1px solid var(--border-control);border-radius:var(--radius-pill);background:var(--fill-control);color:var(--text-primary);font:inherit;font-size:var(--text-sm);white-space:nowrap;cursor:pointer;flex:none;display:inline-flex}.chip:hover{border-color:var(--text-secondary)}.search-field{align-items:center;gap:var(--space-2);width:240px;height:32px;padding:0 var(--space-3);border:1px solid var(--border-control);border-radius:var(--radius-control);background:var(--surface-sunken);color:var(--text-secondary);flex:none;display:inline-flex}.search-field input{min-width:0;color:var(--text-primary);font:inherit;font-size:var(--text-sm);background:0 0;border:0;flex:1}.search-field input::placeholder{color:var(--text-secondary)}.search-field input:focus-visible{outline:none}.search-field:focus-within{outline:2px solid var(--focus-ring);outline-offset:2px}.search-field .kbd{padding:0 var(--space-2);border:1px solid var(--border-control);border-radius:var(--radius-control);color:var(--text-secondary);font-family:var(--font-mono);font-size:var(--text-xs);flex:none}.tool{justify-content:center;align-items:center;gap:var(--space-2);min-width:40px;height:40px;padding:0 var(--space-3);border-radius:var(--radius-control);color:var(--text-primary);font:inherit;font-size:var(--text-sm);cursor:pointer;background:0 0;border:0;flex:none;display:inline-flex}.tool:hover{background:var(--fill-control)}@media (pointer:coarse){.tool{height:var(--size-touch);min-width:var(--size-touch)}}.sk-icon-16{flex:none;width:16px;height:16px;display:inline-block}.sk-icon-tool{flex:none;width:18px;height:18px;display:inline-block}.rail-region{left:var(--space-3);top:var(--space-3);z-index:15;position:absolute}.panel-region{top:var(--space-3);right:var(--space-3);z-index:16;width:min(var(--size-panel), calc(100vw - var(--space-3) * 2));position:absolute}.about-region{left:calc(var(--size-rail) + var(--space-4));bottom:var(--space-3);z-index:14;width:372px;position:absolute}@media (max-width:899px){.rail-region{top:auto;left:50%;bottom:var(--space-3);transform:translate(-50%)}.panel-region{width:auto;inset:auto 0 0}.about-region{display:none}.brand-title{clip-path:inset(50%);white-space:nowrap;width:1px;height:1px;position:absolute;overflow:hidden}.topbar-desktop-only{display:none}}@media (max-width:380px){.topbar{gap:var(--space-1);padding:0 var(--space-1)}}.sk-seg{border:1px solid var(--border-control);border-radius:var(--radius-pill);flex:none;display:inline-flex;overflow:hidden}.sk-seg span{height:30px;padding:0 var(--space-4);font-size:var(--text-sm);color:var(--text-secondary);align-items:center;display:inline-flex}.sk-seg span.is-pressed{background:var(--fill-accent);color:var(--text-on-accent);font-weight:700}.sk-rail{gap:var(--space-1);padding:var(--space-2) var(--space-1);border-radius:var(--radius-pill);background:color-mix(in srgb, var(--surface-panel) var(--glass-opacity), transparent);-webkit-backdrop-filter:blur(var(--glass-blur));backdrop-filter:blur(var(--glass-blur));box-shadow:var(--elev-2);flex-direction:column;display:inline-flex}@media (max-width:899px){.sk-rail{flex-direction:row}}.sk-hexbtn{width:var(--size-touch);height:var(--size-touch);flex:none;position:relative}.sk-hexbtn:before,.sk-hexbtn:after{content:"";clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);position:absolute}.sk-hexbtn:before{background:var(--border-control);inset:0}.sk-hexbtn:after{background:var(--fill-control);inset:2px}.sk-hexbtn.is-pressed:after{background:var(--fill-accent)}.sk-panel{width:var(--size-panel);border:1px solid var(--border-control);border-radius:var(--radius-card);background:color-mix(in srgb, var(--surface-panel) var(--glass-opacity), transparent);-webkit-backdrop-filter:blur(var(--glass-blur));backdrop-filter:blur(var(--glass-blur));box-shadow:var(--elev-3);flex-direction:column;display:flex;overflow:hidden}@media (max-width:899px){.sk-panel{border:0;border-top:1px solid var(--border-control);border-radius:var(--radius-card) var(--radius-card) 0 0;width:100%;height:var(--size-sheet-half)}.sk-panel .sk-panel-grab{width:44px;height:4px;margin:var(--space-3) auto var(--space-2);border-radius:var(--radius-pill);background:var(--border-control);flex:none;display:block}}.sk-panel-grab{display:none}.sk-panel-head{padding:var(--space-3) 116px var(--space-3) var(--space-4);border-bottom:1px solid var(--divider);flex:none;position:relative}@media (max-width:899px){.sk-panel-head{padding:0 var(--space-4) var(--space-2) var(--space-4);border-bottom:0}}.sk-panel-title{font-family:var(--font-display);font-size:var(--text-xl);letter-spacing:var(--tracking-display);margin:0;font-weight:700}.sk-panel-controls{top:var(--space-2);right:var(--space-2);gap:var(--space-1);display:flex;position:absolute}@media (max-width:899px){.sk-panel-controls{margin-left:auto;position:static}.sk-panel-head{align-items:baseline;gap:var(--space-2);display:flex}}.sk-panel-ctrl{flex:none;width:32px;height:32px}@media (pointer:coarse),(max-width:899px){.sk-panel-ctrl{width:var(--size-touch);height:var(--size-touch)}}.sk-panel-body{padding:var(--space-3) var(--space-4) var(--space-4);max-height:60vh;color:var(--text-secondary);font-size:var(--text-md);flex:1;overflow:hidden}@media (max-width:899px){.sk-panel-body{max-height:none;padding:0 var(--space-4) var(--space-4)}}.sk-about{width:372px;padding:var(--space-3);border:1px solid var(--border-control);border-radius:var(--radius-card);background:var(--surface-raised);box-shadow:var(--elev-2)}.sk-about-head{align-items:center;gap:var(--space-2);display:flex}.sk-about-head h2{font-size:var(--text-sm);flex:1;margin:0}.sk-about-tool{width:var(--size-touch);height:var(--size-touch);flex:none}</style>
+
     <script>
       window.__t0 = performance.now();
     </script>
+
+    <!--
+      pre-paint theme script (spec.md §3): sets `data-theme` on <html> before first paint, through
+      the SAME rule as src/lib/state/types.ts's `resolveTheme` (dark -> navy, light -> paper,
+      "auto"/absent -> prefers-color-scheme, falling back to navy when that signal is unavailable).
+      It reads ONLY `location.search` and `matchMedia` and writes ONLY `document.documentElement.
+      dataset.theme` -- no localStorage, no fetch, nothing else -- so there is no flash of the wrong
+      theme and no other side effect. tests/shell/theme-preboot.test.ts runs this exact script (
+      extracted from this file, like tests/release/inline-early-fetch.test.ts does for the early-
+      fetch script below) through the same case table `resolveTheme` is tested against, and asserts
+      the two never disagree; it also asserts the script touches nothing but that one dataset key.
+    -->
+    <script>
+      (function () {
+        var theme;
+        var q = new URLSearchParams(location.search).get("theme");
+        if (q === "dark") theme = "navy";
+        else if (q === "light") theme = "paper";
+        else {
+          var prefersDark = null;
+          try {
+            prefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
+          } catch (e) {
+            prefersDark = null;
+          }
+          theme = prefersDark === false ? "paper" : "navy";
+        }
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+
     <!--
       early-fetch: kicks off the registry (latest.txt, versions.json) and session.json before the
       app bundle even starts parsing (CalCOFI Explorer's index.html:159-163 pattern,
@@ -217,37 +297,147 @@
         };
       })();
     </script>
-    <script type="module" crossorigin src="./assets/index-VLOym5Dc.js"></script>
+    <script type="module" crossorigin src="./assets/index-CoGquUxC.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/modulepreload-polyfill-P2Xu9kJm.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-BLSRScCA.css">
   </head>
   <body>
-    <div id="shell">
-      <header class="ms-topbar">
-        <span class="ms-title">MarineSensitivity Atlas</span>
-        <span id="version-badge"></span>
+    <a class="skip-link" href="#panel-region">Skip to the details panel</a>
+
+    <div id="shell" class="app">
+      <header class="topbar" data-tour="topbar">
+        <span data-tour="brand" style="display: flex; align-items: center; gap: var(--space-2)">
+          <img class="mark mark--navy" src="data:image/svg+xml,%3c!--%20vendored%20verbatim%20from%20MarineSensitivity/server/branding/mst-mark.svg%20(generated%20there%20by%20make_branding.py;%20never%20hand-edited%20here).%20The%20project's%20OWN%20mark%20—%20the%20top%20bar%20uses%20this,%20not%20the%20MMA%20seal,%20which%20may%20never%20appear%20at%2028%20px%20(guide%20p.%204:%200.75%20in%20minimum).%20--%3e%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20512%20512'%20width='512'%20height='512'%20role='img'%20aria-label='Marine%20Sensitivity%20Toolkit'%3e%3ctitle%3eMarine%20Sensitivity%20Toolkit%3c/title%3e%3cdefs%3e%3clinearGradient%20id='sea'%20x1='0'%20y1='1'%20x2='1'%20y2='0'%3e%3cstop%20offset='0'%20stop-color='%232E8FBE'/%3e%3cstop%20offset='0.55'%20stop-color='%233AB2E4'/%3e%3cstop%20offset='1'%20stop-color='%2366CDE0'/%3e%3c/linearGradient%3e%3cclipPath%20id='disc'%3e%3ccircle%20cx='256'%20cy='256'%20r='228'/%3e%3c/clipPath%3e%3c/defs%3e%3ccircle%20cx='256'%20cy='256'%20r='228'%20fill='%23FFFFFF'/%3e%3cpath%20clip-path='url(%23disc)'%20fill='url(%23sea)'%20d='M-20,330%20C%2080,372%20168,330%20248,258%20C%20316,197%20404,168%20532,150%20L%20532,532%20L%20-20,532%20Z'/%3e%3cpath%20clip-path='url(%23disc)'%20fill='%23FFFFFF'%20opacity='0.16'%20d='M-20,392%20C%2090,424%20190,388%20268,326%20C%20338,270%20430,244%20532,232%20L%20532,286%20C%20430,300%20344,326%20276,382%20C%20196,448%2084,470%20-20,436%20Z'/%3e%3ccircle%20cx='256'%20cy='256'%20r='228'%20fill='none'%20stroke='%232F4858'%20stroke-width='18'/%3e%3c/svg%3e" alt="" />
+          <img class="mark mark--paper" src="data:image/svg+xml,%3c!--%20vendored%20verbatim%20from%20MarineSensitivity/server/branding/mst-mark-dark.svg%20(generated%20there%20by%20make_branding.py;%20never%20hand-edited%20here).%20Used%20by%20the%20`navy`%20theme's%20top%20bar.%20--%3e%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20512%20512'%20width='512'%20height='512'%20role='img'%20aria-label='Marine%20Sensitivity%20Toolkit'%3e%3ctitle%3eMarine%20Sensitivity%20Toolkit%3c/title%3e%3cdefs%3e%3clinearGradient%20id='sea'%20x1='0'%20y1='1'%20x2='1'%20y2='0'%3e%3cstop%20offset='0'%20stop-color='%232E8FBE'/%3e%3cstop%20offset='0.55'%20stop-color='%233AB2E4'/%3e%3cstop%20offset='1'%20stop-color='%2366CDE0'/%3e%3c/linearGradient%3e%3cclipPath%20id='disc'%3e%3ccircle%20cx='256'%20cy='256'%20r='228'/%3e%3c/clipPath%3e%3c/defs%3e%3ccircle%20cx='256'%20cy='256'%20r='228'%20fill='%230E1B22'/%3e%3cpath%20clip-path='url(%23disc)'%20fill='url(%23sea)'%20d='M-20,330%20C%2080,372%20168,330%20248,258%20C%20316,197%20404,168%20532,150%20L%20532,532%20L%20-20,532%20Z'/%3e%3cpath%20clip-path='url(%23disc)'%20fill='%23FFFFFF'%20opacity='0.22'%20d='M-20,392%20C%2090,424%20190,388%20268,326%20C%20338,270%20430,244%20532,232%20L%20532,286%20C%20430,300%20344,326%20276,382%20C%20196,448%2084,470%20-20,436%20Z'/%3e%3ccircle%20cx='256'%20cy='256'%20r='228'%20fill='none'%20stroke='%23DDE7EC'%20stroke-width='18'/%3e%3c/svg%3e" alt="" />
+          <h1 class="brand-title" id="app-title">Marine Sensitivity Atlas</h1>
+        </span>
+
+        <button
+          type="button"
+          class="chip"
+          id="sk-version-chip"
+          data-tour="version-chip"
+          data-control="version-chip"
+          aria-hidden="true"
+          tabindex="-1"
+        ></button>
+
+        <div
+          class="sk-seg"
+          role="group"
+          aria-label="Lens"
+          data-tour="lens-switch"
+          data-control="lens-switch"
+          aria-hidden="true"
+        >
+          <span class="is-pressed">Scores</span>
+          <span>Species</span>
+        </div>
+
+        <div
+          class="search-field topbar-desktop-only"
+          data-tour="search"
+          data-control="search"
+          aria-hidden="true"
+        >
+          <span class="sk-icon-16"></span>
+          <span>Search species and places</span>
+          <span class="kbd">/</span>
+        </div>
+
+        <span class="spacer"></span>
+
+        <!--
+          flat siblings of .topbar, exactly matching src/shell/Shell.svelte's Share/Report/Help/
+          theme buttons (no wrapping element -- an extra wrapper here would change how .topbar's
+          own `gap` is distributed and shift everything after it; e2e/shell.cls.spec.ts's
+          geometry-equality gate caught exactly that). Each icon placeholder is 18x18, the exact
+          size Shell.svelte passes to <Icon size={18}/> for these four (--icon class is 20px, sized
+          for the search field's icon instead).
+        -->
+        <span
+          class="tool topbar-desktop-only"
+          aria-hidden="true"
+          data-tour="share"
+          data-control="share"
+          ><span class="sk-icon-tool"></span>Share</span
+        >
+        <span
+          class="tool topbar-desktop-only"
+          aria-hidden="true"
+          data-tour="report-top"
+          data-control="report-top"
+          ><span class="sk-icon-tool"></span>Report</span
+        >
+        <span
+          class="tool topbar-desktop-only"
+          aria-hidden="true"
+          data-tour="help"
+          data-control="help"
+          ><span class="sk-icon-tool"></span
+        ></span>
+        <span class="tool" aria-hidden="true" data-tour="theme" data-control="theme"
+          ><span class="sk-icon-tool"></span
+        ></span>
       </header>
-      <nav class="ms-rail" aria-label="tools">
-        <button type="button" data-control="lens-scores" aria-label="Scores" disabled>
-          Scores
-        </button>
-        <button type="button" data-control="lens-species" aria-label="Species" disabled>
-          Species
-        </button>
-        <button type="button" data-control="lens-places" aria-label="Places" disabled>
-          Places
-        </button>
-        <button type="button" data-control="lens-report" aria-label="Report" disabled>
-          Report
-        </button>
-      </nav>
-      <main id="main">
-        <section id="panel" aria-label="details panel">
-          <div class="ms-skel" aria-hidden="true"></div>
-          <div class="ms-skel" aria-hidden="true"></div>
-          <div class="ms-skel short" aria-hidden="true"></div>
-        </section>
-        <div id="map" role="img" aria-label="map (not yet loaded)"></div>
+
+      <main class="stage" id="stage">
+        <div
+          id="map"
+          class="map"
+          role="img"
+          aria-label="Map (loads in a later phase)"
+          data-tour="map"
+        ></div>
+
+        <nav
+          class="rail-region"
+          id="rail-region"
+          aria-label="Tools"
+          data-tour="rail"
+          data-control="rail"
+        >
+          <div class="sk-rail" aria-hidden="true">
+            <span class="sk-hexbtn is-pressed"></span>
+            <span class="sk-hexbtn"></span>
+            <span class="sk-hexbtn"></span>
+            <span class="sk-hexbtn"></span>
+            <span class="sk-hexbtn"></span>
+          </div>
+        </nav>
+
+        <div class="panel-region" id="panel-region" data-tour="panel" data-control="panel">
+          <div class="sk-panel" aria-hidden="true">
+            <div class="sk-panel-grab"></div>
+            <div class="sk-panel-head">
+              <p class="sk-panel-title">Layers</p>
+              <div class="sk-panel-controls">
+                <span class="sk-panel-ctrl"></span>
+                <span class="sk-panel-ctrl"></span>
+                <span class="sk-panel-ctrl"></span>
+              </div>
+            </div>
+            <div class="sk-panel-body">
+              Layers, palette and outline options arrive in a later phase.
+            </div>
+          </div>
+        </div>
+
+        <div class="about-region" id="about-region" data-tour="about" data-control="about">
+          <div class="sk-about" aria-hidden="true">
+            <div class="sk-about-head">
+              <span class="sk-icon-tool"></span>
+              <h2>About this release</h2>
+              <span class="sk-about-tool"></span>
+            </div>
+          </div>
+        </div>
       </main>
     </div>
+
+    <noscript>
+      This app needs JavaScript to render the map, scores and species. Please enable it.
+    </noscript>
+
   </body>
 </html>
