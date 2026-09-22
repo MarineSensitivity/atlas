@@ -33,6 +33,8 @@ export interface AtlasMapForSpecies {
  * not a valid URI character (`page.goto` must not be handed one raw). */
 export const LEATHERBACK_SP = encodeURIComponent("ms_merge|WORMS:137209");
 export const WALRUS_AM_MDL_KEY = encodeURIComponent("am|ITS-Mam-180639");
+/** `valid_usa: false` — the "US-only toggle falls back to the default" case's non-US taxon. */
+export const WRYBILL_SP = encodeURIComponent("ms_merge|BOTW:22693928");
 
 const FIXTURES = new URL("../tests/fixtures/species/", import.meta.url);
 function readFixture(path: string): unknown {
@@ -73,13 +75,17 @@ const SHARD_FILES: Record<string, string> = {
   "v9/app/taxa.json": "v9/taxa.json",
   "v9/app/taxon/f9.json": "v9/taxon/f9.json",
   "v9/app/taxon/75.json": "v9/taxon/75.json",
+  "v9/app/taxon/28.json": "v9/taxon/28.json",
   "v9/app/alias/f9.json": "v9/alias/f9.json",
   "v9/app/alias/9f.json": "v9/alias/9f.json",
   "v7/app/taxon/6f.json": "v7/taxon/6f.json",
   "v7/app/alias/6f.json": "v7/alias/6f.json",
 };
 
-async function routeSpeciesShards(page: Page) {
+/** exported so a spec that needs to compose its OWN route order (e.g. registering a hung titiler
+ * handler that must win over `gotoSpecies`'s own `routeTitilerTiles`) can call every other piece
+ * of this setup without duplicating it — see species.smoke.spec.ts's hung-tile-fallback test. */
+export async function routeSpeciesShards(page: Page) {
   await page.route(
     (url) => url.href.startsWith(BUCKET) && url.href.includes("/app/"),
     (route) => {

@@ -329,3 +329,53 @@ export const SEARCH_MIN_CHARS = 3;
 export function shouldLogSearch(query: string): boolean {
   return foldText(query).length >= SEARCH_MIN_CHARS;
 }
+
+/** §5.4/§10's full `search_species` rule, as a pure, testable unit: 900 ms debounce, >= 3 chars
+ * (`shouldLogSearch`), no repeats. Pulled out of `SpeciesPicker.svelte` (fix round 3 #2) — a
+ * reviewer's fault there (900 -> 90 ms; allowing a repeat) stayed GREEN because nothing except the
+ * component itself exercised the timing/dedup rule; this factory is what a fake-clock unit test
+ * (`tests/lens/species/picker.test.ts`) can now pin. */
+export const SEARCH_DEBOUNCE_MS = 900;
+
+export interface SearchLoggerOptions {
+  /** called with the query once it has debounced, is long enough, and is not a repeat. */
+  onLog: (query: string) => void;
+  debounceMs?: number;
+  /** injected so a test drives real behaviour with fake timers rather than sleeping — the same
+   * seam `map/camera.ts`'s `createCameraWriter` already uses for its own debounce. */
+  setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  clearTimer?: (handle: ReturnType<typeof setTimeout>) => void;
+}
+
+export interface SearchLogger {
+  /** call on every keystroke with the CURRENT (raw, un-folded) query. */
+  onInput(query: string): void;
+  /** cancel any pending timer — call on unmount. */
+  destroy(): void;
+}
+
+export function createSearchLogger(opts: SearchLoggerOptions): SearchLogger {
+  const debounceMs = opts.debounceMs ?? SEARCH_DEBOUNCE_MS;
+  const setTimer = opts.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
+  const clearTimer = opts.clearTimer ?? ((h) => clearTimeout(h));
+
+  let lastLogged = "";
+  let handle: ReturnType<typeof setTimeout> | undefined;
+
+  return {
+    onInput(query: string) {
+      if (handle !== undefined) clearTimer(handle);
+      handle = setTimer(() => {
+        handle = undefined;
+        if (shouldLogSearch(query) && query !== lastLogged) {
+          lastLogged = query;
+          opts.onLog(query);
+        }
+      }, debounceMs);
+    },
+    destroy() {
+      if (handle !== undefined) clearTimer(handle);
+      handle = undefined;
+    },
+  };
+}

@@ -9,6 +9,7 @@ import {
   textColorFor,
 } from "../../../src/lens/species/popup";
 import { RANGE_FILL_COLOR } from "../../../src/lib/map/colors";
+import { createTitilerValueSource, type PointJsonFetcher } from "../../../src/lib/raster/point";
 
 // 11 stops, min->black-ish (dark) at index 0, max->white-ish (light) at index 10, so the bin math
 // is easy to eyeball: this is a TEST fixture ramp, never a second app-wide palette.
@@ -34,9 +35,15 @@ describe("luminance / textColorFor", () => {
     expect(textColorFor("#000000")).toBe("white");
   });
 
-  it("the exact 0.5 threshold", () => {
-    // luminance(0.299,0.587,0.114) . (128,128,128)/255 ≈ 0.502 > 0.5 -> black
+  it("the exact 0.5 threshold, PAIRED on both sides (fix round 3 #3)", () => {
+    // a lone one-sided fixture (only #808080 -> black) cannot tell "threshold is 0.5" apart from
+    // "threshold is anywhere below 0.502" — a reviewer's fault lowering it to 0.35 stayed GREEN
+    // against it. #7f7f7f sits on the OTHER side, close enough (0.498) that only the real 0.5
+    // threshold gets it right.
+    expect(luminance("#808080")).toBeCloseTo(0.502, 3); // (128,128,128)/255 ≈ 0.502 > 0.5 -> black
     expect(textColorFor("#808080")).toBe("black");
+    expect(luminance("#7f7f7f")).toBeCloseTo(0.498, 3); // (127,127,127)/255 ≈ 0.498 <= 0.5 -> white
+    expect(textColorFor("#7f7f7f")).toBe("white");
   });
 });
 
@@ -160,5 +167,105 @@ describe("popupHtml", () => {
     );
     expect(html).not.toContain("<img");
     expect(html).toContain("&lt;img");
+  });
+});
+
+// atlas-5's own gate: "click value equals /cog/point at five probe points per layer type." Each
+// probe here goes through the REAL `createTitilerValueSource` (raster/point.ts) with a routed
+// (fake, injected) fetchJson standing in for the network — never a live request — then feeds the
+// resolved value into `popupContent`, so this pins the WHOLE click pipeline, not just the swatch
+// math above.
+describe("the five /cog/point probes -> popupContent.displayValue", () => {
+  const COG_URL = "https://s3.example/v9/native/merged/ms_merge_WORMS_137209.tif";
+  const AQUAX_URL = "https://s3.example/v9/native/ax_native/ax_137209.tif";
+
+  // `titilerPointUrl` builds `{host}/cog/point/{lon},{lat}?url={encoded cogUrl}` — the fake
+  // "route" below matches on the cogUrl actually embedded in that query string (percent-encoded,
+  // like a real request), not a bare prefix, so it fails the same way a real 404 would if the
+  // point sampler ever asked for the WRONG asset's url.
+  function fetcherFor(byCogUrl: Record<string, unknown>): PointJsonFetcher {
+    return async (url: string) => {
+      for (const [cogUrl, body] of Object.entries(byCogUrl)) {
+        if (url.includes(encodeURIComponent(cogUrl))) return body;
+      }
+      throw Object.assign(new Error("HTTP 404"), { status: 404 });
+    };
+  }
+
+  it("probe 1 — cog (merged, 1-100 band): a plain numeric value", async () => {
+    const source = createTitilerValueSource(fetcherFor({ [COG_URL]: { values: [42] } }));
+    const value = await source.pointValue({
+      domain: "species",
+      lon: -70,
+      lat: 30,
+      cogUrl: COG_URL,
+    });
+    const content = popupContent({
+      sci: "x",
+      lon: -70,
+      lat: 30,
+      cellId: 1,
+      kind: "value",
+      value: value!,
+      rescale: [1, 100],
+      stops: STOPS,
+    });
+    expect(content.displayValue).toBe(42);
+  });
+
+  it("probe 2 — aquax-delivered (0-1000 band): NOT rescaled into 1-100", async () => {
+    const source = createTitilerValueSource(fetcherFor({ [AQUAX_URL]: { values: [850] } }));
+    const value = await source.pointValue({
+      domain: "species",
+      lon: -70,
+      lat: 30,
+      cogUrl: AQUAX_URL,
+    });
+    const content = popupContent({
+      sci: "x",
+      lon: -70,
+      lat: 30,
+      cellId: 1,
+      kind: "value",
+      value: value!,
+      rescale: [0, 1000],
+      stops: STOPS,
+    });
+    expect(content.displayValue).toBe(850);
+  });
+
+  it("probe 3 — pmtiles presence: no /cog/point call at all, no numeric value", () => {
+    // a range asset has no `/cog/point` URL to sample in the first place (mapInputs.ts never
+    // builds one for a pmtiles asset) — the probe here IS the absence of a fetch.
+    const content = popupContent({ sci: "x", lon: -70, lat: 30, cellId: 1, kind: "presence" });
+    expect(content.displayValue).toBeNull();
+    expect(content.text).toBe("presence only");
+  });
+
+  it("probe 4 — nodata: /cog/point answers with no value (a nodata pixel)", async () => {
+    const source = createTitilerValueSource(fetcherFor({ [COG_URL]: { values: [null] } }));
+    const value = await source.pointValue({ domain: "species", lon: 0, lat: 0, cogUrl: COG_URL });
+    expect(value).toBeNull();
+    const content = popupContent({
+      sci: "x",
+      lon: 0,
+      lat: 0,
+      cellId: 5,
+      kind: value === null ? "no-value" : "value",
+      value: value ?? undefined,
+      rescale: [1, 100],
+      stops: STOPS,
+    });
+    expect(content.displayValue).toBeNull();
+    expect(content.text).toBe("no value here");
+  });
+
+  it("probe 5 — off-grid: the click never resolved a cell id, so no /cog/point call is made", () => {
+    // `mapClick`'s own `cellId: null` (map/interaction.ts) for a click outside the release's
+    // grid — the caller (state.svelte.ts) never even reaches the ValueSource in that branch.
+    const content = popupContent({ sci: "x", lon: 200, lat: 89, cellId: null, kind: "no-value" });
+    expect(content.displayValue).toBeNull();
+    expect(content.cellId).toBeNull();
+    expect(content.text).toBe("no value here");
   });
 });

@@ -4,12 +4,13 @@
   // list (reusing `dataTableCore.ts`'s window math — the same tested code the species/zone tables
   // use, rather than a second virtualization implementation). Mounted into the shell's topbar
   // search field (the shared "Search species and places" input) when the species lens is active.
+  import { onDestroy } from "svelte";
   import { computeVisibleWindow } from "../../lib/ui/dataTableCore";
   import {
+    createSearchLogger,
     groupByCat,
     keepSelection,
     searchTaxa,
-    shouldLogSearch,
     visibleRows,
     type PickerRow,
     type TaxaIndex,
@@ -21,7 +22,8 @@
     usOnly: boolean;
     onSelect: (key: string) => void;
     onSetUsOnly: (enabled: boolean) => void;
-    /** `shouldLogSearch(query)` already gated; the 900 ms debounce + no-repeats belong here. */
+    /** `createSearchLogger` (data/picker.ts) already owns the 900 ms debounce, the >= 3 char
+     * gate and the no-repeats rule — this fires only once all three have already passed. */
     onSearchLogged: (query: string) => void;
     onFocusIndex: () => void;
   }
@@ -32,8 +34,8 @@
   let query = $state("");
   let open = $state(false);
   let scrollTop = $state(0);
-  let lastLogged = "";
-  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  const searchLogger = createSearchLogger({ onLog: (q) => onSearchLogged(q) });
+  onDestroy(() => searchLogger.destroy());
 
   const ROW_HEIGHT = 28;
   const VIEWPORT_HEIGHT = 320;
@@ -68,13 +70,7 @@
   function onInput(value: string) {
     query = value;
     open = true;
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      if (shouldLogSearch(query) && query !== lastLogged) {
-        lastLogged = query;
-        onSearchLogged(query);
-      }
-    }, 900);
+    searchLogger.onInput(query);
   }
 
   function pick(row: PickerRow) {

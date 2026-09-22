@@ -12,13 +12,22 @@
 // makes a single sample meaningless: measured 1,578-1,621ms alone vs 3,065ms inside the full run).
 // Shared fixtures/helpers now live in e2e/species-hermetic.ts so the two files never duplicate them.
 import { expect, test } from "@playwright/test";
-import { collectRequests } from "./hermetic";
-import { routeZonesPmtiles } from "./map-hermetic";
+import {
+  collectRequests,
+  routeBucket,
+  routeSealFixture,
+  routeSession,
+  waitForHydration,
+} from "./hermetic";
+import { blockWasm, routeGlyphs, routeZonesPmtiles } from "./map-hermetic";
 import {
   type AtlasMapForSpecies,
   LEATHERBACK_SP,
   WALRUS_AM_MDL_KEY,
+  WRYBILL_SP,
+  bootFor,
   gotoSpecies,
+  routeSpeciesShards,
 } from "./species-hermetic";
 
 test.skip(({ browserName }) => browserName !== "chromium", "WebGL gate: chromium only (S2)");
@@ -97,6 +106,37 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
     const title = await unavailable.getAttribute("title");
     expect(title).toContain("feeds the merged model");
     expect(title).toContain("nothing to draw");
+  });
+
+  test("fix round 3 #1: ticking 'US only' on a non-US selection falls back to the default (keeps a shared one)", async ({
+    page,
+  }) => {
+    // wrybill (valid_usa: false) loaded directly, US-only OFF (?us=0) so the checkbox starts
+    // unticked and wrybill is legitimately on screen. Ticking it must fall back to the default
+    // (§13.1's trap; the pure rule is data/picker.ts's `keepSelection`, already unit-tested —
+    // this pins the SVELTE WIRING that calls it, which a pure unit test cannot).
+    await gotoSpecies(page, `/?sp=${WRYBILL_SP}&us=0&ver=v9`);
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Anarhynchus frontalis");
+
+    // the picker index must be loaded before the checkbox's fallback logic has anything to
+    // compute against (SpeciesPicker.svelte's toggleUsOnly no-ops without it) — focusing the
+    // search field is what triggers that fetch in the real app.
+    await page.locator(".picker-input").focus();
+    await expect
+      .poll(() => page.locator(".picker-option").count(), { timeout: 10_000 })
+      .toBeGreaterThan(0);
+
+    const usOnly = page.locator(".us-only input[type='checkbox']");
+    await expect(usOnly).not.toBeChecked();
+    await usOnly.check();
+
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Dermochelys coriacea");
+
+    // a species IN BOTH lists (leatherback) must survive the SAME toggle, in either direction.
+    await usOnly.uncheck();
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Dermochelys coriacea");
+    await usOnly.check();
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Dermochelys coriacea");
   });
 
   test("?mdl_seq=<int> on v7 lands on the right taxon and input (the merged model)", async ({
@@ -187,5 +227,71 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
         },
       )
       .toBeGreaterThan(0);
+  });
+
+  test("fix round 3 #4: a hung titiler tile does not strand a species switch forever (the bounded fallback)", async ({
+    page,
+  }) => {
+    // EVERY tile (basemap AND titiler) NEVER responds (no fulfill/abort/continue), from
+    // construction onward — the map's true INITIAL style transition itself never completes, so
+    // `isStyleLoaded()` stays false and `"idle"` never fires even once (mirroring
+    // `styleQueue.ts`'s unit fallback test's FakeMap, whose `isStyleLoaded()` is pinned `false`
+    // throughout). Hanging ONLY the species raster's own tile was NOT enough, measured: MapLibre's
+    // `isStyleLoaded()` settles once the basemap's own (unrelated) tiles load, independent of a
+    // LATER raster's hung one, so the DIRECT `apply()` path fired every time regardless of the
+    // fix. Composed by hand, not via `gotoSpecies`, since that helper's own tile routes (real
+    // PNGs) would win if registered after these.
+    await blockWasm(page);
+    await routeBucket(page, "v9", bootFor("v9"));
+    await routeSpeciesShards(page);
+    await routeSession(page, { preview: true, ver: "v9" });
+    await routeSealFixture(page);
+    await routeGlyphs(page);
+    await page.route("https://basemaps.cartocdn.com/**", () => {
+      /* never resolves — simulates a hung tile request */
+    });
+    await page.route("https://titiler-v8.marinesensitivity.org/**", () => {
+      /* never resolves — simulates a hung tile request */
+    });
+    await page.goto(`/?sp=${LEATHERBACK_SP}&ver=v9`);
+    await waitForHydration(page);
+
+    await expect
+      .poll(() => page.getByTestId("species-title-sci").textContent(), { timeout: 10_000 })
+      .toBe("Dermochelys coriacea");
+
+    // switch species WHILE the first raster's tile is still (forever) hung.
+    await page.evaluate((walrusKey) => {
+      (
+        window as unknown as { __atlasSpecies: { selectSpecies: (k: string) => void } }
+      ).__atlasSpecies.selectSpecies(walrusKey);
+    }, "ms_merge|WORMS:137077");
+    await expect
+      .poll(() => page.getByTestId("species-title-sci").textContent(), { timeout: 10_000 })
+      .toBe("Odobenus rosmarus");
+
+    // the default fallback bound is 4000 ms (styleQueue.ts's DEFAULT_STYLE_FALLBACK_MS) — poll
+    // well past it. `isSourceLoaded` would never become true (the tile is hung by design), so the
+    // assertion is on the SOURCE appearing in the style, matching the unit test's own contract.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const style = (
+              window as unknown as {
+                __atlasMap: {
+                  handle: { map: { getStyle(): { sources: Record<string, unknown> } } };
+                };
+              }
+            ).__atlasMap.handle.map.getStyle();
+            const source = style.sources["species-raster"] as { tiles?: string[] } | undefined;
+            return source?.tiles?.[0] ?? null;
+          }),
+        {
+          message: "the walrus raster source never appeared — the hung-tile fallback did not fire",
+          timeout: 8_000,
+        },
+      )
+      .toContain("WORMS_137077");
   });
 });
