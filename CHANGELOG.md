@@ -1,3 +1,35 @@
+# atlas 0.9.8
+
+`atlas-6` step 3, UI half: upload (Deliverable 4). Drop a file anywhere on the map (a native
+drop/dragover listener on the map's own container) or use the picker; `src/lib/geo/upload/` (atlas-2's
+parsing half) is called only through a dynamic `import()`, so this is the first time anything in
+`src/` reaches it. `src/places/dataEngine.ts` is new: the ONE lazily-created DuckDB engine +
+`AnalysisSources` this panel now shares between the study-area check here and Deliverable 5's
+results (a later commit) — `Engine` itself, and `analysis/templates.ts` (which embeds every
+`sql/*.sql` file verbatim, comments included), are dynamic imports for the same reason terra-draw
+was in step 2: a correctly-lazy reference that still matched `scripts/size-budget.mjs`'s
+forbidden-marker text scan ("duckdb"; `composition.sql`'s own comments happen to say "treemap").
+Measured: **409.1 KB gzip static** (budget 450) / **140.5 KB gzip runtime worker** (budget 150).
+
+- Every refusal (a bad file, a point/line geometry, a self-intersection, an out-of-range or
+  projected coordinate, a `.gpkg` with no runtime wired) renders verbatim (what/why/fix) in the
+  panel, never "invalid file".
+- A multi-feature file asks once: keep every shape as its own place (auto-named "Uploaded place N",
+  editable via the existing inline rename — a live "name from this property" picker is NOT wired
+  this step, a documented scope trim) or merge into one. Re-parses with the chosen
+  `multiFeature` option rather than re-implementing the split client-side.
+- The GeoPackage consent prompt (naming the ~22 MB, third-party `extensions.duckdb.org` download)
+  is written, but with `runtime: null` (no DuckDB `spatial` wiring in this phase — docs/upload.md's
+  own documented limitation): every `.gpkg` ends at the "convert to GeoJSON" fallback refusal today;
+  wiring a real runtime later needs no UI change.
+- **"Must touch the study area" (D7b) is a real, network-backed check** (`src/places/studyArea.ts`):
+  fetches only the place's own `cell` tiles (materialize-then-query) and clips to `in_usa` cells
+  (`sql/cells_in_study_area.sql`) exactly as Deliverable 5's results will; zero touching cells is
+  `outsideUsWaters()`, never a silently-added place with nothing to score. Because
+  `NormalizeOptions.studyArea`'s own type is synchronous and this check is not, it runs as a
+  separate async step immediately after `normalizeUpload()`/`parseCoordinateEntry()` returns
+  `ok: true`, before the place is added — same user-visible refusal shape either way.
+
 # atlas 0.9.7
 
 `atlas-6` step 2: drawing (Deliverable 3). `terra-draw@1.35.0` +

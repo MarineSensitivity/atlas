@@ -11,7 +11,7 @@
   // "URL-is-the-view"). Status text goes through the shell's ONE shared `announce()`; this
   // component renders no live region of its own (e2e/shell.a11y.spec.ts's "exactly one live region"
   // walk clicks through every rail tool, including this one).
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import Icon from "../lib/ui/Icon.svelte";
   import Pill from "../lib/ui/Pill.svelte";
   import Chip from "../lib/ui/Chip.svelte";
@@ -61,8 +61,10 @@
   import { geomPlaceFrom } from "./geomPlace";
   import { cellsFeatureCollection, MAX_ANALYSIS_CELLS } from "./cellSquares";
   import CoordinateDialog from "./CoordinateDialog.svelte";
+  import UploadPanel from "./UploadPanel.svelte";
   import { cellsInPolygon } from "../lib/geo/coverage";
   import { gridFromBoot } from "../lib/grid/grid";
+  import { getDataEngine } from "./dataEngine";
   import type { AreaGeometry } from "../lib/geo/types";
   import type { NormalizedPlace } from "../lib/geo/upload/normalize";
 
@@ -280,6 +282,28 @@
       announce(entered.length > 1 ? `Added ${entered.length} places.` : "Place added.");
     }
   }
+
+  // --- upload (Deliverable 4's UI half) -----------------------------------------------------------
+  // `window.__early.version` is the SAME global VersionBadge.svelte/Shell.svelte already read
+  // (never `src/lib/release` imported here directly, matching Shell.svelte's own restriction --
+  // this component is not restricted from it, but there is no reason to duplicate that plumbing).
+  interface Early {
+    version: Promise<string | null>;
+  }
+  let ver = $state<string | null>(null);
+  onMount(() => {
+    (window as unknown as { __early?: Early }).__early?.version
+      .then((v) => (ver = v))
+      .catch(() => {});
+  });
+
+  /** `undefined` when no release is resolved yet -- the study-area check then simply does not run
+   * (normalize.ts's own documented behaviour for an absent hook). */
+  const dataEngineFn = $derived(
+    ver
+      ? () => getDataEngine({ ver: ver as string, boot: (boot ?? {}) as Record<string, unknown> })
+      : undefined,
+  );
 
   // --- "show analysis cells" (Deliverable 2/3): places <= MAX_ANALYSIS_CELLS only ----------------
   let showCells = $state(false);
@@ -547,10 +571,12 @@
     />
   </section>
 
+  <UploadPanel {mapHandle} dataEngine={dataEngineFn} onAdd={addEnteredPlaces} />
+
   {#if !places.length}
     <p class="empty">
-      No places yet. Turn on pick mode and click a Program Area, or draw and upload arrive in the
-      next steps.
+      No places yet. Turn on pick mode and click a Program Area, draw a shape, enter coordinates, or
+      drop a file on the map.
     </p>
   {:else}
     <ul class="place-list" aria-label="Places">
