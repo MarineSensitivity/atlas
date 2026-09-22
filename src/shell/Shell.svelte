@@ -39,6 +39,11 @@
   import { zoneUnitsFromBoot } from "../lib/map/layers/zones";
   import { studyAreaFromBoot } from "../lib/map/interaction";
   import type { ZoneUnitSpec } from "../lib/map/types";
+  // atlas-6 step 1: the Places panel mounts here (the shell's one reserved panel slot); it never
+  // touches MapLibre directly -- `placesMap` is the reactive bridge this file's own composeStyle
+  // effect (below) folds into the ONE `selection` input, per docs/map.md.
+  import Places from "../places/Places.svelte";
+  import { createPlacesMapStore } from "../places/placesMap.svelte";
 
   const selStore = createSelStore(location);
   const sel = selStore.sel;
@@ -148,6 +153,7 @@
   // same.
   let mapEl = $state<HTMLDivElement | undefined>(undefined);
   let mapHandle = $state<MapHandle | undefined>(undefined);
+  const placesMap = createPlacesMapStore();
 
   // outline-only, on purpose: labels, choropleth fills and the score raster are the LENS's
   // composeStyle inputs (atlas-4/5), not the shell's. `src/lib/map/layers/zones.ts` already builds
@@ -185,11 +191,19 @@
     };
   });
 
-  // one composed style, re-applied with setStyle(diff:true) whenever theme, projection or the
-  // release's zone units change -- never addLayer() piecemeal (CLAUDE.md).
+  // one composed style, re-applied with setStyle(diff:true) whenever theme, projection, the
+  // release's zone units, or places' own pick-mode highlight change -- never addLayer() piecemeal
+  // (CLAUDE.md). `placesMap.outline` is atlas-6's ONLY way to reach the map: a composeStyle
+  // `selection` input (docs/map.md), nothing imperative.
+  const placesSelection = $derived(placesMap.outline ? { features: placesMap.outline } : null);
   $effect(() => {
     mapHandle?.applyStyle(
-      composeStyle({ theme: resolvedTheme, projection: sel.proj, zones: zoneUnits }),
+      composeStyle({
+        theme: resolvedTheme,
+        projection: sel.proj,
+        zones: zoneUnits,
+        selection: placesSelection,
+      }),
     );
   });
   const releaseNote = $derived(
@@ -303,11 +317,19 @@
   <div class="panel-region" id="panel-region" data-tour="panel" data-control="panel">
     {#if isPhone}
       <Sheet id="shell" title={TOOL_LABEL[activeTool]}>
-        <p>{TOOL_BODY[activeTool]}</p>
+        {#if activeTool === "places"}
+          <Places {sel} {selStore} {boot} {mapHandle} {zoneUnits} mapStore={placesMap} />
+        {:else}
+          <p>{TOOL_BODY[activeTool]}</p>
+        {/if}
       </Sheet>
     {:else}
       <Panel id="shell" title={TOOL_LABEL[activeTool]}>
-        <p>{TOOL_BODY[activeTool]}</p>
+        {#if activeTool === "places"}
+          <Places {sel} {selStore} {boot} {mapHandle} {zoneUnits} mapStore={placesMap} />
+        {:else}
+          <p>{TOOL_BODY[activeTool]}</p>
+        {/if}
       </Panel>
     {/if}
   </div>

@@ -1,3 +1,32 @@
+# atlas 0.9.6
+
+`atlas-6` step 1: the Places panel (Deliverable 1) and pick mode on the release's one drawable
+zone unit (Deliverable 2, Tier 0 — zone places only; draw/upload/results follow in the next three
+commits). `src/places/**` is new; the shell mounts it where the "Places" rail tool already
+reserved a panel slot (`src/shell/Shell.svelte`), and the map only gains one new `composeStyle`
+input (the pick-mode highlight, folded into the existing `selection` field).
+
+- **The list**: kind icon, inline rename (≤ 60 chars, `geom`/`upload` places only — a `zone` place's
+  identity is its keys, not a name, per the `g1` codec's own schema), area km² (a fast client-side
+  estimate until Deliverable 5's results land; a zone place's is `boot.zones`' own published
+  number), data coverage % and a composite chip where known, and zoom / duplicate / delete / "open
+  in report" (a stub link to `report.html` carrying the same query + hash). Up to 20 places; every
+  mutation writes `#pl=` through the existing `g1` codec with `history.replaceState` only — never a
+  second copy of the list.
+- **Pick mode**: click a zone on the map to select it; Ctrl/Cmd-click, Shift-click or a long-press
+  (500 ms) adds to the selection; clicking the sole picked zone again clears it. "Add to places"
+  turns the current pick into one new zone place (`z.pa.GAA,WGA`) — this is also the exact function
+  (`src/places/model.ts`'s `addZonePlace`) the scores lens's zones table calls once atlas-4 builds
+  it, needing no reference to this panel's UI.
+- **"Recent"**: the last ten place tokens in `localStorage`, never the only copy of a live place; a
+  "Clear" button, and "Add back" to restore one.
+- **`SELECTION_COLOR` is now pinned** (`tests/map/colors.test.ts`): the constant itself, not just
+  code that stays self-consistent with whatever value it happens to hold today.
+- Footer: Share (copies the current link — the same clipboard action the top bar's Share already
+  uses) and Download places (a GeoJSON `FeatureCollection` of the decoded geometries actually
+  analysed; a `zone` place, which carries no geometry client-side, is a named `geometry: null`
+  feature rather than being silently dropped).
+
 # atlas 0.8.3
 
 # atlas 0.8.1
