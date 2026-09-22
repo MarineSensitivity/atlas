@@ -4,6 +4,15 @@
 // the zones PMTiles archive is a SEPARATE 20-feature fixture built for this spec (`e2e/fixtures/
 // scores/zones20.{geojson,pmtiles}`) rather than the shared 4-feature one `e2e/map-hermetic.ts`
 // already serves other specs, so this never contends with atlas-map's or another lens' fixture.
+//
+// atlas-4 fix round 2: runs this whole suite on BOTH v7 (public, the plain case) and v9 (the real
+// release that broke the flower — `extrisk_primary_producer_ecoregion_rescaled` AND
+// `primprod_ecoregion_rescaled` both published, folding onto one "primprod" category; see
+// `src/lens/scores/flower.ts`'s `dedupeFlowerComponents`). v9 is `restricted` in
+// `e2e/hermetic.ts`'s `VERSIONS_FIXTURE` (matching the live registry), so viewing it here needs a
+// preview session — same as `e2e/species-hermetic.ts`'s `gotoSpecies` already does for the species
+// lens, and for the same reason (measured: a public, no-session load of v9 is correctly DENIED by
+// plan D6's access gate and renders nothing at all).
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
@@ -30,6 +39,9 @@ test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 800 } });
 
 const ZONES20_PATH = fileURLToPath(new URL("./fixtures/scores/zones20.pmtiles", import.meta.url));
+// the SAME 20-feature fixture geometry serves both versions -- only the boot.json each version
+// publishes differs for this spec's purposes, and the fixture's own URL literal is a test-only
+// artifact (routeZones20 matches this exact string), never a real per-release bucket path.
 const ZONES20_URL =
   "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v7/zones/programarea_2026-01/zones.pmtiles";
 
@@ -39,60 +51,147 @@ const ZONE_KEYS = [
   "GOA", "HAR", "HOP", "KOD", "MAT", "NAV", "NOC", "NOR", "SHU", "SOC",
 ]; // prettier-ignore
 
-const BOOT_SCORES_FIXTURE = {
-  schema: 1,
-  ver: "v7",
-  grid: {
-    grid_id: "usa05",
-    nc: 3103,
-    nr: 2006,
-    xmin: 141.1,
-    ymax: 74.75,
-    resx: 0.05,
-    resy: 0.05,
-    lon360: true,
-    tile: { size: 50 },
+const SPECTRAL_R = [
+  "#5E4EA1", "#3287BD", "#66C1A5", "#ABDDA4", "#E5F498", "#FFFFBF",
+  "#FEDF8B", "#FDAD60", "#F36C43", "#D43E4E", "#9E0041",
+]; // prettier-ignore
+
+type Ver = "v7" | "v9";
+
+/**
+ * v9's real 17-key `layers` list (curl'd from the live
+ * `v9/app/boot.json`, orchestrator-verified 2026-09-22) — only the composite carries a
+ * `by_subregion` (the raster/legend probes below only ever look at the default, composite layer).
+ */
+const LAYERS_V9 = [
+  { metric_key: "extrisk_bird", category: "raw", order: 1 },
+  { metric_key: "extrisk_coral", category: "raw", order: 2 },
+  { metric_key: "extrisk_fish", category: "raw", order: 3 },
+  { metric_key: "extrisk_invertebrate", category: "raw", order: 4 },
+  { metric_key: "extrisk_mammal", category: "raw", order: 5 },
+  { metric_key: "extrisk_primary_producer", category: "raw", order: 6 },
+  { metric_key: "extrisk_turtle", category: "raw", order: 7 },
+  { metric_key: "extrisk_bird_ecoregion_rescaled", category: "component", order: 8 },
+  { metric_key: "extrisk_coral_ecoregion_rescaled", category: "component", order: 9 },
+  { metric_key: "extrisk_fish_ecoregion_rescaled", category: "component", order: 10 },
+  { metric_key: "extrisk_invertebrate_ecoregion_rescaled", category: "component", order: 11 },
+  { metric_key: "extrisk_mammal_ecoregion_rescaled", category: "component", order: 12 },
+  { metric_key: "extrisk_primary_producer_ecoregion_rescaled", category: "component", order: 13 },
+  { metric_key: "extrisk_turtle_ecoregion_rescaled", category: "component", order: 14 },
+  { metric_key: "primprod", category: "raw", order: 15 },
+  { metric_key: "primprod_ecoregion_rescaled", category: "component", order: 16 },
+  {
+    metric_key: COMPOSITE_KEY,
+    label: "Equal-weight composite",
+    category: "composite",
+    order: 17,
+    by_subregion: { FULL: { cog: SCORE_COG_URL, rescale: [0, 90] } },
   },
-  study_areas: [{ key: "FULL", label: "All US waters", lon: -101.304, lat: 46.9, zoom: 2.16 }],
-  units: [
-    {
-      fld: "programarea_key",
-      label: "Program areas",
-      pmtiles: ZONES20_URL,
-      source_layer: "programarea",
-    },
-  ],
-  layers: [
-    {
-      metric_key: COMPOSITE_KEY,
-      label: "Overall score",
-      category: "composite",
-      order: 1,
-      by_subregion: { FULL: { cog: SCORE_COG_URL, rescale: [0, 90] } },
-    },
-  ],
-  zones: {
-    programarea: ZONE_KEYS.map((key, i) => ({
-      key,
-      name: key,
-      n_taxa: 100 + i,
-      metrics: { [COMPOSITE_KEY]: 10 + i },
-    })),
-    subregion: [{ key: "FULL", name: "All US waters", n_taxa: 1, metrics: {} }],
-  },
-  flower_default: {
-    FULL: [
-      { component: "bird", score: 45.67 },
-      { component: "fish", score: 15.96 },
-      { component: "primprod", score: 10.38 },
+];
+
+/** v9's real `flower_default.AK` (8 entries: both "primary producer" and the bare "primprod" —
+ * the exact collision `dedupeFlowerComponents` must resolve to 7). */
+const FLOWER_DEFAULT_V9_AK = [
+  { component: "bird", score: 31.5829481713802 },
+  { component: "coral", score: 16.7307766374964 },
+  { component: "fish", score: 18.9728978214797 },
+  { component: "invertebrate", score: 22.8381493804011 },
+  { component: "mammal", score: 27.9090045093681 },
+  { component: "primary producer", score: 15.5113319426193 },
+  { component: "turtle", score: 18.3932458216487 },
+  { component: "primprod", score: 5.63669830203109 },
+];
+
+function bootFor(ver: Ver) {
+  const common = {
+    schema: 1,
+    ver,
+    study_areas: [{ key: "FULL", label: "All US waters", lon: -101.304, lat: 46.9, zoom: 2.16 }],
+    units: [
+      {
+        fld: "programarea_key",
+        label: "Program areas",
+        pmtiles: ZONES20_URL,
+        source_layer: "programarea",
+      },
     ],
-  },
-  palettes: {
-    spectral_r: [
-      "#5E4EA1", "#3287BD", "#66C1A5", "#ABDDA4", "#E5F498", "#FFFFBF",
-      "#FEDF8B", "#FDAD60", "#F36C43", "#D43E4E", "#9E0041",
-    ], // prettier-ignore
-  },
+    palettes: { spectral_r: SPECTRAL_R },
+  };
+  if (ver === "v9") {
+    return {
+      ...common,
+      grid: {
+        grid_id: "global05",
+        nc: 7200,
+        nr: 3600,
+        xmin: -180,
+        ymax: 90,
+        resx: 0.05,
+        resy: 0.05,
+        lon360: false,
+        tile: { size: 50 },
+      },
+      layers: LAYERS_V9,
+      zones: {
+        programarea: ZONE_KEYS.map((key, i) => ({
+          key,
+          name: key,
+          n_taxa: 100 + i,
+          metrics: { [COMPOSITE_KEY]: 10 + i },
+        })),
+        // no FULL/USA subregion published on v9 (real shape) -- zoneAllKey() falls through to the
+        // first available key, "AK", matching flower_default.AK below it.
+        subregion: [{ key: "AK", name: "Alaska", n_taxa: 1, metrics: {} }],
+      },
+      flower_default: { AK: FLOWER_DEFAULT_V9_AK },
+    };
+  }
+  return {
+    ...common,
+    grid: {
+      grid_id: "usa05",
+      nc: 3103,
+      nr: 2006,
+      xmin: 141.1,
+      ymax: 74.75,
+      resx: 0.05,
+      resy: 0.05,
+      lon360: true,
+      tile: { size: 50 },
+    },
+    layers: [
+      {
+        metric_key: COMPOSITE_KEY,
+        label: "Overall score",
+        category: "composite",
+        order: 1,
+        by_subregion: { FULL: { cog: SCORE_COG_URL, rescale: [0, 90] } },
+      },
+    ],
+    zones: {
+      programarea: ZONE_KEYS.map((key, i) => ({
+        key,
+        name: key,
+        n_taxa: 100 + i,
+        metrics: { [COMPOSITE_KEY]: 10 + i },
+      })),
+      subregion: [{ key: "FULL", name: "All US waters", n_taxa: 1, metrics: {} }],
+    },
+    flower_default: {
+      FULL: [
+        { component: "bird", score: 45.67 },
+        { component: "fish", score: 15.96 },
+        { component: "primprod", score: 10.38 },
+      ],
+    },
+  };
+}
+
+/** the default flower's expected rounded hub value for each version -- v7's plain 3-component
+ * mean, v9's real 8-entry `flower_default.AK` de-duplicated down to 7 before averaging. */
+const EXPECTED_DEFAULT_HUB: Record<Ver, string> = {
+  v7: "24", // (45.67+15.96+10.38)/3 = 24.00...
+  v9: "22", // 7 kept of 8 (bare "primprod" dropped): mean ~= 21.705 -> 22
 };
 
 /** the 20-feature scores fixture, with real HTTP range support (the `pmtiles://` protocol reads
@@ -148,10 +247,14 @@ declare global {
   }
 }
 
-async function gotoScoresMap(page: Page) {
+async function gotoScoresMap(page: Page, ver: Ver) {
   await blockWasm(page);
-  await routeBucket(page, "v7", BOOT_SCORES_FIXTURE);
-  await routeSession(page, null);
+  await routeBucket(page, ver, bootFor(ver));
+  // v9 is `restricted` in VERSIONS_FIXTURE (matching the live registry) -- a public, no-session
+  // load renders nothing (plan D6's access gate correctly denies it). A preview session is the
+  // honest way to view it here, same as a real reviewer would; v7 is already public, so passing
+  // `preview: true` for it too is harmless (a public release never checks the session either way).
+  await routeSession(page, { preview: true, ver });
   await routeSealFixture(page);
   await routeZones20(page);
   await routeBasemapTiles(page);
@@ -203,61 +306,65 @@ const BLENDED_RASTER_RGB = [0, 1, 2].map((i) =>
   Math.round(RASTER_RGB[i] * 0.6 + BASEMAP_RGB[i] * 0.4),
 );
 
-test.describe("scores lens — first paint with **/*.wasm blocked (atlas-4 step 1 gate)", () => {
-  test("paints the score raster at two ocean probe points", async ({ page }) => {
-    const errors = collectConsoleErrors(page);
-    const requests = collectRequests(page);
-    await gotoScoresMap(page);
-    await page.waitForFunction(() => window.__atlasMap!.handle.map.loaded(), undefined, {
-      timeout: 20_000,
+for (const ver of ["v7", "v9"] as const) {
+  test.describe(`scores lens — first paint with **/*.wasm blocked (atlas-4 step 1 gate), ${ver}`, () => {
+    test("paints the score raster at two ocean probe points", async ({ page }) => {
+      const errors = collectConsoleErrors(page);
+      const requests = collectRequests(page);
+      await gotoScoresMap(page, ver);
+      await page.waitForFunction(() => window.__atlasMap!.handle.map.loaded(), undefined, {
+        timeout: 20_000,
+      });
+
+      for (const [lon, lat] of OCEAN_PROBES) {
+        await expect
+          .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
+            message: `no score raster pixel painted at ${lon},${lat}`,
+            timeout: 20_000,
+          })
+          .toBe(BLENDED_RASTER_RGB.join(","));
+      }
+
+      expect(requests.filter((u) => /\.wasm(\?|$)/.test(u))).toEqual([]);
+      expect(requests.filter((u) => /duckdb/i.test(u))).toEqual([]);
+      expect(errors).toEqual([]);
     });
 
-    for (const [lon, lat] of OCEAN_PROBES) {
+    test("renders 20 Program-Area outlines", async ({ page }) => {
+      await gotoScoresMap(page, ver);
       await expect
-        .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
-          message: `no score raster pixel painted at ${lon},${lat}`,
-          timeout: 20_000,
-        })
-        .toBe(BLENDED_RASTER_RGB.join(","));
-    }
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const map = window.__atlasMap!.handle.map;
+              if (!map.isSourceLoaded("programarea_src")) return -1;
+              return map.queryRenderedFeatures({ layers: ["programarea_ln"] }).length;
+            }),
+          { timeout: 20_000 },
+        )
+        .toBeGreaterThanOrEqual(20);
+    });
 
-    expect(requests.filter((u) => /\.wasm(\?|$)/.test(u))).toEqual([]);
-    expect(requests.filter((u) => /duckdb/i.test(u))).toEqual([]);
-    expect(errors).toEqual([]);
-  });
+    test("shows the legend with the raster's rescale endpoints", async ({ page }) => {
+      await gotoScoresMap(page, ver);
+      // "Layers" is already the shell's default rail tool, so no click is needed, but click it
+      // anyway so this spec does not depend on that default staying true.
+      await page.getByRole("button", { name: "Layers" }).click();
+      const legend = page.locator(".legend");
+      await expect(legend).toBeVisible({ timeout: 10_000 });
+      await expect(legend.locator(".ramp-ticks")).toContainText("0");
+      await expect(legend.locator(".ramp-ticks")).toContainText("90");
+    });
 
-  test("renders 20 Program-Area outlines", async ({ page }) => {
-    await gotoScoresMap(page);
-    await expect
-      .poll(
-        () =>
-          page.evaluate(() => {
-            const map = window.__atlasMap!.handle.map;
-            if (!map.isSourceLoaded("programarea_src")) return -1;
-            return map.queryRenderedFeatures({ layers: ["programarea_ln"] }).length;
-          }),
-        { timeout: 20_000 },
-      )
-      .toBeGreaterThanOrEqual(20);
+    test("shows the default flower (nothing selected, Tier 0 only)", async ({ page }) => {
+      await gotoScoresMap(page, ver);
+      await page.getByRole("button", { name: "Flower plot" }).click();
+      const flower = page.locator(".flower-title");
+      await expect(flower).toHaveText("Full study area", { timeout: 10_000 });
+      // v7: mean of 3 fixture components. v9: `flower_default.AK`'s real 8 entries, de-duplicated
+      // to 7 (the "primprod"/"primary producer" collision `dedupeFlowerComponents` resolves) —
+      // proving the fix end-to-end, not just at the unit level.
+      await expect(page.locator(".hub-text")).toHaveText(EXPECTED_DEFAULT_HUB[ver]);
+    });
   });
-
-  test("shows the legend with the raster's rescale endpoints", async ({ page }) => {
-    await gotoScoresMap(page);
-    // "Layers" is already the shell's default rail tool, so no click is needed, but click it
-    // anyway so this spec does not depend on that default staying true.
-    await page.getByRole("button", { name: "Layers" }).click();
-    const legend = page.locator(".legend");
-    await expect(legend).toBeVisible({ timeout: 10_000 });
-    await expect(legend.locator(".ramp-ticks")).toContainText("0");
-    await expect(legend.locator(".ramp-ticks")).toContainText("90");
-  });
-
-  test("shows the default flower (nothing selected, Tier 0 only)", async ({ page }) => {
-    await gotoScoresMap(page);
-    await page.getByRole("button", { name: "Flower plot" }).click();
-    const flower = page.locator(".flower-title");
-    await expect(flower).toHaveText("Full study area", { timeout: 10_000 });
-    // the centre number is the mean of the three fixture components, rounded: (45.67+15.96+10.38)/3
-    await expect(page.locator(".hub-text")).toHaveText("24");
-  });
-});
+}

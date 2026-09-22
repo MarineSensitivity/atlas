@@ -162,6 +162,243 @@ export const BOOT_V1_PLANAREA = {
   flower_default: {},
 };
 
+// atlas-4 fix round 2: v8/v9's REAL shape, trimmed from the live release
+// (`curl --compressed https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v9/app/boot.json`,
+// orchestrator-verified 2026-09-22) -- the exact 17-key `layers` list (8 raw + 7 ecoregion-rescaled
+// components + primprod's own rescaled component + the composite, in the release's own `order`) and
+// the exact `flower_default.AK` (8 entries: 6 unambiguous species categories, PLUS both
+// "primary producer" and the bare "primprod" -- the collision this fixture exists to exercise). No
+// live release ever publishes a `flower_default.FULL` key (unlike the synthetic v7 fixture above);
+// `zoneAllKey()` falls through FULL -> USA -> first available, so this fixture's one `subregion`
+// zone is keyed "AK" on purpose, matching `flower_default.AK` above it.
+export const BOOT_V9 = {
+  schema: 1,
+  ver: "v9",
+  id_field: "mdl_key",
+  grid: {
+    grid_id: "global05",
+    nc: 7200,
+    nr: 3600,
+    xmin: -180,
+    ymax: 90,
+    resx: 0.05,
+    resy: 0.05,
+    lon360: false,
+    tile: { size: 50 },
+  },
+  study_areas: [{ key: "FULL", label: "All US waters", lon: -101.304, lat: 46.9, zoom: 2.16 }],
+  units: [
+    {
+      zone_type: "programarea",
+      zone_set_key: "programarea_2026-01",
+      fld: "programarea_key",
+      zone_tbl: "ply_programareas_2026_v9",
+      label: "Program areas",
+      pmtiles:
+        "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/zones/programarea_2026-01/zones.pmtiles",
+      source_layer: "programarea",
+      keys: [
+        "ALA", "ALB", "BFT", "BOW", "CEC", "CHU", "COK", "GAA", "GAB", "GEO",
+        "GOA", "HAR", "HOP", "KOD", "MAT", "NAV", "NOC", "NOR", "SHU", "SOC",
+      ], // prettier-ignore
+    },
+  ],
+  layers: [
+    {
+      metric_key: "extrisk_bird",
+      label: "Extinction-risk-weighted suitability, bird",
+      category: "raw",
+      order: 1,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "extrisk_coral",
+      label: "Extinction-risk-weighted suitability, coral",
+      category: "raw",
+      order: 2,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "extrisk_fish",
+      label: "Extinction-risk-weighted suitability, fish",
+      category: "raw",
+      order: 3,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "extrisk_invertebrate",
+      label: "Extinction-risk-weighted suitability, invertebrate",
+      category: "raw",
+      order: 4,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "extrisk_mammal",
+      label: "Extinction-risk-weighted suitability, mammal",
+      category: "raw",
+      order: 5,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "extrisk_primary_producer",
+      label: "Extinction-risk-weighted suitability, primary_producer",
+      category: "raw",
+      order: 6,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "extrisk_turtle",
+      label: "Extinction-risk-weighted suitability, turtle",
+      category: "raw",
+      order: 7,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "extrisk_bird_ecoregion_rescaled",
+      label: "extrisk_bird_ecoregion_rescaled",
+      category: "component",
+      order: 8,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "extrisk_coral_ecoregion_rescaled",
+      label: "extrisk_coral_ecoregion_rescaled",
+      category: "component",
+      order: 9,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "extrisk_fish_ecoregion_rescaled",
+      label: "extrisk_fish_ecoregion_rescaled",
+      category: "component",
+      order: 10,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "extrisk_invertebrate_ecoregion_rescaled",
+      label: "extrisk_invertebrate_ecoregion_rescaled",
+      category: "component",
+      order: 11,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "extrisk_mammal_ecoregion_rescaled",
+      label: "extrisk_mammal_ecoregion_rescaled",
+      category: "component",
+      order: 12,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "extrisk_primary_producer_ecoregion_rescaled",
+      label: "extrisk_primary_producer_ecoregion_rescaled",
+      category: "component",
+      order: 13,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "extrisk_turtle_ecoregion_rescaled",
+      label: "extrisk_turtle_ecoregion_rescaled",
+      category: "component",
+      order: 14,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "primprod",
+      label: "Primary productivity VGPM/VIIRS npp_avg (mg C/m2/day)",
+      category: "raw",
+      order: 15,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "primprod_ecoregion_rescaled",
+      label: "primprod_ecoregion_rescaled",
+      category: "component",
+      order: 16,
+      colormap: "spectral_r",
+    },
+    {
+      metric_key: "score_extriskspcat_primprod_ecoregionrescaled_equalweights",
+      label: "Equal-weight composite",
+      category: "composite",
+      order: 17,
+      colormap: "spectral_r",
+      by_subregion: {
+        FULL: {
+          cog: "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/cog/global05/9b06b2c2fd2d3672.tif",
+          rescale: [0, 90],
+        },
+      },
+    },
+  ],
+  zones: {
+    programarea: [
+      {
+        key: "GAA",
+        name: "Gulf of America, Eastern",
+        n_cells: 14238,
+        area_km2: 380954.194756411,
+        n_taxa: 6346,
+        metrics: {
+          extrisk_bird_ecoregion_rescaled: 52.7525380825174,
+          extrisk_coral_ecoregion_rescaled: 10.6506959949505,
+          extrisk_fish_ecoregion_rescaled: 52.6838523369752,
+          extrisk_invertebrate_ecoregion_rescaled: 44.2749788356391,
+          extrisk_mammal_ecoregion_rescaled: 56.44791952156,
+          extrisk_primary_producer_ecoregion_rescaled: 17.4828425546332,
+          extrisk_turtle_ecoregion_rescaled: 78.5246656275609,
+          primprod_ecoregion_rescaled: 10.7696635962531,
+          score_extriskspcat_primprod_ecoregionrescaled_equalweights: 40.4483945687612,
+        },
+      },
+    ],
+    subregion: [
+      {
+        key: "AK",
+        name: "Alaska",
+        n_cells: 314935,
+        area_km2: 4239345.37113726,
+        n_taxa: 2935,
+        metrics: {},
+      },
+    ],
+  },
+  flower_default: {
+    AK: [
+      { component: "bird", score: 31.5829481713802 },
+      { component: "coral", score: 16.7307766374964 },
+      { component: "fish", score: 18.9728978214797 },
+      { component: "invertebrate", score: 22.8381493804011 },
+      { component: "mammal", score: 27.9090045093681 },
+      { component: "primary producer", score: 15.5113319426193 },
+      { component: "turtle", score: 18.3932458216487 },
+      { component: "primprod", score: 5.63669830203109 },
+    ],
+  },
+  palettes: {
+    spectral_r: [
+      "#5E4EA1",
+      "#3287BD",
+      "#66C1A5",
+      "#ABDDA4",
+      "#E5F498",
+      "#FFFFBF",
+      "#FEDF8B",
+      "#FDAD60",
+      "#F36C43",
+      "#D43E4E",
+      "#9E0041",
+    ],
+  },
+  tables: {
+    taxon: { href: "https://s3.example/marine-atlas/v9/app/taxon.parquet", bytes: 1, digest: "d1" },
+    zone_taxon: {
+      href: "https://s3.example/marine-atlas/v9/app/zone_taxon.parquet",
+      bytes: 1,
+      digest: "d2",
+    },
+  },
+};
+
 export const MANIFEST_OVERLAYS_V7 = [
   {
     overlay_key: "_outside_pra",

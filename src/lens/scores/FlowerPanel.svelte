@@ -4,18 +4,22 @@
   // selection's flower needs the engine (`sql/cell_components.sql`) and is wired by
   // `ScoresLens.svelte`'s step-2 click handling, which passes `cellComponents` down once loaded.
   import Flower from "../../lib/ui/Flower.svelte";
-  import type { FlowerComponentInput } from "../../lib/ui/flowerGeometry";
-  import { defaultFlowerComponents, flowerTitle, zoneFlowerComponents } from "./flower";
+  import {
+    defaultFlowerComponents,
+    flowerTitle,
+    zoneFlowerComponents,
+    type DedupResult,
+  } from "./flower";
   import { zoneAllKey, zoneRows } from "./boot";
   import type { ScoresSelection } from "./selection";
 
   interface Props {
     boot: unknown;
     selection: ScoresSelection;
-    /** the clicked cell's own flower (step 2's engine-backed path); `undefined` while unloaded,
-     * `null` on a load failure. Cell selections fall back to a loading/unavailable message when
-     * this is not yet a real array. */
-    cellComponents?: FlowerComponentInput[] | null;
+    /** the clicked cell's own flower (step 2's engine-backed path, already de-duplicated by
+     * `cellFlowerComponents`); `undefined` while unloaded, `null` on a load failure. Cell
+     * selections fall back to a loading/unavailable message when this is not yet a real result. */
+    cellComponents?: DedupResult | null;
     cellCoords?: { lon: number; lat: number };
   }
 
@@ -35,17 +39,22 @@
     return zoneRows(boot, unit).find((z) => z.key === key)?.name ?? key;
   }
 
-  const components = $derived.by((): FlowerComponentInput[] | null => {
+  // every path already returns ONE slot per category (`flower.ts`'s `dedupeFlowerComponents`,
+  // atlas-4 fix round 2) -- `droppedLabels` is surfaced to `Flower.svelte` so it can announce the
+  // drop once, rather than the data quirk silently disappearing.
+  const result = $derived.by((): DedupResult | null => {
     if (selection?.kind === "zone")
       return zoneFlowerComponents(zoneRows(boot, selection.unit), selection.key);
     if (selection?.kind === "cell") return cellComponents ?? null;
     return defaultFlowerComponents(boot, allKey);
   });
+  const components = $derived(result?.components ?? null);
+  const droppedLabels = $derived(result?.droppedLabels ?? []);
 </script>
 
 <div class="flower-panel">
   {#if components}
-    <Flower {title} {components} />
+    <Flower {title} {components} {droppedLabels} />
   {:else if selection?.kind === "cell" && cellComponents === undefined}
     <p class="note">Loading the cell's component scores…</p>
   {:else}
