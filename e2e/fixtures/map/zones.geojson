@@ -1,0 +1,69 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "programarea_key": "GAA", "programarea_name": "Gulf of America" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-96, 24],
+            [-84, 24],
+            [-84, 30],
+            [-96, 30],
+            [-96, 24]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "programarea_key": "MDA", "programarea_name": "Mid Atlantic" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-76, 35],
+            [-68, 35],
+            [-68, 41],
+            [-76, 41],
+            [-76, 35]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "programarea_key": "CGA", "programarea_name": "Cook Inlet" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-162, 54],
+            [-148, 54],
+            [-148, 60],
+            [-162, 60],
+            [-162, 54]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "programarea_key": "CAA", "programarea_name": "Central California" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-129, 34],
+            [-121, 34],
+            [-121, 42],
+            [-129, 42],
+            [-129, 34]
+          ]
+        ]
+      }
+    }
+  ]
+}

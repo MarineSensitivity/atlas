@@ -124,7 +124,13 @@ a {
   min-height: 0;
 }
 
-.map {
+/* `.stage > .map`, not a bare `.map` (atlas-map): MapLibre's own stylesheet declares
+   `.maplibregl-map { position: relative }` and it is imported by src/lib/map/map.ts AFTER this
+   file, so with equal (single-class) specificity it won the cascade -- `inset: 0` stopped applying,
+   the container collapsed to 0 px tall and MapLibre fell back to a 300 px canvas (measured: a
+   1280x800 viewport rendered a 1280x300 map). The child combinator raises specificity above
+   maplibre's class rule without depending on import order. */
+.stage > .map {
   position: absolute;
   inset: 0;
   background: var(--surface-map);

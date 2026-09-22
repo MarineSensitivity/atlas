@@ -41,6 +41,38 @@ imports it yet, so the static critical path is unchanged at 108.6 KB gzip. Full 
   test setup, never committed. `@xmldom/xmldom` added as a devDependency so KML and GPX are covered
   by fast node unit tests rather than only in a browser.
 
+# atlas 0.8.0
+
+`atlas-map`: the shared map module (`src/lib/map/`) the three lenses build on — one MapLibre
+instance, one composed style, one `setStyle(diff:true)`. The shell now renders a real map.
+
+- **New: `src/lib/map/`.** `map.ts` (`createMap()` — the whole S2 wiring: named imports,
+  `?worker&url` + `setWorkerUrl`, `preserveDrawingBuffer`, `resize()` plus a `ResizeObserver` on the
+  container, camera to/from the URL), `style.ts` (`composeStyle()` + `applyStyle()` and a DECLARED
+  layer order, so a missing layer can never cascade), `camera.ts` (rounded, de-duplicated, 300 ms
+  debounced, never on a programmatic move), `interaction.ts` (click → `{lngLat, cellId, zone}` using
+  the RELEASE's grid; hover; `flyTo(studyArea)` — never `fitBounds`) and the pure builders
+  `layers/{basemap,zones,raster,titiler}.ts`.
+- **The basemap follows the theme**: navy → CARTO dark-matter, paper → positron, as raster tiles
+  (one source, no style.json/sprite/TileJSON, zero added JS). Globe ⇄ mercator travels in the style.
+- **The `zone_style` table is data, not code**: programarea/planarea white 1 px, ecoregion black
+  3 px, subregion `#d9d9d9` 2 px dashed `[3,3]` 0.7, labels programarea white 12 px / ecoregion black
+  16 px, subregion none.
+- **The camera is in the URL**: `?map=lon,lat,zoom` is written with `history.replaceState`, debounced,
+  and never while the app itself is moving the map.
+- `pmtiles@^4.5.0` is now a dependency (the `pmtiles://` protocol the zones sources are read through).
+- `docs/map.md`: the interface the three lenses may call, and how to add a source.
+- **Fix, `scripts/size-budget.mjs`:** a forbidden lazy-chunk marker now has to start a token.
+  Minified maplibre-gl contains `dashPositions`, which embeds `shp`, so the budget failed the moment
+  maplibre entered the static graph. Measured after the fix: **391.2 KB gzip static** (budget 450) and
+  **140.5 KB gzip runtime worker** (budget 150).
+- **Fix, `src/shell/shell.css`:** the map container is `.stage > .map`, not `.map` — MapLibre's own
+  stylesheet declares `.maplibregl-map { position: relative }` and won on equal specificity, which
+  collapsed the container to 0 px tall and left a 300 px canvas on an 800 px viewport.
+- `e2e/hermetic.ts`'s `routeBucket()` also routes the map's tile origins, so no spec reaches the live
+  network now that every shell page mounts a map; the shell a11y gate's `color-contrast` incomplete
+  triage is re-pinned (desktop 8 → 9 nodes, `imgNode` added) because axe cannot see through a canvas.
+
 # atlas 0.7.6
 
 `atlas-5` step 1, fix round 1: `camera.ts` copes with how extents are ACTUALLY published. Measured

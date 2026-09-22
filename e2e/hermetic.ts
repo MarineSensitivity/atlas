@@ -4,6 +4,7 @@
 // never tries to run it as a test on its own.
 import type { Page } from "@playwright/test";
 import type { IncompleteResult } from "axe-core";
+import { solidPng } from "./map-hermetic";
 
 export const BUCKET = "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/";
 
@@ -21,6 +22,31 @@ export const VERSIONS_FIXTURE = [
 // console "error" regardless of the .catch() -- so this is the ONE class of message a spec allows
 // through; anything else still fails it.
 export const EXPECTED_MISSING_FILES = new Set(["session.json", "boot.json"]);
+
+/**
+ * The map's cross-origin tile/glyph origins → an empty 204, so no spec ever reaches the live
+ * network for them. A spec that needs a PAINTED tile (e2e/map.spec.ts) registers its own,
+ * later-winning route with a real PNG — Playwright matches handlers in reverse registration order.
+ */
+export async function routeMapTileOrigins(page: Page) {
+  // a real (transparent) PNG, not a 204 and not a hand-typed base64 blob: MapLibre reports a tile
+  // it cannot DECODE through `map.on("error")`, which logs to the console — and "zero console
+  // errors" is the smoke spec's whole assertion (an invalid literal produced 35 of them).
+  const png = solidPng(0, 0, 0, 1, 0);
+  for (const glob of [
+    "https://basemaps.cartocdn.com/**",
+    "https://titiler-v8.marinesensitivity.org/**",
+  ]) {
+    await page.route(glob, (route) =>
+      route.fulfill({ status: 200, contentType: "image/png", body: png }),
+    );
+  }
+  // glyphs: the shell composes no label layer, so this is only ever reached by a spec that adds
+  // one — a 404 there degrades to "render the codepoint locally" (a warning), never an error.
+  await page.route("https://tiles.basemaps.cartocdn.com/**", (route) =>
+    route.fulfill({ status: 404, body: "" }),
+  );
+}
 
 export function collectConsoleErrors(page: Page): string[] {
   const errors: string[] = [];
@@ -43,8 +69,18 @@ export function collectRequests(page: Page): string[] {
   return urls;
 }
 
-/** fixture responses for the bucket: latest.txt, versions.json and each release's manifest. */
-export async function routeBucket(page: Page, latest = "v7") {
+/**
+ * Every cross-origin GET the shell makes, routed to a fixture: the release bucket (latest.txt,
+ * versions.json, each release's manifest and — when `boot` is given — `{ver}/app/boot.json`) AND
+ * the map's tile origins.
+ *
+ * The tile origins are folded in here on purpose (atlas-map): the moment the shell mounted a real
+ * MapLibre map, EVERY spec that loads the shell started requesting CARTO basemap tiles, and a
+ * hermeticity rule that each spec has to remember separately is one that a future spec will
+ * silently break. `routeBucket` is the one call every shell spec already makes.
+ */
+export async function routeBucket(page: Page, latest = "v7", boot?: object) {
+  await routeMapTileOrigins(page);
   await page.route(
     (url) => url.href.startsWith(BUCKET),
     async (route) => {
@@ -58,6 +94,9 @@ export async function routeBucket(page: Page, latest = "v7") {
       const manifest = /^(v[0-9]+[a-z]?)\/manifest\.json/.exec(path);
       if (manifest) {
         return route.fulfill({ status: 200, json: { ver: manifest[1], capabilities: {} } });
+      }
+      if (boot && /^v[0-9]+[a-z]?\/app\/boot\.json/.test(path)) {
+        return route.fulfill({ status: 200, json: boot });
       }
       return route.fulfill({ status: 404, body: "" }); // app/boot.json: not published until atlas-1
     },
