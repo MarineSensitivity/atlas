@@ -108,8 +108,15 @@ export function orderLayers(roled: readonly RoledLayer[]): LayerSpecification[] 
     .map(({ r }) => r.layer);
 }
 
+/** atlas-6 Deliverable 2: 0.15 for an ordinary highlight; each feature's own `opacity` property
+ * when `cellOpacity` is set (`places/cellSquares.ts` writes `pct / 100` there). */
+export const SELECTION_FILL_OPACITY_DEFAULT = 0.15;
+
 function selectionLayers(sel: SelectionSpec): RoledLayer[] {
   const color = sel.color ?? SELECTION_COLOR;
+  const fillOpacity = sel.cellOpacity
+    ? (["get", "opacity"] as const)
+    : SELECTION_FILL_OPACITY_DEFAULT;
   return [
     {
       role: "selection-fill",
@@ -118,7 +125,7 @@ function selectionLayers(sel: SelectionSpec): RoledLayer[] {
         type: "fill",
         source: SELECTION_SOURCE_ID,
         filter: ["==", ["geometry-type"], "Polygon"],
-        paint: { "fill-color": color, "fill-opacity": 0.15 },
+        paint: { "fill-color": color, "fill-opacity": fillOpacity as never },
       },
     },
     {

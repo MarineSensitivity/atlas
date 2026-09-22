@@ -1,3 +1,122 @@
+# atlas 0.9.9
+
+`atlas-6` step 4: results and share (Deliverables 5-7), closing out the phase. Measured:
+**420.2 KB gzip static** (budget 450) / **140.5 KB gzip runtime worker** (budget 150).
+
+- **Results for a custom place**, by the published zone method (master plan D7/D7b), reusing
+  `src/places/dataEngine.ts` from step 3: coverage ("N% of this place is inside the US study
+  area", each component's own coverage/mean-where-present), composite + a `Flower` (shared
+  `src/lib/ui/`, not the scores lens's own — this renders entirely within `src/places/**`), and a
+  components `DataTable`. A place wholly outside the study area gets the "no scores" notice
+  (`ResultsPanel.svelte`), never a row of zeros.
+- **Species need `cell_model` tiles**: the fetch plan (tile count, MB — real `Content-Length` via
+  `HEAD`, falling back to a documented average) shows before anything downloads; above 40 tiles or
+  150 MB it asks first (`src/places/fetchPlan.ts`); progress reads "batch N of M" as each
+  ≤ 8-tile batch's buffers are dropped. `capabilities.cell_model === false` shows "species aren't
+  available for this release" instead of a table.
+- **Share** (`ShareDialog.svelte`) states what the link carries (release, lens, layer, camera, N
+  places) and its length; over 2,000 chars a note, over 8,000 the simplification ladder
+  (before/after vertices, area change %, cells changed) — and **accepting writes the simplified
+  geometry back to `#pl=` itself**, never a share-only copy, so the numbers visibly update before
+  the (now-shorter) link is copied. Nothing fitting even simplified offers the GeoJSON download
+  first. Reuses `geo/placeCodec.ts`'s `fitPlacesToUrl` (atlas-2) — this phase only adds the "what it
+  carries" summary and the before/after diff.
+- **Analytics** (`place_draw`, `place_upload`, `place_share`) are now wired at their real call
+  sites — a drawn shape, an upload's outcome, a copied share link — all counts/buckets only
+  (`src/places/analytics.ts`, built in step 1). Every call site's `track` prop defaults to a no-op:
+  no GA4 loader is mounted app-wide yet (`analytics.ts`'s own header), so nothing sends anything
+  until a later phase wires that in.
+
+# atlas 0.9.8
+
+`atlas-6` step 3, UI half: upload (Deliverable 4). Drop a file anywhere on the map (a native
+drop/dragover listener on the map's own container) or use the picker; `src/lib/geo/upload/` (atlas-2's
+parsing half) is called only through a dynamic `import()`, so this is the first time anything in
+`src/` reaches it. `src/places/dataEngine.ts` is new: the ONE lazily-created DuckDB engine +
+`AnalysisSources` this panel now shares between the study-area check here and Deliverable 5's
+results (a later commit) — `Engine` itself, and `analysis/templates.ts` (which embeds every
+`sql/*.sql` file verbatim, comments included), are dynamic imports for the same reason terra-draw
+was in step 2: a correctly-lazy reference that still matched `scripts/size-budget.mjs`'s
+forbidden-marker text scan ("duckdb"; `composition.sql`'s own comments happen to say "treemap").
+Measured: **409.1 KB gzip static** (budget 450) / **140.5 KB gzip runtime worker** (budget 150).
+
+- Every refusal (a bad file, a point/line geometry, a self-intersection, an out-of-range or
+  projected coordinate, a `.gpkg` with no runtime wired) renders verbatim (what/why/fix) in the
+  panel, never "invalid file".
+- A multi-feature file asks once: keep every shape as its own place (auto-named "Uploaded place N",
+  editable via the existing inline rename — a live "name from this property" picker is NOT wired
+  this step, a documented scope trim) or merge into one. Re-parses with the chosen
+  `multiFeature` option rather than re-implementing the split client-side.
+- The GeoPackage consent prompt (naming the ~22 MB, third-party `extensions.duckdb.org` download)
+  is written, but with `runtime: null` (no DuckDB `spatial` wiring in this phase — docs/upload.md's
+  own documented limitation): every `.gpkg` ends at the "convert to GeoJSON" fallback refusal today;
+  wiring a real runtime later needs no UI change.
+- **"Must touch the study area" (D7b) is a real, network-backed check** (`src/places/studyArea.ts`):
+  fetches only the place's own `cell` tiles (materialize-then-query) and clips to `in_usa` cells
+  (`sql/cells_in_study_area.sql`) exactly as Deliverable 5's results will; zero touching cells is
+  `outsideUsWaters()`, never a silently-added place with nothing to score. Because
+  `NormalizeOptions.studyArea`'s own type is synchronous and this check is not, it runs as a
+  separate async step immediately after `normalizeUpload()`/`parseCoordinateEntry()` returns
+  `ok: true`, before the place is added — same user-visible refusal shape either way.
+
+# atlas 0.9.7
+
+`atlas-6` step 2: drawing (Deliverable 3). `terra-draw@1.35.0` +
+`terra-draw-maplibre-gl-adapter@1.4.1` are new, exact-pinned dependencies, reached ONLY through
+`src/places/draw.ts`'s dynamic `import()` — genuinely lazy: neither package appears in
+`index.html`'s static import graph (`tests/places/lazyImports.test.ts`), and `vite.config.ts` now
+renames their output chunks (`draw-vendor-*.js`) because Vite's default chunk-naming otherwise put
+the literal string `"terra-draw"` into the entry's own dynamic-import specifier — a correct, lazy
+reference that still tripped `scripts/size-budget.mjs`'s forbidden-marker text scan. Measured after
+the fix: **405.9 KB gzip static** (budget 450) / **140.5 KB gzip runtime worker** (budget 150).
+
+- **Polygon, rectangle and circle** (a 64-gon, `CIRCLE_SEGMENTS`), plus a select/edit mode with
+  midpoints (drag a vertex, drag a midpoint to add one, drag the whole shape) — touch-capable
+  (terra-draw's own adapter). On finish, the RAW drawn geometry is run through
+  `analysis/place.ts`'s `analysisGeometry()` (unwrap, then decode(encode(...))) before it becomes a
+  place — Deliverable 3's "what is displayed is what is analyzed" starts at creation, not at share
+  time — and the displayed outline is redrawn from that decoded geometry, densified to ≤ 0.25°
+  steps per edge (`src/places/densify.ts`) so a long straight analysed edge cannot visibly bow on
+  the globe projection.
+- **"Show analysis cells"**: for the selected drawn/uploaded place, paints every covered cell
+  (`geo/coverage.ts#cellsInPolygon`, purely client-side — no engine needed) at `fill-opacity = pct /
+100`. `SelectionSpec` gained one field for this (`cellOpacity`), the selection layer's only change
+  (`src/lib/map/style.ts`); disabled above 20,000 cells (`MAX_ANALYSIS_CELLS`).
+- **"Enter coordinates"**: the promised keyboard/screen-reader alternative — drawing is never the
+  only way. A bounding box (`xmin, ymin, xmax, ymax`), a list of `lon, lat` lines (≥ 3, closed
+  automatically), or pasted WKT/GeoJSON (handed to the SAME `normalizeUpload()` a file drop uses, so
+  a typed shape passes through every rule Deliverable 4 already enforces — self-intersection, the
+  antimeridian, the vertex cap). A refusal renders verbatim (what/why/fix), never "invalid".
+
+# atlas 0.9.6
+
+`atlas-6` step 1: the Places panel (Deliverable 1) and pick mode on the release's one drawable
+zone unit (Deliverable 2, Tier 0 — zone places only; draw/upload/results follow in the next three
+commits). `src/places/**` is new; the shell mounts it where the "Places" rail tool already
+reserved a panel slot (`src/shell/Shell.svelte`), and the map only gains one new `composeStyle`
+input (the pick-mode highlight, folded into the existing `selection` field).
+
+- **The list**: kind icon, inline rename (≤ 60 chars, `geom`/`upload` places only — a `zone` place's
+  identity is its keys, not a name, per the `g1` codec's own schema), area km² (a fast client-side
+  estimate until Deliverable 5's results land; a zone place's is `boot.zones`' own published
+  number), data coverage % and a composite chip where known, and zoom / duplicate / delete / "open
+  in report" (a stub link to `report.html` carrying the same query + hash). Up to 20 places; every
+  mutation writes `#pl=` through the existing `g1` codec with `history.replaceState` only — never a
+  second copy of the list.
+- **Pick mode**: click a zone on the map to select it; Ctrl/Cmd-click, Shift-click or a long-press
+  (500 ms) adds to the selection; clicking the sole picked zone again clears it. "Add to places"
+  turns the current pick into one new zone place (`z.pa.GAA,WGA`) — this is also the exact function
+  (`src/places/model.ts`'s `addZonePlace`) the scores lens's zones table calls once atlas-4 builds
+  it, needing no reference to this panel's UI.
+- **"Recent"**: the last ten place tokens in `localStorage`, never the only copy of a live place; a
+  "Clear" button, and "Add back" to restore one.
+- **`SELECTION_COLOR` is now pinned** (`tests/map/colors.test.ts`): the constant itself, not just
+  code that stays self-consistent with whatever value it happens to hold today.
+- Footer: Share (copies the current link — the same clipboard action the top bar's Share already
+  uses) and Download places (a GeoJSON `FeatureCollection` of the decoded geometries actually
+  analysed; a `zone` place, which carries no geometry client-side, is a named `geometry: null`
+  feature rather than being silently dropped).
+
 # atlas 0.9.5
 
 atlas-5 fix round 2: closes the gaps a review found in fix round 1's `map.ts` `applyStyle`-queue

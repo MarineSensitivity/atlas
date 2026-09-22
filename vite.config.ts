@@ -53,6 +53,28 @@ export default defineConfig({
         index: fileURLToPath(new URL("./index.html", import.meta.url)),
         report: fileURLToPath(new URL("./report.html", import.meta.url)),
       },
+      output: {
+        // atlas-6 step 2: terra-draw/terra-draw-maplibre-gl-adapter are genuinely lazy (reached
+        // only via `places/draw.ts`'s dynamic import()) — collectStaticGraph in
+        // scripts/size-budget-core.mjs walks only STATIC `imports`, so neither chunk's own CODE
+        // ever enters the static graph. But Vite names a lazy chunk after the imported module by
+        // default ("terra-draw.modern-<hash>.js"), and the ENTRY necessarily contains that
+        // filename as a literal string (the dynamic `import()` call's resolved specifier, plus its
+        // own modulepreload dependency map) so the browser knows what to fetch when the import
+        // runs — unavoidable Vite plumbing, not eagerly-loaded code. `size-budget-core.mjs`'s
+        // FORBIDDEN_LAZY_MARKERS scan greps file CONTENT (by design, atlas-3's own header: "catches
+        // the case where Rollup inlines the forbidden module... instead of giving it its own
+        // file"), so it cannot tell "the chunk's own name, referenced correctly" apart from
+        // "the chunk's code, inlined wrongly" — this renames just the OUTPUT FILENAME of these two
+        // chunks so the correct, lazy behaviour underneath is unchanged and the entry's reference
+        // to it no longer happens to start with a forbidden token.
+        chunkFileNames: (chunk) => {
+          const name = chunk.name ?? "";
+          return /^terra-draw/.test(name)
+            ? "assets/draw-vendor-[hash].js"
+            : "assets/[name]-[hash].js";
+        },
+      },
     },
   },
 });

@@ -48,6 +48,11 @@
   import SpeciesPicker from "../lens/species/SpeciesPicker.svelte";
   import SpeciesLegend from "../lens/species/SpeciesLegend.svelte";
   import NotFoundModal from "../lens/species/NotFoundModal.svelte";
+  // atlas-6 step 1: the Places panel mounts here (the shell's one reserved panel slot); it never
+  // touches MapLibre directly -- `placesMap` is the reactive bridge this file's own composeStyle
+  // effect (below) folds into the ONE `selection` input, per docs/map.md.
+  import Places from "../places/Places.svelte";
+  import { createPlacesMapStore } from "../places/placesMap.svelte";
 
   const selStore = createSelStore(location);
   const sel = selStore.sel;
@@ -164,6 +169,7 @@
   // same.
   let mapEl = $state<HTMLDivElement | undefined>(undefined);
   let mapHandle = $state<MapHandle | undefined>(undefined);
+  const placesMap = createPlacesMapStore();
 
   // outline-only, on purpose: labels, choropleth fills and the score raster are the LENS's
   // composeStyle inputs (atlas-4/5), not the shell's. `src/lib/map/layers/zones.ts` already builds
@@ -237,6 +243,19 @@
   // release's zone units, OR (species lens only) the layer on screen changes -- never addLayer()
   // piecemeal (CLAUDE.md). `raster`/`range` are the ONLY species-specific fields this shell ever
   // reads; every rule that produced them lives in the lens (mapInputs.ts), not here.
+  // release's zone units, or places' own pick-mode highlight / "show analysis cells" toggle change
+  // -- never addLayer() piecemeal (CLAUDE.md). `placesMap.{outline,cells}` are atlas-6's ONLY way
+  // to reach the map: composeStyle `selection` inputs (docs/map.md), nothing imperative. Cells (a
+  // place's own covered-cell squares) take priority over the pick-mode outline when both exist --
+  // Deliverable 2 shows cells only for the place currently being inspected, so nothing else should
+  // paint underneath it at the same time.
+  const placesSelection = $derived(
+    placesMap.cells
+      ? { features: placesMap.cells, cellOpacity: true }
+      : placesMap.outline
+        ? { features: placesMap.outline }
+        : null,
+  );
   $effect(() => {
     const isSpecies = sel.lens === "species";
     // read raster/range as their OWN statements, not inline inside `mapHandle?.`'s optional
@@ -248,7 +267,14 @@
     const raster = isSpecies ? speciesLens.mapInputs.raster : null;
     const range = isSpecies ? speciesLens.mapInputs.range : null;
     mapHandle?.applyStyle(
-      composeStyle({ theme: resolvedTheme, projection: sel.proj, zones: zoneUnits, raster, range }),
+      composeStyle({
+        theme: resolvedTheme,
+        projection: sel.proj,
+        zones: zoneUnits,
+        raster,
+        range,
+        selection: placesSelection,
+      }),
     );
   });
   const releaseNote = $derived(
@@ -374,6 +400,8 @@
   {#snippet panelBody()}
     {#if sel.lens === "species" && activeTool === "layers"}
       <SpeciesLensPanel lens={speciesLens} rep={sel.rep} />
+    {:else if activeTool === "places"}
+      <Places {sel} {selStore} {boot} {mapHandle} {zoneUnits} mapStore={placesMap} />
     {:else}
       <p>{TOOL_BODY[activeTool]}</p>
     {/if}

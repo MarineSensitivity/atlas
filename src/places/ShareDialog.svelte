@@ -1,0 +1,198 @@
+<script lang="ts">
+  // atlas-6 step 4, Deliverable 6: "Copy link shows what the link carries ... and its length."
+  // Over 2,000 chars: a note. Over 8,000: the simplification ladder, with a before/after the user
+  // ACCEPTS -- and accepting writes the SAME simplified geometry back to #pl= (never a
+  // share-only copy), so "the panel always analyses the geometry that is in the link" holds: the
+  // numbers visibly update FIRST, then the (now-shorter) link is what gets copied.
+  import Modal from "../lib/ui/Modal.svelte";
+  import { announce } from "../lib/ui/announcer";
+  import {
+    fitPlacesToUrl,
+    URL_LONG_MAX,
+    URL_SILENT_MAX,
+    type FitResult,
+  } from "../lib/geo/placeCodec";
+  import { hashFromPlaces } from "./model";
+  import { diffSimplification, describeShareSummary, summarizeShare } from "./share";
+  import { downloadGeoJson, placesToGeoJson } from "./download";
+  import type { Place, GeomPlace } from "../lib/geo/placeCodec";
+  import type { Sel } from "../lib/state/types";
+  import type { SelStore } from "../lib/state/sel.svelte";
+  import type { GridSpec } from "../lib/grid/grid";
+
+  interface Props {
+    open: boolean;
+    onclose: () => void;
+    sel: Sel;
+    selStore: SelStore;
+    places: Place[];
+    grid: GridSpec | null;
+    /** Deliverable 7: counts/buckets only -- defaults to a no-op until the GA4 loader is wired
+     * app-wide (analytics.ts's own header; this stays a no-op call site until that lands). */
+    onShare?: (linkLength: number) => void;
+  }
+
+  let { open, onclose, sel, selStore, places, grid, onShare }: Props = $props();
+
+  let fit = $state<FitResult | null>(null);
+  let busy = $state(false);
+
+  function baseLength(): number {
+    // "everything in the URL that is not this #pl= value" (placeCodec.ts's own FitOptions doc) --
+    // the current href already carries the CURRENT #pl=, so subtracting its length approximates
+    // the rest byte-for-byte closely enough for a length ESTIMATE (never used to build a real URL).
+    const current = sel.pl ?? "";
+    return current ? location.href.length - current.length : location.href.length;
+  }
+
+  async function compute() {
+    busy = true;
+    try {
+      fit = await fitPlacesToUrl(places, { baseLength: baseLength() });
+    } finally {
+      busy = false;
+    }
+  }
+
+  $effect(() => {
+    if (open) void compute();
+  });
+
+  const summary = $derived(summarizeShare(sel, places));
+
+  /** the first geom place the ladder actually changed, for the before/after readout -- Deliverable
+   * 6 asks for ONE comparison, not one per place. */
+  const changedPlace = $derived.by(() => {
+    if (!fit) return null;
+    for (let i = 0; i < places.length; i++) {
+      const before = places[i];
+      const after = fit.places[i];
+      if (before?.kind === "geom" && after?.kind === "geom" && before.geometry !== after.geometry) {
+        return { before: before as GeomPlace, after: after as GeomPlace };
+      }
+    }
+    return null;
+  });
+
+  const diff = $derived(
+    changedPlace
+      ? diffSimplification(changedPlace.before, changedPlace.after, grid ?? undefined)
+      : null,
+  );
+
+  async function accept() {
+    if (!fit) return;
+    // the numbers visibly update FIRST (this write IS the analysed geometry from here on), THEN
+    // the link is copyable -- never a share-only simplified copy diverging from #pl=.
+    selStore.set({ pl: hashFromPlaces(fit.places) });
+    await compute();
+    announce("Simplified. The numbers above now match the link.");
+  }
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(location.href);
+      onShare?.(fit?.length ?? location.href.length);
+      announce("Link copied to your clipboard.");
+    } catch {
+      announce("Couldn't copy the link automatically — copy it from the address bar.");
+    }
+  }
+
+  function download() {
+    downloadGeoJson(placesToGeoJson(places));
+    announce("Downloaded places as GeoJSON.");
+  }
+</script>
+
+<Modal {open} title="Share" {onclose}>
+  <p class="summary">{describeShareSummary(summary)}</p>
+
+  {#if busy || !fit}
+    <p class="status">Checking the link length…</p>
+  {:else}
+    <p class="length" class:length--long={fit.status !== "ok"}>
+      Link length: {fit.length.toLocaleString("en-US")} characters
+      {#if fit.status === "ok" && fit.length > URL_SILENT_MAX}
+        (long link)
+      {/if}
+    </p>
+
+    {#if fit.status === "ok" && fit.length <= URL_SILENT_MAX}
+      <button type="button" class="primary" onclick={copyLink}>Copy link</button>
+    {:else if fit.status === "long"}
+      <p class="note">
+        This link is over {URL_SILENT_MAX.toLocaleString("en-US")} characters — some chat apps and older
+        browsers truncate very long links.
+      </p>
+      <button type="button" class="primary" onclick={copyLink}>Copy anyway</button>
+    {:else if fit.status === "upload"}
+      <p class="note">
+        This place is too large to carry in a link, even simplified, and would exceed
+        {URL_LONG_MAX.toLocaleString("en-US")} characters. Download it as GeoJSON and share that file
+        instead — the link below names it but cannot carry its shape.
+      </p>
+      <button type="button" class="primary" onclick={download}>Download GeoJSON</button>
+      <button type="button" onclick={copyLink}>Copy link anyway</button>
+    {:else if diff}
+      <div class="ladder" role="group" aria-label="Simplify to fit the link">
+        <p>
+          Simplifying to {fit.tolerance}° would change this place from {diff.beforeVertices} to
+          {diff.afterVertices} vertices ({diff.areaChangePct >= 0
+            ? "+"
+            : ""}{diff.areaChangePct.toFixed(2)}% area{#if diff.cellsBefore !== null && diff.cellsAfter !== null},
+            {diff.cellsBefore} →
+            {diff.cellsAfter} cells{/if}).
+        </p>
+        <button type="button" class="primary" onclick={accept}
+          >Simplify and update the numbers</button
+        >
+      </div>
+    {/if}
+  {/if}
+</Modal>
+
+<style>
+  .summary {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+  }
+
+  .status,
+  .note {
+    font-size: var(--text-sm);
+    margin: 0 0 var(--space-2);
+  }
+
+  .length {
+    font-size: var(--text-sm);
+    margin: 0 0 var(--space-3);
+  }
+
+  .length--long {
+    color: var(--text-danger);
+  }
+
+  .ladder {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  button {
+    align-self: flex-start;
+    height: var(--size-touch);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+
+  button.primary {
+    background: var(--fill-accent);
+    color: var(--text-on-accent);
+  }
+</style>
