@@ -223,6 +223,72 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
   return style;
 }
 
+/** page chrome (background/basemap) and the click-driven selection ring — never something a real
+ * "layers control" toggles on/off. Every OTHER id in a composed style is a real, toggleable data
+ * layer and is listed by {@link layersControlItems}. */
+const LAYERS_CONTROL_EXCLUDED_IDS = new Set([
+  "background",
+  "basemap",
+  "selection-fill",
+  "selection-line",
+]);
+
+export interface LayersControlItem {
+  id: string;
+  /** best-effort text derived straight from `id` (a composed `LayerSpecification` carries no
+   * separate display label) — good enough for a checkbox's visible text; see this function's own
+   * header for why it is derived, never a hand-maintained id/label pair. */
+  label: string;
+}
+
+function titleCaseFromId(s: string): string {
+  return s.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** parity doc §6.2 step 7's `"Raster cell values" = "r_lyr"` / `"Cells outside Program Areas" =
+ * "outside_pra_lyr"`, and §6.4's `zone_ctrl_layers()` naming convention (`"{label} outlines" =
+ * "{type}_ln"`, `"{label} labels" = "{type}_lbl"`, `"{label} values" = "{unit}_fill"`) — applied to
+ * the id alone (this module has no access to `boot.units[].label` here), falling back to a plain
+ * title-cased id for anything the table does not recognize (a species range layer, a future layer
+ * kind, etc.) rather than throwing. */
+function layersControlLabel(id: string): string {
+  if (id === "r_lyr") return "Raster cell values";
+  if (id === "outside_pra_lyr") return "Cells outside Program Areas";
+  const highlight = /^(.+)_highlight_ln$/.exec(id);
+  if (highlight) return `${titleCaseFromId(highlight[1])} selection`;
+  const line = /^(.+)_ln$/.exec(id);
+  if (line) return `${titleCaseFromId(line[1])} outlines`;
+  const label = /^(.+)_lbl$/.exec(id);
+  if (label) return `${titleCaseFromId(label[1])} labels`;
+  const fill = /^(.+)_fill$/.exec(id);
+  if (fill) return `${titleCaseFromId(fill[1])} values`;
+  return titleCaseFromId(id);
+}
+
+/**
+ * The "layers control" a real map UI would offer, derived from the style MapLibre actually
+ * renders — never a hand-maintained list of ids.
+ *
+ * **This is the structural fix for a known bug in the ported Shiny app** (parity doc §6.4:
+ * `add_layers_control(layers = c(zone_ctrl_layers(), list("Raster cell values" = "r_lyr", "Cells
+ * outside Program Areas" = "outside_pra_lyr")))`). That control was hardcoded to `pra_ln`,
+ * `pra_lbl`, `er_ln`, `r_lyr`, `outside_pra_lyr` while the layers actually created were named
+ * `programarea_ln`/`programarea_lbl`/`ecoregion_ln`/… — after any sidebar change in cell mode,
+ * three of the five switches pointed at nothing (`app.R:2136-2143`). Building the control's
+ * entries FROM `style.layers` makes that class of bug impossible by construction: every id this
+ * function returns is, by definition, a layer id that is ACTUALLY in the style passed in — there
+ * is no separate literal string that can drift out of sync with it.
+ *
+ * The zone LABEL layer only ever appears once a release publishes `label_pt` (currently absent
+ * from every boot — atlas-1's TODO, not this function's problem): until then, this simply lists
+ * one fewer item, exactly matching what `composeStyle` actually drew.
+ */
+export function layersControlItems(style: StyleSpecification): LayersControlItem[] {
+  return style.layers
+    .filter((l) => !LAYERS_CONTROL_EXCLUDED_IDS.has(l.id))
+    .map((l) => ({ id: l.id, label: layersControlLabel(l.id) }));
+}
+
 /** the narrow slice of MapLibre's `Map` this module needs — so `applyStyle` is unit-testable with
  * a two-line fake and `style.ts` never imports maplibre-gl at runtime. */
 export interface StyleTarget {

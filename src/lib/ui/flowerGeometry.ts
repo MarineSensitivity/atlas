@@ -162,6 +162,54 @@ export function computeFlowerGeometry(
   return { petals, noData, centerValue, sliceCount: n };
 }
 
+export interface SafeFlowerGeometry {
+  geometry: FlowerGeometry;
+  /** the input filtered down to what `geometry` actually drew from -- identical to `components`
+   * (same array) when there was no collision; the table equivalent iterates THIS, never the raw
+   * `components` prop, so it cannot list a row `geometry` itself refused to draw. */
+  keptComponents: readonly FlowerComponentInput[];
+  /** raw input `key`s dropped because they collided with an already-kept category (first-seen
+   * wins, input order); empty when `components` had no collision. Populated ONLY as a
+   * belt-and-braces fallback for a caller that did not already de-duplicate its own data (the
+   * primary fix for the known v8/v9 case lives in `src/lens/scores/flower.ts`'s
+   * `dedupeFlowerComponents`, upstream of this function) -- a caller bug or a future data quirk
+   * must degrade the flower, not blank it. */
+  droppedKeys: string[];
+}
+
+/**
+ * `computeFlowerGeometry`, but a same-category collision degrades instead of throwing: the
+ * FIRST-SEEN component per category wins (input order), the rest are reported in `droppedKeys`
+ * rather than drawn. `Flower.svelte` calls this (never the throwing form directly) so a data
+ * quirk renders what it can and announces the drop once, rather than blanking the whole flower.
+ */
+export function computeFlowerGeometrySafe(
+  components: readonly FlowerComponentInput[],
+  options: FlowerGeometryOptions = {},
+): SafeFlowerGeometry {
+  try {
+    return {
+      geometry: computeFlowerGeometry(components, options),
+      keptComponents: components,
+      droppedKeys: [],
+    };
+  } catch {
+    const seenCategoryKeys = new Set<string>();
+    const kept: FlowerComponentInput[] = [];
+    const droppedKeys: string[] = [];
+    for (const c of components) {
+      const resolved = categoryKeyFor(c.key);
+      if (resolved === null || !seenCategoryKeys.has(resolved)) {
+        if (resolved !== null) seenCategoryKeys.add(resolved);
+        kept.push(c);
+      } else {
+        droppedKeys.push(c.key);
+      }
+    }
+    return { geometry: computeFlowerGeometry(kept, options), keptComponents: kept, droppedKeys };
+  }
+}
+
 /**
  * PURE: the flower's text summary (SC 1.1.1 -- "every chart has a table equivalent AND a text
  * summary"), built from the SAME `FlowerGeometry` the SVG draws, so the two cannot disagree. The

@@ -1,3 +1,41 @@
+# atlas 0.9.12
+
+`atlas-4` fix round 2: the flower threw on every v8/v9 view. Both releases publish
+`extrisk_primary_producer_ecoregion_rescaled` (the species-category extinction-risk term) AND the
+unrelated `primprod_ecoregion_rescaled` (raw environmental productivity) — both fold onto ONE
+`primprod` category (`categories.ts`'s synonym table predates a release publishing both at once),
+and `computeFlowerGeometry` deliberately throws when two components share a category. Verified
+against the publish pipeline itself (`workflows/score_cell_metrics.qmd`:
+`comp_keys <- c(glue("extrisk_{sp_cats}_ecoregion_rescaled"), "primprod_ecoregion_rescaled")`) that
+BOTH terms genuinely feed the composite score as separate, equal-weight inputs — this is a FLOWER
+DISPLAY collision only, not a data-correctness issue.
+
+- `src/lens/scores/flower.ts`: every path (`fromMetrics`/`zoneFlowerComponents`,
+  `defaultFlowerComponents`, `cellFlowerComponents`) now runs its components through
+  `dedupeFlowerComponents` — ONE slot per resolved category, keeping the ER-weighted
+  species-category term over the bare environmental twin on a collision. Each now returns a
+  `DedupResult` (`{components, droppedLabels}`) instead of a bare array.
+- `src/lib/ui/flowerGeometry.ts`: new `computeFlowerGeometrySafe` — the throwing
+  `computeFlowerGeometry`, but a same-category collision degrades (first-seen category wins,
+  the rest reported in `droppedKeys`) instead of throwing; a belt-and-braces fallback for a caller
+  that did not already de-duplicate its own data. `Flower.svelte` calls this, never the throwing
+  form directly, and announces every dropped label (its own catch AND the caller's
+  `droppedLabels` prop) exactly once via the shared Announcer ("duplicate component skipped:
+  {key}") — a data quirk degrades the flower, it never blanks it.
+- New fixture `tests/lens/scores/fixtures.ts`'s `BOOT_V9`, trimmed from the LIVE v9
+  `app/boot.json` (curl'd 2026-09-22): the exact 17-key `layers` list and the exact
+  `flower_default.AK` (8 entries, both "primary producer" and "primprod" present) — the real
+  collision, not a synthetic stand-in. `e2e/scores.firstpaint.spec.ts` now runs its whole suite on
+  BOTH v7 and v9 (v9 via a preview session — it is `restricted` in the versions fixture, matching
+  the live registry); the default-flower test's expected hub value is version-specific (v9: 7
+  kept of 8, mean rounded to 22).
+- New `src/lib/map/style.ts`'s `layersControlItems(style)`: a "layers control" derived from the
+  actually-composed style's own layer ids, never a hand-maintained list — the structural fix for
+  the ported Shiny app's known bug (parity doc §6.4: a control hardcoded to `pra_ln`/`pra_lbl`/
+  `er_ln`/`r_lyr`/`outside_pra_lyr` while the real ids were `programarea_ln`/`programarea_lbl`/
+  `ecoregion_ln`/…, so three of five switches were dead after any sidebar change). This
+  architecture already avoided that bug; `tests/map/style.test.ts` now names and pins it.
+
 # atlas 0.9.11
 
 - The species cold first-paint gate (`e2e/species.smoke.spec.ts`'s "paints the first species pixel

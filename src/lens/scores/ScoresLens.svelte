@@ -16,13 +16,12 @@
   import { cellRing, formatCellToken, formatZoneToken, parseScoresSelection } from "./selection";
   import { gridFromBoot, tileOf } from "../../lib/grid/grid";
   import { componentMetricKeys } from "../../lib/analysis/queries";
-  import { cellFlowerComponents, type CellComponentRow } from "./flower";
+  import { cellFlowerComponents, type CellComponentRow, type DedupResult } from "./flower";
   import { getAnalysisSources } from "./engine";
   import LayersPanel from "./LayersPanel.svelte";
   import FlowerPanel from "./FlowerPanel.svelte";
   import TablePanel from "./TablePanel.svelte";
   import type { ManifestOverlayRow } from "./raster";
-  import type { FlowerComponentInput } from "../../lib/ui/flowerGeometry";
 
   interface Props {
     sel: Sel;
@@ -128,7 +127,7 @@
   // --- a clicked cell's flower (step 2): the wide `cell` tile fetched through the engine
   // (`sql/cell_components.sql`), never `/cog/point` (plan D4 reserves that for species values
   // only). A token guard drops a stale response if the selection moves on before it resolves.
-  let cellFlowerRows = $state<FlowerComponentInput[] | null | undefined>(undefined);
+  let cellFlowerRows = $state<DedupResult | null | undefined>(undefined);
   let cellFlowerToken = 0;
   $effect(() => {
     const s = selection;

@@ -17,8 +17,9 @@
   // chart is showing), so `aria-describedby` always resolves to real content regardless of the
   // toggle -- geometry/rules live in flowerGeometry.ts (computeFlowerGeometry), unit-tested there.
   import { categoryFor } from "./categories";
+  import { announce } from "./announcer";
   import {
-    computeFlowerGeometry,
+    computeFlowerGeometrySafe,
     describeFlowerSummary,
     type FlowerComponentInput,
   } from "./flowerGeometry";
@@ -27,21 +28,47 @@
     /** flower_panel_title equivalent: "Cell 123", a zone name, or "Full study area (default)" */
     title: string;
     components: FlowerComponentInput[];
+    /** labels the CALLER already dropped before handing `components` to this component (the
+     * real-world case: `flower.ts`'s `dedupeFlowerComponents`, atlas-4 fix round 2's v8/v9
+     * "primprod"/"primary producer" collision) -- announced the same way as a drop this
+     * component detects itself, so the one real data quirk is not silently invisible to an
+     * assistive-tech user just because the de-dup happened upstream. */
+    droppedLabels?: string[];
     /** CSS px; the SVG viewBox is fixed at 0 0 200 200, so this only scales the drawing.
      * spec.md §10: the phone flower shrinks to 150. */
     size?: number;
   }
 
-  let { title, components, size = 220 }: Props = $props();
+  let { title, components, droppedLabels = [], size = 220 }: Props = $props();
 
   const uid = nextUid();
   const summaryId = `${uid}-summary`;
   const tableId = `${uid}-table`;
 
-  const geometry = $derived(computeFlowerGeometry(components));
+  // `computeFlowerGeometrySafe` never throws: a same-category collision in `components` (a caller
+  // that did not already de-duplicate its own data -- a belt-and-braces fallback; the real v8/v9
+  // "primprod"/"primary producer" case is de-duplicated upstream by `flower.ts` and arrives here
+  // via `droppedLabels` instead) degrades to "drop the duplicate, draw the rest" rather than
+  // blanking the whole flower -- see flowerGeometry.ts.
+  const safe = $derived(computeFlowerGeometrySafe(components));
+  const geometry = $derived(safe.geometry);
   const roundedCenter = $derived(
     geometry.centerValue !== null ? Math.round(geometry.centerValue) : null,
   );
+
+  // announce every duplicate-component drop -- the caller's (`droppedLabels`) and any this
+  // component caught itself (`safe.droppedKeys`) -- exactly ONCE per distinct set (not on every
+  // re-render while the same selection stays active); keyed by the joined, order-preserving list
+  // so a genuinely different drop (a different selection) still announces again.
+  let announcedDropKey = "";
+  $effect(() => {
+    const dropped = [...droppedLabels, ...safe.droppedKeys];
+    if (dropped.length === 0) return;
+    const dropKey = dropped.join("\u0000");
+    if (dropKey === announcedDropKey) return;
+    announcedDropKey = dropKey;
+    announce(`duplicate component skipped: ${dropped.join(", ")}`);
+  });
 
   let showTable = $state(false);
 
@@ -113,7 +140,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each components as c (c.key)}
+        {#each safe.keptComponents as c (c.key)}
           <tr>
             <td>{categoryFor(c.key).label}</td>
             <td class="num">{c.score === null ? "No data" : c.score}</td>
