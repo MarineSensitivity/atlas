@@ -1,3 +1,28 @@
+# atlas 0.9.14
+
+`atlas-6` fix round 1 (Opus review): four must-fixes in the places panel.
+
+- **Share dialog: dead ladder, link/number divergence.** `ShareDialog.svelte` now branches on
+  `fit.simplified` BEFORE `fit.status`, so the simplify-and-accept ladder actually renders whenever
+  a rung already ran to fit the link (previously unreachable: `fit.status === "ok"` is true for an
+  accepted rung too). `copyLink()` now builds the copied URL from `fit.hash` via the new
+  `shareUrl()` helper (`src/places/share.ts`), never `location.href` verbatim — which used to copy
+  the ORIGINAL, unsimplified link while the dialog displayed the simplified length. Accepting a
+  rung recomputes from `fit.places` directly so the numbers on screen update before anything is
+  copied.
+- **"Show analysis cells" now paints the D7b-clipped set.** `Places.svelte`'s
+  `toggleAnalysisCells()` calls the new `placeCellsInStudyArea()` (`src/places/results.ts`) instead
+  of the raw, unclipped `geo/coverage.ts#cellsInPolygon()` — a place straddling the study-area edge
+  no longer paints land/foreign-water squares the analysis itself never counts.
+- **D7b's study-area clip has a behavioural test**, not just a text regex over the SQL: a new
+  `tests/analysis/studyAreaClip.test.ts` evaluates the real `sql/cells_in_study_area.sql` WHERE
+  clause against a small in-memory cell table (`in_usa` TRUE/FALSE/NULL), proving NULL counts as
+  inside and the composite reflects only the clipped cells. `MAX_PLACES` (model.ts vs.
+  upload/normalize.ts) and `CIRCLE_SEGMENTS` are now pinned with a regression test each.
+- **Fresh-profile round trip**: `e2e/places.spec.ts` gained a real-release test (a tiny checked-in
+  DuckDB-WASM fixture) proving that copying a place's share link and opening it in a brand-new
+  browser context recomputes the identical cell count and composite.
+
 # atlas 0.9.11
 
 - The species cold first-paint gate (`e2e/species.smoke.spec.ts`'s "paints the first species pixel

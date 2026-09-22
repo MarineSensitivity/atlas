@@ -1,7 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { describeShareSummary, diffSimplification, summarizeShare } from "../../src/places/share";
+import {
+  describeShareSummary,
+  diffSimplification,
+  shareUrl,
+  summarizeShare,
+} from "../../src/places/share";
 import { DEFAULT_SEL, type Sel } from "../../src/lib/state/types";
-import type { GeomPlace } from "../../src/lib/geo/placeCodec";
+import {
+  decodePlaces,
+  encodePlaces,
+  fitPlacesToUrl,
+  URL_LONG_MAX,
+  URL_SILENT_MAX,
+  type GeomPlace,
+  type Place,
+} from "../../src/lib/geo/placeCodec";
+import { closeRing } from "../../src/lib/geo/types";
 import type { GridSpec } from "../../src/lib/grid/grid";
 
 const GRID: GridSpec = {
@@ -126,5 +140,125 @@ describe("diffSimplification", () => {
     const diff = diffSimplification(before, after, GRID);
     expect(diff.cellsBefore).toBeGreaterThan(0);
     expect(diff.cellsAfter).toBeGreaterThan(0);
+  });
+});
+
+describe("shareUrl: the link is built from `newHash`, never trusting `href`'s own #pl= to match it", () => {
+  const HREF = "https://marinesensitivity.org/atlas/?lens=scores#pl=g1.Old.AAAA&t=Report";
+
+  it("replaces exactly the existing pl value, leaving every other part of the URL untouched", () => {
+    const url = shareUrl(HREF, "g1.Old.AAAA", "g1.New.BBBBBBBB");
+    expect(url).toBe(
+      "https://marinesensitivity.org/atlas/?lens=scores#pl=g1.New.BBBBBBBB&t=Report",
+    );
+  });
+
+  it("is a no-op replacement when the new hash equals the old one", () => {
+    expect(shareUrl(HREF, "g1.Old.AAAA", "g1.Old.AAAA")).toBe(HREF);
+  });
+
+  it("inserts a #pl= at the front of the hash when there is no existing one to replace", () => {
+    const noHash = "https://marinesensitivity.org/atlas/?lens=scores";
+    expect(shareUrl(noHash, undefined, "g1.New.BBBB")).toBe(
+      "https://marinesensitivity.org/atlas/?lens=scores#pl=g1.New.BBBB",
+    );
+    const withTitleOnly = "https://marinesensitivity.org/atlas/#t=Report";
+    expect(shareUrl(withTitleOnly, undefined, "g1.New.BBBB")).toBe(
+      "https://marinesensitivity.org/atlas/#pl=g1.New.BBBB&t=Report",
+    );
+  });
+});
+
+// Fix round 1 (Opus review): "Dead ladder, link/number divergence" -- fitPlacesToUrl can return
+// status "ok" (or "long") with simplified: true (a rung of the ladder DID have to run to reach
+// that length), and the OLD ShareDialog.svelte branched on `status` first, so the ladder/accept
+// control could never render for that case, and copyLink() copied `location.href` (the ORIGINAL,
+// unsimplified link) while the dialog showed the SIMPLIFIED length. These tests exercise the exact
+// mechanism the fix relies on: fitPlacesToUrl's OWN `simplified` flag, and shareUrl()'s length
+// exactness -- not the .svelte file itself (no component-test runner in this repo; see
+// e2e/places.spec.ts for the browser-level equivalent).
+describe("the dead-ladder fix: fitPlacesToUrl().simplified is what the dialog now branches on FIRST", () => {
+  /** a 4,000-vertex rectangle ring (four edges, each subdivided into 1,000 collinear points) --
+   * `douglasPeucker` collapses collinear runs almost exactly (~0% area change), so it simplifies
+   * hard without ever needing the "upload" fallback, giving a deterministic "simplified: true,
+   * status: ok/long" case ("a 4,000-vertex ring renders the accept control"). */
+  function denseRectanglePlace(name: string): GeomPlace {
+    const corners: [number, number][] = [
+      [-124, 40],
+      [-124, 41],
+      [-123, 41],
+      [-123, 40],
+    ];
+    const perEdge = 1000;
+    const ring: [number, number][] = [];
+    for (let i = 0; i < corners.length; i++) {
+      const [x0, y0] = corners[i];
+      const [x1, y1] = corners[(i + 1) % corners.length];
+      for (let j = 0; j < perEdge; j++) {
+        const t = j / perEdge;
+        ring.push([x0 + (x1 - x0) * t, y0 + (y1 - y0) * t]);
+      }
+    }
+    expect(ring).toHaveLength(4000);
+    return { kind: "geom", name, geometry: { type: "Polygon", coordinates: [closeRing(ring)] } };
+  }
+
+  it("a 4,000-vertex ring: fitPlacesToUrl reports simplified: true (the dialog's accept control renders)", async () => {
+    const places: Place[] = [denseRectanglePlace("Big")];
+    const unsimplified = encodePlaces(places).length;
+    expect(unsimplified).toBeGreaterThan(URL_LONG_MAX); // confirms this fixture NEEDS the ladder at all
+
+    const fit = await fitPlacesToUrl(places, { baseLength: 0 });
+    expect(fit.simplified).toBe(true);
+    expect(fit.status).not.toBe("upload"); // the collinear ring simplifies comfortably within budget
+  });
+
+  it("copied.length === fit.length for every status this fixture can reach", async () => {
+    const tiny: Place[] = [{ kind: "zone", set: "pa", keys: ["GAA"] }];
+    const big: Place[] = [denseRectanglePlace("Big")];
+
+    for (const [label, places, opts] of [
+      ["ok, unsimplified", tiny, {}],
+      ["ok, simplified (a rung already fit under 2,000)", big, { baseLength: 0 }],
+      ["long", big, { baseLength: 0, silentMax: 1 }], // forces past "ok" into "long" territory
+      ["upload", big, { baseLength: 0, silentMax: 1, longMax: 1 }], // nothing can fit at all
+    ] as const) {
+      const fit = await fitPlacesToUrl([...places], opts);
+      const href = `https://marinesensitivity.org/atlas/#pl=${encodePlaces(places)}`;
+      const copied = shareUrl(href, encodePlaces(places), fit.hash);
+      const copiedHashLength = new URL(copied).hash.length - 1 - "pl=".length; // strip "#" and "pl="
+      expect(copiedHashLength, label).toBe(fit.hash.length);
+      // the dialog's OWN `baseLength: 0` fixtures above make this exact, not merely close:
+      expect(fit.length, label).toBe(fit.hash.length);
+    }
+  });
+
+  it("the numbers shown after accept equal those of the decoded #pl= -- decodePlaces(fit.hash) round-trips to fit.places exactly", async () => {
+    // mimic the real app: the `places` ShareDialog receives already came from
+    // `placesFromHash(sel.pl)`, so they already carry whatever `decodePlace` always sets (e.g.
+    // `precision`) -- round-trip once first so this test's starting point matches that, not a
+    // freshly-constructed in-memory object no real caller would ever actually pass in.
+    const raw: Place[] = [denseRectanglePlace("Big")];
+    const places = decodePlaces(encodePlaces(raw));
+
+    const fit = await fitPlacesToUrl(places, { baseLength: 0 });
+    expect(fit.simplified).toBe(true);
+
+    const decoded = decodePlaces(fit.hash);
+    expect(decoded).toEqual(fit.places);
+    // and re-encoding what was decoded reproduces the SAME hash -- the link and the analysed
+    // geometry can never observably disagree once accept() has written `fit.hash` to #pl=.
+    expect(encodePlaces(decoded)).toBe(fit.hash);
+  });
+
+  it('documents exactly why the old branch order was wrong: `status==="ok"` alone is true for this fixture even though it was simplified', async () => {
+    const places: Place[] = [denseRectanglePlace("Big")];
+    const fit = await fitPlacesToUrl(places, { baseLength: 0 });
+    // the OLD (buggy) condition ShareDialog.svelte gated "Copy link" on:
+    const oldCopyLinkShown = fit.status === "ok" && fit.length <= URL_SILENT_MAX;
+    expect(oldCopyLinkShown).toBe(true); // -- so the old code showed "Copy link", never the ladder
+    expect(fit.simplified).toBe(true); // -- even though #pl= still holds the UNSIMPLIFIED geometry
+    // tests/places/invariants.test.ts's "the ladder renders before the plain copy button" source
+    // scan is the permanent regression gate for the FIXED branch order this fact demands.
   });
 });

@@ -7,6 +7,9 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { MAX_PLACES as MODEL_MAX_PLACES } from "../../src/places/model";
+import { MAX_PLACES as NORMALIZE_MAX_PLACES } from "../../src/lib/geo/upload/normalize";
+import { CIRCLE_SEGMENTS } from "../../src/places/draw";
 
 const placesDir = fileURLToPath(new URL("../../src/places/", import.meta.url));
 
@@ -88,5 +91,99 @@ describe("a name is never inserted as HTML — every {@html} would bypass Svelte
   it("SEEDED FAULT: the scan flags a file using {@html} to render a name", () => {
     const seeded = "<span>{@html place.name}</span>";
     expect(seeded).toMatch(/\{@html\b/);
+  });
+});
+
+describe("MAX_PLACES: two independent constants (places/model.ts's own cap and geo/upload/normalize.ts's per-file cap) pinned equal", () => {
+  // atlas-6 fix round 1 (Opus review): the two were never DERIVED from one shared source (they
+  // answer different questions -- "places total" vs "places from one file" -- so one importing
+  // the other would be the wrong fix), but both happen to be 20 and a drift between them (either
+  // file bumped without the other) would be a real, silent behaviour change nobody would notice
+  // without this.
+  it("both are 20", () => {
+    expect(MODEL_MAX_PLACES).toBe(20);
+    expect(NORMALIZE_MAX_PLACES).toBe(20);
+  });
+
+  it("stays pinned to each other, whatever the shared number is", () => {
+    expect(MODEL_MAX_PLACES).toBe(NORMALIZE_MAX_PLACES);
+  });
+});
+
+describe("CIRCLE_SEGMENTS: Deliverable 3's '64-gon' is the literal value, not just internally consistent", () => {
+  // draw.test.ts already asserts terra-draw's circle mode is CONSTRUCTED with this constant --
+  // that catches a wiring regression, not a drift of the constant's own value away from 64.
+  it("is exactly 64", () => {
+    expect(CIRCLE_SEGMENTS).toBe(64);
+  });
+});
+
+describe("'Show analysis cells' paints the D7b-CLIPPED set, never the raw geo/coverage.ts#cellsInPolygon() one", () => {
+  // atlas-6 fix round 1 (Opus review): tests/places/results.test.ts proves `placeCellsInStudyArea`
+  // ITSELF returns the clipped rows, but nothing proved `Places.svelte`'s `toggleAnalysisCells`
+  // actually PAINTS them -- a revert back to painting the unclipped `cellsInPolygon()` result would
+  // stay green there while GAA re-paints 14,238 squares for 14,165 analysed cells. This source scan
+  // is the wiring gate: the paint call (`mapStore.setCells(...)`) must be built from
+  // `placeCellsInStudyArea`'s own result, not from the pre-check upper bound.
+  it("toggleAnalysisCells() paints cellsFeatureCollection(cells, grid) where `cells` came from placeCellsInStudyArea(), not cellsInPolygon()", () => {
+    const [, src] = allSource.find(([f]) => f.endsWith("Places.svelte"))!;
+    const fn = src.slice(
+      src.indexOf("async function toggleAnalysisCells"),
+      src.indexOf("// turning the toggle off"),
+    );
+    expect(fn).toMatch(/const cells = await placeCellsInStudyArea\(ctx, p\.geometry\);/);
+    expect(fn).toMatch(/mapStore\.setCells\(cellsFeatureCollection\(cells, grid\)\)/);
+    // the unclipped call is still allowed to exist (it's the cheap pre-check upper bound), but it
+    // must never be the thing PAINTED -- i.e. never passed straight into cellsFeatureCollection.
+    expect(fn).not.toMatch(/cellsFeatureCollection\(unclipped/);
+  });
+
+  it("SEEDED FAULT: painting the pre-check's unclipped set instead is exactly what this scan catches", () => {
+    const seeded =
+      "const unclipped = cellsInPolygon(p.geometry, grid);\n" +
+      "    showCells = true;\n" +
+      "    mapStore.setCells(cellsFeatureCollection(unclipped, grid));\n" +
+      "  }\n\n  // turning the toggle off";
+    expect(seeded).not.toMatch(/const cells = await placeCellsInStudyArea\(ctx, p\.geometry\);/);
+    expect(seeded).toMatch(/cellsFeatureCollection\(unclipped/);
+  });
+});
+
+describe("ShareDialog: the ladder renders before the plain copy button, and copyLink never trusts location.href", () => {
+  // atlas-6 fix round 1 (Opus review), "Dead ladder, link/number divergence": `fitPlacesToUrl` can
+  // report `status: "ok"`/`"long"` with `simplified: true` (a rung already ran), and the ladder
+  // must render in that case -- so `{#if fit.simplified}` has to appear BEFORE any branch that
+  // renders "Copy link" off `fit.status` alone, or the ladder is dead code (unreachable: `status
+  // === "ok"` is true FOR EVERY accepted rung too, by fitPlacesToUrl's own construction).
+  it('`{#if fit.simplified}` appears before the `{:else if fit.status === "ok"}` COPY-LINK branch in ShareDialog.svelte\'s template', () => {
+    const [, src] = allSvelte.find(([f]) => f.endsWith("ShareDialog.svelte"))!;
+    const simplifiedAt = src.indexOf("{#if fit.simplified}");
+    // the specific BRANCH keyword, not `fit.status === "ok"`'s OTHER (unrelated) use just above,
+    // inside the length paragraph's own "(long link)" text.
+    const okBranchAt = src.indexOf('{:else if fit.status === "ok"}');
+    expect(simplifiedAt).toBeGreaterThan(-1);
+    expect(okBranchAt).toBeGreaterThan(-1);
+    expect(simplifiedAt).toBeLessThan(okBranchAt);
+  });
+
+  it("copyLink() builds the URL from shareUrl(...), never `location.href` verbatim", () => {
+    const [, src] = allSvelte.find(([f]) => f.endsWith("ShareDialog.svelte"))!;
+    const fn = src.slice(src.indexOf("async function copyLink"), src.indexOf("function download"));
+    expect(fn).toMatch(/shareUrl\(\s*location\.href\s*,/);
+    expect(fn).not.toMatch(/writeText\(\s*location\.href\s*\)/);
+  });
+
+  it("SEEDED FAULT: restoring the old branch order (status before simplified) is exactly what the first scan catches", () => {
+    const seeded =
+      '{#if fit.status === "ok" && fit.length <= URL_SILENT_MAX}\n<button>Copy link</button>\n{:else if fit.simplified}\n';
+    const simplifiedAt = seeded.indexOf("fit.simplified");
+    const okBranchAt = seeded.indexOf('fit.status === "ok"');
+    expect(simplifiedAt).toBeGreaterThan(okBranchAt); // wrong order -- the ladder is now unreachable
+  });
+
+  it("SEEDED FAULT: copyLink() falling back to location.href is exactly what the second scan catches", () => {
+    const seeded =
+      "async function copyLink() {\n    await navigator.clipboard.writeText(location.href);\n  }\n\n  function download() {";
+    expect(seeded).toMatch(/writeText\(\s*location\.href\s*\)/);
   });
 });

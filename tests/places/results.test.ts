@@ -4,6 +4,7 @@ import {
   cellModelTilePath,
   computeScoreResults,
   computeSpeciesResults,
+  placeCellsInStudyArea,
   speciesTilePlan,
 } from "../../src/places/results";
 import { TEMPLATES } from "../../src/lib/analysis/templates";
@@ -62,6 +63,10 @@ describe("cellModelTilePath", () => {
 /** the same fake DataEngineContext pattern tests/places/studyArea.test.ts uses. */
 function fakeCtx(opts: {
   countAnswer?: number;
+  /** the D7b-clipped rows `placeCellsInStudyArea` returns -- kept CONSISTENT with `countAnswer`
+   * by the caller (both describe the SAME `place_cell_sa`), never derived from one another here,
+   * so a test that passes both is the one asserting they actually agree. */
+  saRows?: { cell_id: number; pct: number }[];
   scoreRows?: Record<string, unknown>[];
   speciesRows?: Record<string, unknown>[];
 }): {
@@ -76,6 +81,9 @@ function fakeCtx(opts: {
   const db: SqlRunner = {
     async exec<T>(sql: string): Promise<T[]> {
       if (/SELECT count\(\*\)/i.test(sql)) return [{ n: opts.countAnswer ?? 10 }] as unknown as T[];
+      if (/FROM place_cell_sa/i.test(sql) && /pct_covered\s+AS\s+pct/i.test(sql)) {
+        return (opts.saRows ?? []) as unknown as T[];
+      }
       if (/^\s*SELECT/i.test(sql) && /agg\.metric_key/i.test(sql)) {
         return (opts.scoreRows ?? []) as unknown as T[];
       }
@@ -139,6 +147,33 @@ describe("computeScoreResults", () => {
     const result = await computeScoreResults(ctx, {}, SQUARE);
     expect(result.coverage.nCellsTotal).toBe(0);
     expect(result.coverage.coveragePct).toBe(0);
+  });
+});
+
+describe("placeCellsInStudyArea", () => {
+  it("returns the CLIPPED rows, and its count matches computeScoreResults' nCellsStudyArea for the SAME place -- fix round 1 (Opus review): 'show analysis cells' must paint exactly this set, never the raw geo/coverage.ts#cellsInPolygon() one", async () => {
+    // a place straddling the study-area edge: 5 cells touched, only 2 (a fictional in/NULL pair)
+    // survive the clip -- the fixture's own numbers are what "straddling the edge" means here; the
+    // SQL twin's own behaviour (which rows survive coalesce(in_usa, TRUE)) is
+    // tests/analysis/studyAreaClip.test.ts's job, not this file's.
+    const saRows = [
+      { cell_id: 11, pct: 100 },
+      { cell_id: 42, pct: 60 },
+    ];
+    const { ctx } = fakeCtx({ countAnswer: saRows.length, saRows });
+
+    const cells = await placeCellsInStudyArea(ctx, SQUARE);
+    expect(cells).toEqual(saRows);
+
+    const result = await computeScoreResults(ctx, {}, SQUARE);
+    expect(cells.length).toBe(result.coverage.nCellsStudyArea);
+  });
+
+  it("never returns more cells than the place's own unclipped total", async () => {
+    const { ctx } = fakeCtx({ countAnswer: 0, saRows: [] });
+    const cells = await placeCellsInStudyArea(ctx, SQUARE);
+    const result = await computeScoreResults(ctx, {}, SQUARE);
+    expect(cells.length).toBeLessThanOrEqual(result.coverage.nCellsTotal);
   });
 });
 

@@ -38,6 +38,32 @@ export function describeShareSummary(s: ShareSummary): string {
   return `This link carries ${parts.join(", ")}.`;
 }
 
+/**
+ * The actual link to copy, built from `newHash` (a `FitResult.hash` -- the geometry the panel just
+ * ANALYSED and is showing the numbers for) rather than trusting `href`'s own `#pl=` to already
+ * match it. Fix round 1 (Opus review): `fitPlacesToUrl` can return `status: "ok"` (or "long") with
+ * `simplified: true` -- a rung DID have to run to fit the budget -- and copying `location.href`
+ * verbatim in that case copies the ORIGINAL, unsimplified (and often far longer) link while the
+ * dialog is showing the SIMPLIFIED one's length: a real link/number divergence, not a cosmetic one.
+ *
+ * A plain string substring-replace, not a `URLSearchParams` round trip: `oldPl` and `newHash` are
+ * both the codec's own alphabet (`g1`'s base64url token, or `z.`/`u.` place tokens joined by
+ * literal `~`/`,` -- every one of those characters is already a valid, unescaped URL-fragment
+ * character, RFC 3986 `pchar` `/` `sub-delims`), so replacing `pl=<oldPl>` with `pl=<newHash>`
+ * changes exactly the bytes that differ and nothing else -- which is also what makes
+ * `shareUrl(...).length` land EXACTLY on `fit.length` (both are `base + hash.length` over the
+ * IDENTICAL base), not merely close.
+ */
+export function shareUrl(href: string, oldPl: string | undefined, newHash: string): string {
+  if (oldPl) return href.replace(`pl=${oldPl}`, `pl=${newHash}`);
+  // no existing #pl= to replace (sharing before any place has ever been written back) -- insert
+  // one at the front of the hash, ahead of any other hash key (e.g. `t=`).
+  const url = new URL(href);
+  const rest = url.hash.replace(/^#/, "");
+  url.hash = rest ? `#pl=${newHash}&${rest}` : `#pl=${newHash}`;
+  return url.toString();
+}
+
 function vertexCount(g: AreaGeometry): number {
   return polygonsOf(g).reduce((n, rings) => n + rings.reduce((m, r) => m + r.length, 0), 0);
 }
