@@ -41,10 +41,18 @@ export async function routeMapTileOrigins(page: Page) {
       route.fulfill({ status: 200, contentType: "image/png", body: png }),
     );
   }
-  // glyphs: the shell composes no label layer, so this is only ever reached by a spec that adds
-  // one — a 404 there degrades to "render the codepoint locally" (a warning), never an error.
+  // glyphs: atlas-4 mounts the scores lens by default, and its zones carry `label_pt` in every
+  // boot fixture here, so `zonesNeedGlyphs()` is now true and this endpoint IS reached on an
+  // ordinary shell load (verified live: `curl -sI` on the exact requested URL,
+  // https://tiles.basemaps.cartocdn.com/fonts/Open%20Sans%20Regular/0-255.pbf, returns 200 — the
+  // font NAME in layers/basemap.ts's LABEL_FONT is correct). A 404 here used to be harmless only
+  // because nothing exercised it; Chromium logs ANY failed resource load as a console "error"
+  // regardless of how gracefully MapLibre itself recovers, so a deliberate 404 now fails the
+  // "zero console errors" gate. Fixed with a 200 + an EMPTY body: a zero-byte protobuf is a valid
+  // (if data-free) serialization of the glyph PBF schema — every field in it is optional/repeated
+  // — so MapLibre parses it as "no glyphs in this range" rather than erroring.
   await page.route("https://tiles.basemaps.cartocdn.com/**", (route) =>
-    route.fulfill({ status: 404, body: "" }),
+    route.fulfill({ status: 200, contentType: "application/x-protobuf", body: "" }),
   );
 }
 
@@ -131,7 +139,16 @@ export async function routeSession(page: Page, body: object | null) {
 }
 
 /** the seal image About.svelte's default VITE_SEAL_URL points at -- routed so no spec here ever
- * touches the live network (matching e2e/gallery.spec.ts's convention). */
+ * touches the live network (matching e2e/gallery.spec.ts's convention).
+ *
+ * ALSO seeds the welcome modal's "don't show again" localStorage key (atlas-4 step 3,
+ * `WelcomeModal.svelte`) via `addInitScript`, so it runs before the page's own scripts on every
+ * navigation from here on. Every spec in this file already calls this ONE function as part of its
+ * hermetic setup, and the welcome modal's native `<dialog>` (`showModal()`) blocks pointer events
+ * across the WHOLE page while open -- an unrelated spec clicking `.topbar`/`#rail-region`/panel
+ * controls would otherwise time out (measured: this broke shell.url-state/a11y/cls/theme-flash
+ * wholesale the moment the modal landed). A spec that wants to see the real welcome modal clears
+ * this key itself (`e2e/scores.welcome.spec.ts`) rather than expecting the shared default to show it. */
 export async function routeSealFixture(page: Page) {
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">' +
@@ -139,6 +156,13 @@ export async function routeSealFixture(page: Page) {
   await page.route("**/branding/mma-seal.svg", (route) =>
     route.fulfill({ contentType: "image/svg+xml", body: svg }),
   );
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem("atlas.welcome.dontShowAgain", "1");
+    } catch {
+      /* private mode / storage disabled -- the modal just shows, no spec breaks because of it */
+    }
+  });
 }
 
 /** the shell's one same-origin, one-time setup for a hermetic public-host load: routes the

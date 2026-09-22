@@ -38,7 +38,6 @@
   import { composeStyle } from "../lib/map/style";
   import { zoneUnitsFromBoot } from "../lib/map/layers/zones";
   import { studyAreaFromBoot } from "../lib/map/interaction";
-  import type { ZoneUnitSpec } from "../lib/map/types";
   import { createAnalytics } from "../lib/analytics/analytics";
   // atlas-5: the species lens. Shell owns WHERE it mounts (the "layers" panel body, the topbar
   // search field, a legend region over the map) and the ONE composeStyle call; the lens owns what
@@ -53,6 +52,10 @@
   // effect (below) folds into the ONE `selection` input, per docs/map.md.
   import Places from "../places/Places.svelte";
   import { createPlacesMapStore } from "../places/placesMap.svelte";
+  import type { RasterLayerSpec, SelectionSpec, ZoneUnitSpec } from "../lib/map/types";
+  import ScoresLens from "../lens/scores/ScoresLens.svelte";
+  import VersionPickerModal from "../lens/scores/VersionPickerModal.svelte";
+  import WelcomeModal from "../lens/scores/WelcomeModal.svelte";
 
   const selStore = createSelStore(location);
   const sel = selStore.sel;
@@ -141,8 +144,9 @@
     document.querySelector<HTMLButtonElement>("#about-region button")?.focus();
   }
 
+  let versionPickerOpen = $state(false);
   function onVersionClick() {
-    announce("The release picker arrives in a later phase.");
+    versionPickerOpen = true;
   }
 
   // --- the on-map About card's release note (spec.md §9): the seal itself is About.svelte's own
@@ -151,9 +155,30 @@
   interface Early {
     version: Promise<string | null>;
     boot?: Promise<unknown>;
+    // atlas-4: the scores lens' raster/overlay/legend inputs come from `manifest.overlays`
+    // (boot.json carries no `overlays` key today) -- read the same global VersionBadge.svelte and
+    // index.html's inline script already publish, never a second fetch.
+    manifest?: Promise<unknown>;
+    // atlas-4 step 3: the release picker (D15) reads the SAME `versions.json` rows and denial
+    // record index.html's inline early-fetch script already resolved -- never a second fetch.
+    versions?: Promise<EarlyVersionRow[] | null>;
+    denied?: Promise<{ ver: string; reason: string } | null>;
+  }
+  // structurally identical to src/lib/release/access.ts's own `VersionRow` -- NOT imported from
+  // it: this file must never import src/lib/release (tests/shell/shell-invariants.test.ts's
+  // source-scan guard) since the early-fetch script is the ONE place that logic runs before any
+  // bundle parses; the shell only ever reads window.__early's already-resolved values.
+  interface EarlyVersionRow {
+    ver?: string;
+    status?: string;
+    access?: string;
+    released?: string;
   }
   let earlyVersion = $state<string | null>(null);
   let boot = $state<unknown>(null);
+  let manifest = $state<unknown>(null);
+  let versions = $state<EarlyVersionRow[] | null>(null);
+  let denied = $state<{ ver: string; reason: string } | null>(null);
   onMount(() => {
     const early = (window as unknown as { __early?: Early }).__early;
     early?.version.then((v) => (earlyVersion = v)).catch(() => {});
@@ -161,6 +186,16 @@
     // their PMTiles archives. A missing/404 boot (no release has published app/boot.json until
     // atlas-1) leaves `boot` null and the map paints basemap-only -- never an error.
     early?.boot?.then((b) => (boot = b)).catch(() => {});
+    early?.manifest?.then((m) => (manifest = m)).catch(() => {});
+    early?.versions?.then((v) => (versions = v)).catch(() => {});
+    // a denied version (e.g. the public host + ?ver=v9) auto-opens the picker so the "why" is
+    // visible without a click -- D15's e2e gate: "shows the notice", not "shows it once asked".
+    early?.denied
+      ?.then((d) => {
+        denied = d;
+        if (d) versionPickerOpen = true;
+      })
+      .catch(() => {});
   });
 
   // --- the map (atlas-map): mounted under the panels, one MapLibre instance ---------------------
@@ -188,6 +223,20 @@
     mapHandle: () => mapHandle,
     track: (name, params) => analytics.track(name as never, params as never),
   });
+
+  // atlas-4: the ACTIVE lens' own composeStyle contribution (raster, overlays, zone fills/
+  // highlights, selection). A lens computes it and hands it back through this one bucket -- the
+  // shell still owns the ONE `applyStyle` call (below), so a lens never touches MapLibre itself
+  // (docs/map.md). `zones` here REPLACES the shell's outline-only `zoneUnits` when a lens supplies
+  // its own (choropleth fills/highlights included); `undefined` on any field falls back to "the
+  // shell's own base view" so a lens that has not loaded yet (or a species view, which does not
+  // use this bucket the same way) never blanks the map.
+  let lensMapExtra = $state<{
+    zones?: ZoneUnitSpec[];
+    raster?: RasterLayerSpec | null;
+    overlays?: RasterLayerSpec[];
+    selection?: SelectionSpec | null;
+  }>({});
 
   onMount(() => {
     if (!mapEl) return;
@@ -218,7 +267,16 @@
     (window as unknown as { __atlasMap?: unknown }).__atlasMap = {
       handle,
       composeStyle,
-      inputs: () => ({ theme: resolvedTheme, projection: sel.proj, zones: zoneUnits }),
+      inputs: () => ({
+        theme: resolvedTheme,
+        projection: sel.proj,
+        zones: lensMapExtra.zones ?? zoneUnits,
+        raster:
+          sel.lens === "scores" ? (lensMapExtra.raster ?? null) : speciesLens.mapInputs.raster,
+        range: sel.lens === "species" ? speciesLens.mapInputs.range : null,
+        overlays: lensMapExtra.overlays ?? [],
+        selection: placesSelection ?? lensMapExtra.selection ?? null,
+      }),
     };
     // the species lens' own test/automation seam, same spirit as __atlasMap just above: it exposes
     // only `selectSpecies`, exactly what clicking a picker option already does through the UI (used
@@ -270,10 +328,11 @@
       composeStyle({
         theme: resolvedTheme,
         projection: sel.proj,
-        zones: zoneUnits,
-        raster,
+        zones: lensMapExtra.zones ?? zoneUnits,
+        raster: sel.lens === "scores" ? (lensMapExtra.raster ?? null) : raster,
         range,
-        selection: placesSelection,
+        overlays: lensMapExtra.overlays ?? [],
+        selection: placesSelection ?? lensMapExtra.selection ?? null,
       }),
     );
   });
@@ -295,6 +354,7 @@
     class="chip"
     data-tour="version-chip"
     data-control="version-chip"
+    aria-haspopup="dialog"
     onclick={onVersionClick}
   >
     <Icon name="version" size={14} />
@@ -397,17 +457,31 @@
     />
   </nav>
 
-  {#snippet panelBody()}
-    {#if sel.lens === "species" && activeTool === "layers"}
-      <SpeciesLensPanel lens={speciesLens} rep={sel.rep} />
-    {:else if activeTool === "places"}
-      <Places {sel} {selStore} {boot} {mapHandle} {zoneUnits} mapStore={placesMap} />
-    {:else}
-      <p>{TOOL_BODY[activeTool]}</p>
-    {/if}
-  {/snippet}
-
   <div class="panel-region" id="panel-region" data-tour="panel" data-control="panel">
+    <!-- the ONE panel body: places owns its tool on either lens; otherwise the active lens
+         decides what the tool's panel shows (the scores lens takes every tool and falls back to
+         the tool's own text; the species lens takes "layers" only). -->
+    {#snippet panelBody()}
+      {#if activeTool === "places"}
+        <Places {sel} {selStore} {boot} {mapHandle} {zoneUnits} mapStore={placesMap} />
+      {:else if sel.lens === "species" && activeTool === "layers"}
+        <SpeciesLensPanel lens={speciesLens} rep={sel.rep} />
+      {:else if sel.lens === "scores"}
+        <ScoresLens
+          {sel}
+          {selStore}
+          {boot}
+          {manifest}
+          ver={earlyVersion}
+          {mapHandle}
+          {activeTool}
+          fallbackBody={TOOL_BODY[activeTool]}
+          bind:mapExtra={lensMapExtra}
+        />
+      {:else}
+        <p>{TOOL_BODY[activeTool]}</p>
+      {/if}
+    {/snippet}
     {#if isPhone}
       <Sheet id="shell" title={TOOL_LABEL[activeTool]}>
         {@render panelBody()}
@@ -439,3 +513,15 @@
      `announce()` from src/lib/ui/announcer.ts; nothing else in the shell renders a region of
      its own. -->
 <Announcer />
+
+<!-- atlas-4 step 3: app-wide chrome, not gated on `sel.lens` -- the release picker and the
+     welcome modal apply to either lens, exactly as the ported app's own modals did. -->
+<VersionPickerModal
+  open={versionPickerOpen}
+  onclose={() => (versionPickerOpen = false)}
+  {versions}
+  {denied}
+  currentVer={earlyVersion}
+  loc={{ search: location.search, hash: location.hash }}
+/>
+<WelcomeModal tour={sel.tour} />

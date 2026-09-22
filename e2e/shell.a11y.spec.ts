@@ -44,9 +44,18 @@ async function gotoShell(page: import("@playwright/test").Page, theme: string, p
 // The contrast itself did not change and is gated elsewhere -- `--text-primary` on
 // `--surface-panel-basis` is one of the 70 pairs `node scripts/contrast.mjs` resolves in both
 // themes (spec.md §7/§8). Phone is unchanged at 5 (the sheet covers the same text).
+//
+// RE-TRIAGED 2026-09-22 (atlas-4 step 1), desktop 9 -> 16, phone 5 -> 10: the scores lens' Layers
+// panel (the shell's default rail tool) landed, replacing the one-paragraph placeholder with real
+// field labels, `<select>`s and a legend note -- seven more text/control nodes over the SAME
+// glass-over-canvas (desktop `imgNode`) / glass-over-sheet (phone `pseudoContent`) background axe
+// already could not resolve. Verified, not assumed: every new node's own foreground/background
+// token pair (`--text-secondary`/`--icon-muted` on `--surface-panel-basis`/`--surface-sunken`) is
+// among the pairs `node scripts/contrast.mjs` independently resolves and passes; none of the new
+// nodes cited a reason outside the two already allow-listed below.
 const COLOR_CONTRAST_INCOMPLETE_CEILING: Record<string, number> = {
-  phone: 5,
-  desktop: 9,
+  phone: 10,
+  desktop: 16,
 };
 // `imgNode` joined `pseudoContent` in the same re-triage: axe reports it when the element's
 // background resolves to an IMAGE it cannot sample — here the map's WebGL canvas behind the glass
@@ -94,16 +103,18 @@ test.describe("layout: no horizontal overflow, every control on screen (verify.m
 });
 
 test.describe("aria semantics", () => {
-  // atlas-3 closing review, item 3: the version chip advertised a popup dialog it does not open
-  // yet (the picker itself arrives in atlas-4) -- a false affordance for assistive tech. Removed
-  // until the picker exists; the announcement on click (onVersionClick) stays.
-  test("the version chip carries no aria-haspopup (the picker doesn't exist yet)", async ({
+  // atlas-3 closing review, item 3: the version chip advertised a popup dialog it did not open yet
+  // -- a false affordance for assistive tech, removed until the picker existed. atlas-4 step 3
+  // restores it in the SAME change that ships the picker (the subplan's own instruction): the chip
+  // now opens VersionPickerModal, a real dialog, on click.
+  test("the version chip carries aria-haspopup=dialog and opens a real dialog on click", async ({
     page,
   }) => {
     await gotoShell(page, "navy");
-    await expect(page.locator('[data-control="version-chip"]')).not.toHaveAttribute(
-      "aria-haspopup",
-    );
+    const chip = page.locator('[data-control="version-chip"]');
+    await expect(chip).toHaveAttribute("aria-haspopup", "dialog");
+    await chip.click();
+    await expect(page.getByRole("dialog", { name: "Data release" })).toBeVisible();
   });
 });
 

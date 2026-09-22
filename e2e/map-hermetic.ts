@@ -167,10 +167,15 @@ export async function routeTitilerTiles(page: Page) {
 }
 
 /** the glyph endpoint a label layer would fetch — routed so a symbol layer cannot reach the live
- * network either (it 404s: a missing glyph range drops the label, never the map). */
+ * network either. A 200 with an EMPTY body, not a 404: the live CARTO endpoint answers 200 for
+ * `layers/basemap.ts`'s `LABEL_FONT` (verified with `curl -sI` on the exact requested URL), and a
+ * 404 in the fixture makes Chromium log a console "error" (its own resource-load reporting, not
+ * MapLibre's) the moment any spec's boot fixture gives a zone `label_pt` — which every fixture
+ * here now does (atlas-4's zones carry labels by default). A zero-byte body is still a VALID
+ * (empty) glyph protobuf, so MapLibre reads it as "no glyphs in this range", never an error. */
 export async function routeGlyphs(page: Page) {
   await page.route("https://tiles.basemaps.cartocdn.com/**", (route) =>
-    route.fulfill({ status: 404, body: "" }),
+    route.fulfill({ status: 200, contentType: "application/x-protobuf", body: "" }),
   );
 }
 

@@ -38,3 +38,16 @@ export function snapNoise(x: number, digits = 9): number {
   const f = 10 ** digits;
   return Math.round(x * f) / f;
 }
+
+/**
+ * R's `signif(x, digits)` (atlas-4: the raster legend's endpoints are `signif(rescale, 3)`,
+ * verbatim — the manifest's own rescale, never re-rounded to a fixed number of decimals, which
+ * would misrepresent a metric whose range is e.g. `[35.1, 11033.7]`). Half-even, like `round()`
+ * above — R's `signif()` shares the same IEC 60559 rounding rule.
+ */
+export function signif3(x: number, digits = 3): number {
+  if (!Number.isFinite(x) || x === 0) return x;
+  const magnitude = Math.floor(Math.log10(Math.abs(x)));
+  const factor = 10 ** (digits - magnitude - 1);
+  return roundHalfEven(x * factor) / factor;
+}

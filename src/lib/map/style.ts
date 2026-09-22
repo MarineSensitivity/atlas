@@ -16,6 +16,7 @@ import { rasterLayer, rasterSource } from "./layers/raster";
 import { rangeLayer, rangeSource } from "./layers/ranges";
 import {
   zoneFillLayer,
+  zoneHighlightLayer,
   zoneLabelLayer,
   zoneLineLayer,
   zoneSources,
@@ -199,6 +200,10 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
   for (const u of zones) {
     const label = zoneLabelLayer(u);
     if (label) roled.push({ role: "zone-label", layer: label });
+  }
+  for (const u of zones) {
+    const highlight = zoneHighlightLayer(u);
+    if (highlight) roled.push({ role: "selection-line", layer: highlight });
   }
 
   if (input.selection) {

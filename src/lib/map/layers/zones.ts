@@ -13,6 +13,7 @@
 import type { Feature, FeatureCollection, Point } from "geojson";
 import { GLYPHS_URL, LABEL_FONT } from "./basemap";
 import {
+  SELECTION_COLOR,
   ZONE_LABEL_BLACK,
   ZONE_LABEL_HALO_DARK,
   ZONE_LABEL_HALO_LIGHT,
@@ -91,6 +92,12 @@ export const zoneLineId = (unit: string) => `${unit}_ln`;
 export const zoneFillId = (unit: string) => `${unit}_fill`;
 export const zoneLabelId = (unit: string) => `${unit}_lbl`;
 export const zoneLabelSourceId = (unit: string) => `${unit}_lbl_src`;
+export const zoneHighlightId = (unit: string) => `${unit}_highlight_ln`;
+
+/** the clicked-zone highlight's line width — kept equal to `style.ts`'s `SELECTION_LINE_WIDTH` (a
+ * literal here, not an import, to avoid a `style.ts` <-> `layers/zones.ts` import cycle; the two
+ * are pinned equal by `tests/map/zoneHighlight.test.ts`). */
+export const ZONE_HIGHLIGHT_LINE_WIDTH = 4;
 
 /** every layer id that a click/hover query may hit for these units, innermost first (fills before
  * lines — a click inside a polygon should resolve to the polygon, not to whichever border is 2 px
@@ -169,6 +176,24 @@ export function zoneLineLayer(u: ZoneUnitSpec): LayerSpecification {
     "source-layer": u.sourceLayer,
     layout: { visibility: u.lineVisible === false ? "none" : "visible" },
     paint: paint as never,
+  };
+}
+
+/**
+ * The clicked-zone highlight (atlas-4 §6.6): a line layer filtered to ONE key of the SAME vector
+ * source/layer `u` already draws an outline for — no separate geometry fetch, matching the ported
+ * app's `add_line_layer(filter=list("==", "{unit}_key", key))`. `null` when `u.highlightKey` is
+ * unset (the common case: nothing of this unit is selected).
+ */
+export function zoneHighlightLayer(u: ZoneUnitSpec): LayerSpecification | null {
+  if (!u.highlightKey) return null;
+  return {
+    id: zoneHighlightId(u.unit),
+    type: "line",
+    source: zoneSourceId(u.unit),
+    "source-layer": u.sourceLayer,
+    filter: ["==", ["get", zoneKeyProperty(u.unit)], u.highlightKey] as never,
+    paint: { "line-color": SELECTION_COLOR, "line-width": ZONE_HIGHLIGHT_LINE_WIDTH },
   };
 }
 
