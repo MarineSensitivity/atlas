@@ -1,3 +1,42 @@
+# atlas 0.9.1
+
+`atlas-4` step 2: selection, the clicked cell's flower, the species table + CSV + composition
+treemap.
+
+- **Map click -> selection** (`ScoresLens.svelte`): `mapClick()` resolves a click on the release's
+  own grid; the cell branch always selects a cell (`sel=cell:<id>`), the zone-choropleth branch
+  only reacts to an actual zone hit (`sel=zone:<unit>:<key>`) — matching the ported app's separate
+  `map_click`/`map_feature_click` events, never a fallback between the two.
+- **The clicked cell's flower** now loads through the engine (`sql/cell_components.sql`, never
+  `/cog/point`): `src/lens/scores/engine.ts` boots DuckDB-WASM lazily (dynamic `import()` only,
+  memoised per release) the first time a cell is clicked or the species table opens.
+- **New: `src/lens/scores/{SpeciesTable,ZonesTable,Composition,GlossaryModal,TablePanel}.svelte`,
+  `{speciesLoad,composition,zonesTable}.ts`.** The species table is a bespoke grid (not
+  `src/lib/ui/DataTable.svelte`, which renders every cell as plain text): real `<a>` cells for
+  `taxon` (BOTW/WoRMS) and `model` (switches to the Species lens in place, keeping place and
+  camera; a plain click intercepts to avoid a reload, a modifier-click/new-tab falls through to
+  the browser's own default), still built on `dataTableCore.ts`'s proven sort/filter. CSV export
+  writes the UNFORMATTED frame, RFC 4180-quoted. The zones table ranks every zone of the release's
+  one unit by the current layer (`zone_metric`, read verbatim — the atlas-4 numbers gate holds by
+  construction). The composition treemap groups by species category (not the six WoRMS ranks the
+  ported app nests — `Treemap.svelte` is one level by design; see "could not satisfy").
+- **`capabilities.cell_species_list = false`** (read as the closest match to the checklist's
+  "`capabilities.cell_model`") and **`n_taxa == 0`** both show a header explaining why, never an
+  error or an empty-looking table.
+- **Fix, size budget**: `Composition.svelte` (and, inside it, `Treemap.svelte`) load through a
+  DYNAMIC `import()` two hops deep from `TablePanel.svelte`, not a static one — a static import
+  one hop up still failed `scripts/size-budget.mjs`'s "treemap" marker on `Treemap-<hash>.js`
+  itself appearing in the entry chunk's own Vite chunk-preload bookkeeping, a case the marker scan
+  is explicitly designed to catch. Static path: 410.3 KB gzip (budget 450).
+- **Could not satisfy this step**: the "≤ 2 requests cold" gate's shape assumes the species table's
+  CORE tables (`taxon`/`zone_taxon`/`taxonomy`) are already resident when a cell is clicked; this
+  step loads them lazily on first need instead (fewer requests for a session that never opens the
+  species table, more on the very first one) — not verified against the gate's literal request
+  count. `analysis/queries.ts` and `release/dataBase.ts` are statically reachable (via
+  `componentMetricKeys`/`dataUrl` type-adjacent usage), logged by Vite as
+  `INEFFECTIVE_DYNAMIC_IMPORT`; harmless today (neither pulls in DuckDB) but not the fully-lazy
+  "whole analysis layer" the plan describes — untangling it further was not done this step.
+
 # atlas 0.9.0
 
 `atlas-4` step 1: the Scores lens' Layers panel, legend and map wiring, from Tier 0 (`boot.json`)

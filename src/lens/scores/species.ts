@@ -125,3 +125,27 @@ export function modelHref(current: Sel, mdlKey: string): string {
   const { search, hash } = formatSel(next);
   return `${search}${hash}` || "?";
 }
+
+// --- CSV export (parity doc §8) -------------------------------------------------------------------
+
+/** RFC 4180 field quoting: quote (doubling embedded quotes) whenever a field contains the
+ * delimiter, a quote or a line break — the three characters that would otherwise corrupt the row
+ * boundary a naive `join(",")` assumes. */
+function csvField(v: unknown): string {
+  const s = v === null || v === undefined ? "" : String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * The species CSV — the UNFORMATTED frame (parity doc §8: `write_csv(rx$spp_tbl, file)` writes
+ * `fmt_spp_tbl()`'s raw numbers, e.g. `0.5`, never the display string `"50%"`), `\r\n` line
+ * endings (RFC 4180 / Excel's own convention, matching `readr::write_csv()`'s default).
+ */
+export function toCsv<T>(
+  rows: readonly T[],
+  columns: readonly { key: string; value: (r: T) => unknown }[],
+): string {
+  const header = columns.map((c) => csvField(c.key)).join(",");
+  const lines = rows.map((r) => columns.map((c) => csvField(c.value(r))).join(","));
+  return [header, ...lines].join("\r\n") + "\r\n";
+}

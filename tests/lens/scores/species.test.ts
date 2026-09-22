@@ -11,6 +11,7 @@ import {
   speciesFilenameStem,
   speciesHeader,
   taxonUrl,
+  toCsv,
   unitSingularLabel,
 } from "../../../src/lens/scores/species";
 
@@ -156,5 +157,42 @@ describe("model link", () => {
     expect(parsed.lens).toBe("species");
     expect(parsed.sp).toBe("ms_merge|WORMS:137209");
     expect(parsed.area).toBe("GA");
+  });
+});
+
+describe("toCsv", () => {
+  it("writes the header then one row per record, CRLF-terminated", () => {
+    const csv = toCsv(
+      [
+        { a: 1, b: "x" },
+        { a: 2, b: "y" },
+      ],
+      [
+        { key: "a", value: (r: { a: number }) => r.a },
+        { key: "b", value: (r: { b: string }) => r.b },
+      ],
+    );
+    expect(csv).toBe("a,b\r\n1,x\r\n2,y\r\n");
+  });
+
+  it("writes the UNFORMATTED value, not a display string (0.5, never '50%')", () => {
+    const csv = toCsv(
+      [{ er_score: 0.5 }],
+      [{ key: "er_score", value: (r: { er_score: number }) => r.er_score }],
+    );
+    expect(csv).toBe("er_score\r\n0.5\r\n");
+  });
+
+  it("quotes a field containing a comma, quote or newline (RFC 4180)", () => {
+    const csv = toCsv(
+      [{ name: 'a,b"c\nd' }],
+      [{ key: "name", value: (r: { name: string }) => r.name }],
+    );
+    expect(csv).toBe('name\r\n"a,b""c\nd"\r\n');
+  });
+
+  it("null/undefined become an empty field", () => {
+    const csv = toCsv([{ x: null }], [{ key: "x", value: (r: { x: null }) => r.x }]);
+    expect(csv).toBe("x\r\n\r\n");
   });
 });
