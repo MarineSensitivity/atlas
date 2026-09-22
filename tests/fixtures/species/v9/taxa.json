@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "ver": "v9",
+  "n": 13,
+  "cat": ["bird", "coral", "fish", "invertebrate", "mammal", "primary_producer", "turtle"],
+  "key": [
+    "ms_merge|WORMS:137209",
+    "ms_merge|WORMS:137077",
+    "ms_merge|BOTW:22694915",
+    "ms_merge|BOTW:22693928",
+    "ms_merge|WORMS:240727",
+    "ms_merge|WORMS:289534",
+    "ms_merge|WORMS:127427",
+    "ms_merge|WORMS:126596",
+    "ms_merge|WORMS:342067",
+    "ms_merge|BOTW:22696634",
+    "ms_merge|BOTW:22696631",
+    "ms_merge|BOTW:22694906",
+    "ms_merge|BOTW:22694921"
+  ],
+  "sci": [
+    "Dermochelys coriacea",
+    "Odobenus rosmarus",
+    "Aethia cristatella",
+    "Anarhynchus frontalis",
+    "Oxyjulis californica",
+    "Briareum asbestinum",
+    "Zeus faber",
+    "Diaphus rafinesquii",
+    "Todarodes pacificus",
+    "Aechmophorus clarkii",
+    "Aechmophorus occidentalis",
+    "Aethia psittacula",
+    "Aethia pusilla"
+  ],
+  "common": [
+    "Leatherback Turtle",
+    "Walrus",
+    "Crested auklet",
+    "Wrybill",
+    "señorita",
+    "deadman’s fingers",
+    "dory",
+    "white-spotted lantern fish",
+    "Common flying squid",
+    "Clark's Grebe",
+    "Western Grebe",
+    "Parakeet Auklet",
+    "Least Auklet"
+  ],
+  "cat_idx": [6, 4, 0, 0, 2, 1, 2, 2, 3, 0, 0, 0, 0],
+  "flags": [3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3]
+}

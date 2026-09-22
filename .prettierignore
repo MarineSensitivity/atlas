@@ -12,6 +12,12 @@ spikes
 # break the comparison in the other repo, so prettier must not touch this directory.
 tests/fixtures/places
 
+# Cross-repo artifacts again: byte copies of msens inst/schema/app_{taxon,alias,taxa}.schema.json.
+# tests/lens/species/schema.test.ts drives the validators through these files' own `required` lists
+# and compares their `pattern` literals, so what is checked here must stay what msens published —
+# not a locally reformatted variant of it.
+tests/fixtures/species/schema
+
 # R-generated parity references (scripts/parity/fixtures.R, atlas-2 Step 3b). Written by
 # jsonlite as one line at 17 significant digits, which is exactly what makes the 1e-9 gate
 # meaningful; reformatting them here would put them back out of step on the next regeneration

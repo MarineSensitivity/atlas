@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "ver": "v9",
+  "shard": "28",
+  "taxa": {
+    "ms_merge|BOTW:22693928": {
+      "key": "ms_merge|BOTW:22693928",
+      "sci": "Anarhynchus frontalis",
+      "common": "Wrybill",
+      "sp_cat": "bird",
+      "taxon_id": "22693928",
+      "taxon_authority": "botw",
+      "rl": "VU",
+      "esa": {
+        "code": "IUCN:VU",
+        "source": null
+      },
+      "mmpa": false,
+      "mbta": false,
+      "er_score": 5,
+      "valid_usa": false,
+      "valid_global": true,
+      "merged": {
+        "type": "cog",
+        "url": "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v9/native/merged/ms_merge_BOTW_22693928.tif",
+        "rescale": [1, 100],
+        "colormap": "spectral_r",
+        "bbox": [168.9, -45, 178.1, -34.5]
+      },
+      "inputs": [
+        {
+          "ds_key": "bl",
+          "mdl_key": "bl|22693928",
+          "is_mask": true,
+          "assets": [
+            {
+              "rep": "native",
+              "type": "pmtiles",
+              "url": "https://file.marinesensitivity.org/pmtiles/v9/bl/22693928.pmtiles?v=1786641806",
+              "rescale": null,
+              "colormap": null,
+              "source_layer": "bl",
+              "bbox": [168.9, -45, 178.1, -34.5]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

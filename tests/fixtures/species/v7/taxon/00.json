@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "ver": "v7",
+  "shard": "00",
+  "taxa": {
+    "54272": {
+      "key": "54272",
+      "sci": "Brachyramphus marmoratus",
+      "common": "Marbled Murrelet",
+      "sp_cat": "bird",
+      "taxon_id": "22694870",
+      "taxon_authority": "botw",
+      "rl": "EN",
+      "esa": {
+        "code": "FWS:TN",
+        "source": "ch_fws"
+      },
+      "mmpa": false,
+      "mbta": true,
+      "er_score": 50,
+      "valid_usa": true,
+      "valid_global": null,
+      "merged": {
+        "type": "cog",
+        "url": "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/cog/usa05/7d028c7d233f11f3.tif",
+        "rescale": [1, 100],
+        "colormap": "spectral_r",
+        "bbox": null
+      },
+      "inputs": [
+        {
+          "ds_key": "bl",
+          "mdl_key": "17626",
+          "is_mask": true,
+          "assets": []
+        },
+        {
+          "ds_key": "ch_fws",
+          "mdl_key": "18289",
+          "is_mask": true,
+          "assets": []
+        },
+        {
+          "ds_key": "rng_fws",
+          "mdl_key": "18336",
+          "is_mask": true,
+          "assets": []
+        }
+      ]
+    }
+  }
+}

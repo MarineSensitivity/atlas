@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "ver": "v9",
+  "shard": "02",
+  "alias": {
+    "rng_iucn|15106": ["ms_merge|WORMS:137077", "rng_iucn"]
+  }
+}

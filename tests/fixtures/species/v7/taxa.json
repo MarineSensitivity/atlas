@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "ver": "v7",
+  "n": 3,
+  "cat": ["bird", "coral", "fish", "invertebrate", "mammal", "other", "turtle"],
+  "key": ["54383", "54241", "54272"],
+  "sci": ["Odobenus rosmarus", "Dermochelys coriacea", "Brachyramphus marmoratus"],
+  "common": ["Walrus", "Leatherback Turtle", "Marbled Murrelet"],
+  "cat_idx": [4, 6, 0],
+  "flags": [1, 1, 1]
+}
