@@ -1,0 +1,42 @@
+[
+  {
+    "key": "FULL",
+    "label": "All US waters",
+    "lon": -101.304,
+    "lat": 46.9,
+    "zoom": 2.16,
+    "ecoregions": "CAC CBS EBS EGOA GOA HAR NECS PIS PUR SECS WAOR WCGOA"
+  },
+  {
+    "key": "AK",
+    "label": "Alaska",
+    "lon": -164.654,
+    "lat": 63.327,
+    "zoom": 2.35,
+    "ecoregions": "CBS EBS GOA HAR"
+  },
+  {
+    "key": "AT",
+    "label": "Atlantic",
+    "lon": -67.627,
+    "lat": 29.862,
+    "zoom": 2.71,
+    "ecoregions": "NECS PUR SECS"
+  },
+  {
+    "key": "GA",
+    "label": "Gulf of America",
+    "lon": -89.089,
+    "lat": 26.251,
+    "zoom": 3.74,
+    "ecoregions": "EGOA WCGOA"
+  },
+  {
+    "key": "PA",
+    "label": "Pacific",
+    "lon": -171.57,
+    "lat": 28.541,
+    "zoom": 1.7,
+    "ecoregions": "CAC PIS WAOR"
+  }
+]

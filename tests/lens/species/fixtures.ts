@@ -8,6 +8,7 @@ import { dataUrl } from "../../../src/lib/release/dataBase";
 import { parseTaxonShard, type TaxonCard } from "../../../src/lens/species/data/shards";
 import { datasetIndex, type DatasetIndex } from "../../../src/lens/species/data/layerBar";
 import { parseTaxaIndex, type TaxaIndex } from "../../../src/lens/species/data/picker";
+import { studyAreaView, type StudyAreaView } from "../../../src/lens/species/data/camera";
 
 const ROOT = new URL("../../fixtures/species/", import.meta.url);
 
@@ -102,6 +103,13 @@ export const CARDS = {
 
 export function datasetsFor(ver: "v9" | "v7" | "v1"): DatasetIndex {
   return datasetIndex(readFixture(`${ver}/datasets.json`));
+}
+
+/** `boot.study_areas[FULL]` for a release — the camera of last resort (fix round 1). */
+export function studyAreaFor(ver: "v9" | "v7"): StudyAreaView {
+  const view = studyAreaView(readFixture(`${ver}/study-areas.json`));
+  if (!view) throw new Error(`${ver}/study-areas.json: no FULL study area`);
+  return view;
 }
 
 export function taxaIndexFor(ver: "v9" | "v7"): TaxaIndex {

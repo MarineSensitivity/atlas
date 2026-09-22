@@ -88,20 +88,44 @@ resolution}}`, `resolution ∈ {merged_model, input_model, not_found}`. This mod
 ## `camera.ts` — the antimeridian
 
 ```ts
-const cam = cameraFor(card, selectedInput, { rep, fallbackBbox: erBbox });
-// { bounds: [[w, s], [e, n]], padding, source: "input" | "merged" | "fallback" } | null
-if (refitNeeded(prevKey, { sp, in: selected })) map.fitBounds(cam.bounds, { padding: cam.padding });
+const cam = cameraFor(card, selectedInput, {
+  rep,
+  fallbackBbox: erBbox,
+  studyArea: studyAreaView(boot),
+});
+// { kind: "bounds", bounds: [[w, s], [e, n]], padding, source: "input" | "merged" | "ecoregion" }
+// | { kind: "center", center: [lon, lat], zoom, source: "study-area" } | null
+if (refitNeeded(prevKey, { sp, in: selected })) apply(cam);
 ```
 
-- **Longitudes are never normalized.** The release publishes each extent already in the
-  minimal-span (`lon_span_agg`) frame, so `e` may exceed 180 — `[[160, 48], [210, 73]]` is a walrus
-  in the Bering and Chukchi seas. `((x + 180) % 360) - 180` anywhere on the way turns it into a
-  350°-wide box framing Iceland (2,744 of v8's models once did that).
-- Fallback order for an input: its own extent → unless it spans ≥ 350° → the merged extent → the
-  supplied ecoregion extent → `null` (leave the camera alone).
+**Two facts about the published data, measured 2026-09-22 over every shard** — the contract says an
+extent arrives already reduced to the minimal-span (`lon_span_agg`) frame, and it does not:
+
+- **v9** publishes 48,378 bboxes. Only **16** have `xmax > 180`; **6,273 have a naive span wider
+  than 180°** (5,053 wider than 300°) — e.g. `[-173.7, -16.05, 163.7, 20.2]`, a Pacific taxon
+  written _wrapped_, which read naively is 337° of the wrong ocean. 38,448 more are `null`.
+- **v7 publishes no bbox at all**: all 16,153 are `null`.
+
+The upstream defect is atlas-1's (msens `.app_bbox` / `lon_span_agg` for v9; the v7 `model_asset`
+path yielding no bbox). **The lens compensates**, so the plan's camera gate holds today:
+
+- **Longitudes are never normalized** (`((x + 180) % 360) - 180`), which would turn a Bering Sea
+  model into a 350°-wide box framing Iceland (2,744 of v8's models once did that). `minimalFrame()`
+  only ever _re-expresses_ a frame: a box whose naive span exceeds 180° is read as wrapped and
+  becomes its complementary interval `[xmax, xmin + 360]` when that is narrower, so
+  `[-173.7, …, 163.7, …]` becomes `[163.7, …, 186.3, …]` — 22.6° centred on 175°E, `xmax > 180` on
+  purpose. An already-unwrapped box (`[160, 48, 210, 66]`) is untouched, and a genuinely
+  circumglobal one stays wide rather than framing a degenerate sliver.
+- Fallback order: the input's own extent → the merged extent → the supplied ecoregion extent → the
+  release's **study-area view** (`boot.study_areas[FULL]`, a `lon/lat/zoom` preset that always
+  exists), so a v7 species — which has no extent of any kind — frames US waters, never the globe.
+  Any step whose extent is still ≥ 350° after re-framing, or is `null`, is skipped.
 - `refitNeeded` is true **only when the species changes**. A layer or representation switch keeps
   the user's camera, which is the point of switching.
-- The extent is precomputed in the shard: the lens runs no aggregate and holds no grid constant.
+- The gate: `tests/fixtures/species/v9/wide-bboxes.json` holds **50 real v9 extents** with naive
+  spans over 180°. Framed naively, 48 of them span ≥ 200°; after `minimalFrame()` the widest is
+  179.5° and all 50 centres land inside the model's own longitudes.
+- The lens runs no aggregate and holds no grid constant.
 
 ## `layerBar.ts` — the pills
 

@@ -1,0 +1,358 @@
+{
+  "source": "workflows/_output/app_bundle/v9/taxon/*.json (the published v9 app bundle)",
+  "measured": "48,378 published v9 bboxes; 6,273 have a naive span > 180 deg; 16 have xmax > 180; 38,448 are null. v7 publishes no bbox at all (all 16,153 null).",
+  "sample": "50 of the 6,273, spread evenly across the naive-span distribution (sorted by span, every 125th)",
+  "n": 50,
+  "rows": [
+    {
+      "key": "ms_merge|WORMS:127095",
+      "sci": "Gymnelus retrodorsalis",
+      "layer": "am/model",
+      "shard": "77.json",
+      "bbox": [-112.25, 42.75, 68.25, 83.25]
+    },
+    {
+      "key": "ms_merge|WORMS:107583",
+      "sci": "Acanthephyra stylorostratis",
+      "layer": "am/model",
+      "shard": "3f.json",
+      "bbox": [-155.25, -61.75, 43.25, 71.25]
+    },
+    {
+      "key": "ms_merge|WORMS:272392",
+      "sci": "Malacocephalus laevis",
+      "layer": "am/native",
+      "shard": "08.json",
+      "bbox": [-97.25, -43.25, 124.25, 62.25]
+    },
+    {
+      "key": "ms_merge|WORMS:178376",
+      "sci": "Siphonodictyon mucosum",
+      "layer": "ax/model",
+      "shard": "c8.json",
+      "bbox": [-86.7, 11.65, 149.05, 30.75]
+    },
+    {
+      "key": "ms_merge|WORMS:118827",
+      "sci": "Aega psora",
+      "layer": "am/native",
+      "shard": "2b.json",
+      "bbox": [-97.9, -57.75, 147.2, 80.25]
+    },
+    {
+      "key": "ms_merge|WORMS:102564",
+      "sci": "Eurythenes obesus",
+      "layer": "am/native",
+      "shard": "a4.json",
+      "bbox": [-97.85, -70.05, 150.25, 66.6]
+    },
+    {
+      "key": "ms_merge|WORMS:156454",
+      "sci": "Thracia septentrionalis",
+      "layer": "am/model",
+      "shard": "26.json",
+      "bbox": [-177.5, 35.75, 76.25, 78.2]
+    },
+    {
+      "key": "ms_merge|WORMS:421705",
+      "sci": "Periclimenes iridescens",
+      "layer": "merged",
+      "shard": "49.json",
+      "bbox": [-177.750006028059, -57.2499990291018, 84.2500028571812, 78.1999986738124]
+    },
+    {
+      "key": "ms_merge|WORMS:377493",
+      "sci": "Metapenaeopsis goodei",
+      "layer": "am/model",
+      "shard": "95.json",
+      "bbox": [-178.75, -68.25, 92.25, 80.75]
+    },
+    {
+      "key": "ms_merge|WORMS:101883",
+      "sci": "Ampelisca aequicornis",
+      "layer": "merged",
+      "shard": "fb.json",
+      "bbox": [-177.750006028059, 33.5499994310282, 110.750003755879, 81.2499986220877]
+    },
+    {
+      "key": "ms_merge|WORMS:236593",
+      "sci": "Streetsia porcella",
+      "layer": "ax/native",
+      "shard": "31.json",
+      "bbox": [-122.8, 10.95, 180, 39.5]
+    },
+    {
+      "key": "ms_merge|WORMS:158540",
+      "sci": "Pteroplatytrygon violacea",
+      "layer": "ax/model",
+      "shard": "4c.json",
+      "bbox": [-162.45, 11.3, 148, 48.2]
+    },
+    {
+      "key": "ms_merge|WORMS:217597",
+      "sci": "Xestochilus nebulosus",
+      "layer": "rng_iucn/native",
+      "shard": "fd.json",
+      "bbox": [-141, -26.9, 173.4, 33.1]
+    },
+    {
+      "key": "ms_merge|WORMS:712726",
+      "sci": "Paracaristius nudarcus",
+      "layer": "ax/model",
+      "shard": "16.json",
+      "bbox": [-170, 4.75, 149.55, 44]
+    },
+    {
+      "key": "ms_merge|WORMS:212034",
+      "sci": "Uropterygius micropterus",
+      "layer": "ax/model",
+      "shard": "42.json",
+      "bbox": [-173.05, -16.3, 147.75, 17]
+    },
+    {
+      "key": "ms_merge|WORMS:219904",
+      "sci": "Lactoria cornuta",
+      "layer": "ax/native",
+      "shard": "00.json",
+      "bbox": [-173.05, -16.3, 148, 22.45]
+    },
+    {
+      "key": "ms_merge|WORMS:210392",
+      "sci": "Metapenaeus ensis",
+      "layer": "ax/model",
+      "shard": "d8.json",
+      "bbox": [-173.35, -14.4, 149.5, 23]
+    },
+    {
+      "key": "ms_merge|WORMS:165705",
+      "sci": "Stylissa carteri",
+      "layer": "ax/model",
+      "shard": "49.json",
+      "bbox": [-173.8, -14.4, 149.55, 23.75]
+    },
+    {
+      "key": "ms_merge|WORMS:291250",
+      "sci": "Truncatoguynia irregularis",
+      "layer": "ax/model",
+      "shard": "b2.json",
+      "bbox": [-173.8, -17.4, 149.55, 23.75]
+    },
+    {
+      "key": "ms_merge|WORMS:743630",
+      "sci": "Murex tribulus",
+      "layer": "ax/native",
+      "shard": "ce.json",
+      "bbox": [-173.8, -14.4, 149.55, 23.4]
+    },
+    {
+      "key": "ms_merge|WORMS:219466",
+      "sci": "Feia nympha",
+      "layer": "ax/model",
+      "shard": "4a.json",
+      "bbox": [-176.05, -15.95, 149.05, 22.9]
+    },
+    {
+      "key": "ms_merge|WORMS:213328",
+      "sci": "Comanthus wahlbergii",
+      "layer": "ax/model",
+      "shard": "50.json",
+      "bbox": [-176.05, -17.4, 149.55, 23.75]
+    },
+    {
+      "key": "ms_merge|WORMS:207364",
+      "sci": "Podabacia crustacea",
+      "layer": "ax/model",
+      "shard": "04.json",
+      "bbox": [-178.2, -16.3, 148, 22.45]
+    },
+    {
+      "key": "ms_merge|WORMS:218260",
+      "sci": "Plectropomus laevis",
+      "layer": "ax/model",
+      "shard": "94.json",
+      "bbox": [-178.5, -16.3, 148, 22.45]
+    },
+    {
+      "key": "ms_merge|WORMS:207461",
+      "sci": "Goniastrea retiformis",
+      "layer": "ax/model",
+      "shard": "65.json",
+      "bbox": [-178.55, -16.3, 148, 22.45]
+    },
+    {
+      "key": "ms_merge|WORMS:220001",
+      "sci": "Pomacanthus imperator",
+      "layer": "ax/native",
+      "shard": "61.json",
+      "bbox": [-178.55, -16.35, 148, 23.7]
+    },
+    {
+      "key": "ms_merge|WORMS:107619",
+      "sci": "Palaemonella rotumana",
+      "layer": "ax/native",
+      "shard": "63.json",
+      "bbox": [-179.35, -15.95, 149.05, 29.65]
+    },
+    {
+      "key": "ms_merge|WORMS:224652",
+      "sci": "Dolabrifera dolabrifera",
+      "layer": "ax/native",
+      "shard": "8c.json",
+      "bbox": [-179.65, -17.35, 149.05, 41.95]
+    },
+    {
+      "key": "ms_merge|WORMS:368025",
+      "sci": "Oncopagurus indicus",
+      "layer": "ax/model",
+      "shard": "99.json",
+      "bbox": [-179.65, -17.6, 149.55, 30.75]
+    },
+    {
+      "key": "ms_merge|WORMS:130935",
+      "sci": "Hypsicomus phaeotenia",
+      "layer": "ax/native",
+      "shard": "77.json",
+      "bbox": [-163.4, 11.5, 168.3, 36.35]
+    },
+    {
+      "key": "ms_merge|WORMS:275679",
+      "sci": "Gobiesox rhessodon",
+      "layer": "am/model",
+      "shard": "df.json",
+      "bbox": [-155.75, -45.1, 179.1, 35.6]
+    },
+    {
+      "key": "ms_merge|WORMS:104547",
+      "sci": "Subeucalanus pileatus",
+      "layer": "am/model",
+      "shard": "63.json",
+      "bbox": [-178.75, -50.6, 157.75, 47.25]
+    },
+    {
+      "key": "ms_merge|WORMS:280110",
+      "sci": "Chaenopsis schmitti",
+      "layer": "am/native",
+      "shard": "2e.json",
+      "bbox": [-160.2, -38.2, 176.5, 33.75]
+    },
+    {
+      "key": "ms_merge|WORMS:240847",
+      "sci": "Alpheus cristulifrons",
+      "layer": "am/native",
+      "shard": "cf.json",
+      "bbox": [-175.25, -33.7, 163.7, 35.75]
+    },
+    {
+      "key": "ms_merge|WORMS:220539",
+      "sci": "Phascolosoma pacificum",
+      "layer": "ax/model",
+      "shard": "7b.json",
+      "bbox": [-161.4, -3.75, 178.65, 40.8]
+    },
+    {
+      "key": "ms_merge|WORMS:234490",
+      "sci": "Acrostichum speciosum",
+      "layer": "rng_iucn/native",
+      "shard": "fa.json",
+      "bbox": [-178.75, -29.4, 163.3, 22.25]
+    },
+    {
+      "key": "ms_merge|WORMS:367592",
+      "sci": "Dardanus sanguinocarpus",
+      "layer": "am/model",
+      "shard": "e8.json",
+      "bbox": [-178.75, -30.2, 163.75, 33.7]
+    },
+    {
+      "key": "ms_merge|WORMS:128517",
+      "sci": "Pennatula phosphorea",
+      "layer": "ax/native",
+      "shard": "05.json",
+      "bbox": [-163.55, 16.05, 180, 61.5]
+    },
+    {
+      "key": "ms_merge|WORMS:209508",
+      "sci": "Actaeomorpha erosa",
+      "layer": "ax/model",
+      "shard": "64.json",
+      "bbox": [-179.65, -15.95, 164.9, 30]
+    },
+    {
+      "key": "ms_merge|WORMS:210772",
+      "sci": "Pearsonothuria graeffei",
+      "layer": "ax/native",
+      "shard": "54.json",
+      "bbox": [-176.05, -15.95, 168.6, 22.9]
+    },
+    {
+      "key": "ms_merge|WORMS:219609",
+      "sci": "Gunnellichthys viridescens",
+      "layer": "ax/native",
+      "shard": "d9.json",
+      "bbox": [-176.05, -15.95, 168.6, 22.9]
+    },
+    {
+      "key": "ms_merge|WORMS:409361",
+      "sci": "Squilloides leptosquilla",
+      "layer": "ax/native",
+      "shard": "11.json",
+      "bbox": [-177.7, -14.4, 168.3, 56.8]
+    },
+    {
+      "key": "ms_merge|WORMS:394366",
+      "sci": "Gloripallium spiniferum",
+      "layer": "am/native",
+      "shard": "7e.json",
+      "bbox": [-178.2, -32.2, 168.7, 31.8]
+    },
+    {
+      "key": "ms_merge|WORMS:218224",
+      "sci": "Epinephelus lanceolatus",
+      "layer": "ax/native",
+      "shard": "70.json",
+      "bbox": [-178.55, -16.3, 168.6, 24.15]
+    },
+    {
+      "key": "ms_merge|WORMS:210833",
+      "sci": "Holothuria languens",
+      "layer": "merged",
+      "shard": "91.json",
+      "bbox": [-179.1, -35, 168.7, 31.8]
+    },
+    {
+      "key": "ms_merge|WORMS:103706",
+      "sci": "Ascidia interrupta",
+      "layer": "merged",
+      "shard": "1a.json",
+      "bbox": [-179.25, -37.05, 168.75, 40.05]
+    },
+    {
+      "key": "ms_merge|WORMS:126385",
+      "sci": "Exocoetus volitans",
+      "layer": "ax/model",
+      "shard": "b1.json",
+      "bbox": [-179.65, -15.95, 168.6, 44.85]
+    },
+    {
+      "key": "ms_merge|WORMS:213378",
+      "sci": "Echinothrix diadema",
+      "layer": "ax/native",
+      "shard": "82.json",
+      "bbox": [-179.65, -15.95, 168.6, 30]
+    },
+    {
+      "key": "ms_merge|WORMS:585885",
+      "sci": "Psilaxis radiatus",
+      "layer": "ax/native",
+      "shard": "9d.json",
+      "bbox": [-179.65, -17.4, 168.6, 30]
+    },
+    {
+      "key": "ms_merge|WORMS:531258",
+      "sci": "Triopha catalinae",
+      "layer": "ax/native",
+      "shard": "3a.json",
+      "bbox": [-170.6, 30.9, 178.15, 61.5]
+    }
+  ]
+}

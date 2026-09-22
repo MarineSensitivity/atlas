@@ -21,10 +21,19 @@ verbatim.
 | `v7/datasets.json`, `v1/datasets.json` | v7's registry, and v1's where **every `name_display` and `sort_order` is null**                                                                                                                                                                                    |
 | `v1/taxon/48.json`                     | `Buccinum undatum` — `merged: null` and zero inputs: the "no surface published in {ver}" case                                                                                                                                                                      |
 
+`v9/wide-bboxes.json` is 50 **real** extents from the v9 bundle, each with a naive longitude span
+wider than 180° (sorted by span, every 125th of the 6,273 that qualify), carrying the taxon key,
+scientific name and layer each one came from. It is the camera gate's sample: framed naively, 48 of
+the 50 span ≥ 200°; re-expressed in the complementary frame by `minimalFrame()`, the widest is
+179.5° and every centre lands in the model's own longitudes. `v9/study-areas.json` and
+`v7/study-areas.json` are `boot.study_areas` verbatim — the camera of last resort.
+
 `derived/taxon-dateline.json` is the **one hand-written** file, and it is marked as such on
 purpose. No published release currently carries a `bbox` whose `xmax` exceeds 180 (checked across
-all eleven local bundles: v8/v9 precompute 10,6xx merged bboxes and none exceeds 180.5; v1–v7
-publish none at all), so the antimeridian branch has no real fixture yet. Its numbers are the
+all eleven local bundles: of v9's 48,378 published bboxes only **16** have `xmax > 180`, while
+**6,273 are written WRAPPED** with a naive span over 180° and 38,448 are `null`; **v7 publishes no
+bbox at all**), so the `xmax > 180` branch has no real fixture — `v9/wide-bboxes.json` covers the
+wrapped branch with real data. Its numbers are the
 `lon_span_agg` 0–360 frame for the Bering/Chukchi walrus range (`[160, 48, 210, 73]`), plus a
 wraparound input whose own COG honestly reads `[-180, 47, 180, 85]` and a taxon whose merged extent
 spans the globe. Those are exactly the three branches `cameraFor()` has to separate.
