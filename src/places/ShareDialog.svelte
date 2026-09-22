@@ -13,7 +13,7 @@
     type FitResult,
   } from "../lib/geo/placeCodec";
   import { hashFromPlaces } from "./model";
-  import { diffSimplification, describeShareSummary, summarizeShare } from "./share";
+  import { diffSimplification, describeShareSummary, shareUrl, summarizeShare } from "./share";
   import { downloadGeoJson, placesToGeoJson } from "./download";
   import type { Place, GeomPlace } from "../lib/geo/placeCodec";
   import type { Sel } from "../lib/state/types";
@@ -83,16 +83,30 @@
   async function accept() {
     if (!fit) return;
     // the numbers visibly update FIRST (this write IS the analysed geometry from here on), THEN
-    // the link is copyable -- never a share-only simplified copy diverging from #pl=.
+    // the link is copyable -- never a share-only simplified copy diverging from #pl=. Recompute
+    // from `fit.places` directly (not the `places` PROP, which updates reactively off `sel.pl` on
+    // its own schedule) so `fit` reflects exactly what was just written, with no timing gap.
     selStore.set({ pl: hashFromPlaces(fit.places) });
-    await compute();
+    busy = true;
+    try {
+      fit = await fitPlacesToUrl(fit.places, { baseLength: baseLength() });
+    } finally {
+      busy = false;
+    }
     announce("Simplified. The numbers above now match the link.");
   }
 
+  // Fix round 1 (Opus review): build the link from `fit.hash`, NEVER `location.href` verbatim --
+  // `fitPlacesToUrl` can report `status: "ok"`/`"long"` with `simplified: true` (a rung had to run
+  // to reach that length), and `location.href` still carries the ORIGINAL, unsimplified `#pl=`
+  // until `accept()` writes it back. Copying `location.href` in that case would copy a link far
+  // longer than the "length" this dialog just showed.
   async function copyLink() {
+    if (!fit) return;
+    const url = shareUrl(location.href, sel.pl, fit.hash);
     try {
-      await navigator.clipboard.writeText(location.href);
-      onShare?.(fit?.length ?? location.href.length);
+      await navigator.clipboard.writeText(url);
+      onShare?.(fit.length);
       announce("Link copied to your clipboard.");
     } catch {
       announce("Couldn't copy the link automatically — copy it from the address bar.");
@@ -118,7 +132,32 @@
       {/if}
     </p>
 
-    {#if fit.status === "ok" && fit.length <= URL_SILENT_MAX}
+    <!-- Fix round 1 (Opus review): branch on `fit.simplified` BEFORE `fit.status` -- a rung of
+         the ladder can already have run to reach "ok" or "long" (fitPlacesToUrl tries a rung,
+         then re-checks the status against the SAME thresholds), and in that case the geometry on
+         screen (`#pl=`) is still the ORIGINAL, unsimplified one until `accept()` runs. Showing the
+         plain "Copy link"/"Copy anyway" buttons in that state would let a person copy a link whose
+         `#pl=` doesn't match the length just displayed -- the ladder must render whenever
+         `simplified` is true, whatever the status ended up being. (`status === "upload"` never
+         coexists with `simplified: true` -- fitPlacesToUrl's own fallback that produces "upload"
+         always passes a literal `null` tolerance -- so that branch stays separate, below.) -->
+    {#if fit.simplified}
+      <div class="ladder" role="group" aria-label="Simplify to fit the link">
+        {#if diff}
+          <p>
+            Simplifying to {fit.tolerance}° would change this place from {diff.beforeVertices} to
+            {diff.afterVertices} vertices ({diff.areaChangePct >= 0
+              ? "+"
+              : ""}{diff.areaChangePct.toFixed(2)}% area{#if diff.cellsBefore !== null && diff.cellsAfter !== null},
+              {diff.cellsBefore} →
+              {diff.cellsAfter} cells{/if}).
+          </p>
+        {/if}
+        <button type="button" class="primary" onclick={accept}
+          >Simplify and update the numbers</button
+        >
+      </div>
+    {:else if fit.status === "ok"}
       <button type="button" class="primary" onclick={copyLink}>Copy link</button>
     {:else if fit.status === "long"}
       <p class="note">
@@ -134,20 +173,6 @@
       </p>
       <button type="button" class="primary" onclick={download}>Download GeoJSON</button>
       <button type="button" onclick={copyLink}>Copy link anyway</button>
-    {:else if diff}
-      <div class="ladder" role="group" aria-label="Simplify to fit the link">
-        <p>
-          Simplifying to {fit.tolerance}° would change this place from {diff.beforeVertices} to
-          {diff.afterVertices} vertices ({diff.areaChangePct >= 0
-            ? "+"
-            : ""}{diff.areaChangePct.toFixed(2)}% area{#if diff.cellsBefore !== null && diff.cellsAfter !== null},
-            {diff.cellsBefore} →
-            {diff.cellsAfter} cells{/if}).
-        </p>
-        <button type="button" class="primary" onclick={accept}
-          >Simplify and update the numbers</button
-        >
-      </div>
     {/if}
   {/if}
 </Modal>

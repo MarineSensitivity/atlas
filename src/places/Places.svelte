@@ -67,6 +67,7 @@
   import { cellsInPolygon } from "../lib/geo/coverage";
   import { gridFromBoot } from "../lib/grid/grid";
   import { getDataEngine } from "./dataEngine";
+  import { placeCellsInStudyArea } from "./results";
   import { noopTrack, placeDrawParams, placeShareParams, type Track } from "./analytics";
   import type { AreaGeometry } from "../lib/geo/types";
   import type { NormalizedPlace } from "../lib/geo/upload/normalize";
@@ -333,7 +334,13 @@
     }
   }
 
-  function toggleAnalysisCells() {
+  let loadingCells = $state(false);
+
+  // Fix round 1 (Opus review): paint the D7b-CLIPPED cell set (`placeCellsInStudyArea`, the
+  // engine-backed `place_cell_sa` rows), never the raw, unclipped `cellsInPolygon()` -- a place
+  // straddling the study-area edge would otherwise paint land/foreign-water squares the analysis
+  // itself never counts (measured: GAA would paint 14,238 for 14,165 analysed cells).
+  async function toggleAnalysisCells() {
     if (showCells) {
       showCells = false;
       mapStore.setCells(null);
@@ -349,15 +356,31 @@
       announce("No release grid loaded yet.");
       return;
     }
-    const cells = cellsInPolygon(p.geometry, grid);
-    if (cells.length > MAX_ANALYSIS_CELLS) {
+    if (!dataEngineFn) {
+      announce("No release is resolved yet.");
+      return;
+    }
+    // an upper bound BEFORE the engine round trip, from the UNCLIPPED count -- clipping can only
+    // ever SHRINK the set, so this cheaply rejects an already-too-large place without booting the
+    // engine at all, and never itself decides what gets painted.
+    const unclipped = cellsInPolygon(p.geometry, grid);
+    if (unclipped.length > MAX_ANALYSIS_CELLS) {
       announce(
-        `This place covers ${cells.length.toLocaleString("en-US")} cells — too many to paint (limit ${MAX_ANALYSIS_CELLS.toLocaleString("en-US")}).`,
+        `This place covers ${unclipped.length.toLocaleString("en-US")} cells — too many to paint (limit ${MAX_ANALYSIS_CELLS.toLocaleString("en-US")}).`,
       );
       return;
     }
-    showCells = true;
-    mapStore.setCells(cellsFeatureCollection(cells, grid));
+    loadingCells = true;
+    try {
+      const ctx = await dataEngineFn();
+      const cells = await placeCellsInStudyArea(ctx, p.geometry);
+      showCells = true;
+      mapStore.setCells(cellsFeatureCollection(cells, grid));
+    } catch {
+      announce("Couldn't compute the analysed cells for this place.");
+    } finally {
+      loadingCells = false;
+    }
   }
 
   // turning the toggle off (or losing the selected place) always clears the painted cells, so a
@@ -580,9 +603,9 @@
       Enter coordinates
     </button>
     <Pill
-      label="Show analysis cells"
+      label={loadingCells ? "Loading analysed cells…" : "Show analysis cells"}
       pressed={showCells}
-      disabled={selectedIndex === null || places[selectedIndex]?.kind !== "geom"}
+      disabled={loadingCells || selectedIndex === null || places[selectedIndex]?.kind !== "geom"}
       disabledReason="Select a drawn or uploaded place first."
       onclick={toggleAnalysisCells}
     />

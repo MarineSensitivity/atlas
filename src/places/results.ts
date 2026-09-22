@@ -16,6 +16,7 @@ import {
 } from "../lib/analysis/queries";
 import type { DataEngineContext } from "./dataEngine";
 import type { AreaGeometry } from "../lib/geo/types";
+import type { CellCoverage } from "../lib/geo/coverage";
 
 export interface CoverageSummary {
   /** cells this place's geometry overlaps, before any study-area clip. */
@@ -71,6 +72,24 @@ export async function computeScoreResults(
     ? await scoresForCells(ctx.sources.db, ctx.sources.templates, { metricKeys })
     : [];
   return { coverage, components, composite: meanScore(components) };
+}
+
+/**
+ * D7b's CLIPPED cell set -- the actual rows `place_cell_sa` holds (`sql/cells_in_study_area.sql`),
+ * never the raw, unclipped `geo/coverage.ts#cellsInPolygon()` result. Fix round 1 (Opus review):
+ * "show analysis cells" was painting the unclipped set (14,238 squares for a place whose analysis
+ * only touches 14,165 cells) because it called `cellsInPolygon` directly instead of asking the
+ * engine for the SAME clip `computeScoreResults` already runs. This is that clip, exposed so the
+ * toggle can paint exactly what D7b says drives scores/species/area/N cells -- nothing else.
+ */
+export async function placeCellsInStudyArea(
+  ctx: DataEngineContext,
+  geometry: AreaGeometry,
+): Promise<CellCoverage[]> {
+  await ensurePlaceCells(ctx, geometry);
+  return ctx.sources.db.exec<CellCoverage>(
+    "SELECT cell_id, pct_covered AS pct FROM place_cell_sa ORDER BY cell_id;",
+  );
 }
 
 /** the `serve/cell_model` tile path a release publishes -- mirrors `analysis/sources.ts`'s own
