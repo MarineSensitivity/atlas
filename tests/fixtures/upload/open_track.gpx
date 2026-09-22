@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="atlas-6 fixtures (hand-written)" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Open track</name>
+    <desc>The other half of the GPX case: a track that does NOT return to where it started. It describes a route, not an area, and atlas-6 refuses it by name (gpxTrackNotClosed) rather than closing it or buffering it — Deliverable 4 forbids buffering, and closing it would draw the edge that was never travelled.</desc>
+  </metadata>
+  <trk>
+    <name>Open track</name>
+    <trkseg>
+      <trkpt lat="26.5" lon="-93.5"></trkpt>
+      <trkpt lat="29.5" lon="-93.5"></trkpt>
+      <trkpt lat="29.5" lon="-88.5"></trkpt>
+      <trkpt lat="26.5" lon="-88.5"></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

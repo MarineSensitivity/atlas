@@ -1,0 +1,22 @@
+{
+  "type": "FeatureCollection",
+  "note": "atlas-6 addition to the five S4 fixtures: GeoJSON is the commonest drop and the spike had no fixture for it, because it needs no parser (docs/spikes/S4.md, 'What was NOT measured'). Same geometry and same CW vertex order as gulf_rectangle.zip/.kml/.fgb/.gpkg/.wkt, hand-written rather than generated, so fixtures_manifest.json's gulf_rectangle entry is its ground truth too.",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "id": 1, "name": "Gulf rectangle" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-93.5, 26.5],
+            [-93.5, 29.5],
+            [-88.5, 29.5],
+            [-88.5, 26.5],
+            [-93.5, 26.5]
+          ]
+        ]
+      }
+    }
+  ]
+}
