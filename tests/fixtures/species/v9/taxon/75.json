@@ -1,0 +1,100 @@
+{
+  "schema": 1,
+  "ver": "v9",
+  "shard": "75",
+  "taxa": {
+    "ms_merge|WORMS:137077": {
+      "key": "ms_merge|WORMS:137077",
+      "sci": "Odobenus rosmarus",
+      "common": "Walrus",
+      "sp_cat": "mammal",
+      "taxon_id": "137077",
+      "taxon_authority": "worms",
+      "rl": "VU",
+      "esa": {
+        "code": "NMFS:LC",
+        "source": null
+      },
+      "mmpa": true,
+      "mbta": false,
+      "er_score": 20,
+      "valid_usa": true,
+      "valid_global": true,
+      "merged": {
+        "type": "cog",
+        "url": "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v9/native/merged/ms_merge_WORMS_137077.tif",
+        "rescale": [1, 100],
+        "colormap": "spectral_r",
+        "bbox": null
+      },
+      "inputs": [
+        {
+          "ds_key": "am",
+          "mdl_key": "am|ITS-Mam-180639",
+          "is_mask": false,
+          "assets": [
+            {
+              "rep": "model",
+              "type": "cog",
+              "url": "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v9/native/am/am_ITS-Mam-180639.tif",
+              "rescale": [1, 100],
+              "colormap": "spectral_r",
+              "source_layer": null,
+              "bbox": null
+            },
+            {
+              "rep": "native",
+              "type": "cog",
+              "url": "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v9/native/am_native/am_ITS-Mam-180639.tif",
+              "rescale": [1, 100],
+              "colormap": "spectral_r",
+              "source_layer": null,
+              "bbox": null
+            }
+          ]
+        },
+        {
+          "ds_key": "ax",
+          "mdl_key": "ax|137077",
+          "is_mask": false,
+          "assets": [
+            {
+              "rep": "model",
+              "type": "cog",
+              "url": "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v9/native/ax/ax_137077.tif",
+              "rescale": [1, 100],
+              "colormap": "spectral_r",
+              "source_layer": null,
+              "bbox": [-177.7, 60.65, -139.15, 79]
+            },
+            {
+              "rep": "native",
+              "type": "cog",
+              "url": "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v9/native/ax_native/ax_137077.tif",
+              "rescale": [0, 1000],
+              "colormap": "spectral_r",
+              "source_layer": null,
+              "bbox": [-177.7, 60.65, -139.15, 79]
+            }
+          ]
+        },
+        {
+          "ds_key": "rng_iucn",
+          "mdl_key": "rng_iucn|15106",
+          "is_mask": true,
+          "assets": [
+            {
+              "rep": "native",
+              "type": "pmtiles",
+              "url": "https://file.marinesensitivity.org/pmtiles/v9/rng_iucn/15106.pmtiles?v=1786443800",
+              "rescale": null,
+              "colormap": null,
+              "source_layer": "rng_iucn",
+              "bbox": null
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

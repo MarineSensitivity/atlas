@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "ver": "v9",
+  "shard": "03",
+  "alias": {
+    "ms_merge|BOTW:22694915": ["ms_merge|BOTW:22694915", "ms_merge"],
+    "bl|22694915": ["ms_merge|BOTW:22694915", "bl"]
+  }
+}

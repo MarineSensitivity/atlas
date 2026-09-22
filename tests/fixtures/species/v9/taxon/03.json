@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "ver": "v9",
+  "shard": "03",
+  "taxa": {
+    "ms_merge|BOTW:22694915": {
+      "key": "ms_merge|BOTW:22694915",
+      "sci": "Aethia cristatella",
+      "common": "Crested auklet",
+      "sp_cat": "bird",
+      "taxon_id": "22694915",
+      "taxon_authority": "botw",
+      "rl": "LC",
+      "esa": {
+        "code": "FWS:LC",
+        "source": null
+      },
+      "mmpa": false,
+      "mbta": true,
+      "er_score": 10,
+      "valid_usa": true,
+      "valid_global": true,
+      "merged": {
+        "type": "cog",
+        "url": "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v9/native/merged/ms_merge_BOTW_22694915.tif",
+        "rescale": [1, 100],
+        "colormap": "spectral_r",
+        "bbox": null
+      },
+      "inputs": [
+        {
+          "ds_key": "bl",
+          "mdl_key": "bl|22694915",
+          "is_mask": true,
+          "assets": [
+            {
+              "rep": "native",
+              "type": "pmtiles",
+              "url": "https://file.marinesensitivity.org/pmtiles/v9/bl/22694915.pmtiles?v=1786449611",
+              "rescale": null,
+              "colormap": null,
+              "source_layer": "bl",
+              "bbox": null
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

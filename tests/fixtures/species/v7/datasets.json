@@ -1,0 +1,92 @@
+[
+  {
+    "ds_key": "am_0.05",
+    "name_display": "AquaMaps SDM",
+    "value_info": null,
+    "is_mask": false,
+    "on_grid": null,
+    "sort_order": 1,
+    "citation": "Kaschner, K., K. Kesner-Reyes, C. Garilao, J. Segschneider, J. Rius-Barile, T. Rees, and R. Froese. 2019. AquaMaps: Predicted range maps for aquatic species. World wide web electronic publication, www.aquamaps.org, Version 10/2019. Content from AquaMaps as provided in this R package is licensed under a Creative Commons Attribution-NonCommercial 3.0 UnportedLicense, please see http://creativecommons.org/licenses/by-nc/3.0/",
+    "link_info": "https://www.aquamaps.org"
+  },
+  {
+    "ds_key": "bl",
+    "name_display": "BirdLife Range",
+    "value_info": "CR:50, EN:25, VU:5, NT:2, LC:1, DD:1",
+    "is_mask": true,
+    "on_grid": null,
+    "sort_order": 6,
+    "citation": "",
+    "link_info": "http://datazone.birdlife.org/species/requestdis"
+  },
+  {
+    "ds_key": "ca_nmfs",
+    "name_display": "NMFS Core Area",
+    "value_info": "Core: 100",
+    "is_mask": true,
+    "on_grid": null,
+    "sort_order": 2,
+    "citation": "",
+    "link_info": "https://www.fisheries.noaa.gov/species/rices-whale"
+  },
+  {
+    "ds_key": "ch_fws",
+    "name_display": "FWS Critical Habitat",
+    "value_info": "EN:100, TN:50",
+    "is_mask": true,
+    "on_grid": null,
+    "sort_order": 4,
+    "citation": "",
+    "link_info": "https://ecos.fws.gov/ecp/report/table/critical-habitat.html"
+  },
+  {
+    "ds_key": "ch_nmfs",
+    "name_display": "NMFS Critical Habitat",
+    "value_info": "EN:100, TN:50",
+    "is_mask": true,
+    "on_grid": null,
+    "sort_order": 3,
+    "citation": "",
+    "link_info": "https://www.fisheries.noaa.gov/resource/map/national-esa-critical-habitat-mapper"
+  },
+  {
+    "ds_key": "ms_merge",
+    "name_display": "Merged Model",
+    "value_info": null,
+    "is_mask": false,
+    "on_grid": null,
+    "sort_order": 0,
+    "citation": "",
+    "link_info": "https://github.com/MarineSensitivity"
+  },
+  {
+    "ds_key": "rng_fws",
+    "name_display": "FWS Range",
+    "value_info": "EN:100, TN:50, LC:1",
+    "is_mask": true,
+    "on_grid": null,
+    "sort_order": 5,
+    "citation": "",
+    "link_info": "https://ecos.fws.gov/ecp/species-reports"
+  },
+  {
+    "ds_key": "rng_iucn",
+    "name_display": "IUCN Range",
+    "value_info": "CR:50, EN:25, VU:5, NT:2, LC:1, DD:1",
+    "is_mask": true,
+    "on_grid": null,
+    "sort_order": 7,
+    "citation": "IUCN Red List of Threatened Species. Version 2025-2. <www.iucnredlist.org>. Downloaded on 21 January 2026.",
+    "link_info": "https://www.iucnredlist.org/resources/spatial-data-download"
+  },
+  {
+    "ds_key": "rng_turtle_swot_dps",
+    "name_display": "SWOT+DPS Turtle Range",
+    "value_info": "EN:100, TN:50",
+    "is_mask": true,
+    "on_grid": null,
+    "sort_order": 8,
+    "citation": "Wallace BP et al. (2023) Marine turtle regional management units 2.0. Endangered Species Research 52:209-223. DOI:10.3354/esr01243",
+    "link_info": "https://www.seaturtlestatus.org/online-map-data"
+  }
+]

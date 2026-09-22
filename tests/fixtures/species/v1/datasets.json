@@ -1,0 +1,62 @@
+[
+  {
+    "ds_key": "am_0.05",
+    "name_display": null,
+    "value_info": null,
+    "is_mask": null,
+    "on_grid": null,
+    "sort_order": null,
+    "citation": "Kaschner, K., K. Kesner-Reyes, C. Garilao, J. Segschneider, J. Rius-Barile, T. Rees, and R. Froese. 2019. AquaMaps: Predicted range maps for aquatic species. World wide web electronic publication, www.aquamaps.org, Version 10/2019. Content from AquaMaps as provided in this R package is licensed under a Creative Commons Attribution-NonCommercial 3.0 UnportedLicense, please see http://creativecommons.org/licenses/by-nc/3.0/",
+    "link_info": "https://www.aquamaps.org"
+  },
+  {
+    "ds_key": "bl",
+    "name_display": null,
+    "value_info": null,
+    "is_mask": null,
+    "on_grid": null,
+    "sort_order": null,
+    "citation": "",
+    "link_info": "http://datazone.birdlife.org/species/requestdis"
+  },
+  {
+    "ds_key": "ch_fws",
+    "name_display": null,
+    "value_info": null,
+    "is_mask": null,
+    "on_grid": null,
+    "sort_order": null,
+    "citation": "",
+    "link_info": "https://ecos.fws.gov/ecp/report/table/critical-habitat.html"
+  },
+  {
+    "ds_key": "ch_nmfs",
+    "name_display": null,
+    "value_info": null,
+    "is_mask": null,
+    "on_grid": null,
+    "sort_order": null,
+    "citation": "",
+    "link_info": "https://www.fisheries.noaa.gov/resource/map/national-esa-critical-habitat-mapper"
+  },
+  {
+    "ds_key": "ms_merge",
+    "name_display": null,
+    "value_info": null,
+    "is_mask": null,
+    "on_grid": null,
+    "sort_order": null,
+    "citation": "",
+    "link_info": "https://github.com/MarineSensitivity"
+  },
+  {
+    "ds_key": "rng_fws",
+    "name_display": null,
+    "value_info": null,
+    "is_mask": null,
+    "on_grid": null,
+    "sort_order": null,
+    "citation": "",
+    "link_info": "https://ecos.fws.gov/ecp/species-reports"
+  }
+]

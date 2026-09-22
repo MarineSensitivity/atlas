@@ -1,3 +1,44 @@
+# atlas 0.8.2
+
+`atlas-5` step 1, the species lens' DATA layer: the pure, map-free half (`src/lens/species/data/`,
+unit-tested, no DOM and no MapLibre), so the UI half can be wired the moment the shared map module
+lands. See `docs/species-data.md` for what the UI half calls.
+
+- **A selected species is one fetch.** `shards.ts` reads `app/taxon/{xx}.json` and
+  `app/alias/{xx}.json` through `dataUrl()` with an in-memory per-shard cache, validated against
+  msens' schemas. `shardIdFor()` is the published 256-way rule (`trailing_integer(key) %% 256`, no
+  digits -> `00`), pinned to vectors printed by the R twin itself. Every failure is a TYPED result
+  (`network` / `http` / `parse` / `schema` / `not-found`) — a retired `mdl_key` or a malformed shard
+  never throws into the UI. No code path reads the asset registry or runs a bbox aggregate.
+- **The picker.** `picker.ts` loads `app/taxa.json`, folds diacritics and curly apostrophes once at
+  load, and ranks matches over scientific AND common names (exact > prefix > word-start >
+  substring). "Only species in US waters" swaps the two lists while KEEPING a selection present in
+  both; the default species is _Dermochelys coriacea_ among US-valid taxa, else the first US-valid
+  taxon in published order.
+- **Deep links keep working.** `resolve.ts` resolves `?sp=`, `?mdl_key=` (merged or any raw input
+  key) and the legacy `?mdl_seq=<int>` of v1-v7b through one alias fetch, turns "Only species in US
+  waters" off for a non-US target, explains an unknown key with the two reasons the Shiny app gave,
+  and rewrites the URL canonically to `sp` + `in` + `rep` with the legacy keys dropped. The
+  `deeplink_mdl_key{resolution}` event is returned as DATA (no analytics import).
+- **The camera never normalizes a longitude.** `camera.ts` passes the release's precomputed extent
+  through in its `lon_span_agg` frame (`xmax` may exceed 180), falls back input -> merged ->
+  ecoregion when an extent spans the globe, and re-frames ONLY when the species changes — a layer or
+  representation switch keeps the camera.
+- **The layer bar and the card, as data.** `layerBar.ts` orders pills by `dataset.sort_order`, marks
+  an input with no published surface struck-through with the title that says why, counts `nInputs`
+  from the shard's edges (1 for a single-input taxon — the v1 crash of the reference's section
+  11.5), relabels the representation toggle Delivered / As ingested when `dataset.on_grid`, and
+  passes every asset's `rescale` through verbatim (AquaX delivered 0-1000, else 1-100). `card.ts`
+  builds the species card and the document title.
+- **Gates.** One test per rule with a fixture trimmed from a REAL published bundle (v1, v7, v9 — see
+  `tests/fixtures/species/README.md`); `schema.test.ts` drives msens' own `required` lists through
+  the validators; `sourceScan.test.ts` fails if `native_asset`, `mdl_bbox`, `7200`, `3600` or
+  `fitBounds(` ever appears under `src/lens/species/**`, with a seeded-fault fixture proving the
+  scan can fail.
+- Two deliberate differences from the Shiny card, each with a named test: an ESA code with no source
+  prints `FWS:EN`, not `FWS:EN (NA)`; a taxon with no ESA code omits the row instead of printing
+  `NA`.
+
 # atlas 0.7.6
 
 `atlas-2` fix round 2: the three gate defects left after 0.7.5. All three are gates that could fail

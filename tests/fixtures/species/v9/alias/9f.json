@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "ver": "v9",
+  "shard": "9f",
+  "alias": {
+    "am|ITS-Mam-180639": ["ms_merge|WORMS:137077", "am"]
+  }
+}

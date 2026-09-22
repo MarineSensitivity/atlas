@@ -1,0 +1,112 @@
+{
+  "schema": 1,
+  "ver": "v7",
+  "shard": "01",
+  "taxa": {
+    "ms_merge|DERIVED:257": {
+      "key": "ms_merge|DERIVED:257",
+      "sci": "Odobenus rosmarus",
+      "common": "Walrus (dateline frame)",
+      "sp_cat": "mammal",
+      "taxon_id": "137077",
+      "taxon_authority": "worms",
+      "rl": "VU",
+      "esa": { "code": "NMFS:LC", "source": null },
+      "mmpa": true,
+      "mbta": false,
+      "er_score": 20,
+      "valid_usa": true,
+      "valid_global": true,
+      "merged": {
+        "type": "cog",
+        "url": "https://example.invalid/derived/merged_dateline.tif",
+        "rescale": [1, 100],
+        "colormap": "spectral_r",
+        "bbox": [160.0, 48.0, 210.0, 73.0]
+      },
+      "inputs": [
+        {
+          "ds_key": "am",
+          "mdl_key": "am|DERIVED-257",
+          "is_mask": false,
+          "assets": [
+            {
+              "rep": "native",
+              "type": "cog",
+              "url": "https://example.invalid/derived/am_dateline.tif",
+              "rescale": [1, 100],
+              "colormap": "spectral_r",
+              "source_layer": null,
+              "bbox": [165.0, 51.0, 200.0, 70.0]
+            },
+            {
+              "rep": "model",
+              "type": "cog",
+              "url": "https://example.invalid/derived/am_dateline_model.tif",
+              "rescale": [1, 100],
+              "colormap": "spectral_r",
+              "source_layer": null,
+              "bbox": [165.0, 51.0, 200.0, 70.0]
+            }
+          ]
+        },
+        {
+          "ds_key": "rng_iucn",
+          "mdl_key": "rng_iucn|DERIVED-257",
+          "is_mask": true,
+          "assets": [
+            {
+              "rep": "native",
+              "type": "pmtiles",
+              "url": "https://example.invalid/derived/rng_iucn_wraparound.pmtiles",
+              "rescale": null,
+              "colormap": null,
+              "source_layer": "rng_iucn",
+              "bbox": [-180.0, 47.0, 180.0, 85.0]
+            }
+          ]
+        }
+      ]
+    },
+    "ms_merge|DERIVED:513": {
+      "key": "ms_merge|DERIVED:513",
+      "sci": "Ubiquitous globalis",
+      "common": null,
+      "sp_cat": "fish",
+      "taxon_id": null,
+      "taxon_authority": null,
+      "rl": null,
+      "esa": null,
+      "mmpa": null,
+      "mbta": null,
+      "er_score": null,
+      "valid_usa": true,
+      "valid_global": true,
+      "merged": {
+        "type": "cog",
+        "url": "https://example.invalid/derived/merged_globe.tif",
+        "rescale": [1, 100],
+        "colormap": "spectral_r",
+        "bbox": [-180.0, -85.0, 180.0, 85.0]
+      },
+      "inputs": [
+        {
+          "ds_key": "am",
+          "mdl_key": "am|DERIVED-513",
+          "is_mask": false,
+          "assets": [
+            {
+              "rep": "native",
+              "type": "cog",
+              "url": "https://example.invalid/derived/am_globe.tif",
+              "rescale": [1, 100],
+              "colormap": "spectral_r",
+              "source_layer": null,
+              "bbox": [-180.0, -85.0, 180.0, 85.0]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

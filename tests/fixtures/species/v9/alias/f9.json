@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "ver": "v9",
+  "shard": "f9",
+  "alias": {
+    "ms_merge|WORMS:137209": ["ms_merge|WORMS:137209", "ms_merge"],
+    "ax|137209": ["ms_merge|WORMS:137209", "ax"]
+  }
+}

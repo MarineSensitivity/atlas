@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "ver": "v1",
+  "shard": "48",
+  "taxa": {
+    "17224": {
+      "key": "17224",
+      "sci": "Buccinum undatum",
+      "common": "waved whelk",
+      "sp_cat": "invertebrate",
+      "taxon_id": "138878",
+      "taxon_authority": "worms",
+      "rl": null,
+      "esa": {
+        "code": null,
+        "source": null
+      },
+      "mmpa": null,
+      "mbta": null,
+      "er_score": null,
+      "valid_usa": true,
+      "valid_global": null,
+      "merged": null,
+      "inputs": []
+    }
+  }
+}

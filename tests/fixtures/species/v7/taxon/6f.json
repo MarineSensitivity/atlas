@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "ver": "v7",
+  "shard": "6f",
+  "taxa": {
+    "54383": {
+      "key": "54383",
+      "sci": "Odobenus rosmarus",
+      "common": "Walrus",
+      "sp_cat": "mammal",
+      "taxon_id": "137077",
+      "taxon_authority": "worms",
+      "rl": "VU",
+      "esa": {
+        "code": "FWS:LC",
+        "source": null
+      },
+      "mmpa": false,
+      "mbta": false,
+      "er_score": 1,
+      "valid_usa": true,
+      "valid_global": null,
+      "merged": {
+        "type": "cog",
+        "url": "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/cog/usa05/ffe72edb91a4f7ae.tif",
+        "rescale": [1, 100],
+        "colormap": "spectral_r",
+        "bbox": null
+      },
+      "inputs": [
+        {
+          "ds_key": "am_0.05",
+          "mdl_key": "790",
+          "is_mask": false,
+          "assets": []
+        },
+        {
+          "ds_key": "rng_iucn",
+          "mdl_key": "23495",
+          "is_mask": true,
+          "assets": []
+        }
+      ]
+    }
+  }
+}
