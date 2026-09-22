@@ -1,3 +1,42 @@
+# atlas 0.9.3-scores
+
+`atlas-4` fix round 1 (of 2): two real Playwright regressions from steps 1-3, plus four seeded-fault
+demonstrations.
+
+- **Fix, `e2e/map.spec.ts`'s console-error assertion**: the scores lens mounts by default and its
+  zones carry `label_pt` in every boot fixture here, so `zonesNeedGlyphs()` — false before atlas-4,
+  since nothing exercised a label layer — is now true on an ordinary shell load. Verified live
+  (`curl -sI` on the exact requested URL) that `layers/basemap.ts`'s `LABEL_FONT` ("Open Sans
+  Regular") is correct: CARTO's glyph endpoint answers 200 for it. The actual fault was the
+  hermetic fixture: `e2e/hermetic.ts` and `e2e/map-hermetic.ts` both routed
+  `tiles.basemaps.cartocdn.com/**` to a 404, harmless only while unreached — Chromium logs ANY
+  failed resource load as a console "error" regardless of how gracefully MapLibre recovers from
+  it. Both now route to 200 with an empty body (a zero-byte protobuf is still a valid, if
+  data-free, glyph message).
+- **Fix, `e2e/shell.cls.spec.ts`'s skeleton-vs-hydrated geometry gate**: re-measured the real
+  Layers panel at 1280px with no `boot.json` (this spec's own fixture state) and re-fit
+  `index.html`'s skeleton to match — four `sk-field` rows (66px), one `sk-switch-row` (24px), the
+  `sk-layers-control` section (43px) and the `sk-legend-note` fallback (36px), 12px gaps, in
+  `.sk-panel-body` (now `display:flex` to lay them out the same way the real
+  `.layers-panel` does). The pre-existing placeholder sentence (`TOOL_BODY.layers`,
+  `tests/shell/tools.test.ts` still requires it verbatim) stays in the DOM but `hidden`, carrying
+  no layout weight. Total: 524px at desktop, matching the hydrated panel exactly; phone was
+  already correct (Sheet's fixed height ignores content either way).
+- **Seeded faults, each shown red then restored** (four of the five requested; the D15 `?ver=`
+  fault was already demonstrated in step 3):
+  - a study-area key reaching a data query (`raster.ts`'s `scoreRasterSpec` appending `&area=GA`)
+    — new permanent regression test added (`tests/lens/scores/raster.test.ts`, asserts
+    `tileUrlLeaksStudyArea(...) === null`), then red, then reverted.
+  - `fitBounds(` in `src/lens/scores` (`LayersPanel.svelte`'s `onAreaChange`) — caught by the
+    existing `tests/map/no-fitbounds.test.ts` source scan (already scans `src/lens`), red, reverted.
+  - the ER-rule table `EN 100 -> 99` — the rule was inline markup in `GlossaryModal.svelte` with no
+    test; extracted to `src/lens/scores/glossary.ts` (CLAUDE.md: core logic in a plain module) with
+    a new permanent test (`tests/lens/scores/glossary.test.ts`), then red, then reverted.
+  - the 11-bin rule off by one (`raster/ramps.ts`'s `choroplethBin`) — the existing `zoneFill.test.ts`
+    did not pin an exact stop colour, so it did NOT catch this; added a test asserting the exact
+    low/mid/high stop colours against `boot.palettes` itself, then red (`#E5F498` vs expected
+    `#FFFFBF`), then reverted.
+
 # atlas 0.9.2
 
 `atlas-4` step 3: chrome — the release picker (D15), the welcome modal, and the version-chip

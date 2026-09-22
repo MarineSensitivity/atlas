@@ -49,6 +49,23 @@ describe("zoneChoropleth", () => {
     expect(out.fill!.stops[0].color).toBe(out.fill!.stops[1].color);
   });
 
+  it("the 11-bin rule: exact stop colours at the low/mid/high end, pinned against boot.palettes itself", () => {
+    // spectral_r's own 11 stops (BOOT_V7 fixture) — index 0 = bin 1 (lowest), index 5 = bin 6
+    // (middle), index 10 = bin 11 (highest). An off-by-one in choroplethBin shifts EVERY one of
+    // these to a neighbouring stop, which this pins directly rather than only checking structure.
+    const stops = BOOT_V7.palettes.spectral_r;
+    const values = [
+      { key: "LOW", name: "LOW", value: 0 },
+      { key: "MID", name: "MID", value: 50 },
+      { key: "HIGH", name: "HIGH", value: 100 },
+    ];
+    const out = zoneChoropleth("programarea", values, BOOT_V7, "spectral_r");
+    const colorOf = (key: string) => out.fill!.stops.find((s) => s.key === key)!.color;
+    expect(colorOf("LOW")).toBe(stops[0]);
+    expect(colorOf("MID")).toBe(stops[5]);
+    expect(colorOf("HIGH")).toBe(stops[10]);
+  });
+
   it("no published stops for the palette: every zone drawn as the default colour, legend unavailable", () => {
     const values = zoneValuesFor(zoneRows(BOOT_V7, "programarea"), COMPOSITE);
     const out = zoneChoropleth("programarea", values, BOOT_V7, "viridis");

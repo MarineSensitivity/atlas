@@ -568,12 +568,42 @@ button.chip {
   max-height: 60vh;
   color: var(--text-secondary);
   font-size: var(--text-md);
+  /* atlas-4: the real `.layers-panel` (src/lens/scores/LayersPanel.svelte) this stands in for is
+     itself `display:flex; flex-direction:column; gap: var(--space-3)` -- matched here so the
+     sk-field/sk-switch-row/sk-layers-control/sk-legend-note placeholders below stack with the
+     SAME 12px gaps instead of collapsing into ordinary block flow. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 @media (max-width: 899px) {
   .sk-panel-body {
     max-height: none;
     padding: 0 var(--space-4) var(--space-4);
   }
+}
+
+/* atlas-4 step 3 fix round 1: sized to the REAL LayersPanel's measured heights at 1280px width
+   with no boot.json yet (the shell.cls.spec.ts fixture's own state -- an empty Study
+   area/Spatial units/Layer select, the 4-option palette select, no note, no outside-PRA switch,
+   the legend's "not published" fallback). A future content change to LayersPanel.svelte must
+   re-measure and update these four numbers, exactly as the icon placeholders above are re-sized
+   whenever an <Icon size> changes. */
+.sk-field {
+  height: 66px;
+  flex: none;
+}
+.sk-switch-row {
+  height: 24px;
+  flex: none;
+}
+.sk-layers-control {
+  height: 43px;
+  flex: none;
+}
+.sk-legend-note {
+  height: 36px;
+  flex: none;
 }
 
 .sk-about {

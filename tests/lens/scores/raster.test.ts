@@ -7,6 +7,7 @@ import {
   rasterLegend,
   scoreRasterSpec,
 } from "../../../src/lens/scores/raster";
+import { tileUrlLeaksStudyArea } from "../../../src/lib/map/layers/titiler";
 import { BOOT_V7, MANIFEST_OVERLAYS_V7 } from "./fixtures";
 
 const primprod = layerByKey(BOOT_V7, "primprod")!;
@@ -29,6 +30,11 @@ describe("scoreRasterSpec", () => {
     expect(
       scoreRasterSpec({ metric_key: "x", category: "raw", order: 1 }, "spectral_r"),
     ).toBeNull();
+  });
+
+  it("never leaks a study-area key (D7/apps#13-14: the raster is always the FULL COG)", () => {
+    const spec = scoreRasterSpec(primprod, "spectral_r")!;
+    expect(tileUrlLeaksStudyArea(spec.tiles[0])).toBeNull();
   });
 });
 
