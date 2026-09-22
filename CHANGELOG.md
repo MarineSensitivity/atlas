@@ -1,3 +1,32 @@
+# atlas 0.9.7
+
+`atlas-6` step 2: drawing (Deliverable 3). `terra-draw@1.35.0` +
+`terra-draw-maplibre-gl-adapter@1.4.1` are new, exact-pinned dependencies, reached ONLY through
+`src/places/draw.ts`'s dynamic `import()` — genuinely lazy: neither package appears in
+`index.html`'s static import graph (`tests/places/lazyImports.test.ts`), and `vite.config.ts` now
+renames their output chunks (`draw-vendor-*.js`) because Vite's default chunk-naming otherwise put
+the literal string `"terra-draw"` into the entry's own dynamic-import specifier — a correct, lazy
+reference that still tripped `scripts/size-budget.mjs`'s forbidden-marker text scan. Measured after
+the fix: **405.9 KB gzip static** (budget 450) / **140.5 KB gzip runtime worker** (budget 150).
+
+- **Polygon, rectangle and circle** (a 64-gon, `CIRCLE_SEGMENTS`), plus a select/edit mode with
+  midpoints (drag a vertex, drag a midpoint to add one, drag the whole shape) — touch-capable
+  (terra-draw's own adapter). On finish, the RAW drawn geometry is run through
+  `analysis/place.ts`'s `analysisGeometry()` (unwrap, then decode(encode(...))) before it becomes a
+  place — Deliverable 3's "what is displayed is what is analyzed" starts at creation, not at share
+  time — and the displayed outline is redrawn from that decoded geometry, densified to ≤ 0.25°
+  steps per edge (`src/places/densify.ts`) so a long straight analysed edge cannot visibly bow on
+  the globe projection.
+- **"Show analysis cells"**: for the selected drawn/uploaded place, paints every covered cell
+  (`geo/coverage.ts#cellsInPolygon`, purely client-side — no engine needed) at `fill-opacity = pct /
+100`. `SelectionSpec` gained one field for this (`cellOpacity`), the selection layer's only change
+  (`src/lib/map/style.ts`); disabled above 20,000 cells (`MAX_ANALYSIS_CELLS`).
+- **"Enter coordinates"**: the promised keyboard/screen-reader alternative — drawing is never the
+  only way. A bounding box (`xmin, ymin, xmax, ymax`), a list of `lon, lat` lines (≥ 3, closed
+  automatically), or pasted WKT/GeoJSON (handed to the SAME `normalizeUpload()` a file drop uses, so
+  a typed shape passes through every rule Deliverable 4 already enforces — self-intersection, the
+  antimeridian, the vertex cap). A refusal renders verbatim (what/why/fix), never "invalid".
+
 # atlas 0.9.6
 
 `atlas-6` step 1: the Places panel (Deliverable 1) and pick mode on the release's one drawable

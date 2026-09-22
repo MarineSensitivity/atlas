@@ -24,6 +24,7 @@
   import type { ZoneUnitSpec } from "../lib/map/types";
   import type { PlacesMapStore } from "./placesMap.svelte";
   import {
+    addPlace,
     addZonePlace,
     duplicatePlaceAt,
     fallbackZoneLabel,
@@ -49,6 +50,21 @@
   import { renderedZoneOutline, type RenderedFeatureMap } from "./zoneOutline";
   import { clearRecents, loadRecents, pushRecent, recentPlace } from "./recents";
   import { downloadGeoJson, placesToGeoJson } from "./download";
+  import {
+    createDrawSession,
+    loadTerraDraw,
+    type DrawSession,
+    type DrawShape,
+    type TerraDrawModules,
+  } from "./draw";
+  import { densifyGeometry } from "./densify";
+  import { geomPlaceFrom } from "./geomPlace";
+  import { cellsFeatureCollection, MAX_ANALYSIS_CELLS } from "./cellSquares";
+  import CoordinateDialog from "./CoordinateDialog.svelte";
+  import { cellsInPolygon } from "../lib/geo/coverage";
+  import { gridFromBoot } from "../lib/grid/grid";
+  import type { AreaGeometry } from "../lib/geo/types";
+  import type { NormalizedPlace } from "../lib/geo/upload/normalize";
 
   interface Props {
     sel: Sel;
@@ -135,6 +151,12 @@
       announce("The map isn't ready yet.");
       return;
     }
+    // pick mode and drawing both use map clicks for different purposes -- never both at once.
+    if (drawMode) {
+      drawSession?.stop();
+      drawSession = undefined;
+      drawMode = null;
+    }
     pickOn = true;
     pickHandle = installPickMode(map, zoneUnits, (next) => {
       pickState = next;
@@ -166,6 +188,156 @@
     mapStore.setOutline(null);
     announce("Added to places.");
   }
+
+  // --- draw (Deliverable 3): terra-draw is a LAZY chunk, loaded once per panel lifetime ----------
+  let drawSession: DrawSession | undefined;
+  let drawModules: TerraDrawModules | undefined;
+  let drawMode = $state<DrawShape | "select" | null>(null);
+  let drawBusy = $state(false);
+
+  function featureCollectionOf(geometry: AreaGeometry) {
+    return {
+      type: "FeatureCollection" as const,
+      features: [{ type: "Feature" as const, geometry, properties: {} }],
+    };
+  }
+
+  function onDrawFinish(rawGeometry: AreaGeometry) {
+    const place = geomPlaceFrom(rawGeometry, `Drawn place ${places.length + 1}`);
+    const result = addPlace(places, place);
+    if (!result.ok) {
+      announce(result.reason ?? "Couldn't add that shape.");
+      return;
+    }
+    remember(place);
+    writePlaces(result.places, result.places.length - 1);
+    // Deliverable 3: "the outline is redrawn from the decoded geometry densified along lon/lat
+    // lines" -- what is displayed from here on is the SAME (already analysed) geometry stored
+    // above, never the raw shape terra-draw just handed back.
+    mapStore.setOutline(featureCollectionOf(densifyGeometry(place.geometry)));
+    drawSession?.setMode("select"); // straight into edit, so the just-drawn shape can be adjusted
+    drawMode = "select";
+    announce(
+      "Place drawn. Drag its corners to adjust, or turn on Pick mode / Enter coordinates for another.",
+    );
+  }
+
+  async function ensureDrawSession(): Promise<DrawSession | undefined> {
+    const map = rawMap();
+    if (!map) {
+      announce("The map isn't ready yet.");
+      return undefined;
+    }
+    if (drawSession) return drawSession;
+    drawBusy = true;
+    try {
+      drawModules ??= await loadTerraDraw();
+      drawSession = createDrawSession({ map, onFinish: onDrawFinish }, drawModules);
+      return drawSession;
+    } catch {
+      announce("Couldn't load the drawing tools — try Enter coordinates instead.");
+      return undefined;
+    } finally {
+      drawBusy = false;
+    }
+  }
+
+  async function startDraw(shape: DrawShape) {
+    // drawing and pick mode both use map clicks for different purposes -- never both at once.
+    if (pickOn) stopPickMode();
+    const session = await ensureDrawSession();
+    if (!session) return;
+    session.setMode(shape);
+    drawMode = shape;
+  }
+
+  function stopDraw() {
+    drawSession?.setMode("select");
+    drawMode = drawMode ? "select" : null;
+  }
+
+  onDestroy(() => drawSession?.stop());
+
+  // --- "Enter coordinates" (Deliverable 3's keyboard/screen-reader path) -------------------------
+  let coordDialogOpen = $state(false);
+
+  function addEnteredPlaces(entered: NormalizedPlace[]) {
+    let current = places;
+    let lastIndex = -1;
+    for (const e of entered) {
+      const place = geomPlaceFrom(e.geometry, e.name);
+      const result = addPlace(current, place);
+      if (!result.ok) {
+        announce(result.reason ?? "Couldn't add every place — the 20-place cap was reached.");
+        break;
+      }
+      current = result.places;
+      lastIndex = current.length - 1;
+      remember(place);
+    }
+    if (lastIndex >= 0) {
+      writePlaces(current, lastIndex);
+      announce(entered.length > 1 ? `Added ${entered.length} places.` : "Place added.");
+    }
+  }
+
+  // --- "show analysis cells" (Deliverable 2/3): places <= MAX_ANALYSIS_CELLS only ----------------
+  let showCells = $state(false);
+
+  function gridOrNull() {
+    try {
+      return gridFromBoot(boot);
+    } catch {
+      return null;
+    }
+  }
+
+  function toggleAnalysisCells() {
+    if (showCells) {
+      showCells = false;
+      mapStore.setCells(null);
+      return;
+    }
+    const p = selectedIndex !== null ? places[selectedIndex] : null;
+    if (!p || p.kind !== "geom") {
+      announce("Select a drawn or uploaded place first.");
+      return;
+    }
+    const grid = gridOrNull();
+    if (!grid) {
+      announce("No release grid loaded yet.");
+      return;
+    }
+    const cells = cellsInPolygon(p.geometry, grid);
+    if (cells.length > MAX_ANALYSIS_CELLS) {
+      announce(
+        `This place covers ${cells.length.toLocaleString("en-US")} cells — too many to paint (limit ${MAX_ANALYSIS_CELLS.toLocaleString("en-US")}).`,
+      );
+      return;
+    }
+    showCells = true;
+    mapStore.setCells(cellsFeatureCollection(cells, grid));
+  }
+
+  // turning the toggle off (or losing the selected place) always clears the painted cells, so a
+  // stale "show analysis cells" layer can never survive past the place it described.
+  $effect(() => {
+    if (showCells && (selectedIndex === null || places[selectedIndex]?.kind !== "geom")) {
+      showCells = false;
+      mapStore.setCells(null);
+    }
+  });
+
+  // the selected row's outline persists on the map while nothing more specific (pick mode, an
+  // active draw) already owns the highlight -- e.g. after a reload, re-picking `sel=place:n` off
+  // the URL alone still shows what that place actually covers.
+  $effect(() => {
+    if (pickOn || drawMode) return;
+    const p = selectedIndex !== null ? places[selectedIndex] : null;
+    mapStore.setOutline(
+      p && p.kind === "geom" ? featureCollectionOf(densifyGeometry(p.geometry)) : null,
+    );
+  });
 
   // --- the list -----------------------------------------------------------------------------------
   function kindIcon(p: Place): "places" | "draw" | "upload" {
@@ -331,6 +503,50 @@
     </button>
   </section>
 
+  <section class="draw-bar" aria-label="Draw a place" role="group">
+    <button
+      type="button"
+      class="draw-tool"
+      class:draw-tool--active={drawMode === "polygon"}
+      disabled={drawBusy}
+      onclick={() => startDraw("polygon")}
+    >
+      <Icon name="draw" size={16} />
+      Polygon
+    </button>
+    <button
+      type="button"
+      class="draw-tool"
+      class:draw-tool--active={drawMode === "rectangle"}
+      disabled={drawBusy}
+      onclick={() => startDraw("rectangle")}
+    >
+      Rectangle
+    </button>
+    <button
+      type="button"
+      class="draw-tool"
+      class:draw-tool--active={drawMode === "circle"}
+      disabled={drawBusy}
+      onclick={() => startDraw("circle")}
+    >
+      Circle
+    </button>
+    {#if drawMode}
+      <button type="button" class="draw-tool" onclick={stopDraw}>Done</button>
+    {/if}
+    <button type="button" class="draw-tool" onclick={() => (coordDialogOpen = true)}>
+      Enter coordinates
+    </button>
+    <Pill
+      label="Show analysis cells"
+      pressed={showCells}
+      disabled={selectedIndex === null || places[selectedIndex]?.kind !== "geom"}
+      disabledReason="Select a drawn or uploaded place first."
+      onclick={toggleAnalysisCells}
+    />
+  </section>
+
   {#if !places.length}
     <p class="empty">
       No places yet. Turn on pick mode and click a Program Area, or draw and upload arrive in the
@@ -426,6 +642,12 @@
       <button type="button" class="clear-recents" onclick={onClearRecents}>Clear</button>
     {/if}
   </Accordion>
+
+  <CoordinateDialog
+    open={coordDialogOpen}
+    onclose={() => (coordDialogOpen = false)}
+    onAccept={addEnteredPlaces}
+  />
 </div>
 
 <style>
@@ -458,6 +680,39 @@
   }
 
   .add-picked:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .draw-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .draw-tool {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: 28px;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+
+  .draw-tool--active {
+    background: var(--fill-accent);
+    border-color: var(--fill-accent);
+    color: var(--text-on-accent);
+  }
+
+  .draw-tool:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }

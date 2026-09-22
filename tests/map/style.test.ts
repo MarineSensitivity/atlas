@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   LAYER_ORDER,
   SELECTION_COLOR,
+  SELECTION_FILL_OPACITY_DEFAULT,
   applyStyle,
   composeStyle,
   orderLayers,
@@ -161,6 +162,30 @@ describe("composeStyle", () => {
       "line-color": SELECTION_COLOR,
     });
     expect(s.layers[s.layers.length - 1].id).toBe("selection-line");
+  });
+
+  // atlas-6 Deliverable 2's "show analysis cells" toggle: a data-driven fill-opacity instead of
+  // the flat default, so a lightly-covered cell paints fainter than a fully-covered one.
+  it("selection-fill's fill-opacity is the flat default without `cellOpacity`", () => {
+    const s = composeStyle({
+      theme: "navy",
+      selection: { features: { type: "FeatureCollection", features: [] } },
+    });
+    const fill = s.layers.find((l) => l.id === "selection-fill");
+    expect(fill && "paint" in fill ? fill.paint : null).toMatchObject({
+      "fill-opacity": SELECTION_FILL_OPACITY_DEFAULT,
+    });
+  });
+
+  it("selection-fill's fill-opacity reads each feature's own `opacity` property when `cellOpacity` is set", () => {
+    const s = composeStyle({
+      theme: "navy",
+      selection: { features: { type: "FeatureCollection", features: [] }, cellOpacity: true },
+    });
+    const fill = s.layers.find((l) => l.id === "selection-fill");
+    expect(fill && "paint" in fill ? fill.paint : null).toMatchObject({
+      "fill-opacity": ["get", "opacity"],
+    });
   });
 
   it("sets `glyphs` only when a label layer really exists (no stray font fetch)", () => {

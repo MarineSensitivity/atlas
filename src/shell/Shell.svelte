@@ -192,10 +192,19 @@
   });
 
   // one composed style, re-applied with setStyle(diff:true) whenever theme, projection, the
-  // release's zone units, or places' own pick-mode highlight change -- never addLayer() piecemeal
-  // (CLAUDE.md). `placesMap.outline` is atlas-6's ONLY way to reach the map: a composeStyle
-  // `selection` input (docs/map.md), nothing imperative.
-  const placesSelection = $derived(placesMap.outline ? { features: placesMap.outline } : null);
+  // release's zone units, or places' own pick-mode highlight / "show analysis cells" toggle change
+  // -- never addLayer() piecemeal (CLAUDE.md). `placesMap.{outline,cells}` are atlas-6's ONLY way
+  // to reach the map: composeStyle `selection` inputs (docs/map.md), nothing imperative. Cells (a
+  // place's own covered-cell squares) take priority over the pick-mode outline when both exist --
+  // Deliverable 2 shows cells only for the place currently being inspected, so nothing else should
+  // paint underneath it at the same time.
+  const placesSelection = $derived(
+    placesMap.cells
+      ? { features: placesMap.cells, cellOpacity: true }
+      : placesMap.outline
+        ? { features: placesMap.outline }
+        : null,
+  );
   $effect(() => {
     mapHandle?.applyStyle(
       composeStyle({

@@ -79,4 +79,11 @@ export interface SelectionSpec {
   features: FeatureCollection;
   /** overridden only by a test; the lens uses the shipped constant. */
   color?: string;
+  /**
+   * atlas-6 Deliverable 2's "show analysis cells" toggle: when true, `fill-opacity` reads each
+   * feature's own `opacity` property (0-1, `pct / 100` — `places/cellSquares.ts` sets it) instead
+   * of the flat 0.15 an ordinary selection highlight uses, so a lightly-covered cell paints
+   * fainter than a fully-covered one.
+   */
+  cellOpacity?: boolean;
 }
