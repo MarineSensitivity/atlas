@@ -80,3 +80,24 @@ export interface SelectionSpec {
   /** overridden only by a test; the lens uses the shipped constant. */
   color?: string;
 }
+
+/**
+ * A PMTiles vector "presence" fill — atlas-5's ranges branch (an IUCN/BirdLife/critical-habitat
+ * range polygon, `atlas-refs/"parity species app.md"` §6.2's PMTiles branch). Distinct from
+ * `ZoneUnitSpec` (a release's drawable UNIT, e.g. Program Area) even though both are PMTiles vector
+ * fills: a range is per-SPECIES-input, filtered to one `mdl_key`, and carries no outline/label.
+ */
+export interface RangeLayerSpec {
+  /** style source AND layer id. */
+  id: string;
+  /** absolute https PMTiles URL (`asset.url`; the map module registers `pmtiles://` — map.ts). */
+  pmtiles: string;
+  /** the vector layer inside the archive (`asset.sourceLayer`). */
+  sourceLayer: string;
+  /** the property every feature carries the model id under (`"mdl_key"`, §6.2). */
+  keyProperty: string;
+  /** the value to filter to — `["==", ["get", keyProperty], key]`. */
+  key: string;
+  fillColor: string;
+  opacity: number;
+}

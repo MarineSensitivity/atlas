@@ -13,6 +13,97 @@
 //     the user never asked for and that a reload would then restore instead of the destination.
 import type { MapView } from "../state/types";
 
+// --- bounds -> camera, WITHOUT MapLibre's own fitBounds ------------------------------------------
+//
+// atlas-5's species camera (src/lens/species/data/camera.ts) hands the lens an EXTENT, not a
+// center+zoom preset — a species surface has a real footprint, unlike a study-area preset. But
+// `tests/map/no-fitbounds.test.ts` scans src/lib/map AND src/lens for a call to MapLibre's own
+// bounds-fitting method (never named literally in this file's prose, on purpose — see that test's
+// own regex), because it normalizes longitudes internally and inverts across the antimeridian
+// (EBS/PIS). The species data layer's `minimalFrame()` already solved that
+// by RE-EXPRESSING a frame so `east` may exceed 180 in a continuous (never wrapped) degree space —
+// so the fit math here must stay linear in that same space and must never re-wrap it.
+//
+// This function is deliberately named `boundsToCameraView`, never MapLibre's own bounds-fitting
+// method name (function name, method name, or call site — see this repo's source-scan gate): it is
+// the plain Web Mercator projection that method uses internally (a linear x = lon/360+0.5, a
+// standard non-linear y for latitude), computed by hand so a bbox with `east > 180` projects to
+// `x > 1` instead of being wrapped back into 0..1 first.
+const MERCATOR_TILE_SIZE = 512;
+const MERCATOR_MIN_ZOOM = 0;
+const MERCATOR_MAX_ZOOM = 22;
+
+function lngToMercatorX(lng: number): number {
+  return lng / 360 + 0.5;
+}
+
+function latToMercatorY(lat: number): number {
+  const clamped = Math.min(89.9, Math.max(-89.9, lat));
+  const rad = (clamped * Math.PI) / 180;
+  return 0.5 - Math.log((1 + Math.sin(rad)) / (1 - Math.sin(rad))) / (4 * Math.PI);
+}
+
+function mercatorXToLng(x: number): number {
+  return (x - 0.5) * 360;
+}
+
+function mercatorYToLat(y: number): number {
+  const y2 = 180 - y * 360;
+  return (360 / Math.PI) * Math.atan(Math.exp((y2 * Math.PI) / 180)) - 90;
+}
+
+/** `[[west, south], [east, north]]` — `east` MAY exceed 180 (a re-expressed, unwrapped frame). */
+export type CameraBoundsInput = readonly [readonly [number, number], readonly [number, number]];
+
+export interface Viewport {
+  width: number;
+  height: number;
+}
+
+export interface BoundsToCameraOptions {
+  /** CSS px on every edge; the species lens' default is 40 (data/camera.ts's `DEFAULT_CAMERA_PADDING`). */
+  padding?: number;
+  minZoom?: number;
+  maxZoom?: number;
+}
+
+/**
+ * The center+zoom that frames `bounds` in `viewport`, computed by hand in linear Mercator space so
+ * `bounds[1][0]` (east) may exceed 180 without wrapping — the whole point of this module existing
+ * instead of calling MapLibre's own `fitBounds`. Degenerate input (a zero-area box, a non-finite
+ * viewport) still returns a sane camera: the box's own center at `maxZoom`'s bound, never `NaN`.
+ */
+export function boundsToCameraView(
+  bounds: CameraBoundsInput,
+  viewport: Viewport,
+  opts: BoundsToCameraOptions = {},
+): { center: [number, number]; zoom: number } {
+  const padding = opts.padding ?? 0;
+  const minZoom = opts.minZoom ?? MERCATOR_MIN_ZOOM;
+  const maxZoom = opts.maxZoom ?? MERCATOR_MAX_ZOOM;
+  const [[west, south], [east, north]] = bounds;
+
+  const x0 = lngToMercatorX(west);
+  const x1 = lngToMercatorX(east);
+  const y0 = latToMercatorY(north); // north has the SMALLER y (Mercator y grows southward)
+  const y1 = latToMercatorY(south);
+
+  const width = Math.max(x1 - x0, 1e-12);
+  const height = Math.max(y1 - y0, 1e-12);
+
+  const availW = Math.max((viewport.width || 0) - 2 * padding, 1);
+  const availH = Math.max((viewport.height || 0) - 2 * padding, 1);
+
+  const scaleX = availW / (width * MERCATOR_TILE_SIZE);
+  const scaleY = availH / (height * MERCATOR_TILE_SIZE);
+  const scale = Math.min(scaleX, scaleY);
+  const zoom = Math.min(maxZoom, Math.max(minZoom, Math.log2(Math.max(scale, 1e-9))));
+
+  const cx = (x0 + x1) / 2;
+  const cy = (y0 + y1) / 2;
+  return { center: [mercatorXToLng(cx), mercatorYToLat(cy)], zoom };
+}
+
 /** debounce for the URL write, per the atlas-3 shell's "replaceState only, debounced" rule. */
 export const CAMERA_WRITE_DELAY_MS = 300;
 

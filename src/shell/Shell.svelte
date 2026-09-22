@@ -39,9 +39,25 @@
   import { zoneUnitsFromBoot } from "../lib/map/layers/zones";
   import { studyAreaFromBoot } from "../lib/map/interaction";
   import type { ZoneUnitSpec } from "../lib/map/types";
+  import { createAnalytics } from "../lib/analytics/analytics";
+  // atlas-5: the species lens. Shell owns WHERE it mounts (the "layers" panel body, the topbar
+  // search field, a legend region over the map) and the ONE composeStyle call; the lens owns what
+  // to draw (docs/map.md / this file's own header comment).
+  import { createSpeciesLens } from "../lens/species/state.svelte";
+  import SpeciesLensPanel from "../lens/species/SpeciesLens.svelte";
+  import SpeciesPicker from "../lens/species/SpeciesPicker.svelte";
+  import SpeciesLegend from "../lens/species/SpeciesLegend.svelte";
+  import NotFoundModal from "../lens/species/NotFoundModal.svelte";
 
   const selStore = createSelStore(location);
   const sel = selStore.sel;
+
+  // a minimal Analytics instance (analytics.ts's own header: the GA4 `<script>` LOADER tag is a
+  // later phase's job; `track()` calls made before it lands simply queue into `dataLayer` the way
+  // GA4's own snippet already expects — see analytics.ts). `preview` is always false here: the
+  // shell does not yet thread a resolved preview session down to a lens (a known gap, not this
+  // phase's to close — see this component's own boot section below).
+  const analytics = createAnalytics({ appVersion: __APP_VERSION__, preview: false });
 
   // --- theme: the SAME rule as index.html's pre-paint script, kept live afterward -------------
   let prefersDark = $state<boolean | null>(null);
@@ -154,6 +170,19 @@
   // all three -- see docs/map.md.
   const zoneUnits = $derived<ZoneUnitSpec[]>(zoneUnitsFromBoot(boot));
 
+  // atlas-5: the species lens' reactive core. A plain call, not a component -- state.svelte.ts's
+  // own header explains why (the same "wiring only, rules live in plain modules" split
+  // src/lib/state/sel.svelte.ts already documents). `mapHandle`/`boot`/`earlyVersion` are read
+  // through getters so the closures below always see the CURRENT value, not the one captured at
+  // this call site (all three settle asynchronously, after this line runs).
+  const speciesLens = createSpeciesLens({
+    selStore,
+    ver: () => earlyVersion,
+    boot: () => boot,
+    mapHandle: () => mapHandle,
+    track: (name, params) => analytics.track(name as never, params as never),
+  });
+
   onMount(() => {
     if (!mapEl) return;
     const handle = createMap(mapEl, {
@@ -166,6 +195,16 @@
       onCamera: (map) => selStore.set({ map }),
     });
     mapHandle = handle;
+    // atlas-5 §6.5: the species click. The shared map's raw click event -- never a second map
+    // instance, never a second `on("click")` owner; a non-species lens ignores its own clicks
+    // inside `handleMapClick` itself (checks `sel.lens` first).
+    const onMapClick = (e: {
+      lngLat: { lng: number; lat: number };
+      point: { x: number; y: number };
+    }) => {
+      void speciesLens.handleMapClick({ lng: e.lngLat.lng, lat: e.lngLat.lat }, e.point);
+    };
+    handle.map.on("click", onMapClick);
     // the map's public test/automation seam (docs/map.md): the handle plus the CURRENT composeStyle
     // inputs, so e2e/map.spec.ts and scripts/verify.mjs can drive the real map the way a lens will
     // -- compose a style, apply it -- instead of reaching into MapLibre. It exposes nothing a
@@ -180,16 +219,26 @@
     // reports.
     return () => {
       delete (window as unknown as { __atlasMap?: unknown }).__atlasMap;
+      handle.map.off("click", onMapClick);
       handle.destroy();
       mapHandle = undefined;
     };
   });
 
-  // one composed style, re-applied with setStyle(diff:true) whenever theme, projection or the
-  // release's zone units change -- never addLayer() piecemeal (CLAUDE.md).
+  // one composed style, re-applied with setStyle(diff:true) whenever theme, projection, the
+  // release's zone units, OR (species lens only) the layer on screen changes -- never addLayer()
+  // piecemeal (CLAUDE.md). `raster`/`range` are the ONLY species-specific fields this shell ever
+  // reads; every rule that produced them lives in the lens (mapInputs.ts), not here.
   $effect(() => {
+    const isSpecies = sel.lens === "species";
     mapHandle?.applyStyle(
-      composeStyle({ theme: resolvedTheme, projection: sel.proj, zones: zoneUnits }),
+      composeStyle({
+        theme: resolvedTheme,
+        projection: sel.proj,
+        zones: zoneUnits,
+        raster: isSpecies ? speciesLens.mapInputs.raster : null,
+        range: isSpecies ? speciesLens.mapInputs.range : null,
+      }),
     );
   });
   const releaseNote = $derived(
@@ -231,11 +280,23 @@
 
   <label class="search-field topbar-desktop-only" data-tour="search" data-control="search">
     <Icon name="search" size={16} />
-    <input
-      type="search"
-      aria-label="Search species and places"
-      placeholder="Search species and places"
-    />
+    {#if sel.lens === "species"}
+      <SpeciesPicker
+        index={speciesLens.taxaIndex}
+        selected={sel.sp}
+        usOnly={sel.us}
+        onSelect={(key) => speciesLens.selectSpecies(key)}
+        onSetUsOnly={(enabled) => speciesLens.setUsOnly(enabled)}
+        onSearchLogged={(query) => analytics.track("search_species", { query })}
+        onFocusIndex={() => speciesLens.ensureTaxaIndex()}
+      />
+    {:else}
+      <input
+        type="search"
+        aria-label="Search species and places"
+        placeholder="Search species and places"
+      />
+    {/if}
   </label>
 
   <span class="spacer"></span>
@@ -300,22 +361,40 @@
     />
   </nav>
 
+  {#snippet panelBody()}
+    {#if sel.lens === "species" && activeTool === "layers"}
+      <SpeciesLensPanel lens={speciesLens} rep={sel.rep} />
+    {:else}
+      <p>{TOOL_BODY[activeTool]}</p>
+    {/if}
+  {/snippet}
+
   <div class="panel-region" id="panel-region" data-tour="panel" data-control="panel">
     {#if isPhone}
       <Sheet id="shell" title={TOOL_LABEL[activeTool]}>
-        <p>{TOOL_BODY[activeTool]}</p>
+        {@render panelBody()}
       </Sheet>
     {:else}
       <Panel id="shell" title={TOOL_LABEL[activeTool]}>
-        <p>{TOOL_BODY[activeTool]}</p>
+        {@render panelBody()}
       </Panel>
     {/if}
   </div>
+
+  {#if sel.lens === "species"}
+    <SpeciesLegend legend={speciesLens.mapInputs.legend} />
+  {/if}
 
   <div class="about-region" id="about-region" data-tour="about" data-control="about">
     <About {releaseNote} />
   </div>
 </main>
+
+<NotFoundModal
+  open={speciesLens.notFound !== null}
+  reasons={speciesLens.notFound?.reasons ?? []}
+  onclose={() => speciesLens.dismissNotFound()}
+/>
 
 <!-- spec.md §11: the shell's ONE polite live region (SC 4.1.3) -- every component (Rail's
      onAnnounce below, this file's own onShare/onHelp/onVersionClick) calls the shared

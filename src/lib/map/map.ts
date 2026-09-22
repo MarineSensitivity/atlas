@@ -25,7 +25,12 @@ import { Map as MapLibreMap, addProtocol, setWorkerUrl } from "maplibre-gl";
 import { Protocol } from "pmtiles";
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { createCameraWriter, type CameraWriter } from "./camera";
+import {
+  boundsToCameraView,
+  createCameraWriter,
+  type CameraBoundsInput,
+  type CameraWriter,
+} from "./camera";
 import { FALLBACK_FULL_STUDY_AREA, PROGRAMMATIC_EVENT_DATA, type StudyArea } from "./interaction";
 import { applyStyle } from "./style";
 import type { MapView, Projection, ResolvedTheme, StyleSpecification } from "./types";
@@ -74,6 +79,15 @@ export interface MapHandle {
   setProjection(projection: Projection): void;
   /** fly to a study area's centre + zoom. Never `fitBounds` (see interaction.ts). */
   flyTo(area: StudyArea): void;
+  /**
+   * Fly to an EXTENT — atlas-5's species camera (`src/lens/species/data/camera.ts`'s
+   * `BoundsCamera`). `bounds[1][0]` (east) may exceed 180 (an unwrapped, re-expressed frame); this
+   * computes the equivalent center+zoom itself (`camera.ts`'s `boundsToCameraView`, plain linear
+   * Mercator math) rather than calling MapLibre's own bounds-fitting method, which re-wraps
+   * longitudes and inverts across the antimeridian — that native method is never called anywhere
+   * in this module (see docs/map.md).
+   */
+  flyToBounds(bounds: CameraBoundsInput, opts?: { padding?: number }): void;
   /** the current camera, rounded for the URL. */
   camera(): MapView;
   resize(): void;
@@ -180,6 +194,16 @@ export function createMap(container: HTMLElement, opts: CreateMapOptions): MapHa
       // a programmatic move supersedes whatever the user's last gesture was still holding.
       writer?.cancel();
       map.flyTo({ center: [area.lon, area.lat], zoom: area.zoom }, { ...PROGRAMMATIC_EVENT_DATA });
+    },
+    flyToBounds(bounds: CameraBoundsInput, opts?: { padding?: number }) {
+      writer?.cancel();
+      const rect = map.getContainer().getBoundingClientRect();
+      const view = boundsToCameraView(
+        bounds,
+        { width: rect.width, height: rect.height },
+        { padding: opts?.padding },
+      );
+      map.flyTo({ center: view.center, zoom: view.zoom }, { ...PROGRAMMATIC_EVENT_DATA });
     },
     camera: currentCamera,
     resize() {

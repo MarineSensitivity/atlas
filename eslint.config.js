@@ -28,9 +28,11 @@ export default ts.config(
   ...svelte.configs.recommended,
   prettier,
   {
-    // browser app code: src/, and the e2e/fixture pages that stand in for it
+    // browser app code: src/, and the e2e/fixture pages that stand in for it. `__APP_VERSION__` is
+    // `vite.config.ts`'s `define` (atlas-5: Analytics["appVersion"], inlined at build time — see
+    // that file's own comment for why not a runtime `import` of package.json).
     files: ["src/**/*.ts", "src/**/*.svelte", "tests/fixtures/**/*.ts"],
-    languageOptions: { globals: globals.browser },
+    languageOptions: { globals: { ...globals.browser, __APP_VERSION__: "readonly" } },
   },
   {
     // Node-run tooling: build scripts and *.config.ts files. scripts/verify.mjs also drives

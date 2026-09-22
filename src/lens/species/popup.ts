@@ -1,0 +1,190 @@
+// The species lens' UI half, part 2: the click popup, as data (§6.5). Pure — the click's own
+// {lngLat, cellId} comes from `map/interaction.ts`'s `mapClick` (grid-aware arithmetic on the
+// release's own `boot.grid`, never a hard-coded global05 constant); the sampled numeric value comes
+// from a `ValueSource`
+// (`src/lib/raster/point.ts`, `/cog/point`, plan D4). This module only turns those two things into
+// what a popup renders — swatch color, text color, and the line of text.
+//
+// THE SWATCH RULE (§6.5 step 5): `val_scaled = clamp((val-1)/99, 0, 1)`, `col_idx =
+// round(val_scaled*10)+1`, `bg_color = cols_r[col_idx]` — this is byte-for-byte
+// `raster/ramps.ts`'s `binColor(stops, val, 1, 100)` (same half-even round, same 11-bin snap), so
+// this module calls that rather than re-deriving the bin math a second time. It is generalized to
+// the asset's OWN rescale range (not a hard-coded `1, 100`) so an AquaX "Delivered" click — whose
+// raw band is `[0, 1000]`, not `[1, 100]` — still picks the correct bin instead of clamping every
+// real value into the bottom two stops.
+import { roundHalfEven } from "../../lib/geo/round";
+import { RANGE_FILL_COLOR } from "../../lib/map/colors";
+import { binColor, type PaletteStops } from "../../lib/raster/ramps";
+
+/** relative luminance, R's own weights (§6.5 step 5: `0.299R + 0.587G + 0.114B`, NOT the WCAG
+ * formula) — the exact threshold the parity reference gives, kept byte-for-byte rather than
+ * "improved" to sRGB-linear luminance, which would pick a different color on some swatches. */
+export function luminance(hex: string): number {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex);
+  if (!m) return 1; // an unreadable color reads as "light" -> black text, the safer default
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
+/** black on a light swatch, white on a dark one — the exact 0.5 threshold (§6.5 step 5). CSS named
+ * colors, matching the R source's own literal `"black"`/`"white"` (`txt_color <- if (luminance >
+ * 0.5) "black" else "white"`) — not hex, which would also trip
+ * `tests/raster/ramps.wiring.test.ts`'s "no hex literal outside ramps.ts/colors.ts" scan for a
+ * color this module does not own. */
+export function textColorFor(hexBg: string): "black" | "white" {
+  return luminance(hexBg) > 0.5 ? "black" : "white";
+}
+
+/** R's `round(val, 3)` (half-to-even, same convention as `geo/round.ts` elsewhere in this repo). */
+export function roundValue(value: number, decimals = 3): number {
+  const f = 10 ** decimals;
+  return roundHalfEven(value * f) / f;
+}
+
+export type PopupKind = "value" | "presence" | "no-value";
+
+export interface PopupInput {
+  sci: string;
+  lon: number;
+  lat: number;
+  /** `null` when the click fell outside the release's grid (`mapClick`'s own `cellId: null`). */
+  cellId: number | null;
+  /** the layer sampled: a COG asset's own numeric value, a PMTiles range (presence only), or a COG
+   * click that resolved to no value (a `/cog/point` `null`, e.g. a nodata pixel). */
+  kind: PopupKind;
+  /** required when `kind === "value"`: the sampled value and the bin range to color it against
+   * (the asset's OWN rescale — see the module header on why this is not a hard-coded `[1,100]`). */
+  value?: number;
+  rescale?: readonly [number, number];
+  /** `boot.palettes[colormap]` (`raster/ramps.ts`'s `paletteStopsFromBoot`). `null`/absent —
+   * `boot.json` has not published palettes for this release yet — degrades to a neutral grey pin
+   * with the value still shown as text: there is no second, hard-coded ramp anywhere in this repo
+   * to fall back to (`tests/raster/ramps.wiring.test.ts`'s gate; `ramps.ts` itself asserts it holds
+   * no hard-coded stops either — palette colors come from `boot.json` alone). */
+  stops?: PaletteStops | null;
+}
+
+export interface PopupContent {
+  kind: PopupKind;
+  sci: string;
+  lon: number;
+  lat: number;
+  cellId: number | null;
+  /** the value line's rounded display value, or `null` for a presence/no-value popup. */
+  displayValue: number | null;
+  /** the marker/pin color: a data swatch for "value"/"presence", the CSS named color `"grey"` for
+   * "no-value" — a named color, never a hex literal, is what keeps this file clear of
+   * `tests/raster/ramps.wiring.test.ts`'s scan for a color this module does not actually own. */
+  pinColor: string;
+  /** `null` for the grey "no value" pin — there is no ramp value to contrast text against. */
+  textColor: "black" | "white" | null;
+  /** the popup's one line of state text (§6.5's `<i>no value here</i>`, and this app's own
+   * "presence only" for a range click — ranges have no numeric value to show at all). */
+  text: string;
+}
+
+/**
+ * The whole popup, as data (§6.5 steps 4-6). A component renders this; nothing here touches the
+ * DOM or MapLibre.
+ */
+export function popupContent(input: PopupInput): PopupContent {
+  const base = { sci: input.sci, lon: input.lon, lat: input.lat, cellId: input.cellId };
+
+  if (input.kind === "no-value") {
+    return {
+      ...base,
+      kind: "no-value",
+      displayValue: null,
+      pinColor: "grey",
+      textColor: null,
+      text: "no value here",
+    };
+  }
+  if (input.kind === "presence") {
+    return {
+      ...base,
+      kind: "presence",
+      displayValue: null,
+      pinColor: RANGE_FILL_COLOR,
+      textColor: textColorFor(RANGE_FILL_COLOR),
+      text: "presence only",
+    };
+  }
+
+  // "value": both `value` and `rescale` are required by the type, but a caller building this from
+  // untyped data (e.g. relaying a worker message) could still omit them — fail to "no value here"
+  // rather than color a swatch with `undefined`.
+  if (input.value === undefined || !input.rescale) {
+    return {
+      ...base,
+      kind: "no-value",
+      displayValue: null,
+      pinColor: "grey",
+      textColor: null,
+      text: "no value here",
+    };
+  }
+  const displayValue = roundValue(input.value);
+  // no boot.palettes yet (see the module header): show the value, but with no ramp to color a
+  // swatch against — a grey pin rather than a guessed color.
+  if (!input.stops) {
+    return {
+      ...base,
+      kind: "value",
+      displayValue,
+      pinColor: "grey",
+      textColor: null,
+      text: `Value: ${displayValue}`,
+    };
+  }
+  const [min, max] = input.rescale;
+  const swatch = binColor(input.stops, input.value, min, max);
+  return {
+    ...base,
+    kind: "value",
+    displayValue,
+    pinColor: swatch,
+    textColor: textColorFor(swatch),
+    text: `Value: ${displayValue}`,
+  };
+}
+
+/** the four characters an interpolated species/place name could carry into an `innerHTML` string
+ * (`popupHtml` below feeds a real MapLibre `Popup.setHTML`) — a name from a release bundle is
+ * still untrusted TEXT, never markup. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * The popup's HTML (§6.5 step 5's `<b>{sci}</b><br>Cell ID: {id}<br>Lon: {x}<br>Lat:
+ * {y}<br>Value: {round(val,3)}`, adapted for the two atlas-only states "presence only" and "no
+ * value here"): a swatch square colored `pinColor`, text colored `textColor` when there is a ramp
+ * value to contrast against. The caller hands this to a real `maplibregl.Popup#setHTML` — this
+ * module still touches no DOM itself, only builds the string.
+ */
+export function popupHtml(content: PopupContent): string {
+  const cell = content.cellId === null ? "—" : String(content.cellId);
+  const lon = content.lon.toFixed(3);
+  const lat = content.lat.toFixed(3);
+  const swatchStyle =
+    content.textColor === null
+      ? `background:${escapeHtml(content.pinColor)}`
+      : `background:${escapeHtml(content.pinColor)};color:${content.textColor}`;
+  return (
+    `<div class="species-popup">` +
+    `<b><i>${escapeHtml(content.sci)}</i></b><br>` +
+    `Cell ID: ${cell}<br>` +
+    `Lon: ${lon}<br>` +
+    `Lat: ${lat}<br>` +
+    `<span class="species-popup-swatch" style="${swatchStyle}">${escapeHtml(content.text)}</span>` +
+    `</div>`
+  );
+}

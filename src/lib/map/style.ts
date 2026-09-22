@@ -13,6 +13,7 @@
 import { basemapForTheme, GLYPHS_URL, MAP_BACKGROUND_BY_THEME } from "./layers/basemap";
 import { SELECTION_COLOR } from "./colors";
 import { rasterLayer, rasterSource } from "./layers/raster";
+import { rangeLayer, rangeSource } from "./layers/ranges";
 import {
   zoneFillLayer,
   zoneLabelLayer,
@@ -24,6 +25,7 @@ import type {
   BasemapSpec,
   LayerSpecification,
   Projection,
+  RangeLayerSpec,
   RasterLayerSpec,
   ResolvedTheme,
   SelectionSpec,
@@ -42,6 +44,7 @@ export const LAYER_ORDER = [
   "background",
   "basemap",
   "raster",
+  "range",
   "overlay",
   "zone-fill",
   "zone-line",
@@ -70,8 +73,10 @@ export interface ComposeStyleInput {
    * one more `setStyle(diff)` rather than a second imperative API the lenses have to remember. */
   projection?: Projection;
   zones?: readonly ZoneUnitSpec[];
-  /** the score raster (atlas-4) or a species surface (atlas-5). */
+  /** the score raster (atlas-4) or a species COG surface (atlas-5). */
   raster?: RasterLayerSpec | null;
+  /** a species PMTiles range/presence fill (atlas-5's ranges branch) — `null` for none. */
+  range?: RangeLayerSpec | null;
   /** extra rasters above the main one, e.g. "cells outside Program Areas". */
   overlays?: readonly RasterLayerSpec[];
   selection?: SelectionSpec | null;
@@ -168,6 +173,10 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
   if (input.raster) {
     sources[input.raster.id] = rasterSource(input.raster);
     roled.push({ role: "raster", layer: rasterLayer(input.raster) });
+  }
+  if (input.range) {
+    sources[input.range.id] = rangeSource(input.range);
+    roled.push({ role: "range", layer: rangeLayer(input.range) });
   }
   for (const overlay of overlays) {
     sources[overlay.id] = rasterSource(overlay);

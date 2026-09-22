@@ -39,7 +39,8 @@ composeStyle({
   projection, // "globe" (default) | "mercator"
   basemap, // omit for the theme's own; `null` for none (print)
   zones, // ZoneUnitSpec[]: outline always, `fill` and `labels` optional
-  raster, // RasterLayerSpec | null: the score COG / species surface
+  raster, // RasterLayerSpec | null: the score COG / species COG surface
+  range, // RangeLayerSpec | null: a species PMTiles presence fill (atlas-5)
   overlays, // RasterLayerSpec[]: e.g. "cells outside Program Areas"
   selection, // SelectionSpec | null: the #ff00aa highlight
 });
@@ -50,10 +51,13 @@ composeStyle({
 it belongs, and a unit test for the builder. `orderLayers()` throws on a role the table does not
 name, so there is no way to add a layer without deciding where it sits.
 
-**Layer order is declared, bottom to top:** `background · basemap · raster · overlay · zone-fill ·
-zone-line · zone-label · selection-fill · selection-line`. Because the order is a table rather than a
-chain of `before` ids, a missing layer removes exactly itself — the v1 failure where one absent
-`before_id` cascaded into "a map with nothing but labels" cannot happen here.
+**Layer order is declared, bottom to top:** `background · basemap · raster · range · overlay ·
+zone-fill · zone-line · zone-label · selection-fill · selection-line`. Because the order is a table
+rather than a chain of `before` ids, a missing layer removes exactly itself — the v1 failure where
+one absent `before_id` cascaded into "a map with nothing but labels" cannot happen here.
+`range` (atlas-5, `map/layers/ranges.ts`) is a species PMTiles presence fill, filtered to one
+`mdl_key` — distinct from a zone unit's own PMTiles outline even though both register the same
+`pmtiles://` protocol.
 
 ## Rules with teeth
 

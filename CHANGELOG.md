@@ -1,3 +1,51 @@
+# atlas 0.9.4
+
+`atlas-5` steps 1-2: the species lens UI, on top of the already-merged data layer
+(`src/lens/species/data/**`) and shared map module (`src/lib/map/**`). Delivered together (skipping
+an interim 0.9.3 checkpoint) because the two steps share one reactive core.
+
+- **Shard-driven species view**: on `sp=` the taxon shard loads, draws through `composeStyle` (the
+  asset's OWN colormap/rescale — AquaX delivered `[0,1000]`, everything else `[1,100]` — opacity
+  0.8, nearest), a continuous legend from `ramps.ts`, the sidebar card (§7.3), and a camera fit to
+  the layer's own extent. `merged.type = null` shows "No surface published for this taxon in {ver}"
+  instead of a raster. Document title tracks the layer on screen.
+- **The camera never calls MapLibre's own bounds-fitting method** (`tests/map/no-fitbounds.test.ts`'s
+  gate covers `src/lens` too): `src/lib/map/camera.ts`'s new `boundsToCameraView()` computes the
+  equivalent center+zoom by hand, in linear (never re-wrapped) Mercator space, so a frame whose
+  `east` exceeds 180 fits correctly; `map.ts`'s new `flyToBounds()` is the imperative half. Refits
+  ONLY when the species changes, never on a layer/representation switch.
+- **Picker + search**: `app/taxa.json` loads on focus/idle, grouped by `sp_cat`, ranked
+  (exact→prefix→word-start→substring, scientific before common), virtualized (reusing
+  `dataTableCore.ts`'s window math). "Only species in US waters" keeps the current selection across
+  the swap. `search_species` logs at ≥3 chars, 900 ms debounced, no repeats.
+- **Layer bar + representation**: green `is-merged` / a distinct `is-input` state, one pill per
+  input in `dataset.sort_order`; a struck-through pill for an input with no published surface is a
+  plain, non-focusable `<span title="...">` (not a `<button>`) — the atlas-5 gate's exact wording.
+  The Original/Interpolated ↔ Delivered/As ingested toggle switches `rep`, live.
+- **The PMTiles ranges branch**: a new `map/layers/ranges.ts` builder + `ComposeStyleInput.range`
+  field + `LAYER_ORDER` role, filtered to the asset's own `mdl_key`; switching from a COG layer to a
+  range (or back) removes the old source AND layer together, proven by a test (the stale-surface
+  bug, §11.8) — `composeStyle` always replaces the whole style.
+- **Click → popup**: `cellFromLonLat` on the release's own grid (never a hard-coded 7200/3600), the
+  sampled value via `/cog/point` behind `ValueSource` (plan D4), binned against the asset's OWN
+  rescale (generalizing §6.5's literal `[1,100]` formula so an AquaX Delivered click still lands in
+  the right bin), swatch/text-luminance rule byte-for-byte from the reference. A range click reports
+  "presence only"; no value is a grey pin + "no value here". A real `maplibregl.Popup` opens on the
+  first click.
+- Deep-link resolution (`?mdl_key=`/`?mdl_seq=`/`sp`), the "Model not found" modal, and the ten
+  analytics events are wired into `state.svelte.ts` already (step 3 lands the remaining chrome:
+  welcome modal, release picker, tour, OBIS).
+- New: `src/lens/species/{mapInputs,popup,state.svelte,SpeciesTitle,LayerBarView,SpeciesCardView,
+  SpeciesLegend,SpeciesPicker,SpeciesLens,NotFoundModal}.{ts,svelte}`; `src/lib/map/layers/ranges.ts`;
+  `boundsToCameraView` in `src/lib/map/camera.ts`; a `RANGE_FILL_COLOR` data color in
+  `src/lib/map/colors.ts`; `vite.config.ts`'s `define: { __APP_VERSION__ }` (so `Analytics`'s
+  `appVersion` never pulls the whole `package.json` — including its `pinReasons` prose — into the
+  static bundle, which tripped the forbidden-lazy-chunk-marker scan on `"duckdb"`/`"shp"`/`"treemap"`
+  literally appearing in that JSON).
+- Size budget: 410.5 KB / 450 KB static, 140.5 KB / 150 KB worker (551.0 KB / 600 KB combined) —
+  unchanged in shape from atlas-map's baseline, all species code counted since none of it is meant
+  to be lazy.
+
 # atlas 0.8.3
 
 # atlas 0.8.1
