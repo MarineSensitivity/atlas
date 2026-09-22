@@ -62,9 +62,12 @@
   import { cellsFeatureCollection, MAX_ANALYSIS_CELLS } from "./cellSquares";
   import CoordinateDialog from "./CoordinateDialog.svelte";
   import UploadPanel from "./UploadPanel.svelte";
+  import ResultsPanel from "./ResultsPanel.svelte";
+  import ShareDialog from "./ShareDialog.svelte";
   import { cellsInPolygon } from "../lib/geo/coverage";
   import { gridFromBoot } from "../lib/grid/grid";
   import { getDataEngine } from "./dataEngine";
+  import { noopTrack, placeDrawParams, placeShareParams, type Track } from "./analytics";
   import type { AreaGeometry } from "../lib/geo/types";
   import type { NormalizedPlace } from "../lib/geo/upload/normalize";
 
@@ -75,9 +78,13 @@
     mapHandle: MapHandle | undefined;
     zoneUnits: ZoneUnitSpec[];
     mapStore: PlacesMapStore;
+    /** Deliverable 7: place_draw/place_upload/place_share, counts and buckets only. Defaults to a
+     * no-op -- see analytics.ts's own header for why nothing here sends anything until the GA4
+     * loader is wired app-wide. */
+    track?: Track;
   }
 
-  let { sel, selStore, boot, mapHandle, zoneUnits, mapStore }: Props = $props();
+  let { sel, selStore, boot, mapHandle, zoneUnits, mapStore, track = noopTrack }: Props = $props();
 
   const places = $derived(placesFromHash(sel.pl));
   const selectedIndex = $derived(
@@ -204,6 +211,12 @@
     };
   }
 
+  /** Deliverable 7's `place_draw` param -- counts a vertex, never carries a coordinate. */
+  function vertexCountOf(geometry: AreaGeometry): number {
+    const rings = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates;
+    return rings.reduce((n, poly) => n + poly.reduce((m, r) => m + r.length, 0), 0);
+  }
+
   function onDrawFinish(rawGeometry: AreaGeometry) {
     const place = geomPlaceFrom(rawGeometry, `Drawn place ${places.length + 1}`);
     const result = addPlace(places, place);
@@ -213,6 +226,10 @@
     }
     remember(place);
     writePlaces(result.places, result.places.length - 1);
+    track(
+      "place_draw",
+      placeDrawParams(vertexCountOf(place.geometry), approxAreaKm2(place.geometry)),
+    );
     // Deliverable 3: "the outline is redrawn from the decoded geometry densified along lon/lat
     // lines" -- what is displayed from here on is the SAME (already analysed) geometry stored
     // above, never the raw shape terra-draw just handed back.
@@ -466,13 +483,13 @@
   }
 
   // --- footer: share / download / report ----------------------------------------------------------
-  async function onShare() {
-    try {
-      await navigator.clipboard.writeText(location.href);
-      announce("Link copied to your clipboard.");
-    } catch {
-      announce("Couldn't copy the link automatically — copy it from the address bar.");
-    }
+  // Deliverable 6: the footer's Share opens the SAME dialog that shows the link's length and, over
+  // budget, the simplification ladder -- not a bare clipboard copy (that stays the top bar's own
+  // one-line convenience for the whole view, unrelated to a place's own geometry).
+  let shareDialogOpen = $state(false);
+
+  function onShareTracked(linkLength: number) {
+    track("place_share", placeShareParams(linkLength));
   }
 
   function onDownload() {
@@ -571,7 +588,7 @@
     />
   </section>
 
-  <UploadPanel {mapHandle} dataEngine={dataEngineFn} onAdd={addEnteredPlaces} />
+  <UploadPanel {mapHandle} dataEngine={dataEngineFn} onAdd={addEnteredPlaces} {track} />
 
   {#if !places.length}
     <p class="empty">
@@ -637,10 +654,14 @@
     </ul>
   {/if}
 
+  {#if selectedIndex !== null && places[selectedIndex]?.kind === "geom"}
+    <ResultsPanel place={places[selectedIndex]} {boot} {ver} dataEngine={dataEngineFn} />
+  {/if}
+
   <p class="cap-note">{places.length} / {MAX_PLACES} places</p>
 
   <footer class="places-footer">
-    <button type="button" onclick={onShare}>
+    <button type="button" onclick={() => (shareDialogOpen = true)}>
       <Icon name="share" size={16} />
       Share
     </button>
@@ -673,6 +694,16 @@
     open={coordDialogOpen}
     onclose={() => (coordDialogOpen = false)}
     onAccept={addEnteredPlaces}
+  />
+
+  <ShareDialog
+    open={shareDialogOpen}
+    onclose={() => (shareDialogOpen = false)}
+    {sel}
+    {selStore}
+    {places}
+    grid={gridOrNull()}
+    onShare={onShareTracked}
   />
 </div>
 

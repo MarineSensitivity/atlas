@@ -9,6 +9,7 @@
   import type { GeoPackageConsentRequest } from "../lib/geo/upload/parsers/geopackage";
   import type { MapHandle } from "../lib/map/map";
   import type { DataEngineContext } from "./dataEngine";
+  import { noopTrack, placeUploadParams, type Track } from "./analytics";
 
   interface Props {
     mapHandle: MapHandle | undefined;
@@ -16,14 +17,17 @@
      * as an absent `NormalizeOptions.studyArea` (normalize.ts's own documented behaviour). */
     dataEngine: (() => Promise<DataEngineContext>) | undefined;
     onAdd: (places: NormalizedPlace[]) => void;
+    /** Deliverable 7: counts and buckets only -- see analytics.ts's own header. */
+    track?: Track;
   }
 
-  let { mapHandle, dataEngine, onAdd }: Props = $props();
+  let { mapHandle, dataEngine, onAdd, track = noopTrack }: Props = $props();
 
   let refusal = $state<Refusal | null>(null);
   let busy = $state(false);
   let multiPrompt = $state<{ names: string[] } | null>(null);
   let pending: { name: string; bytes: Uint8Array } | null = null;
+  let lastMeta: { format: string; bytes: number } = { format: "unknown", bytes: 0 };
 
   const MAX_FILE_MB = 10; // geo/upload/normalize.ts's own MAX_FILE_BYTES, restated for the drop hint
 
@@ -47,11 +51,16 @@
     });
   }
 
+  function trackOutcome(nFeatures: number, outcome: "ok" | "refused") {
+    track("place_upload", placeUploadParams({ ...lastMeta, nFeatures, outcome }));
+  }
+
   // `onAdd` (Places.svelte's `addEnteredPlaces`) already announces success once the place is
   // actually added to `#pl=` — this only announces the FAILURE paths that end here instead.
   async function finalize(places: NormalizedPlace[]) {
     if (!dataEngine) {
       onAdd(places);
+      trackOutcome(places.length, "ok");
       return;
     }
     try {
@@ -60,13 +69,16 @@
       const outside = await checkTouchesStudyArea(ctx, places);
       if (outside) {
         refusal = outside;
+        trackOutcome(places.length, "refused");
         return;
       }
       onAdd(places);
+      trackOutcome(places.length, "ok");
     } catch {
       // the release grid/engine failing to boot must never block adding an otherwise-valid place
       // (D7b's clip is a refinement on top of a geometrically valid upload, not a precondition).
       onAdd(places);
+      trackOutcome(places.length, "ok");
     }
   }
 
@@ -77,9 +89,15 @@
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       pending = { name: file.name, bytes };
+      const { detectFormat } = await import("../lib/geo/upload/detect");
+      lastMeta = {
+        format: detectFormat(file.name, bytes).format ?? "unknown",
+        bytes: bytes.length,
+      };
       const result = await normalize({ name: file.name, bytes }, { multiFeature: "perFeature" });
       if (!result.ok) {
         refusal = result.refusal;
+        trackOutcome(0, "refused");
         return;
       }
       if (result.places.length > 1) {
@@ -100,6 +118,7 @@
       multiPrompt = null;
       if (!result.ok) {
         refusal = result.refusal;
+        trackOutcome(0, "refused");
         return;
       }
       await finalize(result.places);

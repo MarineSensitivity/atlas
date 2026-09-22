@@ -1,3 +1,32 @@
+# atlas 0.9.9
+
+`atlas-6` step 4: results and share (Deliverables 5-7), closing out the phase. Measured:
+**420.2 KB gzip static** (budget 450) / **140.5 KB gzip runtime worker** (budget 150).
+
+- **Results for a custom place**, by the published zone method (master plan D7/D7b), reusing
+  `src/places/dataEngine.ts` from step 3: coverage ("N% of this place is inside the US study
+  area", each component's own coverage/mean-where-present), composite + a `Flower` (shared
+  `src/lib/ui/`, not the scores lens's own — this renders entirely within `src/places/**`), and a
+  components `DataTable`. A place wholly outside the study area gets the "no scores" notice
+  (`ResultsPanel.svelte`), never a row of zeros.
+- **Species need `cell_model` tiles**: the fetch plan (tile count, MB — real `Content-Length` via
+  `HEAD`, falling back to a documented average) shows before anything downloads; above 40 tiles or
+  150 MB it asks first (`src/places/fetchPlan.ts`); progress reads "batch N of M" as each
+  ≤ 8-tile batch's buffers are dropped. `capabilities.cell_model === false` shows "species aren't
+  available for this release" instead of a table.
+- **Share** (`ShareDialog.svelte`) states what the link carries (release, lens, layer, camera, N
+  places) and its length; over 2,000 chars a note, over 8,000 the simplification ladder
+  (before/after vertices, area change %, cells changed) — and **accepting writes the simplified
+  geometry back to `#pl=` itself**, never a share-only copy, so the numbers visibly update before
+  the (now-shorter) link is copied. Nothing fitting even simplified offers the GeoJSON download
+  first. Reuses `geo/placeCodec.ts`'s `fitPlacesToUrl` (atlas-2) — this phase only adds the "what it
+  carries" summary and the before/after diff.
+- **Analytics** (`place_draw`, `place_upload`, `place_share`) are now wired at their real call
+  sites — a drawn shape, an upload's outcome, a copied share link — all counts/buckets only
+  (`src/places/analytics.ts`, built in step 1). Every call site's `track` prop defaults to a no-op:
+  no GA4 loader is mounted app-wide yet (`analytics.ts`'s own header), so nothing sends anything
+  until a later phase wires that in.
+
 # atlas 0.9.8
 
 `atlas-6` step 3, UI half: upload (Deliverable 4). Drop a file anywhere on the map (a native
