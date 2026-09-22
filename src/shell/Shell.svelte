@@ -13,7 +13,7 @@
   // there is exactly one source for every geometry value the CLS gate depends on. The real
   // src/lib/ui/* components below (Rail, Panel, Sheet, Segmented, About, VersionBadge, Announcer)
   // bring their own scoped styles and are used only by import, per this step's instructions.
-  import { onMount } from "svelte";
+  import { onMount, type Component } from "svelte";
   import "./shell.css";
   import { buildRailItems, TOOL_BODY, TOOL_LABEL, type ToolName } from "./tools";
   // a plain `src="../lib/brand/vendor/mst-mark.svg"` in the template below would resolve against
@@ -41,21 +41,19 @@
   import { createAnalytics } from "../lib/analytics/analytics";
   // atlas-5: the species lens. Shell owns WHERE it mounts (the "layers" panel body, the topbar
   // search field, a legend region over the map) and the ONE composeStyle call; the lens owns what
-  // to draw (docs/map.md / this file's own header comment).
+  // to draw (docs/map.md / this file's own header comment). `state.svelte.ts` is the lens' pure
+  // DATA/wiring layer (CLAUDE.md: "keep core logic in an exported function... a component calls
+  // it") -- it never imports a `.svelte` file itself, so it stays a static import even though every
+  // lens PANEL component below is now lazy (see "lazy lens/panel chunks" below).
   import { createSpeciesLens } from "../lens/species/state.svelte";
-  import SpeciesLensPanel from "../lens/species/SpeciesLens.svelte";
-  import SpeciesPicker from "../lens/species/SpeciesPicker.svelte";
-  import SpeciesLegend from "../lens/species/SpeciesLegend.svelte";
-  import NotFoundModal from "../lens/species/NotFoundModal.svelte";
   // atlas-6 step 1: the Places panel mounts here (the shell's one reserved panel slot); it never
   // touches MapLibre directly -- `placesMap` is the reactive bridge this file's own composeStyle
-  // effect (below) folds into the ONE `selection` input, per docs/map.md.
-  import Places from "../places/Places.svelte";
+  // effect (below) folds into the ONE `selection` input, per docs/map.md. `placesMap.svelte.ts` is
+  // the reactive STORE (plain runes, no `.svelte` component inside it) and stays static for the
+  // same reason `state.svelte.ts` does above: `placesSelection` (below) reads it unconditionally,
+  // even when the Places PANEL itself (`../places/Places.svelte`, lazy) has never been opened.
   import { createPlacesMapStore } from "../places/placesMap.svelte";
   import type { RasterLayerSpec, SelectionSpec, ZoneUnitSpec } from "../lib/map/types";
-  import ScoresLens from "../lens/scores/ScoresLens.svelte";
-  import VersionPickerModal from "../lens/scores/VersionPickerModal.svelte";
-  import WelcomeModal from "../lens/scores/WelcomeModal.svelte";
 
   const selStore = createSelStore(location);
   const sel = selStore.sel;
@@ -340,6 +338,96 @@
     `Marine Sensitivity Atlas · release ${earlyVersion ?? "—"} · scores and species from the ` +
       `published marine-atlas release. Basemap © OpenStreetMap contributors.`,
   );
+
+  // --- lazy lens/panel chunks (atlas-4 fix round 2, D13) ----------------------------------------
+  // Shell.svelte used to statically import every lens' panel component (ScoresLens,
+  // SpeciesLensPanel/Picker/Legend/NotFoundModal, Places, VersionPickerModal, WelcomeModal) --
+  // 450.4 KB gzip static, 0.4 KB over budget, and a species-only deep link downloaded the ENTIRE
+  // scores lens it never renders. Each becomes its own dynamic `import()` chunk, chosen by
+  // `sel.lens` (Places by `activeTool === "places"` instead -- it mounts on either lens). This is
+  // the SAME dynamic-component pattern `TablePanel.svelte`/`Composition.svelte` already use for
+  // `Composition.svelte`/`Treemap.svelte` (a `Component<any>` held in `$state`, resolved by a
+  // `$effect`, rendered via `{@const Comp = ...}` -- `Component`'s real generic Props type is not
+  // importable from a plain module here any more than it is there). While a chunk is still in
+  // flight the template falls back to the EXISTING skeleton markup (`TOOL_BODY[activeTool]`'s
+  // placeholder text, or simply omitting an overlay/modal that has no visible closed state) so
+  // e2e/shell.cls.spec.ts's skeleton/hydrated geometry-equality gate never sees a new box shape.
+  // VersionPickerModal/WelcomeModal are app-wide chrome, not gated on `sel.lens` (see the comment
+  // by their own markup below) -- they load unconditionally, right after mount, same as
+  // `TablePanel.svelte`'s CompositionComponent; that still moves their bytes out of the entry's
+  // STATIC import graph (`scripts/size-budget.mjs` only walks `imports`, never `dynamicImports`),
+  // it just does not delay when the download starts.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let ScoresLensComp = $state<Component<any> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let SpeciesLensPanelComp = $state<Component<any> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let SpeciesPickerComp = $state<Component<any> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let SpeciesLegendComp = $state<Component<any> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let NotFoundModalComp = $state<Component<any> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let PlacesComp = $state<Component<any> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let VersionPickerModalComp = $state<Component<any> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let WelcomeModalComp = $state<Component<any> | null>(null);
+
+  $effect(() => {
+    if (sel.lens === "scores" && !ScoresLensComp) {
+      import("../lens/scores/ScoresLens.svelte").then((mod) => (ScoresLensComp = mod.default));
+    }
+  });
+
+  // one trigger for the whole species UI group -- all four chunks start downloading together the
+  // moment the lens becomes "species" (a deep link included, since `sel` resolves from the URL
+  // synchronously before first render), well ahead of `NotFoundModal`'s own `open` ever going
+  // true (that only happens after `state.svelte.ts` resolves a deep link over the network -- see
+  // its own header comment, "the jigger guard").
+  $effect(() => {
+    if (sel.lens !== "species") return;
+    if (!SpeciesLensPanelComp) {
+      import("../lens/species/SpeciesLens.svelte").then(
+        (mod) => (SpeciesLensPanelComp = mod.default),
+      );
+    }
+    if (!SpeciesPickerComp) {
+      import("../lens/species/SpeciesPicker.svelte").then(
+        (mod) => (SpeciesPickerComp = mod.default),
+      );
+    }
+    if (!SpeciesLegendComp) {
+      import("../lens/species/SpeciesLegend.svelte").then(
+        (mod) => (SpeciesLegendComp = mod.default),
+      );
+    }
+    if (!NotFoundModalComp) {
+      import("../lens/species/NotFoundModal.svelte").then(
+        (mod) => (NotFoundModalComp = mod.default),
+      );
+    }
+  });
+
+  $effect(() => {
+    if (activeTool === "places" && !PlacesComp) {
+      import("../places/Places.svelte").then((mod) => (PlacesComp = mod.default));
+    }
+  });
+
+  $effect(() => {
+    if (!VersionPickerModalComp) {
+      import("../lens/scores/VersionPickerModal.svelte").then(
+        (mod) => (VersionPickerModalComp = mod.default),
+      );
+    }
+  });
+
+  $effect(() => {
+    if (!WelcomeModalComp) {
+      import("../lens/scores/WelcomeModal.svelte").then((mod) => (WelcomeModalComp = mod.default));
+    }
+  });
 </script>
 
 <header class="topbar" data-tour="topbar">
@@ -376,14 +464,15 @@
 
   <label class="search-field topbar-desktop-only" data-tour="search" data-control="search">
     <Icon name="search" size={16} />
-    {#if sel.lens === "species"}
-      <SpeciesPicker
+    {#if sel.lens === "species" && SpeciesPickerComp}
+      {@const Comp = SpeciesPickerComp}
+      <Comp
         index={speciesLens.taxaIndex}
         selected={sel.sp}
         usOnly={sel.us}
-        onSelect={(key) => speciesLens.selectSpecies(key)}
-        onSetUsOnly={(enabled) => speciesLens.setUsOnly(enabled)}
-        onSearchLogged={(query) => analytics.track("search_species", { query })}
+        onSelect={(key: string) => speciesLens.selectSpecies(key)}
+        onSetUsOnly={(enabled: boolean) => speciesLens.setUsOnly(enabled)}
+        onSearchLogged={(query: string) => analytics.track("search_species", { query })}
         onFocusIndex={() => speciesLens.ensureTaxaIndex()}
       />
     {:else}
@@ -463,21 +552,36 @@
          the tool's own text; the species lens takes "layers" only). -->
     {#snippet panelBody()}
       {#if activeTool === "places"}
-        <Places {sel} {selStore} {boot} {mapHandle} {zoneUnits} mapStore={placesMap} />
+        {#if PlacesComp}
+          {@const Comp = PlacesComp}
+          <Comp {sel} {selStore} {boot} {mapHandle} {zoneUnits} mapStore={placesMap} />
+        {:else}
+          <p>{TOOL_BODY[activeTool]}</p>
+        {/if}
       {:else if sel.lens === "species" && activeTool === "layers"}
-        <SpeciesLensPanel lens={speciesLens} rep={sel.rep} />
+        {#if SpeciesLensPanelComp}
+          {@const Comp = SpeciesLensPanelComp}
+          <Comp lens={speciesLens} rep={sel.rep} />
+        {:else}
+          <p>{TOOL_BODY[activeTool]}</p>
+        {/if}
       {:else if sel.lens === "scores"}
-        <ScoresLens
-          {sel}
-          {selStore}
-          {boot}
-          {manifest}
-          ver={earlyVersion}
-          {mapHandle}
-          {activeTool}
-          fallbackBody={TOOL_BODY[activeTool]}
-          bind:mapExtra={lensMapExtra}
-        />
+        {#if ScoresLensComp}
+          {@const Comp = ScoresLensComp}
+          <Comp
+            {sel}
+            {selStore}
+            {boot}
+            {manifest}
+            ver={earlyVersion}
+            {mapHandle}
+            {activeTool}
+            fallbackBody={TOOL_BODY[activeTool]}
+            bind:mapExtra={lensMapExtra}
+          />
+        {:else}
+          <p>{TOOL_BODY[activeTool]}</p>
+        {/if}
       {:else}
         <p>{TOOL_BODY[activeTool]}</p>
       {/if}
@@ -493,8 +597,9 @@
     {/if}
   </div>
 
-  {#if sel.lens === "species"}
-    <SpeciesLegend legend={speciesLens.mapInputs.legend} />
+  {#if sel.lens === "species" && SpeciesLegendComp}
+    {@const Comp = SpeciesLegendComp}
+    <Comp legend={speciesLens.mapInputs.legend} />
   {/if}
 
   <div class="about-region" id="about-region" data-tour="about" data-control="about">
@@ -502,11 +607,14 @@
   </div>
 </main>
 
-<NotFoundModal
-  open={speciesLens.notFound !== null}
-  reasons={speciesLens.notFound?.reasons ?? []}
-  onclose={() => speciesLens.dismissNotFound()}
-/>
+{#if NotFoundModalComp}
+  {@const Comp = NotFoundModalComp}
+  <Comp
+    open={speciesLens.notFound !== null}
+    reasons={speciesLens.notFound?.reasons ?? []}
+    onclose={() => speciesLens.dismissNotFound()}
+  />
+{/if}
 
 <!-- spec.md §11: the shell's ONE polite live region (SC 4.1.3) -- every component (Rail's
      onAnnounce below, this file's own onShare/onHelp/onVersionClick) calls the shared
@@ -515,13 +623,22 @@
 <Announcer />
 
 <!-- atlas-4 step 3: app-wide chrome, not gated on `sel.lens` -- the release picker and the
-     welcome modal apply to either lens, exactly as the ported app's own modals did. -->
-<VersionPickerModal
-  open={versionPickerOpen}
-  onclose={() => (versionPickerOpen = false)}
-  {versions}
-  {denied}
-  currentVer={earlyVersion}
-  loc={{ search: location.search, hash: location.hash }}
-/>
-<WelcomeModal tour={sel.tour} />
+     welcome modal apply to either lens, exactly as the ported app's own modals did. Both load as
+     their own lazy chunk (see "lazy lens/panel chunks" above); until then neither renders anything
+     (a closed modal has no visible box), so there is nothing for the skeleton/hydrated geometry
+     gate to compare here. -->
+{#if VersionPickerModalComp}
+  {@const Comp = VersionPickerModalComp}
+  <Comp
+    open={versionPickerOpen}
+    onclose={() => (versionPickerOpen = false)}
+    {versions}
+    {denied}
+    currentVer={earlyVersion}
+    loc={{ search: location.search, hash: location.hash }}
+  />
+{/if}
+{#if WelcomeModalComp}
+  {@const Comp = WelcomeModalComp}
+  <Comp tour={sel.tour} />
+{/if}

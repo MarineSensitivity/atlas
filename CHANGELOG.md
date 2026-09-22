@@ -1,3 +1,33 @@
+# atlas 0.9.10
+
+`atlas-4` fix round 2: `src/shell/Shell.svelte` statically imported every lens' panel component
+(`ScoresLens`, `VersionPickerModal`, `WelcomeModal`, `SpeciesLensPanel`, `SpeciesPicker`,
+`SpeciesLegend`, `NotFoundModal`, `Places`) — 450.4 KB gzip static, 0.4 KB over
+`scripts/size-budget.mjs`'s 450 KB budget, and a species-only deep link downloaded the entire
+scores lens it never renders (`e2e/species.smoke.spec.ts`'s cold first-pixel spec measured
+2,742 ms). Measured after this fix: **409.2 KB gzip static** (budget 450) / **140.5 KB gzip runtime
+worker** (budget 150); species cold first-pixel back to **2,061 ms** (budget 2,500).
+
+- Every lens PANEL component now loads as its own dynamic `import()` chunk, chosen by `sel.lens`
+  (`ScoresLens` on "scores"; `SpeciesLens`/`SpeciesPicker`/`SpeciesLegend`/`NotFoundModal` together
+  on "species") or by `activeTool === "places"` (`Places`) — the same `Component<any>` held in
+  `$state`, resolved by a `$effect`, rendered via `{@const Comp = ...}` pattern
+  `TablePanel.svelte`/`Composition.svelte` already used for `Composition.svelte`/`Treemap.svelte`.
+  `VersionPickerModal`/`WelcomeModal` are app-wide chrome (not gated on `sel.lens`) and load
+  unconditionally right after mount — still their own chunk, out of the entry's static graph, just
+  not delayed. The species lens' pure data/wiring layer (`state.svelte.ts`) and the places map store
+  (`placesMap.svelte.ts`) stay static, since both are needed before any panel component mounts and
+  neither imports a `.svelte` file itself. The ONE `panelBody` snippet and the ONE
+  `composeStyle`/`applyStyle` effect are unchanged in structure — a lens still only computes
+  `composeStyle` inputs (docs/map.md); the shell still owns mounting and the one style call. A
+  chunk still in flight falls back to the existing `TOOL_BODY[activeTool]` skeleton text (or simply
+  renders nothing, for an overlay/modal with no visible closed state), so
+  `e2e/shell.cls.spec.ts`'s skeleton/hydrated geometry-equality gate is unaffected.
+- New regression test, `tests/shell/lazy-lens-imports.test.ts`: a source scan asserting
+  `Shell.svelte` never statically imports a `.svelte` panel component under `src/lens/` or
+  `src/places/`, with its own seeded-fault case (mirrors `tests/places/lazyImports.test.ts`'s
+  technique for terra-draw).
+
 # atlas 0.9.9
 
 `atlas-6` step 4: results and share (Deliverables 5-7), closing out the phase. Measured:
