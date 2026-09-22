@@ -103,16 +103,18 @@ test.describe("layout: no horizontal overflow, every control on screen (verify.m
 });
 
 test.describe("aria semantics", () => {
-  // atlas-3 closing review, item 3: the version chip advertised a popup dialog it does not open
-  // yet (the picker itself arrives in atlas-4) -- a false affordance for assistive tech. Removed
-  // until the picker exists; the announcement on click (onVersionClick) stays.
-  test("the version chip carries no aria-haspopup (the picker doesn't exist yet)", async ({
+  // atlas-3 closing review, item 3: the version chip advertised a popup dialog it did not open yet
+  // -- a false affordance for assistive tech, removed until the picker existed. atlas-4 step 3
+  // restores it in the SAME change that ships the picker (the subplan's own instruction): the chip
+  // now opens VersionPickerModal, a real dialog, on click.
+  test("the version chip carries aria-haspopup=dialog and opens a real dialog on click", async ({
     page,
   }) => {
     await gotoShell(page, "navy");
-    await expect(page.locator('[data-control="version-chip"]')).not.toHaveAttribute(
-      "aria-haspopup",
-    );
+    const chip = page.locator('[data-control="version-chip"]');
+    await expect(chip).toHaveAttribute("aria-haspopup", "dialog");
+    await chip.click();
+    await expect(page.getByRole("dialog", { name: "Data release" })).toBeVisible();
   });
 });
 

@@ -131,7 +131,16 @@ export async function routeSession(page: Page, body: object | null) {
 }
 
 /** the seal image About.svelte's default VITE_SEAL_URL points at -- routed so no spec here ever
- * touches the live network (matching e2e/gallery.spec.ts's convention). */
+ * touches the live network (matching e2e/gallery.spec.ts's convention).
+ *
+ * ALSO seeds the welcome modal's "don't show again" localStorage key (atlas-4 step 3,
+ * `WelcomeModal.svelte`) via `addInitScript`, so it runs before the page's own scripts on every
+ * navigation from here on. Every spec in this file already calls this ONE function as part of its
+ * hermetic setup, and the welcome modal's native `<dialog>` (`showModal()`) blocks pointer events
+ * across the WHOLE page while open -- an unrelated spec clicking `.topbar`/`#rail-region`/panel
+ * controls would otherwise time out (measured: this broke shell.url-state/a11y/cls/theme-flash
+ * wholesale the moment the modal landed). A spec that wants to see the real welcome modal clears
+ * this key itself (`e2e/scores.welcome.spec.ts`) rather than expecting the shared default to show it. */
 export async function routeSealFixture(page: Page) {
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">' +
@@ -139,6 +148,13 @@ export async function routeSealFixture(page: Page) {
   await page.route("**/branding/mma-seal.svg", (route) =>
     route.fulfill({ contentType: "image/svg+xml", body: svg }),
   );
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem("atlas.welcome.dontShowAgain", "1");
+    } catch {
+      /* private mode / storage disabled -- the modal just shows, no spec breaks because of it */
+    }
+  });
 }
 
 /** the shell's one same-origin, one-time setup for a hermetic public-host load: routes the

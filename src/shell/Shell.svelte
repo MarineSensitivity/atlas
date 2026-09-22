@@ -40,6 +40,8 @@
   import { studyAreaFromBoot } from "../lib/map/interaction";
   import type { RasterLayerSpec, SelectionSpec, ZoneUnitSpec } from "../lib/map/types";
   import ScoresLens from "../lens/scores/ScoresLens.svelte";
+  import VersionPickerModal from "../lens/scores/VersionPickerModal.svelte";
+  import WelcomeModal from "../lens/scores/WelcomeModal.svelte";
 
   const selStore = createSelStore(location);
   const sel = selStore.sel;
@@ -121,8 +123,9 @@
     document.querySelector<HTMLButtonElement>("#about-region button")?.focus();
   }
 
+  let versionPickerOpen = $state(false);
   function onVersionClick() {
-    announce("The release picker arrives in a later phase.");
+    versionPickerOpen = true;
   }
 
   // --- the on-map About card's release note (spec.md §9): the seal itself is About.svelte's own
@@ -135,10 +138,26 @@
     // (boot.json carries no `overlays` key today) -- read the same global VersionBadge.svelte and
     // index.html's inline script already publish, never a second fetch.
     manifest?: Promise<unknown>;
+    // atlas-4 step 3: the release picker (D15) reads the SAME `versions.json` rows and denial
+    // record index.html's inline early-fetch script already resolved -- never a second fetch.
+    versions?: Promise<EarlyVersionRow[] | null>;
+    denied?: Promise<{ ver: string; reason: string } | null>;
+  }
+  // structurally identical to src/lib/release/access.ts's own `VersionRow` -- NOT imported from
+  // it: this file must never import src/lib/release (tests/shell/shell-invariants.test.ts's
+  // source-scan guard) since the early-fetch script is the ONE place that logic runs before any
+  // bundle parses; the shell only ever reads window.__early's already-resolved values.
+  interface EarlyVersionRow {
+    ver?: string;
+    status?: string;
+    access?: string;
+    released?: string;
   }
   let earlyVersion = $state<string | null>(null);
   let boot = $state<unknown>(null);
   let manifest = $state<unknown>(null);
+  let versions = $state<EarlyVersionRow[] | null>(null);
+  let denied = $state<{ ver: string; reason: string } | null>(null);
   onMount(() => {
     const early = (window as unknown as { __early?: Early }).__early;
     early?.version.then((v) => (earlyVersion = v)).catch(() => {});
@@ -147,6 +166,15 @@
     // atlas-1) leaves `boot` null and the map paints basemap-only -- never an error.
     early?.boot?.then((b) => (boot = b)).catch(() => {});
     early?.manifest?.then((m) => (manifest = m)).catch(() => {});
+    early?.versions?.then((v) => (versions = v)).catch(() => {});
+    // a denied version (e.g. the public host + ?ver=v9) auto-opens the picker so the "why" is
+    // visible without a click -- D15's e2e gate: "shows the notice", not "shows it once asked".
+    early?.denied
+      ?.then((d) => {
+        denied = d;
+        if (d) versionPickerOpen = true;
+      })
+      .catch(() => {});
   });
 
   // --- the map (atlas-map): mounted under the panels, one MapLibre instance ---------------------
@@ -246,6 +274,7 @@
     class="chip"
     data-tour="version-chip"
     data-control="version-chip"
+    aria-haspopup="dialog"
     onclick={onVersionClick}
   >
     <Icon name="version" size={14} />
@@ -375,3 +404,15 @@
      `announce()` from src/lib/ui/announcer.ts; nothing else in the shell renders a region of
      its own. -->
 <Announcer />
+
+<!-- atlas-4 step 3: app-wide chrome, not gated on `sel.lens` -- the release picker and the
+     welcome modal apply to either lens, exactly as the ported app's own modals did. -->
+<VersionPickerModal
+  open={versionPickerOpen}
+  onclose={() => (versionPickerOpen = false)}
+  {versions}
+  {denied}
+  currentVer={earlyVersion}
+  loc={{ search: location.search, hash: location.hash }}
+/>
+<WelcomeModal tour={sel.tour} />

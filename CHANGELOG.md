@@ -1,3 +1,37 @@
+# atlas 0.9.2
+
+`atlas-4` step 3: chrome — the release picker (D15), the welcome modal, and the version-chip
+`aria-haspopup` restore.
+
+- **New: `src/lib/release/previewLink.ts`** (D15's pure link builder, handed over from atlas-3): a
+  restricted release is offered ONLY as a link to the preview host's `/{ver}/atlas/` path,
+  carrying the CURRENT query + hash verbatim, never `?ver=` on Pages.
+- **New: `src/lens/scores/{VersionPickerModal,WelcomeModal}.svelte`**, mounted from Shell.svelte
+  (app-wide chrome, not gated on `sel.lens` — the ported app's own modals were not lens-specific
+  either). The version chip now opens a real dialog and carries `aria-haspopup="dialog"` again,
+  restored in this SAME change per the subplan's own instruction (and
+  `e2e/shell.a11y.spec.ts`'s matching test flipped from "carries no aria-haspopup" to "opens a
+  real dialog"). A denied version (`?ver=v9` on the public host) auto-opens the SAME modal with a
+  notice + the preview link, so the "why" is visible without an extra click.
+- **The welcome modal** shows on first paint unless "Don't show this again" is set
+  (`localStorage`); `?tour=off` hides the tour invitation. **Not built this step: the driver.js
+  guided tour itself** — a new dependency plus its own lazy-chunk wiring was judged too much risk
+  for the remaining budget; "Take a Tour" announces instead of starting one. The three ported
+  modals (unknown/restricted/not-served) are consolidated into ONE modal varying its notice text
+  by denial reason, a documented simplification over three separate dialogs.
+- **Fix, test infrastructure**: the welcome modal's native `<dialog>` (`showModal()`) blocks
+  pointer events across the WHOLE page while open, which broke nearly every OTHER shell e2e spec
+  wholesale the moment it landed (they click `.topbar`/rail/panel controls with no reason to expect
+  a blocking dialog). `e2e/hermetic.ts`'s `routeSealFixture()` — already called by every affected
+  spec — now also seeds the "don't show again" key via `addInitScript`; a dedicated spec
+  (`e2e/scores.welcome.spec.ts`) exercises the real, unsuppressed first-visit behaviour instead.
+- New e2e: `e2e/scores.welcome.spec.ts`, `e2e/scores.versionPicker.spec.ts` (the D15 gate: the
+  notice, its exact preview-host link, and zero `/v9/` requests — the "zero requests" half was
+  already covered by the existing release-access gate).
+- **Could not satisfy this step**: the driver.js tour (see above); the zones table landed in step
+  2's commit rather than this one (built alongside the rest of the table panel; a step-boundary
+  deviation, not a missing feature).
+
 # atlas 0.9.1
 
 `atlas-4` step 2: selection, the clicked cell's flower, the species table + CSV + composition
