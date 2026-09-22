@@ -33,6 +33,7 @@ import {
 } from "./camera";
 import { FALLBACK_FULL_STUDY_AREA, PROGRAMMATIC_EVENT_DATA, type StudyArea } from "./interaction";
 import { applyStyle } from "./style";
+import { createStyleApplier } from "./styleQueue";
 import type { MapView, Projection, ResolvedTheme, StyleSpecification } from "./types";
 
 /** the empty style the map is constructed with; the real one arrives via `applyStyle` one tick
@@ -148,8 +149,7 @@ export function createMap(container: HTMLElement, opts: CreateMapOptions): MapHa
     };
   }
 
-  let queued: StyleSpecification | undefined;
-  let queuedListener = false;
+  const applyQueuedStyle = createStyleApplier(map, (s) => applyStyle(map, s));
   let writer: CameraWriter | undefined;
   const onMove = (e: unknown) => {
     if (!writer || isProgrammatic(e)) return;
@@ -163,36 +163,9 @@ export function createMap(container: HTMLElement, opts: CreateMapOptions): MapHa
 
   return {
     map,
-    applyStyle(style: StyleSpecification) {
-      // MapLibre can only DIFF against a loaded style: called earlier it logs "Unable to perform
-      // style diff … Rebuilding the style from scratch" and throws the diff away (measured,
-      // atlas-map). Queue the latest style instead — a lens may legitimately compose one before the
-      // blank constructor style has finished loading.
-      //
-      // The flush waits for `"idle"`, NOT `"style.load"` — measured (atlas-5, a lens whose data
-      // arrives async and calls `applyStyle` two or three times in quick succession while the FIRST
-      // style is still loading its own sources): `"style.load"` fires exactly ONCE, ever, for the
-      // true initial style transition. A style already past that point that becomes not-loaded
-      // again (e.g. while a newly-added raster source's tiles are still in flight) NEVER refires
-      // it, so a `map.once("style.load", …)` registered for a SECOND queued style never resolves —
-      // that style is stranded in `queued` forever, and its layer never appears. `"idle"` fires
-      // every time the map settles (loaded style, no pending source loads, no easing), repeatedly,
-      // for the whole life of the map — so a listener registered here always eventually fires.
-      if (map.isStyleLoaded()) {
-        applyStyle(map, style);
-        return;
-      }
-      queued = style;
-      if (!queuedListener) {
-        queuedListener = true;
-        map.once("idle", () => {
-          queuedListener = false;
-          const next = queued;
-          queued = undefined;
-          if (next) applyStyle(map, next);
-        });
-      }
-    },
+    // see styleQueue.ts's own header for the "idle", not "style.load" bug this fixes, and
+    // tests/map/styleQueue.test.ts for its regression test.
+    applyStyle: applyQueuedStyle,
     setProjection(projection: Projection) {
       // deferred until a style exists: `setProjection` on a map whose first style has not loaded
       // throws "Style is not done loading" (measured, atlas-map — it is why the constructor above

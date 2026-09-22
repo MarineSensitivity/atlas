@@ -24,6 +24,7 @@ import {
   routeBasemapTiles,
   routeGlyphs,
   routeTitilerTiles,
+  routeZonesPmtiles,
 } from "./map-hermetic";
 
 // NOT a `declare global` augmentation of `Window.__atlasMap` — e2e/map.spec.ts already declares
@@ -208,6 +209,49 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
     await expect(page.getByTestId("species-title-sci")).toHaveText("Dermochelys coriacea");
   });
 
+  test("switching species twice before the map's first idle leaves the SECOND species' raster in sources (fix round 1)", async ({
+    page,
+  }) => {
+    // the exact race styleQueue.ts's unit regression test covers in isolation: two applyStyle
+    // calls queued while the map's true initial style is still loading. Driven here through the
+    // REAL app (window.__atlasSpecies.selectSpecies, exactly what the picker does) rather than a
+    // fake, so a regression in the WIRING (not just the queue itself) would also show up here.
+    await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
+    await page.evaluate((walrusKey) => {
+      (
+        window as unknown as { __atlasSpecies: { selectSpecies: (k: string) => void } }
+      ).__atlasSpecies.selectSpecies(walrusKey);
+    }, "ms_merge|WORMS:137077");
+
+    await expect
+      .poll(() => page.getByTestId("species-title-sci").textContent(), { timeout: 10_000 })
+      .toBe("Odobenus rosmarus");
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const map = (window as unknown as { __atlasMap: AtlasMapForSpecies }).__atlasMap.handle
+              .map;
+            return !!map.getLayer("species-raster") && map.isSourceLoaded("species-raster");
+          }),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+
+    const sourceUrl = await page.evaluate(() => {
+      const style = (
+        window as unknown as {
+          __atlasMap: { handle: { map: { getStyle(): { sources: Record<string, unknown> } } } };
+        }
+      ).__atlasMap.handle.map.getStyle();
+      const source = style.sources["species-raster"] as { tiles?: string[] } | undefined;
+      return source?.tiles?.[0] ?? null;
+    });
+    // walrus's merged COG (ms_merge_WORMS_137077.tif), never leatherback's stranded first request
+    expect(sourceUrl).toContain("WORMS_137077");
+    expect(sourceUrl).not.toContain("WORMS_137209");
+  });
+
   test("an AquaX 'Delivered' (native) tile URL carries rescale=0,1000 (the AquaX gate)", async ({
     page,
   }) => {
@@ -258,5 +302,73 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
     // the layer bar shows the INPUT variant (orange/is-input), not the merged one — the "no
     // merged-surface flash" guard (§11.12) means this must already be true at first render.
     await expect(page.locator(".layer-bar.is-input")).toHaveCount(1);
+  });
+
+  test("a range draws >= 1 rendered feature (the PMTiles branch, real vector data)", async ({
+    page,
+  }) => {
+    // reuses atlas-map's own committed archive (e2e/fixtures/map/zones.pmtiles, a REAL 7 KB
+    // tippecanoe build with working HTTP range support — building a fresh one-polygon archive
+    // just for this gate would just re-prove tippecanoe works) under a species RANGE-style
+    // filter: layer "programarea", key property "programarea_key", a real feature's key ("GAA").
+    // This exercises the real `map/layers/ranges.ts` builders + composeStyle's "range" field
+    // through REAL MapLibre vector-tile parsing — the same technique e2e/map.spec.ts's own
+    // "renders a VECTOR feature" test uses for zones.
+    const RANGE_URL = "https://file.marinesensitivity.org/pmtiles/v9/e2e-range-fixture.pmtiles";
+    await routeZonesPmtiles(page, RANGE_URL);
+    await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
+    await page.waitForFunction(() => !!(window as unknown as { __atlasMap?: unknown }).__atlasMap);
+
+    await page.evaluate((url) => {
+      const api = (
+        window as unknown as {
+          __atlasMap: {
+            handle: { applyStyle(s: unknown): void };
+            composeStyle: (i: unknown) => unknown;
+            inputs: () => Record<string, unknown>;
+          };
+        }
+      ).__atlasMap;
+      api.handle.applyStyle(
+        api.composeStyle({
+          ...api.inputs(),
+          range: {
+            id: "species-range",
+            pmtiles: url,
+            sourceLayer: "programarea",
+            keyProperty: "programarea_key",
+            key: "GAA",
+            fillColor: "#3388ff",
+            opacity: 0.5,
+          },
+        }),
+      );
+    }, RANGE_URL);
+
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const map = (
+              window as unknown as {
+                __atlasMap: {
+                  handle: {
+                    map: {
+                      isSourceLoaded(id: string): boolean;
+                      queryRenderedFeatures(opts: { layers: string[] }): unknown[];
+                    };
+                  };
+                };
+              }
+            ).__atlasMap.handle.map;
+            if (!map.isSourceLoaded("species-range")) return -1;
+            return map.queryRenderedFeatures({ layers: ["species-range"] }).length;
+          }),
+        {
+          message: 'source/layer "species-range" never rendered a vector feature',
+          timeout: 10_000,
+        },
+      )
+      .toBeGreaterThan(0);
   });
 });

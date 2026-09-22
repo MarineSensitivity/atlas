@@ -214,11 +214,19 @@
       composeStyle,
       inputs: () => ({ theme: resolvedTheme, projection: sel.proj, zones: zoneUnits }),
     };
+    // the species lens' own test/automation seam, same spirit as __atlasMap just above: it exposes
+    // only `selectSpecies`, exactly what clicking a picker option already does through the UI (used
+    // by e2e/species.smoke.spec.ts to drive TWO rapid switches before the map's first "idle" --
+    // the exact race styleQueue.ts's regression test covers at the unit level).
+    (window as unknown as { __atlasSpecies?: unknown }).__atlasSpecies = {
+      selectSpecies: (key: string) => speciesLens.selectSpecies(key),
+    };
     // no window `resize` listener here: createMap observes the CONTAINER, which also covers a
     // layout-driven resize (a panel opening, the phone sheet changing detent) that no window event
     // reports.
     return () => {
       delete (window as unknown as { __atlasMap?: unknown }).__atlasMap;
+      delete (window as unknown as { __atlasSpecies?: unknown }).__atlasSpecies;
       handle.map.off("click", onMapClick);
       handle.destroy();
       mapHandle = undefined;

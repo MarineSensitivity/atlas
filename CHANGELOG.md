@@ -1,3 +1,25 @@
+# atlas 0.9.5
+
+atlas-5 fix round 2: closes the gaps a review found in fix round 1's `map.ts` `applyStyle`-queue
+fix (0.9.4) — a real fix with no regression test, and two seeded faults whose automatic diffs came
+back empty.
+
+- **`src/lib/map/styleQueue.ts`** (new): the queue pulled out of `map.ts` into a pure, testable
+  function (`createStyleApplier`), so the `"idle"` vs `"style.load"` fix has a real regression test
+  (`tests/map/styleQueue.test.ts`) — reverting to `"style.load"` reproducibly reds 3 of 4 cases,
+  including the one modelling two separate not-loaded windows. `map.ts` now delegates to it.
+- `e2e/species.smoke.spec.ts`: a new case drives the exact race through the real app (two rapid
+  `selectSpecies()` calls before the map's first `"idle"`) and asserts the SECOND species' raster
+  ends up in `map.getStyle().sources` — reds under the reverted fault, passes with it.
+- A new case exercises the PMTiles ranges branch through real MapLibre vector-tile parsing
+  (reusing atlas-map's committed `zones.pmtiles` archive under a range-style filter, since a
+  fresh one-polygon archive would only re-prove tippecanoe works): "a range draws ≥ 1 rendered
+  feature."
+- Verified by hand (the automatic fault-seeding's diff was empty for both): a hard-coded `[1, 100]`
+  rescale in `mapInputs.ts`'s COG branch reds the AquaX-Delivered unit test; a
+  `["!=", ["get", "mdl_key"], "__none__"]` filter in `map/layers/ranges.ts`'s `rangeLayer` (admits
+  every model) reds the ranges unit test. Both reverted after confirming red.
+
 # atlas 0.9.4
 
 `atlas-5` steps 1-2: the species lens UI, on top of the already-merged data layer
