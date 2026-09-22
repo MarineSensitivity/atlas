@@ -2,8 +2,12 @@
 // MapLibre fires every time the map settles — NOT `"style.load"`, which fires exactly ONCE, ever,
 // for the true initial style transition. A fake map that models exactly that asymmetry (below) is
 // what makes this a real regression test rather than an assertion that happens to pass either way.
-import { describe, expect, it } from "vitest";
-import { createStyleApplier, type QueuedStyleTarget } from "../../src/lib/map/styleQueue";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  DEFAULT_STYLE_FALLBACK_MS,
+  createStyleApplier,
+  type QueuedStyleTarget,
+} from "../../src/lib/map/styleQueue";
 import type { StyleSpecification } from "../../src/lib/map/types";
 
 const STYLE_A = { version: 8, sources: {}, layers: [{ id: "a", type: "background" }] } as Pick<
@@ -91,5 +95,61 @@ describe("createStyleApplier", () => {
     applyQueued(STYLE_A);
     map.emit("idle");
     expect(received).toBe(STYLE_A);
+  });
+});
+
+// FIX ROUND 3 #4: a HUNG tile request (routed to a handler that never responds) leaves
+// `isStyleLoaded()` false and `"idle"` NEVER fires — without a bounded fallback, the queued style
+// is stranded silently, same symptom as the style.load bug this file already regression-tests,
+// just triggered by the network instead of by event timing.
+describe("createStyleApplier — hung tile fallback", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("the default fallback is 4000 ms", () => {
+    expect(DEFAULT_STYLE_FALLBACK_MS).toBe(4_000);
+  });
+
+  it("REGRESSION: applies the queued style after fallbackMs even though idle never fires", () => {
+    vi.useFakeTimers();
+    const map = new FakeMap(); // isStyleLoaded() always false; "idle" is never emitted below
+    const applied: StyleSpecification[] = [];
+    const applyQueued = createStyleApplier(map, (s) => applied.push(s), { fallbackMs: 4_000 });
+
+    applyQueued(STYLE_A);
+    expect(applied).toEqual([]);
+    vi.advanceTimersByTime(3_999);
+    expect(applied).toEqual([]); // still hung, still not applied — not yet at the bound
+    vi.advanceTimersByTime(1);
+    expect(applied).toEqual([STYLE_A]); // the bound: a hung tile must not block the lens forever
+  });
+
+  it("idle firing before the fallback applies once and cancels the fallback timer (no double-apply)", () => {
+    vi.useFakeTimers();
+    const map = new FakeMap();
+    const applied: StyleSpecification[] = [];
+    const applyQueued = createStyleApplier(map, (s) => applied.push(s), { fallbackMs: 4_000 });
+
+    applyQueued(STYLE_A);
+    map.emit("idle");
+    expect(applied).toEqual([STYLE_A]);
+    vi.advanceTimersByTime(10_000); // long past the fallback bound
+    expect(applied).toEqual([STYLE_A]); // still exactly once
+  });
+
+  it("a later queued style still gets its own fallback after an earlier one already flushed", () => {
+    vi.useFakeTimers();
+    const map = new FakeMap();
+    const applied: StyleSpecification[] = [];
+    const applyQueued = createStyleApplier(map, (s) => applied.push(s), { fallbackMs: 4_000 });
+
+    applyQueued(STYLE_A);
+    vi.advanceTimersByTime(4_000);
+    expect(applied).toEqual([STYLE_A]);
+
+    applyQueued(STYLE_B); // a second hung window, e.g. a later species switch
+    vi.advanceTimersByTime(3_999);
+    expect(applied).toEqual([STYLE_A]);
+    vi.advanceTimersByTime(1);
+    expect(applied).toEqual([STYLE_A, STYLE_B]);
   });
 });

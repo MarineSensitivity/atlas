@@ -1,8 +1,10 @@
 // picker.ts: the index, the two lists, the default species and the search ranking.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_SPECIES_SCI,
   MatchRank,
+  SEARCH_DEBOUNCE_MS,
+  createSearchLogger,
   defaultSpecies,
   foldText,
   groupByCat,
@@ -218,5 +220,98 @@ describe("searchTaxa", () => {
     expect(shouldLogSearch("ae")).toBe(false);
     expect(shouldLogSearch("aet")).toBe(true);
     expect(shouldLogSearch("  a  ")).toBe(false);
+  });
+});
+
+// fix round 3 #2: this rule used to live inline in SpeciesPicker.svelte (a setTimeout + a bare
+// `lastLogged` variable) — a reviewer's fault there (900 -> 90 ms; letting a repeat through)
+// stayed GREEN because nothing exercised the TIMING/DEDUP half at all, only `shouldLogSearch`'s
+// character-count gate above. `createSearchLogger` pulls the whole rule out so a fake clock can
+// pin it.
+describe("createSearchLogger", () => {
+  it("is 900 ms by default", () => {
+    expect(SEARCH_DEBOUNCE_MS).toBe(900);
+  });
+
+  it("debounces: only the LAST call within 900 ms logs, after 900 ms of silence", () => {
+    vi.useFakeTimers();
+    try {
+      const logged: string[] = [];
+      const logger = createSearchLogger({ onLog: (q) => logged.push(q) });
+      logger.onInput("aet");
+      vi.advanceTimersByTime(500);
+      logger.onInput("aeth"); // resets the debounce — "aet" must never log
+      vi.advanceTimersByTime(899);
+      expect(logged).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(logged).toEqual(["aeth"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never logs under 3 folded characters, even after the debounce fires", () => {
+    vi.useFakeTimers();
+    try {
+      const logged: string[] = [];
+      const logger = createSearchLogger({ onLog: (q) => logged.push(q) });
+      logger.onInput("ae");
+      vi.advanceTimersByTime(900);
+      expect(logged).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("REGRESSION: never logs the same query as the immediately preceding logged one", () => {
+    vi.useFakeTimers();
+    try {
+      const logged: string[] = [];
+      const logger = createSearchLogger({ onLog: (q) => logged.push(q) });
+      logger.onInput("aethia");
+      vi.advanceTimersByTime(900);
+      // a repeat of the LAST logged query (e.g. a retriggered debounce with no real edit) must
+      // not log again
+      logger.onInput("aethia");
+      vi.advanceTimersByTime(900);
+      expect(logged).toEqual(["aethia"]);
+      // a DIFFERENT query in between clears the dedup, so the original query can log again later
+      logger.onInput("aethia c");
+      vi.advanceTimersByTime(900);
+      logger.onInput("aethia");
+      vi.advanceTimersByTime(900);
+      expect(logged).toEqual(["aethia", "aethia c", "aethia"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a custom debounceMs is honoured (the fault this pins: 900 silently becoming 90)", () => {
+    vi.useFakeTimers();
+    try {
+      const logged: string[] = [];
+      const logger = createSearchLogger({ onLog: (q) => logged.push(q), debounceMs: 90 });
+      logger.onInput("aethia");
+      vi.advanceTimersByTime(89);
+      expect(logged).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(logged).toEqual(["aethia"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("destroy() cancels a pending flush", () => {
+    vi.useFakeTimers();
+    try {
+      const logged: string[] = [];
+      const logger = createSearchLogger({ onLog: (q) => logged.push(q) });
+      logger.onInput("aethia");
+      logger.destroy();
+      vi.advanceTimersByTime(1000);
+      expect(logged).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

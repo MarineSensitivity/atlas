@@ -1,4 +1,32 @@
+# atlas 0.9.13
+
+atlas-5 fix round 3: pins four reviewer faults that stayed GREEN, plus the five-probe
+`/cog/point` gate as a permanent unit test.
+
+- **US-only toggle keeps a shared selection (SpeciesPicker.svelte)**: `data/picker.ts`'s
+  `keepSelection` was already pure and tested, but nothing exercised the SVELTE WIRING that calls
+  it — dropping that call stayed green. New e2e case (`e2e/species.smoke.spec.ts`) loads a non-US
+  taxon directly, ticks "Only species in US waters", and asserts the fallback to the default; also
+  asserts a taxon in both lists survives the toggle either direction.
+- **`createSearchLogger(now)`** (new, `data/picker.ts`): the 900 ms debounce + ≥ 3 chars +
+  no-repeats `search_species` rule, pulled out of `SpeciesPicker.svelte`'s inline `setTimeout` so a
+  fake-clock unit test can pin it (`tests/lens/species/picker.test.ts`) — a 900 → 90 ms fault and
+  an "allow a repeat" fault both now go red.
+- **`popup.ts`'s 0.5 luminance threshold** now has a PAIRED fixture (`#7f7f7f`, 0.498 → white,
+  beside `#808080`, 0.502 → black) — the previous one-sided fixture could not tell "the threshold
+  is 0.5" apart from "the threshold is anywhere below 0.502"; a 0.5 → 0.35 fault now goes red.
+- **`src/lib/map/styleQueue.ts`**: a bounded fallback (`DEFAULT_STYLE_FALLBACK_MS` = 4000) flushes
+  a queued style even if `"idle"` never fires — a HUNG tile request (no response, ever) used to
+  strand a queued style silently, same symptom as fix round 1's bug, just triggered by the network
+  instead of event timing. Unit-tested with a fake clock; e2e twin in `species.smoke.spec.ts` hangs
+  both basemap and titiler tiles and asserts a species switch still shows the new raster source.
+- New unit test: `tests/lens/species/popup.test.ts`'s "the five `/cog/point` probes" drives the
+  real `createTitilerValueSource` (cog / AquaX-delivered / pmtiles-presence / nodata / off-grid)
+  into `popupContent.displayValue`, pinning the whole click pipeline, not just the swatch math.
+
 # atlas 0.9.11
+
+- The species cold first-paint gate (`e2e/species.smoke.spec.ts`'s "paints the first species pixel
 
 - The species cold first-paint gate (`e2e/species.smoke.spec.ts`'s "paints the first species pixel
   within 2.5s cold" test) is now its own serial Playwright project: moved to
