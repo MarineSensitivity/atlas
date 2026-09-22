@@ -36,8 +36,39 @@ export default defineConfig({
     timeout: 60_000,
   },
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
-    { name: "webkit", use: { ...devices["Desktop Safari"] } },
-    { name: "firefox", use: { ...devices["Desktop Firefox"] } },
+    // species.timing.spec.ts is a COLD-load TIMING gate (atlas-8's rule: runs alone, gated on a
+    // median of N >= 3 cold runs) — excluded here and picked up only by the "timing" project
+    // below, so the three engine projects below never contend with it for CPU. A per-project
+    // testIgnore REPLACES (does not merge with) this config's top-level testIgnore for that
+    // project, so each list below repeats the top-level entries too.
+    {
+      name: "chromium",
+      testIgnore: ["fixtures/**", "gallery.spec.ts", "species.timing.spec.ts"],
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "webkit",
+      testIgnore: ["fixtures/**", "gallery.spec.ts", "species.timing.spec.ts"],
+      use: { ...devices["Desktop Safari"] },
+    },
+    {
+      name: "firefox",
+      testIgnore: ["fixtures/**", "gallery.spec.ts", "species.timing.spec.ts"],
+      use: { ...devices["Desktop Firefox"] },
+    },
+    // the timing gate's own project (atlas-8's rule, see species.timing.spec.ts's header for the
+    // full reasoning): `workers: 1` + `fullyParallel: false` cap concurrency WITHIN this project,
+    // but do not by themselves stop chromium/webkit/firefox's workers running at the same time
+    // inside one `npx playwright test` invocation — species.timing.spec.ts's own
+    // `test.describe.configure({ mode: "serial" })` is the belt-and-suspenders for this file, and
+    // true cross-project isolation is running it as its own invocation:
+    // `npx playwright test --project=timing`.
+    {
+      name: "timing",
+      testMatch: "species.timing.spec.ts",
+      workers: 1,
+      fullyParallel: false,
+      use: { ...devices["Desktop Chrome"] },
+    },
   ],
 });

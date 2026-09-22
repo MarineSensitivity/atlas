@@ -1,3 +1,12 @@
+# atlas 0.9.11
+
+- The species cold first-paint gate (`e2e/species.smoke.spec.ts`'s "paints the first species pixel
+  within 2.5s cold" test) is now its own serial Playwright project: moved to
+  `e2e/species.timing.spec.ts` (project `timing`, `workers: 1`), gated on the MEDIAN of 3 fresh-context
+  cold loads rather than a single sample, so engine-matrix CPU contention (measured: 3,065 ms inside
+  the full `npx playwright test` run vs 1,578-1,621 ms alone) can no longer fail it spuriously. No
+  functional species-lens test changed; shared fixtures moved to `e2e/species-hermetic.ts`.
+
 # atlas 0.9.10
 
 `atlas-4` fix round 2: `src/shell/Shell.svelte` statically imported every lens' panel component
