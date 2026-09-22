@@ -168,6 +168,16 @@ export function createMap(container: HTMLElement, opts: CreateMapOptions): MapHa
       // style diff … Rebuilding the style from scratch" and throws the diff away (measured,
       // atlas-map). Queue the latest style instead — a lens may legitimately compose one before the
       // blank constructor style has finished loading.
+      //
+      // The flush waits for `"idle"`, NOT `"style.load"` — measured (atlas-5, a lens whose data
+      // arrives async and calls `applyStyle` two or three times in quick succession while the FIRST
+      // style is still loading its own sources): `"style.load"` fires exactly ONCE, ever, for the
+      // true initial style transition. A style already past that point that becomes not-loaded
+      // again (e.g. while a newly-added raster source's tiles are still in flight) NEVER refires
+      // it, so a `map.once("style.load", …)` registered for a SECOND queued style never resolves —
+      // that style is stranded in `queued` forever, and its layer never appears. `"idle"` fires
+      // every time the map settles (loaded style, no pending source loads, no easing), repeatedly,
+      // for the whole life of the map — so a listener registered here always eventually fires.
       if (map.isStyleLoaded()) {
         applyStyle(map, style);
         return;
@@ -175,7 +185,7 @@ export function createMap(container: HTMLElement, opts: CreateMapOptions): MapHa
       queued = style;
       if (!queuedListener) {
         queuedListener = true;
-        map.once("style.load", () => {
+        map.once("idle", () => {
           queuedListener = false;
           const next = queued;
           queued = undefined;
@@ -186,9 +196,10 @@ export function createMap(container: HTMLElement, opts: CreateMapOptions): MapHa
     setProjection(projection: Projection) {
       // deferred until a style exists: `setProjection` on a map whose first style has not loaded
       // throws "Style is not done loading" (measured, atlas-map — it is why the constructor above
-      // carries the projection in its blank style instead of calling this).
+      // carries the projection in its blank style instead of calling this). `"idle"`, not
+      // `"style.load"` — see `applyStyle`'s comment just above: the latter fires only once, ever.
       if (map.isStyleLoaded()) map.setProjection({ type: projection });
-      else map.once("style.load", () => map.setProjection({ type: projection }));
+      else map.once("idle", () => map.setProjection({ type: projection }));
     },
     flyTo(area: StudyArea) {
       // a programmatic move supersedes whatever the user's last gesture was still holding.

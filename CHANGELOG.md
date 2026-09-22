@@ -35,8 +35,18 @@ an interim 0.9.3 checkpoint) because the two steps share one reactive core.
 - Deep-link resolution (`?mdl_key=`/`?mdl_seq=`/`sp`), the "Model not found" modal, and the ten
   analytics events are wired into `state.svelte.ts` already (step 3 lands the remaining chrome:
   welcome modal, release picker, tour, OBIS).
+- **Fixed a latent bug in `src/lib/map/map.ts`'s `applyStyle` queue** (atlas-map's own code, not
+  species-specific — any lens whose data arrives async and calls `applyStyle` more than once before
+  the map's first style finishes loading hits it): the queue was flushed on `"style.load"`, which
+  MapLibre fires exactly ONCE, ever, for the true initial style transition. A second style queued
+  while the map is briefly not-loaded again (e.g. while a newly-added raster source's tiles are in
+  flight) registered a SECOND `once("style.load", …)` that never fires, stranding that style in the
+  queue forever — its layer never appears, silently. Now flushed on `"idle"`, which fires every time
+  the map settles, for the whole life of the map. Caught by
+  `e2e/species.smoke.spec.ts`'s cold-load gate; `e2e/map.spec.ts`'s existing suite still passes
+  unchanged.
 - New: `src/lens/species/{mapInputs,popup,state.svelte,SpeciesTitle,LayerBarView,SpeciesCardView,
-  SpeciesLegend,SpeciesPicker,SpeciesLens,NotFoundModal}.{ts,svelte}`; `src/lib/map/layers/ranges.ts`;
+SpeciesLegend,SpeciesPicker,SpeciesLens,NotFoundModal}.{ts,svelte}`; `src/lib/map/layers/ranges.ts`;
   `boundsToCameraView` in `src/lib/map/camera.ts`; a `RANGE_FILL_COLOR` data color in
   `src/lib/map/colors.ts`; `vite.config.ts`'s `define: { __APP_VERSION__ }` (so `Analytics`'s
   `appVersion` never pulls the whole `package.json` — including its `pinReasons` prose — into the

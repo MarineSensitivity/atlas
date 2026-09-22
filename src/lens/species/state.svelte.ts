@@ -201,7 +201,13 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
       // eslint-disable-next-line svelte/prefer-svelte-reactivity
       const initialParams = new URLSearchParams(location.search);
       const asked = deepLinkKey(initialParams);
-      if (asked) {
+      // ONLY a legacy id (mdl_key/mdl_seq) needs resolving through the alias shard. A modern
+      // `sp=`(+`in=`) link is already canonical — codec.ts's parseSel (which ran before this
+      // module even mounted) already put the right values in `selStore.sel`. Resolving it anyway
+      // would be wrong, not just redundant: a merged key's alias entry always maps to itself with
+      // `ds_key = "ms_merge"`, so re-running this for a plain `sp=` link would silently clobber an
+      // already-correct `?sp=X&in=someInput` link's `in` back to "merged" on every load.
+      if (asked?.legacy) {
         const result = await resolveDeepLink(ver, initialParams, {
           index: taxaIndex,
           fetchJson,

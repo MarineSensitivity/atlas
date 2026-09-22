@@ -231,14 +231,16 @@
   // reads; every rule that produced them lives in the lens (mapInputs.ts), not here.
   $effect(() => {
     const isSpecies = sel.lens === "species";
+    // read raster/range as their OWN statements, not inline inside `mapHandle?.`'s optional
+    // chain: optional chaining short-circuits BEFORE evaluating a call's arguments, so an
+    // `applyStyle` call skipped by a still-null `mapHandle` would never even read
+    // `speciesLens.mapInputs` — a defensive belt beside the real fix for this exact symptom,
+    // which turned out to be map.ts's `applyStyle` queue (see its own comment: it was waiting on
+    // an event that only ever fires once).
+    const raster = isSpecies ? speciesLens.mapInputs.raster : null;
+    const range = isSpecies ? speciesLens.mapInputs.range : null;
     mapHandle?.applyStyle(
-      composeStyle({
-        theme: resolvedTheme,
-        projection: sel.proj,
-        zones: zoneUnits,
-        raster: isSpecies ? speciesLens.mapInputs.raster : null,
-        range: isSpecies ? speciesLens.mapInputs.range : null,
-      }),
+      composeStyle({ theme: resolvedTheme, projection: sel.proj, zones: zoneUnits, raster, range }),
     );
   });
   const releaseNote = $derived(
