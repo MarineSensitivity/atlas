@@ -77,13 +77,23 @@ export function collectStaticGraph(manifest, entryKey) {
   return { visitedKeys, files };
 }
 
+// A marker must start a TOKEN, not merely appear inside one (atlas-map, 2026-09-22). Found the
+// moment maplibre-gl first entered the static graph: minified maplibre contains `dashPositions`,
+// whose lowercased form is `da-shp-ositions`, so the three-letter `shp` marker matched it and the
+// budget FAILED on a dependency that has nothing to do with shpjs. The lookbehind keeps every real
+// case (`shpjs`, `shp.js`, `"shp"`, `@duckdb/duckdb-wasm`, `Treemap-abc.js`) and drops the
+// substring-inside-a-word class of false positive. Regression test:
+// tests/size-budget.test.ts, "dashPositions does not trip the shp marker".
+const markerRe = (marker) =>
+  new RegExp(`(?<![a-z0-9])${marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
+
 /** @param {Map<string, string>} fileContents relative path -> utf8 text */
 export function findForbiddenMarkers(fileContents) {
   const hits = [];
   for (const [path, content] of fileContents) {
     const lower = content.toLowerCase();
     for (const marker of FORBIDDEN_LAZY_MARKERS) {
-      if (lower.includes(marker)) hits.push({ path, marker });
+      if (markerRe(marker).test(lower)) hits.push({ path, marker });
     }
   }
   return hits;

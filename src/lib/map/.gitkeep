@@ -1,1 +1,0 @@
-atlas-2/atlas-3: MapLibre style composition, one setStyle(diff:true) call, never addLayer after load.

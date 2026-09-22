@@ -2,9 +2,11 @@
   // atlas-3 step 3: the hydrated shell. Reads and writes view state ONLY through src/lib/state
   // (createSelStore -> history.replaceState, never pushState -- CLAUDE.md "URL-is-the-view"; see
   // tests/shell/shell-invariants.test.ts's source-scan guard, the same technique
-  // tests/state/invariants.test.ts already uses for sel.svelte.ts). NO map, no data, no lens logic
-  // beyond the lens switch itself (atlas-4/5 own that): the map region is an empty, correctly sized
-  // placeholder, and every rail tool's panel body is a one-line placeholder.
+  // tests/state/invariants.test.ts already uses for sel.svelte.ts). No data and no lens logic
+  // beyond the lens switch itself (atlas-4/5 own that): every rail tool's panel body is a one-line
+  // placeholder. atlas-map added the MAP -- basemap by theme plus the release's zone outlines,
+  // composed through src/lib/map and nothing more; the panels, legend and choropleth are the
+  // lenses' own composeStyle inputs (docs/map.md).
   //
   // This file owns NO scoped CSS for the shell's own layout/topbar chrome -- it imports shell.css
   // as a plain global stylesheet (the SAME file index.html's inline critical CSS `@import`s), so
@@ -32,6 +34,11 @@
   import { announce } from "../lib/ui/announcer";
   import { createSelStore } from "../lib/state/sel.svelte";
   import { defaultOut, resolveTheme } from "../lib/state/types";
+  import { createMap, type MapHandle } from "../lib/map/map";
+  import { composeStyle } from "../lib/map/style";
+  import { zoneUnitsFromBoot } from "../lib/map/layers/zones";
+  import { studyAreaFromBoot } from "../lib/map/interaction";
+  import type { ZoneUnitSpec } from "../lib/map/types";
 
   const selStore = createSelStore(location);
   const sel = selStore.sel;
@@ -122,11 +129,68 @@
   // the resolved version off window.__early, the same global VersionBadge.svelte reads.
   interface Early {
     version: Promise<string | null>;
+    boot?: Promise<unknown>;
   }
   let earlyVersion = $state<string | null>(null);
+  let boot = $state<unknown>(null);
   onMount(() => {
     const early = (window as unknown as { __early?: Early }).__early;
     early?.version.then((v) => (earlyVersion = v)).catch(() => {});
+    // boot.json is the map's only data source at this step (Tier 0, plan D3): the zone units and
+    // their PMTiles archives. A missing/404 boot (no release has published app/boot.json until
+    // atlas-1) leaves `boot` null and the map paints basemap-only -- never an error.
+    early?.boot?.then((b) => (boot = b)).catch(() => {});
+  });
+
+  // --- the map (atlas-map): mounted under the panels, one MapLibre instance ---------------------
+  // This component NEVER touches MapLibre directly and never calls addLayer/setStyle: it computes
+  // composeStyle() inputs and hands the result to the handle (docs/map.md). Every lens does the
+  // same.
+  let mapEl = $state<HTMLDivElement | undefined>(undefined);
+  let mapHandle = $state<MapHandle | undefined>(undefined);
+
+  // outline-only, on purpose: labels, choropleth fills and the score raster are the LENS's
+  // composeStyle inputs (atlas-4/5), not the shell's. `src/lib/map/layers/zones.ts` already builds
+  // all three -- see docs/map.md.
+  const zoneUnits = $derived<ZoneUnitSpec[]>(zoneUnitsFromBoot(boot));
+
+  onMount(() => {
+    if (!mapEl) return;
+    const handle = createMap(mapEl, {
+      theme: resolveTheme(sel.theme, prefersDark),
+      camera: sel.map,
+      area: studyAreaFromBoot(null, sel.area),
+      projection: sel.proj,
+      // URL-is-the-view: the camera goes back through selStore, i.e. history.replaceState, and
+      // only for user-driven moves (src/lib/map/camera.ts).
+      onCamera: (map) => selStore.set({ map }),
+    });
+    mapHandle = handle;
+    // the map's public test/automation seam (docs/map.md): the handle plus the CURRENT composeStyle
+    // inputs, so e2e/map.spec.ts and scripts/verify.mjs can drive the real map the way a lens will
+    // -- compose a style, apply it -- instead of reaching into MapLibre. It exposes nothing a
+    // viewer could not already read off the page.
+    (window as unknown as { __atlasMap?: unknown }).__atlasMap = {
+      handle,
+      composeStyle,
+      inputs: () => ({ theme: resolvedTheme, projection: sel.proj, zones: zoneUnits }),
+    };
+    // no window `resize` listener here: createMap observes the CONTAINER, which also covers a
+    // layout-driven resize (a panel opening, the phone sheet changing detent) that no window event
+    // reports.
+    return () => {
+      delete (window as unknown as { __atlasMap?: unknown }).__atlasMap;
+      handle.destroy();
+      mapHandle = undefined;
+    };
+  });
+
+  // one composed style, re-applied with setStyle(diff:true) whenever theme, projection or the
+  // release's zone units change -- never addLayer() piecemeal (CLAUDE.md).
+  $effect(() => {
+    mapHandle?.applyStyle(
+      composeStyle({ theme: resolvedTheme, projection: sel.proj, zones: zoneUnits }),
+    );
   });
   const releaseNote = $derived(
     `Marine Sensitivity Atlas · release ${earlyVersion ?? "—"} · scores and species from the ` +
@@ -218,10 +282,11 @@
 
 <main class="stage" id="stage">
   <div
+    bind:this={mapEl}
     id="map"
     class="map"
     role="img"
-    aria-label="Map (loads in a later phase)"
+    aria-label="Map of U.S. marine areas"
     data-tour="map"
   ></div>
 

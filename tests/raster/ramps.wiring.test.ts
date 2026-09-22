@@ -19,6 +19,17 @@ import { afterEach, describe, expect, it } from "vitest";
 const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const HEX_LITERAL_RE = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b/g;
 const BRAND_PREFIX = join("src", "lib", "brand"); // governed separately by check-hex-literals.mjs
+// atlas-map: the map draws with a handful of colours that are neither a ramp nor a brand token —
+// the `zone_style` table msens publishes (white/black/#d9d9d9 outlines), the `#ff00aa` selection,
+// the `_outside_pra` mask's RGBA, and the two `--surface-map` values a WebGL background layer needs
+// but cannot read from CSS. They are collected in ONE file, which this gate exempts by exact path
+// (not by directory) — plus the ramp-shape assertion below, so the exception cannot become a place
+// to hide a second palette.
+const MAP_COLORS_FILE = join("src", "lib", "map", "colors.ts");
+/** an ARRAY of two or more hex stops is a ramp, whatever it is called — the shape the exempt file
+ * may never contain. (A count ceiling would not do: the file legitimately holds ~8 unrelated
+ * single-purpose colours, and a palette is exactly 11.) */
+const RAMP_ARRAY_RE = /\[\s*"#[0-9a-fA-F]{3,8}"\s*(?:,\s*"#[0-9a-fA-F]{3,8}"\s*)+,?\s*\]/;
 
 function walk(dir: string): string[] {
   let entries: string[];
@@ -45,6 +56,7 @@ export function findRampLiteralsOutsideRamps(
   for (const file of walk(join(rootDir, "src"))) {
     const rel = relative(rootDir, file);
     if (rel.startsWith(BRAND_PREFIX)) continue;
+    if (rel === MAP_COLORS_FILE) continue;
     if (!/\.(ts|svelte|js)$/.test(file)) continue;
     const content = readFileSync(file, "utf8");
     content.split("\n").forEach((text, i) => {
@@ -64,6 +76,20 @@ describe("raster/ramps.ts is the only ramp/palette definition under src/ (brand/
   it("ramps.ts itself contains no hardcoded hex stops — palette colors come from boot.json only", () => {
     const content = readFileSync(join(REPO_ROOT, "src/lib/raster/ramps.ts"), "utf8");
     expect(content.match(HEX_LITERAL_RE)).toBeNull();
+  });
+
+  // the exemption above is narrow BECAUSE of this: the one exempt file may hold the map's fixed
+  // data colours, but never anything ramp-shaped. A palette is 11 stops (boot.palettes); five is
+  // already well past "a table of outline colours".
+  it("the exempt map colour file defines nothing ramp-shaped", () => {
+    const content = readFileSync(join(REPO_ROOT, MAP_COLORS_FILE), "utf8");
+    expect(RAMP_ARRAY_RE.test(content)).toBe(false);
+  });
+
+  it("SEEDED FAULT: that same check flags a palette array planted in the exempt file", () => {
+    expect(RAMP_ARRAY_RE.test('export const rogue = ["#9E0142", "#D53E4F", "#3288BD"];')).toBe(
+      true,
+    );
   });
 });
 

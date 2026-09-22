@@ -34,6 +34,16 @@ export interface RasterTileParams {
   rescaleMax: number;
 }
 
+/** an EXPLICIT value → RGBA colormap instead of a named ramp — `msens::cog_tile_url(color = ...)`
+ * (viz.R:412-420), used only by a binary mask overlay such as `_outside_pra`
+ * (`{"1":[34,34,34,255]}`). Such a URL carries no `colormap_name` and no `rescale` at all, which is
+ * why it is a separate parameter shape rather than a field on {@link RasterTileParams}. */
+export interface RasterMaskTileParams {
+  url: string;
+  /** e.g. `{ "1": [34, 34, 34, 255] }`; serialized with `JSON.stringify`, then fully escaped. */
+  colormap: Record<string, readonly [number, number, number, number]>;
+}
+
 /** the seam a future client-side COG renderer (plan D4, spike S3, deferred) swaps in behind: every
  * caller asks a `RasterSource` for a tile URL, never `titilerTileUrl` directly, so that swap touches
  * one factory, not every call site. */
@@ -52,9 +62,9 @@ export interface RasterSource {
  */
 export function titilerTileUrl(
   config: TitilerConfig,
-  z: number,
-  x: number,
-  y: number,
+  z: number | string,
+  x: number | string,
+  y: number | string,
   params: RasterTileParams,
 ): string {
   return (
@@ -62,6 +72,27 @@ export function titilerTileUrl(
     `?url=${encodeUrlReserved(params.url)}` +
     `&colormap_name=${params.colormapName}` +
     `&rescale=${params.rescaleMin},${params.rescaleMax}`
+  );
+}
+
+/**
+ * The same `/cog/tiles` URL with an EXPLICIT colormap (`msens::cog_tile_url(color = ...)`,
+ * viz.R:412-420): `?url={enc}&colormap={enc(json)}` — no `colormap_name`, no `rescale`. `z`/`x`/`y`
+ * take `number | string` for the same reason {@link titilerTileUrl} does (see `map/layers/titiler.ts`:
+ * MapLibre wants ONE template string carrying literal `{z}/{x}/{y}`, so the template and the
+ * concrete URL must come out of the same formatter or they drift).
+ */
+export function titilerMaskTileUrl(
+  config: TitilerConfig,
+  z: number | string,
+  x: number | string,
+  y: number | string,
+  params: RasterMaskTileParams,
+): string {
+  return (
+    `${config.host}/cog/tiles/WebMercatorQuad/${z}/${x}/${y}.png` +
+    `?url=${encodeUrlReserved(params.url)}` +
+    `&colormap=${encodeUrlReserved(JSON.stringify(params.colormap))}`
   );
 }
 

@@ -1,0 +1,249 @@
+// The `zone_style` table is DATA (atlas-4 §6.2 / msens zone_style.R:22-55). One assertion per row,
+// so a restyle shows up as exactly the row that changed.
+import { describe, expect, it } from "vitest";
+import {
+  ZONE_LINE_STYLE_DEFAULT,
+  unitFromFld,
+  zoneFillLayer,
+  zoneLabelLayer,
+  zoneLabelStyle,
+  zoneLabelsFromBoot,
+  zoneLineLayer,
+  zoneLineStyle,
+  zoneQueryLayerIds,
+  zoneSources,
+  zoneUnitsFromBoot,
+  zonesNeedGlyphs,
+} from "../../src/lib/map/layers/zones";
+import type { ZoneUnitSpec } from "../../src/lib/map/types";
+
+const PRA: ZoneUnitSpec = {
+  unit: "programarea",
+  pmtiles: "https://s3.example/marine-atlas/zones/programarea_2026-01/zones.pmtiles",
+  sourceLayer: "programarea",
+};
+
+describe("zoneLineStyle — one case per row of the table", () => {
+  it("programarea: white, 1 px, opacity 1, solid", () => {
+    expect(zoneLineStyle("programarea")).toEqual({ color: "#ffffff", width: 1, opacity: 1 });
+  });
+
+  it("planarea styles like programarea (v1 reports on Planning Areas)", () => {
+    expect(zoneLineStyle("planarea")).toEqual({ color: "#ffffff", width: 1, opacity: 1 });
+  });
+
+  it("ecoregion: black, 3 px, opacity 1", () => {
+    expect(zoneLineStyle("ecoregion")).toEqual({ color: "#000000", width: 3, opacity: 1 });
+  });
+
+  it("subregion: #d9d9d9, 2 px, opacity 0.7, dashed [3,3]", () => {
+    expect(zoneLineStyle("subregion")).toEqual({
+      color: "#d9d9d9",
+      width: 2,
+      opacity: 0.7,
+      dash: [3, 3],
+    });
+  });
+
+  it("an unknown unit falls back to the table's own 'anything else' row, never throws", () => {
+    expect(zoneLineStyle("seamount")).toEqual(ZONE_LINE_STYLE_DEFAULT);
+    expect(ZONE_LINE_STYLE_DEFAULT).toEqual({ color: "#ffffff", width: 0.5, opacity: 0.45 });
+  });
+});
+
+describe("zoneLabelStyle", () => {
+  it("programarea: white 12 px on a dark halo", () => {
+    expect(zoneLabelStyle("programarea")).toEqual({
+      color: "#ffffff",
+      size: 12,
+      haloColor: "rgba(0,0,0,0.75)",
+      haloWidth: 1,
+    });
+  });
+
+  it("ecoregion: black 16 px on a light halo", () => {
+    expect(zoneLabelStyle("ecoregion")).toEqual({
+      color: "#000000",
+      size: 16,
+      haloColor: "rgba(255,255,255,0.85)",
+      haloWidth: 1.5,
+    });
+  });
+
+  it("subregion has NO labels (the R table's NULL row)", () => {
+    expect(zoneLabelStyle("subregion")).toBeNull();
+  });
+
+  it("an unknown unit gets no labels rather than a guessed style", () => {
+    expect(zoneLabelStyle("seamount")).toBeNull();
+  });
+});
+
+describe("sources and ids", () => {
+  it("a vector source per unit, addressed through the pmtiles:// protocol", () => {
+    expect(zoneSources([PRA])).toEqual({
+      programarea_src: { type: "vector", url: `pmtiles://${PRA.pmtiles}` },
+    });
+  });
+
+  it("a unit with labels also gets a geojson point source", () => {
+    const labels = {
+      points: { type: "FeatureCollection" as const, features: [] },
+      textProperty: "key",
+    };
+    expect(Object.keys(zoneSources([{ ...PRA, labels }]))).toEqual([
+      "programarea_src",
+      "programarea_lbl_src",
+    ]);
+  });
+
+  it("query layers put fills before lines (a click inside a polygon is the polygon)", () => {
+    const withFill: ZoneUnitSpec = {
+      ...PRA,
+      fill: {
+        keyProperty: "programarea_key",
+        stops: [{ key: "GAA", color: "#111111" }],
+        defaultColor: "lightgrey",
+        opacity: 0.7,
+        outlineColor: "white",
+      },
+    };
+    expect(zoneQueryLayerIds([withFill])).toEqual(["programarea_fill", "programarea_ln"]);
+  });
+});
+
+describe("layers", () => {
+  it("the line layer carries the table's paint and a dash only where the table has one", () => {
+    expect(zoneLineLayer(PRA)).toMatchObject({
+      id: "programarea_ln",
+      type: "line",
+      source: "programarea_src",
+      "source-layer": "programarea",
+      paint: { "line-color": "#ffffff", "line-width": 1, "line-opacity": 1 },
+    });
+    expect(zoneLineLayer(PRA).paint).not.toHaveProperty("line-dasharray");
+    const sub = zoneLineLayer({ ...PRA, unit: "subregion" });
+    expect(sub.paint).toMatchObject({ "line-dasharray": [3, 3] });
+  });
+
+  it("no fill layer unless the lens supplied values (outline-only is the default)", () => {
+    expect(zoneFillLayer(PRA)).toBeNull();
+  });
+
+  it("the fill is a `match` on the unit's key property with a default colour last", () => {
+    const layer = zoneFillLayer({
+      ...PRA,
+      fill: {
+        keyProperty: "programarea_key",
+        stops: [
+          { key: "GAA", color: "#111111" },
+          { key: "MDA", color: "#222222" },
+        ],
+        defaultColor: "lightgrey",
+        opacity: 0.7,
+        outlineColor: "white",
+      },
+    });
+    expect(layer?.paint).toEqual({
+      "fill-color": [
+        "match",
+        ["get", "programarea_key"],
+        "GAA",
+        "#111111",
+        "MDA",
+        "#222222",
+        "lightgrey",
+      ],
+      "fill-opacity": 0.7,
+      "fill-outline-color": "white",
+    });
+  });
+
+  it("a label layer exists only where the table allows one", () => {
+    const labels = {
+      points: { type: "FeatureCollection" as const, features: [] },
+      textProperty: "key",
+    };
+    expect(zoneLabelLayer({ ...PRA, labels })).toMatchObject({
+      id: "programarea_lbl",
+      type: "symbol",
+      layout: { "text-size": 12, "text-allow-overlap": true },
+    });
+    expect(zoneLabelLayer({ ...PRA, unit: "subregion", labels })).toBeNull();
+    expect(zonesNeedGlyphs([{ ...PRA, unit: "subregion", labels }])).toBe(false);
+    expect(zonesNeedGlyphs([{ ...PRA, labels }])).toBe(true);
+    expect(zonesNeedGlyphs([PRA])).toBe(false);
+  });
+});
+
+describe("boot.json readers", () => {
+  it("`fld` becomes the unit type", () => {
+    expect(unitFromFld("programarea_key")).toBe("programarea");
+    expect(unitFromFld("ecoregion_key")).toBe("ecoregion");
+  });
+
+  it("reads boot.units in boot's own order", () => {
+    const boot = {
+      units: [
+        {
+          fld: "programarea_key",
+          label: "Program areas",
+          pmtiles: "https://a",
+          source_layer: "programarea",
+        },
+        {
+          fld: "ecoregion_key",
+          label: "Ecoregions",
+          pmtiles: "https://b",
+          source_layer: "ecoregion",
+        },
+      ],
+    };
+    expect(zoneUnitsFromBoot(boot).map((u) => u.unit)).toEqual(["programarea", "ecoregion"]);
+  });
+
+  it("SKIPS a row missing pmtiles or source_layer rather than guessing one", () => {
+    const boot = {
+      units: [
+        { fld: "programarea_key", pmtiles: "https://a" }, // no source_layer
+        { fld: "ecoregion_key", source_layer: "ecoregion" }, // no pmtiles
+        { fld: "subregion_key", pmtiles: "https://c", source_layer: "subregion" },
+      ],
+    };
+    expect(zoneUnitsFromBoot(boot).map((u) => u.unit)).toEqual(["subregion"]);
+  });
+
+  it("a release with no units (or no boot at all) yields none, never a throw", () => {
+    expect(zoneUnitsFromBoot(null)).toEqual([]);
+    expect(zoneUnitsFromBoot({})).toEqual([]);
+    expect(zoneUnitsFromBoot({ units: "nope" })).toEqual([]);
+  });
+
+  it("label points come back as a FeatureCollection keyed by `key`", () => {
+    const boot = {
+      zones: {
+        programarea: [
+          { key: "GAA", name: "Gulf of America", label_pt: [-89.1, 26.3] },
+          { key: "MDA", name: "Mid Atlantic", label_pt: { lng: -73.5, lat: 38.2 } },
+        ],
+      },
+    };
+    const labels = zoneLabelsFromBoot(boot, "programarea");
+    expect(labels?.textProperty).toBe("key");
+    expect(labels?.points.features).toHaveLength(2);
+    expect(labels?.points.features[1].properties).toEqual({ key: "MDA", name: "Mid Atlantic" });
+  });
+
+  it("unshifts a cached 0-360 label longitude back into -180..180 (ALA lng = 187.5)", () => {
+    const boot = { zones: { programarea: [{ key: "ALA", label_pt: [187.5, 55.2] }] } };
+    const f = zoneLabelsFromBoot(boot, "programarea")?.points.features[0];
+    expect(f?.geometry).toEqual({ type: "Point", coordinates: [-172.5, 55.2] });
+  });
+
+  it("a unit with no label points at all is null, not an empty layer", () => {
+    expect(
+      zoneLabelsFromBoot({ zones: { programarea: [{ key: "GAA" }] } }, "programarea"),
+    ).toBeNull();
+    expect(zoneLabelsFromBoot(null, "programarea")).toBeNull();
+  });
+});

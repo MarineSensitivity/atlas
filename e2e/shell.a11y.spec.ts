@@ -37,11 +37,23 @@ async function gotoShell(page: import("@playwright/test").Page, theme: string, p
 // Measured today, both themes report the SAME numbers/reasons:
 //   phone (390x844):    5 nodes, {pseudoContent}
 //   desktop (1280x900): 8 nodes, {pseudoContent}
+//
+// RE-TRIAGED 2026-09-22 (atlas-map), desktop 8 -> 9. The ninth node is the panel body's own
+// paragraph (`#panel-region p`): the map behind the glass panel is now a WebGL canvas rather than a
+// flat `--surface-map` div, so axe can no longer resolve what is behind that one text node either.
+// The contrast itself did not change and is gated elsewhere -- `--text-primary` on
+// `--surface-panel-basis` is one of the 70 pairs `node scripts/contrast.mjs` resolves in both
+// themes (spec.md §7/§8). Phone is unchanged at 5 (the sheet covers the same text).
 const COLOR_CONTRAST_INCOMPLETE_CEILING: Record<string, number> = {
   phone: 5,
-  desktop: 8,
+  desktop: 9,
 };
-const COLOR_CONTRAST_INCOMPLETE_REASONS = ["pseudoContent"];
+// `imgNode` joined `pseudoContent` in the same re-triage: axe reports it when the element's
+// background resolves to an IMAGE it cannot sample — here the map's WebGL canvas behind the glass
+// chrome. Same conclusion as above: the contrast is fixed, known and gated by
+// `node scripts/contrast.mjs`, and axe simply cannot see through a canvas. It is NOT a blanket
+// pass: the node-count ceiling above still bounds how many nodes may cite it.
+const COLOR_CONTRAST_INCOMPLETE_REASONS = ["pseudoContent", "imgNode"];
 
 test.describe("axe: zero serious/critical findings, both themes, both widths", () => {
   for (const theme of THEMES) {

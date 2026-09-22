@@ -1,0 +1,299 @@
+// Zone units: one PMTiles vector source per unit, plus its fill / line / label layers.
+//
+// The style values are a TABLE, not code (atlas-4 §6.2, `msens::zone_line_args()` /
+// `zone_label_args()`, zone_style.R:22-55). A lens never writes a width or a colour: it names a
+// unit and this table answers. Adding `planarea` back, or restyling `subregion`, is a one-line data
+// change here with a unit test beside it — which is the whole point of keeping it out of the
+// component.
+//
+// The colours themselves live in `../colors.ts` — the map module's ONE colour file, and the single
+// exception `tests/raster/ramps.wiring.test.ts` grants under `src/` outside `src/lib/brand/**`.
+// They are DATA colours (the zone_style table msens publishes), not brand chrome, so they must
+// never move into `src/lib/brand/tokens.css` either (spec.md §2).
+import type { Feature, FeatureCollection, Point } from "geojson";
+import { GLYPHS_URL, LABEL_FONT } from "./basemap";
+import {
+  ZONE_LABEL_BLACK,
+  ZONE_LABEL_HALO_DARK,
+  ZONE_LABEL_HALO_LIGHT,
+  ZONE_LABEL_WHITE,
+  ZONE_LINE_BLACK,
+  ZONE_LINE_GREY,
+  ZONE_LINE_WHITE,
+} from "../colors";
+import type {
+  LayerSpecification,
+  SourceSpecification,
+  ZoneLabelSpec,
+  ZoneUnitSpec,
+} from "../types";
+
+export interface ZoneLineStyle {
+  color: string;
+  width: number;
+  opacity: number;
+  /** `line_dasharray`; omitted means a solid line. */
+  dash?: readonly number[];
+}
+
+export interface ZoneLabelStyle {
+  color: string;
+  size: number;
+  haloColor: string;
+  haloWidth: number;
+}
+
+/** `msens::zone_line_args()` (zone_style.R:22-55), verbatim. */
+export const ZONE_LINE_STYLE: Readonly<Record<string, ZoneLineStyle>> = {
+  programarea: { color: ZONE_LINE_WHITE, width: 1, opacity: 1 },
+  planarea: { color: ZONE_LINE_WHITE, width: 1, opacity: 1 },
+  ecoregion: { color: ZONE_LINE_BLACK, width: 3, opacity: 1 },
+  subregion: { color: ZONE_LINE_GREY, width: 2, opacity: 0.7, dash: [3, 3] },
+};
+
+/** the "anything else" row of the same table (white, 0.5, 0.45) — a unit a future release invents
+ * still draws, faintly, instead of throwing or vanishing. */
+export const ZONE_LINE_STYLE_DEFAULT: ZoneLineStyle = {
+  color: ZONE_LINE_WHITE,
+  width: 0.5,
+  opacity: 0.45,
+};
+
+/** `msens::zone_label_args()`: programarea white 12 px on a dark halo, ecoregion black 16 px on a
+ * light halo, subregion NONE (`NULL` in R ⇒ no label layer is created at all). */
+export const ZONE_LABEL_STYLE: Readonly<Record<string, ZoneLabelStyle | null>> = {
+  programarea: { color: ZONE_LABEL_WHITE, size: 12, haloColor: ZONE_LABEL_HALO_DARK, haloWidth: 1 },
+  planarea: { color: ZONE_LABEL_WHITE, size: 12, haloColor: ZONE_LABEL_HALO_DARK, haloWidth: 1 },
+  ecoregion: {
+    color: ZONE_LABEL_BLACK,
+    size: 16,
+    haloColor: ZONE_LABEL_HALO_LIGHT,
+    haloWidth: 1.5,
+  },
+  subregion: null,
+};
+
+export function zoneLineStyle(unit: string): ZoneLineStyle {
+  return ZONE_LINE_STYLE[unit] ?? ZONE_LINE_STYLE_DEFAULT;
+}
+
+/** `null` = this unit gets no label layer (subregion, and any unit the table does not name). */
+export function zoneLabelStyle(unit: string): ZoneLabelStyle | null {
+  return unit in ZONE_LABEL_STYLE ? ZONE_LABEL_STYLE[unit] : null;
+}
+
+// --- ids: one naming rule, so a lens never has to guess one ------------------------------------
+// The Shiny app's ids (`{type}_src`, `{type}_ln`, `{type}_lbl`, `{type}_fill`) are kept verbatim so
+// the parity reference reads straight across.
+
+export const zoneSourceId = (unit: string) => `${unit}_src`;
+export const zoneLineId = (unit: string) => `${unit}_ln`;
+export const zoneFillId = (unit: string) => `${unit}_fill`;
+export const zoneLabelId = (unit: string) => `${unit}_lbl`;
+export const zoneLabelSourceId = (unit: string) => `${unit}_lbl_src`;
+
+/** every layer id that a click/hover query may hit for these units, innermost first (fills before
+ * lines — a click inside a polygon should resolve to the polygon, not to whichever border is 2 px
+ * away). `interaction.ts` takes this list; no caller builds it by hand. */
+export function zoneQueryLayerIds(units: readonly ZoneUnitSpec[]): string[] {
+  return [
+    ...units.filter((u) => u.fill).map((u) => zoneFillId(u.unit)),
+    ...units.map((u) => zoneLineId(u.unit)),
+  ];
+}
+
+// --- sources -----------------------------------------------------------------------------------
+
+/**
+ * `pmtiles://` vector sources, one per unit, plus one GeoJSON point source per unit that has
+ * labels. The `pmtiles://` prefix is what `map.ts`'s `addProtocol("pmtiles", ...)` registration
+ * intercepts; the URL itself is the absolute one `boot.units[].pmtiles` carries (plan D2/D6: a
+ * release URL is ALWAYS absolute and formed in `release/dataBase.ts`, never relative to the mount
+ * point).
+ */
+export function zoneSources(units: readonly ZoneUnitSpec[]): Record<string, SourceSpecification> {
+  const sources: Record<string, SourceSpecification> = {};
+  for (const u of units) {
+    sources[zoneSourceId(u.unit)] = { type: "vector", url: `pmtiles://${u.pmtiles}` };
+    if (u.labels) sources[zoneLabelSourceId(u.unit)] = { type: "geojson", data: u.labels.points };
+  }
+  return sources;
+}
+
+/** does any unit carry labels? (`style.ts` only sets `glyphs` then — a style with no symbol layer
+ * must never make the browser fetch a font range.) */
+export function zonesNeedGlyphs(units: readonly ZoneUnitSpec[]): boolean {
+  return units.some((u) => u.labels !== undefined && zoneLabelStyle(u.unit) !== null);
+}
+
+export { GLYPHS_URL, LABEL_FONT };
+
+// --- layers ------------------------------------------------------------------------------------
+
+/**
+ * The choropleth fill (`app.R:2318`): a `match` expression on the unit's key property, one stop per
+ * zone, `defaultColor` for a zone the lens had no value for. The stops are DATA — the lens computed
+ * them from `boot.zones[unit]` with `ramps.ts`'s 11-bin rule; nothing about binning happens here.
+ */
+export function zoneFillLayer(u: ZoneUnitSpec): LayerSpecification | null {
+  const fill = u.fill;
+  if (!fill) return null;
+  const match: unknown[] = ["match", ["get", fill.keyProperty]];
+  for (const stop of fill.stops) match.push(stop.key, stop.color);
+  match.push(fill.defaultColor);
+  return {
+    id: zoneFillId(u.unit),
+    type: "fill",
+    source: zoneSourceId(u.unit),
+    "source-layer": u.sourceLayer,
+    paint: {
+      "fill-color": match as never,
+      "fill-opacity": fill.opacity,
+      "fill-outline-color": fill.outlineColor,
+    },
+  };
+}
+
+export function zoneLineLayer(u: ZoneUnitSpec): LayerSpecification {
+  const s = zoneLineStyle(u.unit);
+  const paint: Record<string, unknown> = {
+    "line-color": s.color,
+    "line-width": s.width,
+    "line-opacity": s.opacity,
+  };
+  if (s.dash) paint["line-dasharray"] = [...s.dash];
+  return {
+    id: zoneLineId(u.unit),
+    type: "line",
+    source: zoneSourceId(u.unit),
+    "source-layer": u.sourceLayer,
+    layout: { visibility: u.lineVisible === false ? "none" : "visible" },
+    paint: paint as never,
+  };
+}
+
+export function zoneLabelLayer(u: ZoneUnitSpec): LayerSpecification | null {
+  const style = zoneLabelStyle(u.unit);
+  if (!u.labels || !style) return null;
+  return {
+    id: zoneLabelId(u.unit),
+    type: "symbol",
+    source: zoneLabelSourceId(u.unit),
+    layout: {
+      "text-field": ["get", u.labels.textProperty] as never,
+      "text-font": [...LABEL_FONT],
+      "text-size": style.size,
+      // `text_allow_overlap = TRUE` (atlas-4 §6.2 step 3): a Program Area label is the zone's
+      // identity, so it is never dropped to make room for a neighbour's.
+      "text-allow-overlap": true,
+    },
+    paint: {
+      "text-color": style.color,
+      "text-halo-color": style.haloColor,
+      "text-halo-width": style.haloWidth,
+    },
+  };
+}
+
+// --- boot.json readers -------------------------------------------------------------------------
+
+interface BootUnitRow {
+  fld?: unknown;
+  label?: unknown;
+  pmtiles?: unknown;
+  source_layer?: unknown;
+  zone_set_key?: unknown;
+}
+
+/** `fld` (`programarea_key`) → the unit type (`programarea`). */
+export function unitFromFld(fld: string): string {
+  return fld.replace(/_key$/, "");
+}
+
+/** the key property a zone's vector tile carries for this unit — `kcol` in the Shiny app. */
+export function zoneKeyProperty(unit: string): string {
+  return `${unit}_key`;
+}
+
+/** the name property (`ncol`), used for hover text and the selection label. */
+export function zoneNameProperty(unit: string): string {
+  return `${unit}_name`;
+}
+
+/**
+ * Read `boot.units[]` (atlas-1's contract: `zone_set_key, fld, label, pmtiles, source_layer`) into
+ * outline-only `ZoneUnitSpec`s, in boot's own order — Program Areas first, then finest first, which
+ * is the order the publisher already sorted them into (atlas-4 §2.4). A row missing `fld`,
+ * `pmtiles` or `source_layer` is SKIPPED, never defaulted: a guessed source layer renders an empty
+ * outline that looks exactly like "this release has no zones".
+ */
+export function zoneUnitsFromBoot(boot: unknown): ZoneUnitSpec[] {
+  const rows = (boot as { units?: unknown } | null | undefined)?.units;
+  if (!Array.isArray(rows)) return [];
+  const out: ZoneUnitSpec[] = [];
+  for (const raw of rows as BootUnitRow[]) {
+    if (!raw || typeof raw !== "object") continue;
+    const { fld, pmtiles, source_layer: sourceLayer, label } = raw;
+    if (typeof fld !== "string" || typeof pmtiles !== "string" || typeof sourceLayer !== "string")
+      continue;
+    if (!fld || !pmtiles || !sourceLayer) continue;
+    out.push({
+      unit: unitFromFld(fld),
+      pmtiles,
+      sourceLayer,
+      label: typeof label === "string" ? label : undefined,
+    });
+  }
+  return out;
+}
+
+interface BootZoneRow {
+  key?: unknown;
+  name?: unknown;
+  label_pt?: unknown;
+}
+
+/** accepts `[lon, lat]`, `{lon, lat}` or `{lng, lat}` — atlas-1 has not frozen `label_pt`'s shape
+ * yet (src/lib/release/boot.ts's TODO), and a wrong guess must be a skipped label, not a throw. */
+function labelPoint(raw: unknown): [number, number] | null {
+  if (Array.isArray(raw) && raw.length >= 2) {
+    const [lon, lat] = raw;
+    if (typeof lon === "number" && typeof lat === "number") return [lon, lat];
+    return null;
+  }
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    const lon = typeof o.lon === "number" ? o.lon : typeof o.lng === "number" ? o.lng : null;
+    const lat = typeof o.lat === "number" ? o.lat : null;
+    if (lon !== null && lat !== null) return [lon, lat];
+  }
+  return null;
+}
+
+/**
+ * `boot.zones[unit][*].label_pt` → a point FeatureCollection with `key` and `name` properties.
+ *
+ * The cached label longitudes are 0-360 (`st_shift_longitude`, atlas-4 §2.4 / §6.5); they are
+ * brought back into -180..180 here because a GeoJSON source is RFC 7946 and MapLibre would place a
+ * 187.5° label a world away. That is the ONE normalization this reader does.
+ */
+export function zoneLabelsFromBoot(boot: unknown, unit: string): ZoneLabelSpec | null {
+  const zones = (boot as { zones?: Record<string, unknown> } | null | undefined)?.zones;
+  const rows = zones && typeof zones === "object" ? zones[unit] : undefined;
+  if (!Array.isArray(rows)) return null;
+  const features: Feature<Point>[] = [];
+  for (const raw of rows as BootZoneRow[]) {
+    if (!raw || typeof raw !== "object") continue;
+    const pt = labelPoint(raw.label_pt);
+    if (!pt || typeof raw.key !== "string") continue;
+    const lon = pt[0] > 180 ? pt[0] - 360 : pt[0];
+    features.push({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [lon, pt[1]] },
+      properties: { key: raw.key, name: typeof raw.name === "string" ? raw.name : raw.key },
+    });
+  }
+  if (!features.length) return null;
+  const points: FeatureCollection = { type: "FeatureCollection", features };
+  return { points, textProperty: "key" };
+}

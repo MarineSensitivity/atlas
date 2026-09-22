@@ -62,6 +62,23 @@ describe("findForbiddenMarkers", () => {
   it("finds nothing in clean content", () => {
     expect(findForbiddenMarkers(new Map([["x.js", "console.log(1)"]]))).toEqual([]);
   });
+
+  // regression, named after the bug (atlas-map, 2026-09-22): minified maplibre-gl contains
+  // `dashPositions`, whose lowercased form embeds "shp" — the budget failed on it the first time
+  // maplibre entered the static graph. A marker must start a token.
+  it("dashPositions does not trip the shp marker", () => {
+    expect(findForbiddenMarkers(new Map([["x.js", "b.setConstantDashPositions(e,t)"]]))).toEqual(
+      [],
+    );
+  });
+
+  it("still catches a marker that starts a token, however it is punctuated", () => {
+    for (const text of ['import shpjs from "shpjs"', "await import('./shp.js')", "{shp:1}"]) {
+      expect(findForbiddenMarkers(new Map([["x.js", text]]))).toEqual([
+        { path: "x.js", marker: "shp" },
+      ]);
+    }
+  });
 });
 
 describe("findWorkerAssets (atlas-0 review fix F3, extended N1)", () => {
