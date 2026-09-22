@@ -1,6 +1,7 @@
 import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import pkg from "./package.json" with { type: "json" };
 
 // atlas-0 scaffold (plan D2, D3): the same dist/ must run under both
 // https://marinesensitivity.org/atlas/ and https://preview.marinesensitivity.org/v9/atlas/, and Cloudflare
@@ -22,6 +23,13 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 // against a real build is the gate that proves the actual byte count.
 export default defineConfig({
   base: "./",
+  // atlas-5: `Analytics["appVersion"]` (analytics.ts) needs SOME build-time version string. A
+  // plain `import pkg from "./package.json"` at RUNTIME (in a lens/shell file) pulls the WHOLE
+  // JSON module into the static bundle, prose and all — including the `pinReasons` block's own
+  // "duckdb"/"shp"/"treemap" strings, which then trips size-budget.mjs's forbidden-lazy-chunk scan
+  // for those exact substrings (measured: a real build FAILs on it). `define` inlines only this
+  // one string literal instead.
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   // D2: no client router, so there is no "route" for the dev/preview server to fall back to
   // index.html for. `appType: "mpa"` turns that SPA fallback OFF — without it, a missing sibling
   // file (latest.txt, session.json, ...) 200s with index.html's own markup in dev/preview instead

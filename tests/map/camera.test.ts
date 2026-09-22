@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CAMERA_WRITE_DELAY_MS,
+  boundsToCameraView,
   cameraEqual,
   createCameraWriter,
   roundCamera,
@@ -107,5 +108,92 @@ describe("createCameraWriter", () => {
     w.cancel();
     vi.advanceTimersByTime(1000);
     expect(write).not.toHaveBeenCalled();
+  });
+});
+
+// atlas-5: the species camera hands the map an EXTENT (data/camera.ts's BoundsCamera), not a
+// center+zoom preset — this is the "fitBounds is the map module's business" half of the subplan,
+// done WITHOUT ever calling MapLibre's own fitBounds (tests/map/no-fitbounds.test.ts's gate).
+describe("boundsToCameraView", () => {
+  it("centers a symmetric box at its own center", () => {
+    const { center } = boundsToCameraView(
+      [
+        [-10, -10],
+        [10, 10],
+      ],
+      { width: 1000, height: 1000 },
+    );
+    expect(center[0]).toBeCloseTo(0, 5);
+    expect(center[1]).toBeCloseTo(0, 5);
+  });
+
+  it("east may exceed 180 (an unwrapped, re-expressed frame) and is read LINEARLY, never wrapped", () => {
+    // a Bering/Chukchi-style frame, minimalFrame()'s own worked example: 22.6 deg centred on 175E
+    const { center, zoom } = boundsToCameraView(
+      [
+        [163.7, -16.05],
+        [186.3, 20.2],
+      ],
+      { width: 1000, height: 1000 },
+    );
+    // the center must land AT the frame's own longitude (175), never at 0/antipodal from
+    // wrapping east=186.3 back to -173.7 first.
+    expect(center[0]).toBeCloseTo(175, 5);
+    expect(Number.isFinite(zoom)).toBe(true);
+  });
+
+  it("a wider box gets a LOWER zoom than a narrower one, same viewport", () => {
+    const viewport = { width: 800, height: 600 };
+    const wide = boundsToCameraView(
+      [
+        [-100, -20],
+        [100, 20],
+      ],
+      viewport,
+    );
+    const narrow = boundsToCameraView(
+      [
+        [-5, -5],
+        [5, 5],
+      ],
+      viewport,
+    );
+    expect(wide.zoom).toBeLessThan(narrow.zoom);
+  });
+
+  it("padding shrinks the effective viewport, so a padded fit zooms out a bit", () => {
+    const viewport = { width: 800, height: 600 };
+    const bounds: [[number, number], [number, number]] = [
+      [-10, -10],
+      [10, 10],
+    ];
+    const padded = boundsToCameraView(bounds, viewport, { padding: 200 });
+    const unpadded = boundsToCameraView(bounds, viewport, { padding: 0 });
+    expect(padded.zoom).toBeLessThan(unpadded.zoom);
+  });
+
+  it("degenerate input (zero-area box, zero viewport) still returns finite numbers", () => {
+    const { center, zoom } = boundsToCameraView(
+      [
+        [5, 5],
+        [5, 5],
+      ],
+      { width: 0, height: 0 },
+    );
+    expect(Number.isFinite(center[0])).toBe(true);
+    expect(Number.isFinite(center[1])).toBe(true);
+    expect(Number.isFinite(zoom)).toBe(true);
+  });
+
+  it("respects minZoom/maxZoom clamps", () => {
+    const { zoom } = boundsToCameraView(
+      [
+        [-179, -89],
+        [179, 89],
+      ],
+      { width: 100, height: 100 },
+      { minZoom: 3, maxZoom: 18 },
+    );
+    expect(zoom).toBeGreaterThanOrEqual(3);
   });
 });

@@ -43,3 +43,10 @@ export const SELECTION_COLOR = "#ff00aa";
 
 /** `manifest.overlays._outside_pra`'s explicit colormap, `{"1":[34,34,34,255]}` (atlas-4 §6.3). */
 export const OUTSIDE_PRA_RGBA: readonly [number, number, number, number] = [34, 34, 34, 255];
+
+/** atlas-5's species "range" fill (`msens::add_fill_layer(fill_color = "#3388ff")`,
+ * `atlas-refs/"parity species app.md"` §6.2's PMTiles branch) — a fixed data color, not a ramp
+ * (one swatch, not 11 stops) and not brand chrome, so it lives here rather than in `ramps.ts` or
+ * `src/lib/brand/tokens.css`. Also the categorical legend swatch and the click-popup swatch for a
+ * "presence only" click (`map/layers/ranges.ts`, `src/lens/species/popup.ts`). */
+export const RANGE_FILL_COLOR = "#3388ff";

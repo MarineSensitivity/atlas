@@ -1,0 +1,157 @@
+// The species lens' UI half, part 1: `composeStyle()` inputs, as data (atlas-5 step 1/2).
+//
+// This is the ONE place the species lens turns a `LayerBar` (data/layerBar.ts) + a representation
+// into what `src/lib/map/style.ts`'s `composeStyle()` takes — a `RasterLayerSpec` for the COG
+// branch or a `RangeLayerSpec` for the PMTiles branch, never both at once, and never a hand-rolled
+// tile URL (that lives in `map/layers/titiler.ts`, the one place a titiler URL is built).
+//
+// Nothing here touches MapLibre. Nothing here calls `fetch`. A component reads the return value
+// and hands `raster`/`range` straight to `composeStyle()` — the same contract as the rest of this
+// app's lenses (CLAUDE.md "keep core logic in an exported function... a component only calls it").
+import { RANGE_FILL_COLOR, RANGE_FILL_OPACITY } from "../../lib/map/layers/ranges";
+import { titilerTileTemplate } from "../../lib/map/layers/titiler";
+import type { RangeLayerSpec, RasterLayerSpec } from "../../lib/map/types";
+import {
+  legendStops,
+  paletteStopsFromBoot,
+  type LegendStop,
+  type PaletteName,
+} from "../../lib/raster/ramps";
+import type { Representation } from "../../lib/state/types";
+import { noSurfaceNotice } from "./data/card";
+import type { LayerBar, LayerPill } from "./data/layerBar";
+import type { TaxonAsset } from "./data/shards";
+
+/** style ids for the two species surfaces — always exactly one of them is on screen at a time. */
+export const SPECIES_RASTER_ID = "species-raster";
+export const SPECIES_RANGE_ID = "species-range";
+
+/** `msens::add_cell_tiles(..., raster_opacity = 0.8)` (`atlas-refs/"parity species app.md"` §6.2
+ * step 8) — distinct from the SCORES raster's 0.6 (`map/layers/raster.ts`'s `SCORE_RASTER_OPACITY`). */
+export const SPECIES_RASTER_OPACITY = 0.8;
+
+/** the property every range's vector tile carries the model id under (§6.2's PMTiles branch). */
+export const RANGE_KEY_PROPERTY = "mdl_key";
+
+/** used only when an asset's own `colormap` is null (every real fixture sets one) — the app's own
+ * default ramp (`cols_r`, §6.2 step 3: reversed Spectral, the same ramp `pal: "spectral_r"` names). */
+export const DEFAULT_SPECIES_COLORMAP: PaletteName = "spectral_r";
+
+/**
+ * The asset to draw for `rep` — `msens::pick_asset()`'s native-first fallback (§6.2 step 7,
+ * app.R:557-570): the asset matching `rep` exactly, else `"native"`, else whatever is first. `null`
+ * for an input with no published assets at all (the struck-through-pill state).
+ */
+export function pickAsset(assets: readonly TaxonAsset[], rep: Representation): TaxonAsset | null {
+  if (assets.length === 0) return null;
+  return assets.find((a) => a.rep === rep) ?? assets.find((a) => a.rep === "native") ?? assets[0];
+}
+
+/** the layer bar's active pill — always exactly one (the merged pill, or one input pill). */
+export function activePill(bar: LayerBar): LayerPill | undefined {
+  return bar.pills.find((p) => p.active);
+}
+
+export type SpeciesLegend =
+  | { kind: "continuous"; title: string; unit: string; stops: LegendStop[] }
+  | { kind: "categorical"; title: string; label: string; color: string }
+  | null;
+
+export interface SpeciesMapInputsOptions {
+  rep: Representation;
+  /** `boot.palettes` — `null`/absent legend gracefully (the raster still draws; titiler colors it
+   * server-side regardless of whether this app can also draw a legend). */
+  boot?: { palettes?: unknown } | null;
+  ver: string;
+  /** the legend/downloads title — the caller's `documentTitle`-adjacent label, e.g. the card's `sci`. */
+  legendTitle: string;
+}
+
+export interface SpeciesMapInputs {
+  raster: RasterLayerSpec | null;
+  range: RangeLayerSpec | null;
+  legend: SpeciesLegend;
+  /** §7.4's two render-time notices: "no surface published" (merged is null) and "no native surface
+   * available for this input" (an input selected with zero assets — normally unreachable through the
+   * UI, since that pill is struck-through and disabled, but kept here so the render path fails the
+   * same way the old app did rather than silently drawing nothing unexplained). */
+  notice: string | null;
+  /** the asset actually drawn — what Share/"Download this layer" and the click `ValueSource` need. */
+  asset: TaxonAsset | null;
+}
+
+/** §7.4, notification 3 (app.R:2035) — an input picked with no drawable asset. */
+export function noNativeSurfaceNotice(): string {
+  return "No native surface available for this input";
+}
+
+const EMPTY: SpeciesMapInputs = {
+  raster: null,
+  range: null,
+  legend: null,
+  notice: null,
+  asset: null,
+};
+
+/**
+ * The whole `composeStyle()` contribution for the layer currently on screen. `bar.pills` already
+ * carries VERBATIM assets (data/layerBar.ts) — this function's only job is to pick one (by `rep`)
+ * and turn it into map-module data, never re-deriving anything the data layer already computed.
+ */
+export function speciesMapInputs(bar: LayerBar, opts: SpeciesMapInputsOptions): SpeciesMapInputs {
+  const pill = activePill(bar);
+  if (!pill) return EMPTY;
+  if (!pill.hasSurface) {
+    return {
+      ...EMPTY,
+      notice: bar.variant === "merged" ? noSurfaceNotice(opts.ver) : noNativeSurfaceNotice(),
+    };
+  }
+
+  const asset = pickAsset(pill.assets, opts.rep);
+  if (!asset) return { ...EMPTY, notice: noNativeSurfaceNotice() };
+
+  if (asset.type === "cog") {
+    // never default a rescale (CLAUDE.md-adjacent rule already in data/shards.ts): no rescale means
+    // no honest way to color the raster, so skip drawing it rather than guess a range.
+    if (!asset.rescale) return { ...EMPTY, notice: noNativeSurfaceNotice(), asset };
+    const colormapName = asset.colormap ?? DEFAULT_SPECIES_COLORMAP;
+    const [min, max] = asset.rescale;
+    const raster: RasterLayerSpec = {
+      id: SPECIES_RASTER_ID,
+      tiles: [
+        titilerTileTemplate({ url: asset.url, colormapName, rescaleMin: min, rescaleMax: max }),
+      ],
+      opacity: SPECIES_RASTER_OPACITY,
+    };
+    const stops = paletteStopsFromBoot(opts.boot ?? null, colormapName as PaletteName);
+    const legend: SpeciesLegend = stops
+      ? {
+          kind: "continuous",
+          title: opts.legendTitle,
+          unit: "score",
+          stops: legendStops(stops, min, max),
+        }
+      : null;
+    return { raster, range: null, legend, notice: null, asset };
+  }
+
+  // pmtiles: the ranges branch (§6.2's PMTiles branch) — presence only, no rescale/colormap to read.
+  if (!asset.sourceLayer) return { ...EMPTY, notice: noNativeSurfaceNotice(), asset };
+  const range: RangeLayerSpec = {
+    id: SPECIES_RANGE_ID,
+    pmtiles: asset.url,
+    sourceLayer: asset.sourceLayer,
+    keyProperty: RANGE_KEY_PROPERTY,
+    key: pill.mdlKey,
+    fillColor: RANGE_FILL_COLOR,
+    opacity: RANGE_FILL_OPACITY,
+  };
+  const legend: SpeciesLegend = {
+    kind: "categorical",
+    title: opts.legendTitle,
+    label: "range (presence)",
+    color: RANGE_FILL_COLOR,
+  };
+  return { raster: null, range, legend, notice: null, asset };
+}
