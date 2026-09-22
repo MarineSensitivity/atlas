@@ -1,3 +1,10 @@
+# atlas 0.9.15
+
+- The species first-paint timing gate's Playwright project now `depends` on the three engine
+  projects, so in a full `npx playwright test` run it starts only once they have finished and the
+  machine is quiet (started concurrently it hit its 10 s predicate timeout; alone, and now in the
+  full run, medians of ~1.5 s). `--project=timing` still runs it on its own.
+
 # atlas 0.9.14
 
 `atlas-6` fix round 1 (Opus review): four must-fixes in the places panel.

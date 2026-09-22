@@ -59,13 +59,15 @@ export default defineConfig({
     // the timing gate's own project (atlas-8's rule, see species.timing.spec.ts's header for the
     // full reasoning): `workers: 1` + `fullyParallel: false` cap concurrency WITHIN this project,
     // but do not by themselves stop chromium/webkit/firefox's workers running at the same time
-    // inside one `npx playwright test` invocation — species.timing.spec.ts's own
-    // `test.describe.configure({ mode: "serial" })` is the belt-and-suspenders for this file, and
-    // true cross-project isolation is running it as its own invocation:
-    // `npx playwright test --project=timing`.
+    // inside one `npx playwright test` invocation — `dependencies` does: Playwright runs a project
+    // only after the projects it depends on have FINISHED, so in a full run the timing gate starts
+    // once chromium, webkit and firefox are done and the machine is quiet (measured 2026-09-23:
+    // started concurrently it hit the 10 s predicate timeout; alone, medians of 1.5 s).
+    // `npx playwright test --project=timing` still runs it on its own.
     {
       name: "timing",
       testMatch: "species.timing.spec.ts",
+      dependencies: ["chromium", "webkit", "firefox"],
       workers: 1,
       fullyParallel: false,
       use: { ...devices["Desktop Chrome"] },
