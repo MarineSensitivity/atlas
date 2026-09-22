@@ -110,6 +110,7 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
   const track = deps.track ?? (() => {});
 
   let bootStarted = false;
+  let loggedFirstSpecies = false;
   let resolving = $state(true);
   let loading = $state(false);
   let card = $state<TaxonCard | null>(null);
@@ -260,6 +261,23 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
       if (res.ok) {
         card = res.value;
         cardError = null;
+        // §10: "de-duplicated and SEEDED WITH THE DEFAULT SPECIES so the opening taxon is not
+        // logged as a user choice" — the first species this session ever loads is exactly that
+        // seed, whether it came from a deep link or the picker's own default; only a SUBSEQUENT
+        // load (a real choice) logs.
+        if (loggedFirstSpecies) {
+          track("select_species", {
+            mdl_key: card.key,
+            scientific_name: card.sci,
+            common_name: card.common ?? undefined,
+            sp_cat: card.spCat,
+            taxon_id: card.taxonId ?? undefined,
+            n_datasets: card.inputs.length,
+            redlist_code: card.rl ?? undefined,
+            us_only: selStore.sel.us,
+          });
+        }
+        loggedFirstSpecies = true;
       } else {
         card = null;
         cardError = res.error;

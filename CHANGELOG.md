@@ -45,6 +45,8 @@ an interim 0.9.3 checkpoint) because the two steps share one reactive core.
   the map settles, for the whole life of the map. Caught by
   `e2e/species.smoke.spec.ts`'s cold-load gate; `e2e/map.spec.ts`'s existing suite still passes
   unchanged.
+- `select_species` now logs on every species change EXCEPT the session's first (§10: "seeded with
+  the default species so the opening taxon is not logged as a user choice").
 - New: `src/lens/species/{mapInputs,popup,state.svelte,SpeciesTitle,LayerBarView,SpeciesCardView,
 SpeciesLegend,SpeciesPicker,SpeciesLens,NotFoundModal}.{ts,svelte}`; `src/lib/map/layers/ranges.ts`;
   `boundsToCameraView` in `src/lib/map/camera.ts`; a `RANGE_FILL_COLOR` data color in
