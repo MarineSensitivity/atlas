@@ -204,13 +204,20 @@ name, and the Aleutian pair written both ways.
 ## Seeded faults
 
 Every gate here ships with a fault that turns it red — a check that cannot fail is not a check.
-Each was applied, run, and reverted:
+Each was applied, run and reverted on 2026-09-22; the counts are what `npx vitest run tests/geo/upload`
+reported (244 tests green unseeded).
 
-| fault                                                               | what turns red                                                                                                                                          |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `checkSize()` moved to after `parseByFormat()` in `normalizeUpload` | `rules.test.ts` "refuses a zip whose OWN INDEX declares 60 MB" (and the 300-entry case)                                                                 |
-| `rewind()` returns its input                                        | `rules.test.ts` "turns a CLOCKWISE exterior ring counterclockwise", the hole case, and `fixtures.test.ts` "all four formats produce the identical ring" |
-| the `findSelfIntersection` call removed                             | `rules.test.ts` "refuses a bow-tie…" and "catches a hole that cuts through its own outer ring"                                                          |
-| `unwrapRing` replaced by a naive `lon < 0 ? lon + 360 : lon`        | `dateline.test.ts` "normalize to the SAME ring" and `fixtures.test.ts`'s aleutian band                                                                  |
-| `plainText` escaping `<` and `>`                                    | `names.test.ts` "comes back byte-identical, NOT escaped"                                                                                                |
-| a static `import shp from "shpjs"` in `parsers/shapefile.ts`        | `lazyImports.test.ts`, and `npm run size-budget` once anything imports the pipeline                                                                     |
+| fault                                                               | red                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `checkSize()` moved to after `parseByFormat()` in `normalizeUpload` | **2 failed** — `rules.test.ts` "refuses a zip whose OWN INDEX declares 60 MB — before a byte is unpacked", "refuses a 300-entry zip"                                                                                                                    |
+| `rewind()` returns its rings untouched                              | **4 failed** — `rules.test.ts` "turns a CLOCKWISE exterior ring counterclockwise", "keeps a hole, and gives it the OPPOSITE winding"; `fixtures.test.ts` "all four formats produce the identical ring"; `dateline.test.ts` "normalize to the SAME ring" |
+| the `findSelfIntersection` call removed                             | **2 failed** — `rules.test.ts` "refuses a bow-tie and reports the crossing's coordinates and vertex indices", "catches a hole that cuts through its own outer ring"                                                                                     |
+| `unwrapRing()` replaced by a naive `lon < 0 ? lon + 360 : lon`      | **4 failed** — `dateline.test.ts` "normalize to the SAME ring", "RFC 7946 halves touching ±180 are joined into one ring", "leaves an ordinary mid-Pacific place alone"; `rules.test.ts` the bow-tie                                                     |
+| `plainText()` escaping `&`, `<` and `>`                             | **3 failed** — `names.test.ts` "comes back byte-identical, NOT escaped", "survives a round trip through JSON unchanged", "leaves every other character alone"                                                                                           |
+| a static `import shp from "shpjs"` in `parsers/shapefile.ts`        | **3 failed** — `lazyImports.test.ts` "shapefile.ts imports no pinned parser statically", "each pinned parser IS reached, dynamically…", "nothing anywhere under upload/ statically imports a pinned parser"                                             |
+
+Worth recording about the fourth: the naive ±360 shift happens to give the _right answer_ for the
+committed Aleutian fixtures (`-177 + 360 = 183`), so the fixture assertions alone would not have
+caught it. What catches it is the RFC 7946-split half of the pair and an ordinary mid-Pacific place
+(`-170 … -160`), which the naive rule silently moves to `190 … 200`. That is why the dateline pair
+is a test of its own and not a line inside the fixture sweep.
