@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="atlas-6 fixtures (hand-written)" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Gulf rectangle</name>
+    <desc>atlas-6 addition to the five S4 fixtures. docs/spikes/S4.md and package.json's pinReason for @tmcw/togeojson both say GPX was never exercised by a fixture and must be before the format is advertised. GPX has no polygon type, so the only way it can describe an area is a CLOSED track: the last point repeats the first. Same geometry and same vertex order as gulf_rectangle.geojson, so fixtures_manifest.json's gulf_rectangle entry is its ground truth.</desc>
+  </metadata>
+  <trk>
+    <name>Gulf rectangle</name>
+    <trkseg>
+      <trkpt lat="26.5" lon="-93.5"></trkpt>
+      <trkpt lat="29.5" lon="-93.5"></trkpt>
+      <trkpt lat="29.5" lon="-88.5"></trkpt>
+      <trkpt lat="26.5" lon="-88.5"></trkpt>
+      <trkpt lat="26.5" lon="-93.5"></trkpt>
+    </trkseg>
+  </trk>
+</gpx>
