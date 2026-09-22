@@ -38,7 +38,8 @@
   import { composeStyle } from "../lib/map/style";
   import { zoneUnitsFromBoot } from "../lib/map/layers/zones";
   import { studyAreaFromBoot } from "../lib/map/interaction";
-  import type { ZoneUnitSpec } from "../lib/map/types";
+  import type { RasterLayerSpec, SelectionSpec, ZoneUnitSpec } from "../lib/map/types";
+  import ScoresLens from "../lens/scores/ScoresLens.svelte";
 
   const selStore = createSelStore(location);
   const sel = selStore.sel;
@@ -130,9 +131,14 @@
   interface Early {
     version: Promise<string | null>;
     boot?: Promise<unknown>;
+    // atlas-4: the scores lens' raster/overlay/legend inputs come from `manifest.overlays`
+    // (boot.json carries no `overlays` key today) -- read the same global VersionBadge.svelte and
+    // index.html's inline script already publish, never a second fetch.
+    manifest?: Promise<unknown>;
   }
   let earlyVersion = $state<string | null>(null);
   let boot = $state<unknown>(null);
+  let manifest = $state<unknown>(null);
   onMount(() => {
     const early = (window as unknown as { __early?: Early }).__early;
     early?.version.then((v) => (earlyVersion = v)).catch(() => {});
@@ -140,6 +146,7 @@
     // their PMTiles archives. A missing/404 boot (no release has published app/boot.json until
     // atlas-1) leaves `boot` null and the map paints basemap-only -- never an error.
     early?.boot?.then((b) => (boot = b)).catch(() => {});
+    early?.manifest?.then((m) => (manifest = m)).catch(() => {});
   });
 
   // --- the map (atlas-map): mounted under the panels, one MapLibre instance ---------------------
@@ -153,6 +160,20 @@
   // composeStyle inputs (atlas-4/5), not the shell's. `src/lib/map/layers/zones.ts` already builds
   // all three -- see docs/map.md.
   const zoneUnits = $derived<ZoneUnitSpec[]>(zoneUnitsFromBoot(boot));
+
+  // atlas-4: the ACTIVE lens' own composeStyle contribution (raster, overlays, zone fills/
+  // highlights, selection). A lens computes it and hands it back through this one bucket -- the
+  // shell still owns the ONE `applyStyle` call (below), so a lens never touches MapLibre itself
+  // (docs/map.md). `zones` here REPLACES the shell's outline-only `zoneUnits` when a lens supplies
+  // its own (choropleth fills/highlights included); `undefined` on any field falls back to "the
+  // shell's own base view" so a lens that has not loaded yet (or a species view, which does not
+  // use this bucket the same way) never blanks the map.
+  let lensMapExtra = $state<{
+    zones?: ZoneUnitSpec[];
+    raster?: RasterLayerSpec | null;
+    overlays?: RasterLayerSpec[];
+    selection?: SelectionSpec | null;
+  }>({});
 
   onMount(() => {
     if (!mapEl) return;
@@ -173,7 +194,14 @@
     (window as unknown as { __atlasMap?: unknown }).__atlasMap = {
       handle,
       composeStyle,
-      inputs: () => ({ theme: resolvedTheme, projection: sel.proj, zones: zoneUnits }),
+      inputs: () => ({
+        theme: resolvedTheme,
+        projection: sel.proj,
+        zones: lensMapExtra.zones ?? zoneUnits,
+        raster: lensMapExtra.raster ?? null,
+        overlays: lensMapExtra.overlays ?? [],
+        selection: lensMapExtra.selection ?? null,
+      }),
     };
     // no window `resize` listener here: createMap observes the CONTAINER, which also covers a
     // layout-driven resize (a panel opening, the phone sheet changing detent) that no window event
@@ -185,11 +213,19 @@
     };
   });
 
-  // one composed style, re-applied with setStyle(diff:true) whenever theme, projection or the
-  // release's zone units change -- never addLayer() piecemeal (CLAUDE.md).
+  // one composed style, re-applied with setStyle(diff:true) whenever theme, projection, the
+  // release's zone units OR the active lens' own contribution changes -- never addLayer()
+  // piecemeal (CLAUDE.md).
   $effect(() => {
     mapHandle?.applyStyle(
-      composeStyle({ theme: resolvedTheme, projection: sel.proj, zones: zoneUnits }),
+      composeStyle({
+        theme: resolvedTheme,
+        projection: sel.proj,
+        zones: lensMapExtra.zones ?? zoneUnits,
+        raster: lensMapExtra.raster ?? null,
+        overlays: lensMapExtra.overlays ?? [],
+        selection: lensMapExtra.selection ?? null,
+      }),
     );
   });
   const releaseNote = $derived(
@@ -301,13 +337,30 @@
   </nav>
 
   <div class="panel-region" id="panel-region" data-tour="panel" data-control="panel">
+    {#snippet panelBody()}
+      {#if sel.lens === "scores"}
+        <ScoresLens
+          {sel}
+          {selStore}
+          {boot}
+          {manifest}
+          ver={earlyVersion}
+          {mapHandle}
+          {activeTool}
+          fallbackBody={TOOL_BODY[activeTool]}
+          bind:mapExtra={lensMapExtra}
+        />
+      {:else}
+        <p>{TOOL_BODY[activeTool]}</p>
+      {/if}
+    {/snippet}
     {#if isPhone}
       <Sheet id="shell" title={TOOL_LABEL[activeTool]}>
-        <p>{TOOL_BODY[activeTool]}</p>
+        {@render panelBody()}
       </Sheet>
     {:else}
       <Panel id="shell" title={TOOL_LABEL[activeTool]}>
-        <p>{TOOL_BODY[activeTool]}</p>
+        {@render panelBody()}
       </Panel>
     {/if}
   </div>

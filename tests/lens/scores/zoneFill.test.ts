@@ -1,0 +1,68 @@
+import { describe, expect, it } from "vitest";
+import { zoneRows } from "../../../src/lens/scores/boot";
+import { zoneChoropleth, zoneTooltip, zoneValuesFor } from "../../../src/lens/scores/zoneFill";
+import { BOOT_V7 } from "./fixtures";
+
+const COMPOSITE = "score_extriskspcat_primprod_ecoregionrescaled_equalweights";
+
+describe("zoneValuesFor", () => {
+  it("only zones carrying a finite value for the metric, name falling back to key", () => {
+    const values = zoneValuesFor(zoneRows(BOOT_V7, "programarea"), COMPOSITE);
+    expect(values).toEqual([
+      { key: "GAA", name: "Gulf of America, Eastern", value: 33.09 },
+      { key: "GEO", name: "Georgia", value: 12 },
+    ]);
+  });
+
+  it("a metric no zone carries: []", () => {
+    expect(zoneValuesFor(zoneRows(BOOT_V7, "programarea"), "nope")).toEqual([]);
+  });
+});
+
+describe("zoneChoropleth", () => {
+  it("empty values: the Inf/-Inf guard — no fill, no legend, empty:true", () => {
+    const out = zoneChoropleth("programarea", [], BOOT_V7, "spectral_r");
+    expect(out).toEqual({ fill: null, legend: null, empty: true });
+  });
+
+  it("one stop per zone, keyProperty named for the unit, legend range rounded to 1 decimal", () => {
+    const values = zoneValuesFor(zoneRows(BOOT_V7, "programarea"), COMPOSITE);
+    const out = zoneChoropleth("programarea", values, BOOT_V7, "spectral_r");
+    expect(out.empty).toBe(false);
+    expect(out.fill!.keyProperty).toBe("programarea_key");
+    expect(out.fill!.stops.map((s) => s.key)).toEqual(["GAA", "GEO"]);
+    expect(out.fill!.defaultColor).toBe("lightgrey");
+    expect(out.fill!.opacity).toBe(0.7);
+    expect(out.legend).toEqual({
+      min: 12,
+      max: 33.1,
+      stops: expect.arrayContaining([expect.stringMatching(/^#/)]),
+    });
+  });
+
+  it("min == max: every zone gets the same (top) bin colour, never a division by zero", () => {
+    const values = [
+      { key: "A", name: "A", value: 10 },
+      { key: "B", name: "B", value: 10 },
+    ];
+    const out = zoneChoropleth("programarea", values, BOOT_V7, "spectral_r");
+    expect(out.fill!.stops[0].color).toBe(out.fill!.stops[1].color);
+  });
+
+  it("no published stops for the palette: every zone drawn as the default colour, legend unavailable", () => {
+    const values = zoneValuesFor(zoneRows(BOOT_V7, "programarea"), COMPOSITE);
+    const out = zoneChoropleth("programarea", values, BOOT_V7, "viridis");
+    expect(out.empty).toBe(false);
+    expect(out.legend).toBeNull();
+    expect(out.fill!.stops.every((s) => s.color === "lightgrey")).toBe(true);
+  });
+});
+
+describe("zoneTooltip", () => {
+  it('"{name}: {round(value)}" — half-even, matching R round()', () => {
+    expect(zoneTooltip({ key: "GAA", name: "Gulf of America, Eastern", value: 33.09 })).toBe(
+      "Gulf of America, Eastern: 33",
+    );
+    expect(zoneTooltip({ key: "X", name: "X", value: 2.5 })).toBe("X: 2"); // half-even, not half-up
+  });
+});

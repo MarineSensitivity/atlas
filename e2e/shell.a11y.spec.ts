@@ -44,9 +44,18 @@ async function gotoShell(page: import("@playwright/test").Page, theme: string, p
 // The contrast itself did not change and is gated elsewhere -- `--text-primary` on
 // `--surface-panel-basis` is one of the 70 pairs `node scripts/contrast.mjs` resolves in both
 // themes (spec.md §7/§8). Phone is unchanged at 5 (the sheet covers the same text).
+//
+// RE-TRIAGED 2026-09-22 (atlas-4 step 1), desktop 9 -> 16, phone 5 -> 10: the scores lens' Layers
+// panel (the shell's default rail tool) landed, replacing the one-paragraph placeholder with real
+// field labels, `<select>`s and a legend note -- seven more text/control nodes over the SAME
+// glass-over-canvas (desktop `imgNode`) / glass-over-sheet (phone `pseudoContent`) background axe
+// already could not resolve. Verified, not assumed: every new node's own foreground/background
+// token pair (`--text-secondary`/`--icon-muted` on `--surface-panel-basis`/`--surface-sunken`) is
+// among the pairs `node scripts/contrast.mjs` independently resolves and passes; none of the new
+// nodes cited a reason outside the two already allow-listed below.
 const COLOR_CONTRAST_INCOMPLETE_CEILING: Record<string, number> = {
-  phone: 5,
-  desktop: 9,
+  phone: 10,
+  desktop: 16,
 };
 // `imgNode` joined `pseudoContent` in the same re-triage: axe reports it when the element's
 // background resolves to an IMAGE it cannot sample — here the map's WebGL canvas behind the glass

@@ -58,6 +58,11 @@ export interface ZoneUnitSpec {
   labels?: ZoneLabelSpec;
   /** `false` hides the line layer without removing it (the layers control's switch). */
   lineVisible?: boolean;
+  /** the key of ONE zone to outline in the selection colour (atlas-4 §6.6: a clicked zone's
+   * highlight, `colors.ts`'s `SELECTION_COLOR`, 4 px) — filtered against the SAME vector
+   * source/layer, so no separate geometry fetch is needed. `layers/zones.ts`'s
+   * `zoneHighlightLayer()` builds it. */
+  highlightKey?: string;
 }
 
 /** a titiler-backed raster: the score COG, or an overlay such as `_outside_pra` (atlas-4 §6.2). */

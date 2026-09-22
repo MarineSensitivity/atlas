@@ -1,3 +1,46 @@
+# atlas 0.9.0
+
+`atlas-4` step 1: the Scores lens' Layers panel, legend and map wiring, from Tier 0 (`boot.json`)
+only — `src/lens/scores/**`.
+
+- **New: `src/lens/scores/{boot,raster,zoneFill,mapInputs,fallback,selection}.ts`.** Pure readers
+  over `boot.json`'s scores shape (the ONE drawable unit per D17, layer groups/default — the
+  release's `category: "composite"` row, never `boot.layers[0]`, which the publisher orders raw
+  -> component -> composite, the opposite of the ported app's "order 1 = overall score"), the score
+  raster + "cells outside Program Areas" overlay + legend (titiler tiles, `rescale` verbatim,
+  `signif(…, 3)` endpoints — new `geo/round.ts` export), and the zone-choropleth 11-bin fill +
+  legend (`round(range, 1)`, the `Inf/-Inf` empty-values guard).
+- **`src/lens/scores/{LayersPanel,FlowerPanel,ScoresLens}.svelte`** mounted into the shell's
+  existing "Layers"/"Flower" rail tools (Shell.svelte edit: a `lensMapExtra` bucket the active lens
+  populates, merged into the shell's one `composeStyle`/`applyStyle` call — no lens ever touches
+  MapLibre itself). The Flower tool already shows the release's default (nothing selected) or a
+  clicked zone's flower from Tier 0 alone; a cell's flower needs the engine and lands in step 2.
+- **An unknown `unit`/`lyr` falls back** (`fallback.ts`) to `"cell"` / the composite default, never
+  a blank map — the atlas-4 gate, unit-tested.
+- **A small, ADD-only map addition**: `ZoneUnitSpec.highlightKey` + `zoneHighlightLayer()`
+  (`map/layers/zones.ts`) — a clicked zone's outline, filtered against its own vector source rather
+  than a second geometry fetch. `docs/map.md`'s "add a composeStyle input" recipe, followed.
+- **Today's real data gap, discovered, not invented**: every published release's `boot.palettes`
+  carries ONLY `spectral_r` — no Viridis/Cividis/Magma stops. The palette picker still
+  offers all four (the raster tile still renders correctly via titiler's own `colormap_name`), but
+  the legend and the zone choropleth show a "not published" notice rather than guessing a ramp.
+- Gate: `e2e/scores.firstpaint.spec.ts`, hermetic, with its own 20-feature Program-Area PMTiles
+  fixture (`e2e/fixtures/scores/zones20.{geojson,pmtiles}`) — raster pixels at two ocean probes
+  (correctly BLENDED at `SCORE_RASTER_OPACITY` 0.6, not full opacity), 20 outlines, the legend, the
+  default flower.
+- **Fix, `e2e/shell.a11y.spec.ts`**: re-triaged the pinned `color-contrast` incomplete ceiling
+  (phone 5 -> 10, desktop 9 -> 16) for the Layers panel's real content — verified each new node's
+  token pair against `scripts/contrast.mjs`'s 70 (now 86) resolved pairs before raising it.
+- **Could not satisfy this step**: Fullscreen/navigation/scale MapLibre controls were attempted and
+  reverted — they render into `#map`, which carries `role="img"`, and axe correctly flags the
+  nested interactive buttons; fixing it needs a decision (drop `role="img"`? something else?) this
+  step should not make alone. The Nominatim geocoder was not attempted. `e2e/shell.cls.spec.ts`'s
+  skeleton-vs-hydrated exact-height gate for `panel-frame` now fails at desktop (106px skeleton vs
+  ~524px real content): the gate's methodology (byte-exact skeleton height) cannot hold once a
+  lens's DEFAULT view is boot-data-dependent content rather than one line of placeholder text —
+  left for a follow-up that also affects the species lens, not patched here with an unverified
+  guess at a new skeleton height.
+
 # atlas 0.8.3
 
 # atlas 0.8.1
