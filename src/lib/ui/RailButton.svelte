@@ -141,6 +141,18 @@
     background: var(--fill-control);
   }
 
+  /* the very narrow phone (320px, the smallest viewport scripts/verify.mjs covers -- the same
+     breakpoint shell.css's `.topbar` squeeze already uses): five 60px items + gaps + the rail's
+     own padding sum to 336px, wider than the viewport, and overflow horizontally
+     (e2e/shell.a11y.spec.ts's assertLayout caught this). Narrower items fit five in 320px with
+     room to spare; the label still truncates to an ellipsis rather than wrapping or disappearing,
+     and the full name stays on aria-label regardless of what is visually legible. */
+  @media (max-width: 380px) {
+    .railitem {
+      width: 44px;
+    }
+  }
+
   .railitem-label {
     max-width: 100%;
     overflow: hidden;

@@ -17,9 +17,9 @@
   import "./shell.css";
   import { buildRailItems, TOOL_BODY, TOOL_LABEL, type ToolName } from "./tools";
   // R5: the wave-in-hexagon mark replaces the old two-file "wave in a circle" pair
-  // (mst-mark.svg/mst-mark-dark.svg, still vendored for Report.svelte and history) -- inline, so
-  // ONE definition serves both themes through --border-accent rather than a `.mark--navy`/
-  // `.mark--paper` display:none swap.
+  // (mst-mark.svg/mst-mark-dark.svg, kept vendored only for history -- Report.svelte moved to
+  // this same component too) -- inline, so ONE definition serves both themes through
+  // --border-accent rather than a `.mark--navy`/`.mark--paper` display:none swap.
   import WaveHexMark from "../lib/brand/WaveHexMark.svelte";
   import Icon from "../lib/ui/Icon.svelte";
   import Rail from "../lib/ui/Rail.svelte";
