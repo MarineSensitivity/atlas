@@ -1,13 +1,26 @@
 <script lang="ts">
   // atlas-4 step 3 — the welcome modal (parity doc §5.5 modal 2): shown on first paint unless
-  // suppressed via localStorage ("Don't show this again") or `?tour=off`; "Take a Tour" is wired
-  // to the announcer, not a real guided tour — driver.js was NOT added this step (see the atlas-4
-  // report's "could not satisfy": a new dependency + its own lazy-chunk wiring was judged too much
-  // risk for the remaining budget). `tour=off` also hides the tour invitation, since starting one
-  // makes no sense when the URL itself says not to.
+  // suppressed via localStorage ("Don't show this again"), `?tour=off`, or the URL already naming
+  // a deep link (M5 fix, docs/usability.md); "Take a Tour" is wired to the announcer, not a real
+  // guided tour — driver.js was NOT added this step (see the atlas-4 report's "could not satisfy":
+  // a new dependency + its own lazy-chunk wiring was judged too much risk for the remaining
+  // budget). `tour=off` also hides the tour invitation, since starting one makes no sense when the
+  // URL itself says not to.
+  //
+  // M5 fix: before this, `tour` was read ONLY to decide whether the "Take a Tour" BUTTON showed —
+  // despite this file's own header comment claiming `?tour=off` suppressed the MODAL, nothing here
+  // ever checked it for that. A deep link (`?sp=…`, `?sel=…`, `#pl=…`, …) also used to be
+  // interrupted by the "first-timer" welcome copy on every load, species deep links included
+  // (docs/usability.md's `species-deeplink-bogus-sp-1280-dark.jpg`) — `hasViewState()`
+  // (lib/state/codec.ts) is the SAME "differs from the default view" rule `formatSel` already
+  // enforces for what a URL writes, so "this is a deep link" never drifts into a second,
+  // hand-rolled definition of the term. Shell.svelte passes only `tour` (out of scope to edit this
+  // round) -- the deep-link check reads `window.location` directly instead of a new prop, the same
+  // self-contained pattern this component already uses for localStorage.
   import { onMount } from "svelte";
   import Modal from "../../lib/ui/Modal.svelte";
   import { announce } from "../../lib/ui/announcer";
+  import { hasViewState } from "../../lib/state/codec";
   import type { Tour } from "../../lib/state/types";
 
   const STORAGE_KEY = "atlas.welcome.dontShowAgain";
@@ -31,7 +44,8 @@
 
   onMount(() => {
     const suppressed = storage()?.getItem(STORAGE_KEY) === "1";
-    open = !suppressed;
+    const deepLink = hasViewState(location);
+    open = !suppressed && tour !== "off" && !deepLink;
   });
 
   function close() {

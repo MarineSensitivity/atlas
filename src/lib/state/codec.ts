@@ -212,3 +212,17 @@ export function formatSel(sel: Sel): { search: string; hash: string } {
     hash: hashKeys.length > 0 ? `#${prettyEncode(hashParams)}` : "",
   };
 }
+
+/**
+ * Whether `loc` carries any view state at all — i.e., a round trip through `parseSel`/`formatSel`
+ * would write at least one field back, meaning `loc` differs from the app's own default view. This
+ * is "is this a deep link" in exactly this module's own vocabulary (`formatSel`'s header: "writing
+ * ONLY fields that differ from their default"), never a second, hand-rolled notion of it — a caller
+ * that wants "did the visitor arrive via a link that names something" (WelcomeModal.svelte's M5 fix:
+ * a deep link must never be interrupted by the first-timer welcome modal) calls this instead of
+ * re-deriving it from `location.search`/`.hash` directly.
+ */
+export function hasViewState(loc: UrlLike): boolean {
+  const { search, hash } = formatSel(parseSel(loc));
+  return search !== "" || hash !== "";
+}
