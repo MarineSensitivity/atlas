@@ -381,7 +381,11 @@ test.describe("fix list #8 (SC 4.1.2 + 1.3.1): the species picker is a real comb
   test("role=combobox, aria-expanded/controls/activedescendant track the open list, and Enter selects the active option", async ({
     page,
   }) => {
-    await gotoSpecies(page, "/?ver=v9");
+    // an explicit sp= (leatherback), not the bare lens switch other tests in this describe use --
+    // this test's own assertion needs a KNOWN starting species so the identity change Enter
+    // produces is unambiguous, and it must not race the lens' own default-species resolution
+    // (which only settles once the taxa index itself has loaded, asynchronously).
+    await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
     const input = page.locator(".picker-input");
     await expect(input).toHaveAttribute("role", "combobox");
     await expect(input).toHaveAttribute("aria-autocomplete", "list");
@@ -404,30 +408,37 @@ test.describe("fix list #8 (SC 4.1.2 + 1.3.1): the species picker is a real comb
     // convention), and the id it points at actually exists and IS that option.
     const firstOptionId = await input.getAttribute("aria-activedescendant");
     expect(firstOptionId).toBeTruthy();
-    const firstOption = page.locator(`#${firstOptionId}`);
+    // an attribute selector, not a bare `#id` -- a taxon key (and so the option id built from it)
+    // contains "|" and ":", both special in a bare CSS id selector; quoted inside `[id="..."]`
+    // they are just literal characters.
+    const firstOption = page.locator(`[id="${firstOptionId}"]`);
     await expect(firstOption).toHaveCount(1);
     await expect(firstOption).toHaveAttribute("role", "option");
-
-    // ArrowDown moves aria-activedescendant to the NEXT option -- not the same one, and options
-    // never receive individual keyboard focus (the preferred APG variant: they stay out of the
-    // Tab order, tabindex="-1", the input drives navigation).
+    // options never receive individual keyboard focus (the preferred APG variant: they stay out
+    // of the Tab order, tabindex="-1", the input drives navigation).
     await expect(firstOption).toHaveAttribute("tabindex", "-1");
-    await page.keyboard.press("ArrowDown");
-    const secondOptionId = await input.getAttribute("aria-activedescendant");
-    expect(secondOptionId).not.toBe(firstOptionId);
+
+    // typing re-anchors aria-activedescendant to the NEW first match -- filtered to "walrus" so
+    // the match is deterministic AND fixture-backed (this spec's routeSpeciesShards only mocks
+    // leatherback/walrus/wrybill; ArrowDown-ing to an arbitrary OTHER real taxon in the unfiltered
+    // list would 404 its shard and leave the title blank forever, which is what the very first
+    // version of this test measured).
+    await input.pressSequentially("walrus", { delay: 20 });
+    await expect
+      .poll(() => input.getAttribute("aria-activedescendant"), { timeout: 10_000 })
+      .not.toBe(firstOptionId);
+    const walrusOptionId = await input.getAttribute("aria-activedescendant");
+    expect(walrusOptionId).toBeTruthy();
+    const walrusOption = page.locator(`[id="${walrusOptionId}"]`);
+    await expect(walrusOption).toContainText(/walrus/i);
     await expect(input).toBeFocused();
 
-    const secondOptionSci = await page.locator(`#${secondOptionId}`).textContent();
     await page.keyboard.press("Enter");
-    // Enter picks the ACTIVE option (the second one, not the first) and closes the list.
+    // Enter picks the ACTIVE option and closes the list.
     await expect(input).toHaveAttribute("aria-expanded", "false");
-    // the picked species' label is "cat: Sci (Common)" -- its scientific name is a SUBSTRING of
-    // the option's own rendered text, so this holds no matter which real taxon ends up second.
-    await expect
-      .poll(() => page.getByTestId("species-title-sci").textContent(), { timeout: 10_000 })
-      .toBeTruthy();
-    const finalSci = await page.getByTestId("species-title-sci").textContent();
-    expect(secondOptionSci ?? "").toContain(finalSci ?? "");
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Odobenus rosmarus", {
+      timeout: 10_000,
+    });
   });
 
   test("Esc closes the list without moving focus off the field", async ({ page }) => {
@@ -448,7 +459,7 @@ test.describe("fix list #8 (SC 4.1.2 + 1.3.1): the species picker is a real comb
   test("typing a query announces the result count through the shared live region", async ({
     page,
   }) => {
-    await gotoSpecies(page, "/?ver=v9");
+    await gotoSpecies(page, "/?lens=species&ver=v9");
     const input = page.locator(".picker-input");
     await input.focus();
     await expect
