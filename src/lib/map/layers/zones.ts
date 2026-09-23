@@ -144,20 +144,37 @@ export { GLYPHS_URL, LABEL_FONT };
  * The choropleth fill (`app.R:2318`): a `match` expression on the unit's key property, one stop per
  * zone, `defaultColor` for a zone the lens had no value for. The stops are DATA — the lens computed
  * them from `boot.zones[unit]` with `ramps.ts`'s 11-bin rule; nothing about binning happens here.
+ *
+ * B3 fix: a MapLibre `match` expression needs at least ONE label/output pair before its fallback --
+ * `["match", input, fallback]` is invalid (`layers[…].paint.fill-color: Expected at least 4
+ * arguments, but found only 2`), a real runtime style-validation error a plain vitest fixture
+ * cannot catch (only e2e/scores.palettes.spec.ts's real MapLibre instance did, and the SAME broken
+ * style silently starved every other layer behind it: e2e/scores.firstpaint.spec.ts's raster probe
+ * and e2e/places.pick.spec.ts's own pick query both went red from this one cause). `queryFillFor()`
+ * (below) passes `stops: []` on purpose -- an invisible query fill has no per-zone colours to
+ * carry -- so an EMPTY `fill.stops` now skips the `match` wrapper entirely and paints the flat
+ * `defaultColor` directly, which is exactly what a zero-stop `match` was trying (and failing) to
+ * express anyway.
  */
 export function zoneFillLayer(u: ZoneUnitSpec): LayerSpecification | null {
   const fill = u.fill;
   if (!fill) return null;
-  const match: unknown[] = ["match", ["get", fill.keyProperty]];
-  for (const stop of fill.stops) match.push(stop.key, stop.color);
-  match.push(fill.defaultColor);
+  let fillColor: unknown;
+  if (fill.stops.length === 0) {
+    fillColor = fill.defaultColor;
+  } else {
+    const match: unknown[] = ["match", ["get", fill.keyProperty]];
+    for (const stop of fill.stops) match.push(stop.key, stop.color);
+    match.push(fill.defaultColor);
+    fillColor = match;
+  }
   return {
     id: zoneFillId(u.unit),
     type: "fill",
     source: zoneSourceId(u.unit),
     "source-layer": u.sourceLayer,
     paint: {
-      "fill-color": match as never,
+      "fill-color": fillColor as never,
       "fill-opacity": fill.opacity,
       "fill-outline-color": fill.outlineColor,
     },

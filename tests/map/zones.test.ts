@@ -231,8 +231,7 @@ describe("boot.json readers", () => {
   // `u.fill` is set, and outline-only units carried none. Every unit `zoneUnitsFromBoot` returns
   // now gets an invisible (`opacity: 0`) query fill by default, so the `_fill` layer always exists
   // in the composed style and pick mode can query it -- ON SCREEN this is unchanged (opacity 0),
-  // proven by `zoneFillLayer`'s "the fill is a match ... default colour last" case above still
-  // passing with `stops: []` (nothing but the invisible default ever paints).
+  // proven by `zoneFillLayer`'s own empty-stops case (below) painting a flat, invisible colour.
   it("every unit gets an invisible query fill by default (B3) -- visually still outline-only", () => {
     const boot = {
       units: [
@@ -252,11 +251,15 @@ describe("boot.json readers", () => {
       opacity: 0,
       outlineColor: "#000000",
     });
-    // the layer this makes queryable is the SAME one pick mode needs, and it is invisible: a
-    // `match` expression with zero stops always falls through to `defaultColor` at `opacity: 0`.
+    // the layer this makes queryable is the SAME one pick mode needs, and it is invisible.
     expect(zoneQueryLayerIds([u])).toEqual(["programarea_fill", "programarea_ln"]);
+    // a FLAT colour, not a `match` expression with zero label/output pairs -- MapLibre rejects
+    // `["match", input, fallback]` at runtime (`Expected at least 4 arguments, but found only 2`,
+    // caught only by a real browser: e2e/scores.palettes.spec.ts, which also explains why the
+    // SAME broken style silently starved the raster layer behind it in
+    // e2e/scores.firstpaint.spec.ts and the pick query in e2e/places.pick.spec.ts before this).
     expect(zoneFillLayer(u)?.paint).toEqual({
-      "fill-color": ["match", ["get", "programarea_key"], "#000000"],
+      "fill-color": "#000000",
       "fill-opacity": 0,
       "fill-outline-color": "#000000",
     });
