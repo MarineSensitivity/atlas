@@ -588,6 +588,16 @@ async function main() {
 }
 
 // only run as a CLI, not when imported (tests import assertLayout/VIEWPORTS/STATE_MATRIX directly).
+//
+// The `.catch()` is not decoration (atlas-8 step 3, the A11Y-0 post-mortem): a throw INSIDE a state
+// is already counted and turns the exit code red (`runState`'s own try/catch above, proven by
+// `tests/faults/verify-missing-export.patch`), but a throw OUTSIDE one -- `ensureServer()` failing,
+// `launcher.launch()` failing, `browser.close()` failing -- would reject this promise and leave the
+// exit code to Node's default unhandled-rejection policy, which is a runtime flag, not something
+// this script should depend on. Now it is: any escape is printed and exits 1.
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main();
+  main().catch((err) => {
+    process.stderr.write(`verify: fatal — ${err?.stack ?? err}\n`);
+    process.exit(1);
+  });
 }

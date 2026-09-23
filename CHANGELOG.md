@@ -75,8 +75,22 @@ routeBasemapTiles is not a function`** before its first assertion, from `6a7d88b
   serious, including two that only appear on one engine (WebKit drops focus to `<body>` on a rail
   tool swap; Firefox's skip link lands _past_ the tool rail). Seven already have a committed failing
   test.
-- **`tests/GATES.md`** updated: the two new gates and their faults, and the `test:faults` count
-  4 → 6 (on the merged tree, beside Deliverable 4's `feedback-location-href`).
+- **`npm run verify` is in CI** — its own `verify` job in `pages.yml`, gating `publish`. This is the
+  reason A11Y-0 lived for a day: the 58-state × 3-viewport matrix was the last gate with no CI job
+  at all, so nothing ran the script that had been throwing on every scores-lens state. Measured
+  before choosing the shape (laptop, serial by design): **chromium 174 runs in 134 s**, **all three
+  engines 522 runs in 315 s** — cost was not the deciding factor; firefox was. `verify.mjs` launches
+  browsers directly and never reads `playwright.config.ts`, so 0.10.14's `firefoxUserPrefs` +
+  `FIREFOX_HEADED` recipe does not reach it and a GPU-less runner's firefox has no WebGL2; the job
+  runs **chromium only** and says so, with teaching `verify.mjs` that recipe recorded as the
+  follow-up. The three-engine matrix stays covered by the `e2e` job. Proven to fail on a thrown
+  state, not just a failed assertion: `tests/faults/verify-missing-export.patch` reintroduces the
+  exact missing import (measured: baseline exit 0, faulted exit 1, six "✗ … — threw:" lines), and
+  `main()` now also has a `.catch()` so anything thrown _outside_ a state is a hard failure rather
+  than a bet on Node's unhandled-rejection default.
+- **`tests/GATES.md`** updated: the three new gates and their faults, and the `test:faults` count
+  4 → 7 (on the merged tree, beside Deliverable 4's `feedback-location-href`). The CI `test:faults`
+  job now installs chromium, since three of the seven faults drive a real browser.
 
 # atlas 0.10.14
 

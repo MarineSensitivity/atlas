@@ -104,6 +104,27 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4392" },
   },
+  // the `verify` CI job's own fault (atlas-8 step 3, the A11Y-0 post-mortem). `scripts/verify.mjs`
+  // imported `routeBasemapTiles` after the basemap round deleted that export; a missing NAMED
+  // import from a `.ts` module resolved through this repo's bundler hook is `undefined`, not a
+  // load error, so every scores state threw at its first call instead of at load -- and with
+  // verify.mjs in no CI job, nothing said so for a day. This patch reintroduces exactly that
+  // import and must turn `node scripts/verify.mjs` red.
+  //
+  // `--limit=2 --engines=chromium` is six runs (2 states x 3 viewports): enough for every one of
+  // them to hit `gotoScores()` and throw, and ~40 s including the patched tree's own build, rather
+  // than the 8.5 min the full chromium matrix costs. `VERIFY_BASE_URL` moves it off 4331 so it
+  // starts its OWN `vite preview` instead of reusing whatever is already there (verify.mjs reuses
+  // a server it finds, by design).
+  {
+    id: "verify-missing-export",
+    patch: "tests/faults/verify-missing-export.patch",
+    describe:
+      "scripts/verify.mjs imports a name e2e/map-hermetic.ts no longer exports -- every scores " +
+      "state throws before its first assertion (the real A11Y-0 defect, replayed)",
+    gate: ["node", "scripts/verify.mjs", "--engines=chromium", "--limit=2"],
+    env: { VERIFY_BASE_URL: "http://localhost:4393" },
+  },
 ];
 
 function run(cmd, args, cwd, env) {
