@@ -108,9 +108,12 @@ one absent `before_id` cascaded into "a map with nothing but labels" cannot happ
     more rules came with it: a style identical to the one last issued is not issued at all (the
     INACTIVE theme's style.json reporting in recomposes an identical style, whose empty diff fires
     no event), and "may this style be diffed yet?" is a latch set once the map's style has loaded,
-    not `isStyleLoaded()` (false while any tile loads). `"idle"` and the 4 s fallback remain the
-    backstops. Gates: `tests/map/styleQueue.test.ts` ("0.10.22") and `e2e/species.smoke.spec.ts`
-    ("within 1.5 s of the shard", basemap tiles hung so the map can never go idle); seeded fault
+    not `isStyleLoaded()` (false while any tile loads). A changed `sprite` is the one part of a
+    diff `"style.load"` does not cover (MapLibre fetches it afterwards and never aborts an earlier
+    fetch), so a style that changes the sprite AGAIN while the last change loads still waits for
+    `"idle"`. `"idle"` and the 4 s fallback remain the backstops. Gates:
+    `tests/map/styleQueue.test.ts` ("0.10.22") and `e2e/species.smoke.spec.ts` ("within 1.5 s of
+    the shard", basemap tiles hung so the map can never go idle); seeded fault
     `tests/faults/style-settle-on-idle.patch`.
 - **Numbers never come from the tile server** (plan D4). `titiler.ts` builds _display_ tiles;
   scores, cell ids and zonal statistics come from Parquet. `tileUrlLeaksStudyArea()` is the gate that
