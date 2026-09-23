@@ -1,3 +1,34 @@
+# atlas 0.10.6
+
+`atlas-7` step 4: the two entry points into the report.
+
+- **Places panel "Report"** (`src/places/Places.svelte`) — a footer button beside Share/Download
+  that opens `report.html?ver={ver}#pl={sel.pl}` for every place currently in the panel.
+  `window.open()` runs SYNCHRONOUSLY inside the click handler (no `await` before it) so no browser
+  treats the tab as unrequested — the exact popup-blocker workaround the legacy Shiny app's
+  placeholder-tab trick (`apps/scores/app.R:1311-1326`) no longer needs. `ver` is the release this
+  panel is actually viewing (`window.__early.version`, already read here); `pl` is reused verbatim
+  from `sel.pl`, never re-encoded.
+- **Zones table "Report on selected"** (`src/lens/scores/ZonesTable.svelte` + `TablePanel.svelte`)
+  — a checkbox column (only rendered when a caller passes `onReportSelected`) plus a toolbar button
+  that opens a report for one multi-key zone Place carrying every checked key, in the table's own
+  rank order. `TablePanel.svelte` builds the `z.<set>.<keys>` token with `places/model.ts`'s own
+  `zoneSetForUnit()`/`hashFromPlaces()` — the identical encoding a Places-panel zone place uses —
+  and opens it the same synchronous way.
+- Neither entry point imports anything from `src/lib/report/` or `src/report/`: both just build a
+  URL string and call `window.open()`, so index.html's own static graph is untouched by this step
+  (confirmed: `size-budget --entry index.html` is unchanged from 0.10.5's number).
+- Analytics: `report_open{n_places, kinds}` fires once, from inside `report.html` itself
+  (`Report.svelte`, after `expandPlaces()` resolves) rather than from either opener, so a single
+  click is a single event regardless of which entry point was used; `report_export{format}` fires
+  per export button. Both event names were already reserved in `lib/analytics/events.ts` (atlas-2);
+  `sanitize.ts` already strips `pl`/`t` from every event unconditionally, so neither a place name
+  nor a vertex nor the hash can reach either one.
+- Gates: `tsc` 0 * `svelte-check` 0/0 * `vitest` 158 files/2485 tests, all green * `eslint` 0
+  (added `svelte/reactivity`'s `SvelteSet` for the checkbox selection, per `svelte/prefer-svelte-
+reactivity`) * `prettier` clean * `size-budget --entry index.html` unchanged at 414.7 KB gzip
+  static / 555.3 KB combined * `e2e/shell.smoke.spec.ts` and `e2e/report.spec.ts` still green.
+
 # atlas 0.10.5
 
 `atlas-7` steps 2-3: the report document itself, its progressive rendering, the print stylesheet
