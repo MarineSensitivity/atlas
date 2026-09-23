@@ -17,9 +17,9 @@ and the scores lens showed nothing on a map click.
   key}: {round(value)}" (parity doc §6.4's tooltip text, `zoneFill.ts`'s `zoneTooltip()`, wired to a
   click for the first time). The popup closes on the next click or Esc. The cell's value is read
   from the wide `cell` Parquet tile through a new, minimal query (`analysis/queries.ts#cellValue()`,
-  `sql/cell_value.sql`) -- never a rendered raster pixel (plan D4); `tests/lens/scores/
-  no-readpixels.test.ts` is the source-scan gate that holds it, and `e2e/scores.popup.spec.ts`
-  exercises the real engine against a real Parquet fixture.
+  `sql/cell_value.sql`) -- never a rendered raster pixel (plan D4);
+  `tests/lens/scores/no-readpixels.test.ts` is the source-scan gate that holds it, and
+  `e2e/scores.popup.spec.ts` exercises the real engine against a real Parquet fixture.
 
 # atlas 0.10.12
 
