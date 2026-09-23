@@ -62,6 +62,12 @@
 //  - "may this style be diffed against yet?" is a LATCH (the map's style has loaded once — seen via
 //    `"idle"`, a confirmed issue, or `isStyleLoaded()`), not a fresh `isStyleLoaded()` on every call:
 //    that one is false while any tile loads, and parking on it re-created the same wait.
+//  - the ONE part of a diff `"style.load"` does not cover is a changed `sprite`: MapLibre fetches it
+//    afterwards, and maplibre-gl 6.10's `Style#_loadSprite` does not abort an earlier fetch, so two
+//    sprite changes in flight at once land in whichever order the network answers (a double theme
+//    toggle could end on the wrong theme's icons). A style that changes the sprite AGAIN while the
+//    last change is still loading therefore waits for `"idle"`, exactly as 0.10.20 made every style
+//    wait. A style that keeps the sprite — the species raster behind the basemap's arrival — does not.
 // Every 0.10.20 guarantee holds: one `setStyle` in flight (a parked style still waits for the
 // in-flight one to be APPLIED), latest style wins, a stale listener (any cycle's `"idle"` OR
 // `"style.load"`) no-ops, the 4 s fallback still bounds a hung map, and 0.10.10's rule that a stale
@@ -125,6 +131,11 @@ export function createStyleApplier(
   let diffable = false;
   /** the serialized form of the style last handed to `apply` — the no-op check. */
   let lastIssued: string | undefined;
+  /** the last issued style's `sprite` (serialized; `""` for none — the blank first style has none),
+   * and whether a CHANGE to it may still be loading (only `"idle"`/the fallback clear this: the
+   * style's own `"style.load"` fires before its sprite has arrived). */
+  let lastSprite = "";
+  let spriteLoading = false;
   /** bumped on every state change, so listeners/timers armed for an older cycle no-op. */
   let cycle = 0;
   /** the cycle a listener + timer are currently armed for, or `-1` when nothing is armed. */
@@ -145,22 +156,23 @@ export function createStyleApplier(
     armedCycle = cycle;
     const armedFor = cycle;
     map.once("idle", () => {
-      if (armedFor === cycle) settle(true);
+      if (armedFor === cycle) settle("idle");
     });
     fallbackHandle = setTimer(() => {
-      if (armedFor === cycle) settle(false);
+      if (armedFor === cycle) settle("fallback");
     }, fallbackMs);
   }
 
   /** the in-flight style (or the not-yet-loaded initial one) has settled: issue whatever is parked.
-   * `loaded` says whether the signal proves the map's style is loaded (`"idle"`/`"style.load"`),
-   * as opposed to the fallback, which only bounds the wait. */
-  function settle(loaded: boolean): void {
+   * `"idle"` and `"style.load"` prove the map's style is loaded; only `"idle"` proves its sprite is
+   * too; the fallback proves nothing and only bounds the wait (a hung map must never block). */
+  function settle(by: "idle" | "style.load" | "fallback"): void {
     cycle += 1;
     armedCycle = -1;
     clearFallback();
     settling = false;
-    if (loaded) diffable = true;
+    if (by !== "fallback") diffable = true;
+    if (by !== "style.load") spriteLoading = false;
     const next = queued;
     queued = undefined;
     if (next) issue(next.style, next.key);
@@ -175,14 +187,21 @@ export function createStyleApplier(
     queued = undefined;
     settling = true;
     lastIssued = key;
+    const sprite = spriteKey(style);
+    if (sprite !== lastSprite) spriteLoading = sprite !== "";
+    lastSprite = sprite;
     const issuedFor = cycle;
     // registered BEFORE `apply`: a diff that changes anything fires it synchronously, inside
     // `setStyle`, so this is usually settled by the time `apply` returns.
     map.once("style.load", () => {
-      if (issuedFor === cycle) settle(true);
+      if (issuedFor === cycle) settle("style.load");
     });
     apply(style);
     if (issuedFor === cycle) arm(); // not confirmed yet (a rebuild, or a style MapLibre rejected)
+  }
+
+  function spriteKey(style: StyleSpecification): string {
+    return style.sprite === undefined ? "" : JSON.stringify(style.sprite);
   }
 
   return function applyQueued(style: StyleSpecification): void {
@@ -194,7 +213,8 @@ export function createStyleApplier(
       return;
     }
     if (!diffable && map.isStyleLoaded()) diffable = true;
-    if (settling || !diffable) {
+    if (spriteLoading && map.isStyleLoaded()) spriteLoading = false;
+    if (settling || !diffable || (spriteLoading && spriteKey(style) !== lastSprite)) {
       queued = { style, key };
       arm();
       return;

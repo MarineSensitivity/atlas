@@ -299,6 +299,9 @@ describe("createStyleApplier — hung tile fallback", () => {
  * its tiles load — during which (like a camera flight) `"idle"` does not fire until the test says
  * so. The test decides when `"idle"` fires; the fake never emits it on its own.
  */
+const SPRITE_PAPER = "https://example.test/positron/sprite";
+const SPRITE_NAVY = "https://example.test/dark-matter/sprite";
+
 class DiffingFakeMap implements QueuedStyleTarget {
   private listeners = new Map<string, Array<() => void>>();
   /** what MapLibre currently holds, serialized — an equal style is an empty diff. */
@@ -335,10 +338,11 @@ class DiffingFakeMap implements QueuedStyleTarget {
   };
 }
 
-/** a style with one raster source, standing in for "the basemap" / "the species raster". */
+/** a style with one raster source per id, standing in for "the basemap" / "the species raster". */
 function styleWith(...ids: string[]): StyleSpecification {
   return {
     version: 8,
+    ...(ids.includes("basemap") ? { sprite: SPRITE_PAPER } : {}),
     sources: Object.fromEntries(
       ids.map((id) => [id, { type: "raster", tiles: [`https://x/${id}/{z}/{x}/{y}.png`] }]),
     ),
@@ -467,5 +471,39 @@ describe("createStyleApplier — 0.10.22: a style settles on its own style.load,
     expect(applied).toEqual([STYLE_A, STYLE_B, c]);
     map.emit("style.load"); // c reports -> d, once
     expect(applied).toEqual([STYLE_A, STYLE_B, c, d]);
+  });
+
+  it("a style that changes the SPRITE again while the last sprite change is loading waits for idle", () => {
+    // `"style.load"` fires before MapLibre has fetched a new sprite, and maplibre-gl 6.10's
+    // `_loadSprite` does not abort an earlier fetch: two sprite changes in flight land in network
+    // order, not issue order. So a double theme toggle keeps 0.10.20's wait for "idle".
+    vi.useFakeTimers();
+    const map = new DiffingFakeMap();
+    const applyQueued = createStyleApplier(map, map.setStyle);
+    const paper = styleWith("basemap"); // sprite: positron
+    const navy = { ...styleWith("basemap"), sprite: SPRITE_NAVY } as StyleSpecification;
+
+    applyQueued(paper); // the basemap arrives: a sprite change, confirmed by style.load
+    applyQueued(navy); // a theme toggle before paper's sprite has loaded
+    expect(map.setStyleCalls).toEqual([paper]); // parked: one sprite fetch in flight
+    applyQueued(styleWith("basemap", "species-raster")); // ...a raster on the SAME sprite would go,
+    // but it is now the latest request, so it simply replaces the parked toggle
+    expect(map.setStyleCalls).toEqual([paper, styleWith("basemap", "species-raster")]);
+
+    applyQueued(navy); // toggle again, still before any idle
+    expect(map.setStyleCalls).toHaveLength(2);
+    map.emit("idle"); // paper's sprite (and everything else) has loaded
+    expect(map.setStyleCalls).toEqual([paper, styleWith("basemap", "species-raster"), navy]);
+  });
+
+  it("a sprite change goes at once when the map already reports the last one loaded", () => {
+    const map = new DiffingFakeMap();
+    const applyQueued = createStyleApplier(map, map.setStyle);
+    const paper = styleWith("basemap");
+    const navy = { ...styleWith("basemap"), sprite: SPRITE_NAVY } as StyleSpecification;
+    applyQueued(paper);
+    map.tilesLoaded = true; // everything, sprite included, has loaded (no idle listener needed)
+    applyQueued(navy);
+    expect(map.setStyleCalls).toEqual([paper, navy]);
   });
 });
