@@ -89,9 +89,12 @@ test.describe("every step's anchor actually exists on the lens it belongs to", (
       // `waitForSelector` (not an instantaneous `querySelector`): the species lens' legend, in
       // particular, resolves asynchronously (a real species query) -- this tolerates that without
       // weakening the assertion itself: a truly absent anchor still fails hard after the timeout,
-      // never silently skipped.
+      // never silently skipped. 20s (not 8s): measured flaky under shared-machine load -- a real
+      // species query occasionally took longer than 8s to resolve, which is a false red on this
+      // gate, not a true one (docs/usability.md's own species-lens timing note: "about 5.8s" even
+      // uncontended).
       const exists = await page
-        .waitForSelector(step.element, { timeout: 8_000, state: "attached" })
+        .waitForSelector(step.element, { timeout: 20_000, state: "attached" })
         .then(() => true)
         .catch(() => false);
       expect(exists, `step "${step.id}"'s anchor (${step.element}) must exist in the DOM`).toBe(
