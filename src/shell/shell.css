@@ -400,12 +400,28 @@ button.chip {
 
   /* the sheet (Sheet.svelte's root, a plain block <section> with no width of its own -- see its
      header comment) stretches to fill this region the same way a block element always does when
-     both `left` and `right` give its absolutely-positioned ancestor a definite width. */
+     both `left` and `right` give its absolutely-positioned ancestor a definite width.
+     B4 fix (docs/usability.md): the sheet used to sit at `bottom: 0`, the SAME row the rail floats
+     over (`.rail-region`'s own `bottom: var(--space-3)`, above) -- at every detent (even "peek",
+     96 px tall) the sheet's box covered the rail's footprint, and since `.panel-region`'s z-index
+     (16) already outranked `.rail-region`'s (15), the sheet intercepted every tap meant for the
+     rail. Raising the rail's z-index instead was rejected: at "peek" the rail's box lands almost
+     exactly over the sheet's OWN grab handle / detent controls, so it would only have swapped
+     which control became unreachable. The sheet now gets its own reserved row instead: `--size-
+     rail-row` is the rail's real footprint (its own height -- `--size-touch` plus the padding
+     Rail.svelte/HexButton already build it with -- plus its `bottom` offset plus a small gap), so
+     it can never drift from the rail's actual size. It is set HERE (not on `:root`) so it inherits
+     down to `.sheet` itself (Sheet.svelte's root renders as this element's own DOM child) -- see
+     that component's `detent-full` rule, which reads it back to shrink "Full height" so the sheet
+     never grows back down over the reserved row the way a flat `92svh` did. */
   .panel-region {
     top: auto;
     right: 0;
     left: 0;
-    bottom: 0;
+    --size-rail-row: calc(
+      var(--size-touch) + var(--space-2) * 2 + var(--space-3) + var(--space-2)
+    );
+    bottom: var(--size-rail-row);
     /* `left`, `right` AND an explicit `width` together over-constrain an absolutely positioned
        box (CSS 2.1 10.3.7) -- the desktop rule's `width` above would otherwise win and `right`
        get silently recomputed from it, undoing the full-width stretch this media query wants. */
