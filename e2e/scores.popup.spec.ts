@@ -131,15 +131,16 @@ test.describe("scores lens — click popup (fix round 3, real engine)", () => {
     await fireMapClick(page, { lng: CELL_1.lon, lat: CELL_1.lat });
 
     await expect(page.locator(".atlas-popup")).toBeVisible({ timeout: 15_000 });
+    // usability M9: the popup opens AT ONCE with "Loading value…", then is replaced in place once
+    // the engine answers -- wait for the FINAL text (the fixture's real engine round trip is fast
+    // but not synchronous) rather than reading whatever is on screen the instant it appears.
+    await expect.poll(() => popupText(page), { timeout: 15_000 }).toContain("Overall score: 50");
     const text = await popupText(page);
     expect(text).toContain("Cell 1");
     expect(text).toContain(`lon ${CELL_1.lon.toFixed(3)}`);
     expect(text).toContain(`lat ${CELL_1.lat.toFixed(3)}`);
     // the exact fault this popup must never regress to: 2 dp instead of 3.
     expect(text).not.toContain(`lon ${CELL_1.lon.toFixed(2)},`);
-    // the fixture tile's real value for extrisk_bird_ecoregion_rescaled, read through the engine
-    // (never a raster pixel — plan D4; tests/lens/scores/no-readpixels.test.ts is the source scan).
-    expect(text).toContain("Overall score: 50");
   });
 
   // fix list #12 (SC 4.1.3): the popup used to be a plain MapLibre div, never announced -- a
@@ -176,5 +177,36 @@ test.describe("scores lens — click popup (fix round 3, real engine)", () => {
     await fireMapClick(page, { lng: CELL_2.lon, lat: CELL_2.lat });
     await expect(page.locator(".atlas-popup")).toHaveCount(1);
     await expect.poll(() => popupText(page), { timeout: 15_000 }).toContain("Cell 2");
+  });
+
+  // usability M9: "a cold cell click gives no feedback... no popup appeared within 3.5s" -- the
+  // popup now opens AT ONCE with "Loading value..." and is filled in once the engine answers.
+  test("the popup exists within 500ms of the click, even with the cell tile route delayed 3s", async ({
+    page,
+  }) => {
+    await gotoScores(page);
+    // Playwright matches routes in REVERSE registration order (hermetic.ts's own convention) --
+    // this LATER registration for the SAME cell tile wins over `gotoScores`'s own `routeCellTile`,
+    // delaying it long enough that "opens at once" can only be true if the popup never waits on it.
+    await page.route(
+      (url) => url.href === `${BUCKET}${VER}/app/cell/tile=0/data_0.parquet`,
+      async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await route.fulfill({
+          status: 200,
+          contentType: "application/octet-stream",
+          body: CELL_TILE0,
+        });
+      },
+    );
+
+    const clickedAt = Date.now();
+    await fireMapClick(page, { lng: CELL_1.lon, lat: CELL_1.lat });
+    await expect(page.locator(".atlas-popup")).toBeVisible({ timeout: 500 });
+    expect(Date.now() - clickedAt).toBeLessThan(500);
+    await expect(page.locator(".atlas-popup")).toContainText("Loading value…");
+
+    // and it DOES fill in, once the delayed fetch finally answers.
+    await expect.poll(() => popupText(page), { timeout: 10_000 }).toContain("Overall score: 50");
   });
 });

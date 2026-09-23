@@ -1,3 +1,55 @@
+# atlas 0.10.28
+
+Six fixes from the atlas-8 phase review round 2 (`workflows/.claude/plans_todo/atlas-refs/2026-09-23
+atlas-8 phase review (Opus 5.5) on 0.10.21.md`) and `docs/usability.md` §4, all cited by their
+finding id below.
+
+- **Review M1 / usability M9 — the scores map click was still panel-bound, and a cold click showed
+  nothing for seconds.** The click → `sel=cell:`/`sel=zone:` write → popup path lived only inside
+  `ScoresLens.svelte` (the panel body), the SAME class of bug 0.10.21 fixed for map inputs one
+  layer down: a click did nothing with the desktop panel collapsed or the Places tool open. Moved
+  to a lens-level owner, `src/lens/scores/state.svelte.ts#handleMapClick`, which `Shell.svelte`
+  calls directly from its one `map.on("click", ...)` listener (mirroring species). The popup now
+  also opens AT ONCE with a "Loading value…" line (`popup.ts#cellPopupLoadingText`) and is filled
+  in once the engine answers, instead of staying invisible for the whole click-to-value round trip
+  (observed: no popup for > 3.5s, 8s on the phone). New `e2e/scores.collapsed-panel.spec.ts` cases
+  (collapsed panel, Places tool open) and an `e2e/scores.popup.spec.ts` timing case (a 3s-delayed
+  cell-tile route); seeded fault `tests/faults/scores-click-panel-bound.patch`.
+- **Usability M3 (rail) — a rail click on a collapsed desktop panel left it collapsed**, and the
+  collapsed pill floated mid-top instead of docking to the panel's edge. `Panel.svelte` exports
+  `expand()` (the same instance-method pattern `Toast.svelte`'s `push()` uses); `Shell.svelte`'s
+  `selectTool()` calls it. `.panel--collapsed` now shrink-wraps and right-aligns.
+- **Item 3a — the scores lens' click popup and single-cell species path built the shared `cell`/
+  `place_cell` objects OUTSIDE `exclusive()`**, the same race usability B1 (0.10.25) fixed for
+  place analyses. `src/lens/scores/cellClick.ts#fetchCellValue` and
+  `speciesLoad.ts#loadSpeciesRowsFor` (plus `ScoresLens.svelte`'s flower fetch) now wrap their
+  build-then-read sequence in `exclusive(sources.db, …)`. New
+  `tests/analysis/concurrentCellClick.test.ts` drives a real engine (a cell click alongside a place
+  analysis) and asserts both get their solo result.
+- **Item 3b — "Show analysis cells" could paint the PREVIOUS place's cells** when the selection
+  changed mid-load. `Places.svelte`'s `toggleAnalysisCells()` now keys its load on a token
+  (`cellsToken`, the same pattern `ResultsPanel.svelte`'s own `run` uses), dropping a late result
+  once the selection has moved on.
+- **Review m3 — `placesMap.outline` had two effect writers** (`placesMap.svelte.ts`'s baseline,
+  `Places.svelte`'s "the selected row's outline persists" effect), racing over one bucket. Split
+  into a store-derived `baseline` (`model.ts#composeOutline`) plus an `interaction` override set by
+  pick/draw, composed once as `interaction ?? baseline`; `Places.svelte` no longer needs its own
+  baseline-restoring effect. Unit-tested in `tests/places/placesMap.test.ts`. Fixing this surfaced a
+  second collision (item M1's unconditional click dispatch racing Places' own pick/draw session
+  over `sel`) — `placesMap.interactionOwned` gives Places an exclusive claim on clicks while a pick
+  or draw session is active, which `Shell.svelte` now honours.
+- **Review m4 — `showCells` was panel-local while `mapStore.cells` and the pick highlight
+  persisted**, so the toggle could read "off" while cells stayed painted. `showCells` moves into
+  `placesMap.svelte.ts`'s store (chrome, never the URL); the pick highlight is cleared in
+  `Places.svelte`'s `onDestroy`.
+- **Review m5 — the lazy lens/tool imports in `Shell.svelte` had no error path.** Every dynamic
+  `import()` now `.catch()`es and announces through the shared live region; the target `$state`
+  stays `null` on a rejection, so the SAME `if (!Comp)` guard already retries the next time its
+  effect re-runs. New `e2e/shell.chunk-error.spec.ts` aborts the real built `ScoresLens-*.js` chunk.
+- **Review m6 — the `composeStyle` input object was built twice** in `Shell.svelte` (the automation
+  seam and the reactive effect). Built once as `composeStyleInput` (`$derived`), read at both
+  sites; `tests/faults/basemap-not-reactive.patch` regenerated against the new context (same edit).
+
 # atlas 0.10.27
 
 M4 fix round 2 (orchestrator's own seeded fault on `PLACE_CIRCLE_OPACITY = 0`): the M4 gate's

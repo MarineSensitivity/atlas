@@ -475,3 +475,98 @@ test("'show analysis cells' paints the covered cells as a real selection-line fe
     })
     .toBeGreaterThan(0);
 });
+
+// item 3b (atlas-8 review round 2): "Show analysis cells" could paint the PREVIOUS place's cells
+// when the selection changed mid-load -- `toggleAnalysisCells()` (Places.svelte) snapshotted the
+// place before its two `await`s and applied whatever came back unconditionally. `cellsToken` now
+// keys the load on the place and drops a late result once the selection has moved on.
+test("'show analysis cells' drops a late result once the selection moves to a different place (item 3b)", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await gotoPlacesWithRoundtripRelease(page, "/?map=-123.75,40.5,6");
+  await addByCoordinates(page, "-124.5, 40.0, -123.0, 41.5"); // place A -- auto-selected
+  await addByCoordinates(page, "-124.9, 39.0, -124.6, 39.8"); // place B -- auto-selected instead
+  await expect(page.locator(".place-row")).toHaveCount(2);
+
+  // select place A (row 0) and delay the ONE cell tile this fixture publishes (both places' loads
+  // read the same tile, `grid.tile.size === grid.nc`) so A's "show analysis cells" load is still
+  // in flight when the selection below moves to B.
+  await page.locator(".place-row .row-select").nth(0).locator(".icon").click();
+  await page.route(
+    (url) => /\/app\/cell\/tile=0\/data_0\.parquet$/.test(url.pathname),
+    async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/octet-stream",
+        body: CELL_TILE0,
+      });
+    },
+  );
+  const cellsPill = page.getByRole("button", { name: "Show analysis cells" });
+  await expect(cellsPill).toBeEnabled({ timeout: 15_000 });
+  await cellsPill.click(); // place A's load starts, held ~2.5s by the route above
+
+  // before it resolves, select place B instead (B's own toggle is never clicked)
+  await page.locator(".place-row .row-select").nth(1).locator(".icon").click();
+
+  // give A's held fetch time to resolve and (if the bug were back) paint its stale result
+  await page.waitForTimeout(4000);
+
+  // A's late result was dropped: the toggle never turns "on" under B's selection (B's own outline
+  // still renders as an ordinary selection-line/-fill feature -- that IS correct, so this checks
+  // for a CELL SQUARE specifically: `cellSquares.ts` gives every one a `pct` property an outline
+  // feature never carries).
+  await expect(cellsPill).toHaveAttribute("aria-pressed", "false");
+  const staleCellSquares = await page.evaluate(() => {
+    const map = window.__atlasMap!.handle.map;
+    if (!map.getLayer("selection-fill")) return 0;
+    return map
+      .queryRenderedFeatures({ layers: ["selection-fill"] })
+      .filter((f) => typeof (f as { properties?: { pct?: unknown } }).properties?.pct === "number")
+      .length;
+  });
+  expect(staleCellSquares).toBe(0);
+});
+
+// item m4 (atlas-8 review round 2): `showCells` used to be `Places.svelte`'s own local `$state`,
+// which reset to its default the instant the component unmounted -- switching to a different rail
+// tool (Shell.svelte mounts Places lazily, keyed on `activeTool === "places"`) and back left the
+// toggle reading "off" while `mapStore.cells` (a SEPARATE, store-level bucket) stayed painted, so
+// the pill and the map disagreed. `showCells` now lives in `placesMap.svelte.ts`'s store, the SAME
+// lifetime as `cells` -- both survive the panel's own mount/unmount.
+test("the 'Show analysis cells' toggle survives a tool switch + remount, matching what stays painted (item m4)", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await gotoPlacesWithRoundtripRelease(page, "/?map=-123.75,40.75,7");
+  await addByCoordinates(page); // auto-selected
+
+  const cellsPill = page.getByRole("button", { name: "Show analysis cells" });
+  await expect(cellsPill).toBeEnabled({ timeout: 15_000 });
+  await cellsPill.click();
+  await expect(cellsPill).toHaveAttribute("aria-pressed", "true", { timeout: 30_000 });
+  await expect
+    .poll(() => selectionLineFeatureCount(page), {
+      message: "cells never painted before the tool switch",
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(0);
+
+  // switch away -- Places.svelte (and its local component state, if any survived here) unmounts.
+  await page.locator("#rail-region button[aria-label='Layers']").click();
+  await expect(page.locator(".place-row")).toHaveCount(0); // the Places panel body is gone
+
+  // switch back -- Places.svelte remounts from scratch.
+  await page.locator("#rail-region button[aria-label='Places']").click();
+  await expect(page.locator(".place-row")).toHaveCount(1);
+
+  // the toggle still reads "on" (not reset to the component's own default), and the cells it
+  // describes are still the ones painted -- store-backed state, not panel-local state.
+  await expect(page.getByRole("button", { name: "Show analysis cells" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(await selectionLineFeatureCount(page)).toBeGreaterThan(0);
+});

@@ -178,7 +178,15 @@
     );
   }
 
-  onDestroy(() => pickHandle?.uninstall());
+  // item m4 (atlas-8 review round 2): a pick-mode highlight used to persist on the map after this
+  // panel unmounted (a rail tool switch mid pick-session) -- `pickHandle?.uninstall()` alone only
+  // stops the click listener, not what it had already painted. Releasing the interaction override
+  // is always safe (falls straight back to the store's own baseline, `placesMap.svelte.ts`), so
+  // this runs unconditionally, not just while `pickOn` was true.
+  onDestroy(() => {
+    pickHandle?.uninstall();
+    mapStore.setOutline(null);
+  });
 
   function addPicked() {
     if (!pickState.unit || !pickState.keys.length) return;
@@ -205,6 +213,13 @@
   let drawModules: TerraDrawModules | undefined;
   let drawMode = $state<DrawShape | "select" | null>(null);
   let drawBusy = $state(false);
+
+  // item M1's regression (placesMap.svelte.ts's own header): keep the store's "who owns map
+  // clicks" flag in sync with local pick/draw state, so Shell.svelte's click dispatch can skip the
+  // scores lens' own handler while THIS panel has an active pick/draw session claiming clicks.
+  $effect(() => {
+    mapStore.setInteractionOwned(pickOn || drawMode !== null);
+  });
 
   /** Deliverable 7's `place_draw` param -- counts a vertex, never carries a coordinate. */
   function vertexCountOf(geometry: AreaGeometry): number {
@@ -318,7 +333,9 @@
   );
 
   // --- "show analysis cells" (Deliverable 2/3): places <= MAX_ANALYSIS_CELLS only ----------------
-  let showCells = $state(false);
+  // item m4 (atlas-8 review round 2): the toggle's own on/off state now lives in `mapStore`
+  // (`mapStore.showCells`/`setShowCells`), not local `$state` -- it used to read "off" after a
+  // collapse/tool-switch/remount while `mapStore.cells` stayed painted underneath it.
 
   function gridOrNull() {
     try {
@@ -330,13 +347,30 @@
 
   let loadingCells = $state(false);
 
+  // item 3b (atlas-8 review round 2): "Show analysis cells" could paint the PREVIOUS place's cells
+  // when the selection changed mid-load -- `toggleAnalysisCells()` snapshots `p` before its two
+  // `await`s, and used to apply whatever came back unconditionally. `cellsToken` keys the load on
+  // the place, the SAME pattern `ResultsPanel.svelte`'s own `run` uses: a fresh call (or a
+  // selection change, the effect below) invalidates any earlier one in flight, which then drops
+  // its result silently instead of landing it on a place that is no longer selected.
+  let cellsToken = 0;
+  $effect(() => {
+    void selectedIndex; // any selection change invalidates an in-flight "show analysis cells" load
+    cellsToken++;
+    // the invalidated call's own `finally` no longer owns `loadingCells` (its `token !==
+    // cellsToken` check skips it) -- without resetting it here, the toggle's label would be stuck
+    // reading "Loading analysed cells..." forever once the selection moves on, even though nothing
+    // is loading for the place now selected.
+    loadingCells = false;
+  });
+
   // Fix round 1 (Opus review): paint the D7b-CLIPPED cell set (`placeCellsInStudyArea`, the
   // engine-backed `place_cell_sa` rows), never the raw, unclipped `cellsInPolygon()` -- a place
   // straddling the study-area edge would otherwise paint land/foreign-water squares the analysis
   // itself never counts (measured: GAA would paint 14,238 for 14,165 analysed cells).
   async function toggleAnalysisCells() {
-    if (showCells) {
-      showCells = false;
+    if (mapStore.showCells) {
+      mapStore.setShowCells(false);
       mapStore.setCells(null);
       return;
     }
@@ -364,45 +398,40 @@
       );
       return;
     }
+    const token = ++cellsToken;
     loadingCells = true;
     try {
       const ctx = await dataEngineFn();
       const cells = await placeCellsInStudyArea(ctx, p.geometry);
-      showCells = true;
+      if (token !== cellsToken) return; // the selection moved on while this was loading -- drop it
+      mapStore.setShowCells(true);
       mapStore.setCells(cellsFeatureCollection(cells, grid));
     } catch {
-      announce("Couldn't compute the analysed cells for this place.");
+      if (token === cellsToken) announce("Couldn't compute the analysed cells for this place.");
     } finally {
-      loadingCells = false;
+      if (token === cellsToken) loadingCells = false;
     }
   }
 
   // turning the toggle off (or losing the selected place) always clears the painted cells, so a
   // stale "show analysis cells" layer can never survive past the place it described.
   $effect(() => {
-    if (showCells && (selectedIndex === null || places[selectedIndex]?.kind !== "geom")) {
-      showCells = false;
+    if (mapStore.showCells && (selectedIndex === null || places[selectedIndex]?.kind !== "geom")) {
+      mapStore.setShowCells(false);
       mapStore.setCells(null);
     }
   });
 
-  // the selected row's outline persists on the map while nothing more specific (pick mode, an
-  // active draw) already owns the highlight -- e.g. after a reload, re-picking `sel=place:n` off
-  // the URL alone still shows what that place actually covers. 0.10.21: this is no longer the ONLY
-  // place that restores it -- `placesMap.svelte.ts`'s own baseline `$effect` (over
-  // `model.ts#selectedGeomPlaceGeometry`) does the SAME `sel.pl`/`sel.sel`-only computation
-  // regardless of whether this component is mounted at all (the fix for
-  // e2e/places.deeplink-outline.spec.ts: a deep link selecting a drawn place with the Places tool
-  // never opened used to show no outline). This effect stays, unchanged, for the part the store
-  // cannot do without this component's own local state: honouring an in-progress pick/draw
-  // interaction rather than stomping it the instant `pickOn`/`drawMode` end.
-  $effect(() => {
-    if (pickOn || drawMode) return;
-    const p = selectedIndex !== null ? places[selectedIndex] : null;
-    mapStore.setOutline(
-      p && p.kind === "geom" ? featureCollectionOf(densifyGeometry(p.geometry)) : null,
-    );
-  });
+  // item m3 (atlas-8 review round 2): the selected row's outline used to need ITS OWN effect here
+  // ("persists on the map while nothing more specific already owns the highlight"), gated on
+  // `!pickOn && !drawMode` so it never fought `placesMap.svelte.ts`'s own baseline effect over the
+  // SAME `outline` state -- two writers of one bucket, ordered only by Svelte's own scheduling.
+  // `placesMap.svelte.ts` now composes `interaction ?? baseline` itself: every `mapStore.
+  // setOutline(...)` call in this file (pick mode's highlight, a draw's live preview) sets the
+  // INTERACTION override, and `setOutline(null)` (pick/draw ending, below) releases it straight
+  // back to the store's own baseline -- which already recomputes from `sel.pl`/`sel.sel` alone, so
+  // nothing here needs to re-derive or re-assert it. Removing this effect changes no behaviour:
+  // grep this file for `mapStore.setOutline` to see every remaining write, unchanged.
 
   // --- the list -----------------------------------------------------------------------------------
   function kindIcon(p: Place): "places" | "draw" | "upload" {
@@ -630,7 +659,7 @@
     </button>
     <Pill
       label={loadingCells ? "Loading analysed cells…" : "Show analysis cells"}
-      pressed={showCells}
+      pressed={mapStore.showCells}
       disabled={loadingCells || selectedIndex === null || places[selectedIndex]?.kind !== "geom"}
       disabledReason="Select a drawn or uploaded place first."
       onclick={toggleAnalysisCells}

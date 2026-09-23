@@ -94,8 +94,8 @@ export function featureCollectionOf(geometry: AreaGeometry): FeatureCollection {
  * resolved from `sel.pl`/`sel.sel` ALONE -- no `boot`, no pick/draw-mode context, nothing that
  * requires `Places.svelte` to be mounted. `null` for anything but a `kind: "geom"` place (a zone
  * place's highlight is drawn elsewhere; an upload place carries no geometry to draw at all, see
- * `UploadPlace`'s own doc comment in placeCodec.ts) -- the SAME restriction `Places.svelte`'s own
- * "the selected row's outline persists" `$effect` already applies.
+ * `UploadPlace`'s own doc comment in placeCodec.ts) -- the SAME restriction `placesMap.svelte.ts`'s
+ * `baseline` (which calls this) applies to the WHOLE store's outline.
  */
 export function selectedGeomPlaceGeometry(
   pl: string | undefined,
@@ -105,6 +105,21 @@ export function selectedGeomPlaceGeometry(
   if (idx === null) return null;
   const p = placesFromHash(pl)[idx];
   return p && p.kind === "geom" ? p.geometry : null;
+}
+
+/**
+ * atlas-8 review round 2, item m3: `placesMap.svelte.ts`'s composed `outline` — an interaction
+ * override (pick mode's highlight, a draw's live preview) wins whenever one is set; `null` falls
+ * straight through to the baseline (the selected place's own outline, restored from `sel.pl`/
+ * `sel.sel` alone). Pulled out as a plain function so the precedence rule has a real unit test
+ * (`tests/places/placesMap.test.ts`) independent of Svelte's runtime — `placesMap.svelte.ts`
+ * itself only wires `$state`/`$derived` around this.
+ */
+export function composeOutline(
+  interaction: FeatureCollection | null,
+  baseline: FeatureCollection | null,
+): FeatureCollection | null {
+  return interaction ?? baseline;
 }
 
 function ok(places: Place[]): MutationResult {

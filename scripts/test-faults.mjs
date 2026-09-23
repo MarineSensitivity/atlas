@@ -386,6 +386,31 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4386" },
   },
+  // atlas-8 review round 2, item M1: the click -> selection -> popup path used to live ONLY inside
+  // ScoresLens.svelte (the panel body), so a click did nothing with the desktop panel collapsed or
+  // the Places tool open -- the SAME class of bug 0.10.21 fixed for map inputs, one layer down.
+  // This patch reinstates exactly that shape (a mount-only `$effect` in ScoresLens.svelte wiring
+  // the click, and drops Shell.svelte's own dispatch to `scoresLens.handleMapClick`) and must turn
+  // the new "panel collapsed" case in e2e/scores.collapsed-panel.spec.ts red.
+  {
+    id: "scores-click-panel-bound",
+    patch: "tests/faults/scores-click-panel-bound.patch",
+    describe:
+      "the scores lens' click handler moves back onto a bucket only the PANEL body wires -- a " +
+      "collapsed desktop panel (or the Places tool open) makes a scores click do nothing again " +
+      "(review M1's real defect, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.collapsed-panel.spec.ts",
+      "-g",
+      "review M1",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4400" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

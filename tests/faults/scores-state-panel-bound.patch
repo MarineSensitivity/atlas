@@ -1,12 +1,12 @@
 diff --git a/src/lens/scores/ScoresLens.svelte b/src/lens/scores/ScoresLens.svelte
-index 3e7283a..afaac07 100644
+index 1e505a9..4d6b7e4 100644
 --- a/src/lens/scores/ScoresLens.svelte
 +++ b/src/lens/scores/ScoresLens.svelte
-@@ -49,15 +49,36 @@
+@@ -46,15 +46,36 @@
       * `unit`/`lyr`/`manifestOverlays`/`selection`/`mapSelection`/`showOutsidePra`/`mapExtra` all
       * come from here now, not recomputed a second time. */
      lens: ScoresLens;
-+    // SEEDED FAULT (tests/faults/scores-state-panel-bound.patch): reintroduces the 0.10.17 bug --
++    // SEEDED FAULT (tests/faults/scores-state-panel-bound.patch): reinstates the 0.10.17 bug --
 +    // Shell.svelte reads this bucket instead of `lens.mapExtra` directly, so the map only ever
 +    // sees a value while THIS component is mounted.
 +    mapExtra?: import("./mapInputs").ScoresMapInputs | null;
@@ -42,30 +42,24 @@ index 3e7283a..afaac07 100644
    // `flower.ts`/`species.ts` need it verbatim for titles and headers).
    const selection = $derived(lens.selection);
 diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
-index 849db0e..3cc38a8 100644
+index 51d50ae..9723544 100644
 --- a/src/shell/Shell.svelte
 +++ b/src/shell/Shell.svelte
-@@ -65,6 +65,7 @@
-   // out of a species-only session's bundle). `tests/shell/lazy-lens-imports.test.ts` asserts this
-   // file never imports the RUNTIME module statically.
-   import type { ScoresLens as ScoresLensState } from "../lens/scores/state.svelte";
-+  import type { ScoresMapInputs } from "../lens/scores/mapInputs";
-   // atlas-6 step 1: the Places panel mounts here (the shell's one reserved panel slot); it never
-   // touches MapLibre directly -- `placesMap` is the reactive bridge this file's own composeStyle
-   // effect (below) folds into the ONE `selection` input, per docs/map.md. `placesMap.svelte.ts` is
-@@ -319,6 +320,11 @@
+@@ -327,6 +327,13 @@
    // every read of it below is null-safe and falls back to "the shell's own base view", same as
    // the old `{}` default did.
    let scoresLens = $state<ScoresLensState | null>(null);
-+  // SEEDED FAULT (tests/faults/scores-state-panel-bound.patch): reintroduces the 0.10.17 bug on
++  // SEEDED FAULT (tests/faults/scores-state-panel-bound.patch): reinstates the 0.10.17 bug on
 +  // purpose -- a bucket only ScoresLens.svelte (the PANEL body) ever writes, via bind:mapExtra,
 +  // instead of reading scoresLens.mapExtra directly. A collapsed desktop panel never mounts that
 +  // component, so this stays null forever.
-+  let scoresPanelMapExtra = $state<ScoresMapInputs | null>(null);
++  let scoresPanelMapExtra = $state<import("../lens/scores/mapInputs").ScoresMapInputs | null>(
++    null,
++  );
  
    // G-25 fix: `Sel.out`'s ONE effect on the map, applied to whichever `zones` array (the shell's
    // own outline-only `zoneUnits`, or the scores lens' richer `scoresLens.mapExtra.zones`) is about
-@@ -331,7 +337,7 @@
+@@ -339,7 +346,7 @@
    // never mounted on a species view in the first place.
    const zonesForStyle = $derived<ZoneUnitSpec[]>(
      zoneUnitsWithOutline(
@@ -74,40 +68,22 @@ index 849db0e..3cc38a8 100644
        sel.out,
      ),
    );
-@@ -374,13 +380,13 @@
-         zones: zonesForStyle,
-         raster:
-           sel.lens === "scores"
--            ? (scoresLens?.mapExtra.raster ?? null)
-+            ? (scoresPanelMapExtra?.raster ?? null)
-             : speciesLens.mapInputs.raster,
-         range: sel.lens === "species" ? speciesLens.mapInputs.range : null,
--        overlays: sel.lens === "scores" ? (scoresLens?.mapExtra.overlays ?? []) : [],
-+        overlays: sel.lens === "scores" ? (scoresPanelMapExtra?.overlays ?? []) : [],
-         selection:
-           placesSelection ??
--          (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
-+          (sel.lens === "scores" ? (scoresPanelMapExtra?.selection ?? null) : null),
-       }),
-     };
-     // the species lens' own test/automation seam, same spirit as __atlasMap just above: it exposes
-@@ -474,12 +480,12 @@
-         basemapStyle: basemapStyles[resolvedTheme],
-         projection: sel.proj,
-         zones: zonesForStyle,
--        raster: sel.lens === "scores" ? (scoresLens?.mapExtra.raster ?? null) : raster,
-+        raster: sel.lens === "scores" ? (scoresPanelMapExtra?.raster ?? null) : raster,
-         range,
--        overlays: sel.lens === "scores" ? (scoresLens?.mapExtra.overlays ?? []) : [],
-+        overlays: sel.lens === "scores" ? (scoresPanelMapExtra?.overlays ?? []) : [],
-         selection:
-           placesSelection ??
--          (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
-+          (sel.lens === "scores" ? (scoresPanelMapExtra?.selection ?? null) : null),
-       }),
-     );
+@@ -488,11 +495,11 @@
+     projection: sel.proj,
+     zones: zonesForStyle,
+     raster:
+-      sel.lens === "scores" ? (scoresLens?.mapExtra.raster ?? null) : speciesLens.mapInputs.raster,
++      sel.lens === "scores" ? (scoresPanelMapExtra?.raster ?? null) : speciesLens.mapInputs.raster,
+     range: sel.lens === "species" ? speciesLens.mapInputs.range : null,
+-    overlays: sel.lens === "scores" ? (scoresLens?.mapExtra.overlays ?? []) : [],
++    overlays: sel.lens === "scores" ? (scoresPanelMapExtra?.overlays ?? []) : [],
+     selection:
+-      placesSelection ?? (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
++      placesSelection ?? (sel.lens === "scores" ? (scoresPanelMapExtra?.selection ?? null) : null),
    });
-@@ -829,6 +835,7 @@
+ 
+   $effect(() => {
+@@ -873,6 +880,7 @@
              {activeTool}
              fallbackBody={TOOL_BODY[activeTool]}
              lens={scoresLens}
@@ -115,7 +91,7 @@ index 849db0e..3cc38a8 100644
            />
          {:else}
            <p>{TOOL_BODY[activeTool]}</p>
-@@ -858,7 +865,7 @@
+@@ -902,7 +910,7 @@
      <Comp legend={speciesLens.mapInputs.legend} />
    {:else if sel.lens === "scores" && ScoresLegendComp}
      {@const Comp = ScoresLegendComp}

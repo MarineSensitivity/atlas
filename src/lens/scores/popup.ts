@@ -67,6 +67,24 @@ export function cellPopupAnnounceText(input: CellPopupInput): string {
   return formatCellPopup(input, input.layerLabel);
 }
 
+export interface CellPopupLoadingInput {
+  cellId: number;
+  lon: number;
+  lat: number;
+}
+
+/**
+ * usability M9: "a cold cell click gives no feedback... no popup appeared within 3.5s". The popup
+ * now opens AT ONCE with this line (never waiting on the engine); {@link cellPopupText}/
+ * {@link cellPopupAnnounceText} replace it once the value resolves. No markup to escape here (cell
+ * id and lon/lat are both plain numbers), so one function covers the HTML and the announce text.
+ */
+export function cellPopupLoadingText(input: CellPopupLoadingInput): string {
+  const lon = input.lon.toFixed(3);
+  const lat = input.lat.toFixed(3);
+  return `Cell ${input.cellId} · lon ${lon}, lat ${lat} · Loading value…`;
+}
+
 /**
  * "{name or key}: {round(value)}" -- parity doc §6.4's tooltip text, unchanged; this only resolves
  * WHICH `ZoneValue` (if any) the clicked zone/layer pair has. `zone.name` already carries the

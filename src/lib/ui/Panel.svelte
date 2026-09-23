@@ -62,6 +62,15 @@
     rootEl?.querySelector<HTMLButtonElement>(".panel-pill")?.focus();
   }
 
+  // usability M3: a rail click on a collapsed desktop panel used to do nothing but change the
+  // pill's own label -- Shell.svelte's `selectTool()` calls this so a tool switch always shows its
+  // panel. No focus move (unlike `restore()`, called from the pill itself): the user's focus
+  // stays on the rail button they just activated, matching `armRailFocusRestore`'s own intent.
+  // Idempotent -- a no-op when the panel is already open.
+  export function expand(): void {
+    if (geometry.collapsed) persist({ ...geometry, collapsed: false });
+  }
+
   async function restore() {
     persist({ ...geometry, collapsed: false });
     await tick();
@@ -155,6 +164,17 @@
        horizontal scroll. */
     width: 100%;
     max-width: var(--size-panel);
+  }
+
+  /* usability M3: collapsed, `.panel` held its FULL 380px basis (`.panel-region`'s own width,
+     shell.css) with the pill left-aligned inside it -- since `.panel-region` is docked at the
+     STAGE's right edge, the pill floated near the LEFT edge of that reserved width, mid-top
+     (observed: x≈888 of a 1280px viewport), not at the panel's own edge. Shrinking to the pill's
+     own content width and pushing it flush right (the side `.panel-region` docks to) puts it where
+     a "collapsed to an edge pill" affordance should read: right at the stage's edge. */
+  .panel--collapsed {
+    width: fit-content;
+    margin-left: auto;
   }
 
   .panel-surface {
