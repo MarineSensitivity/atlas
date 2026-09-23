@@ -85,8 +85,8 @@ and the Atlas side by side at the same view. <b>atlas-9's cutover is gated on th
 
 <div class="meta">
 <dl>
-  <dt>Atlas version</dt><dd>0.10.27 · generated against commit <code data-volatile="sha">unknown</code> (the commit that ADDS this page is its child)</dd>
-  <dt>Generated</dt><dd><span data-volatile="generated">2026-09-23 21:31 UTC</span></dd>
+  <dt>Atlas version</dt><dd>0.10.29 · generated against commit <code data-volatile="sha">dff1c366e0</code> (the commit that ADDS this page is its child)</dd>
+  <dt>Generated</dt><dd><span data-volatile="generated">2026-09-23 22:47 UTC</span></dd>
   <dt>Release compared</dt><dd><b>v7</b> — today's <code>latest.txt</code>, the only release both hosts serve publicly</dd>
   <dt>Shiny host</dt><dd><code>https://app.marinesensitivity.org/v7</code></dd>
   <dt>Atlas host</dt><dd><code>https://marinesensitivity.org/atlas</code></dd>
@@ -259,7 +259,7 @@ and where the Atlas behaviour is asserted.</p>
 </section>
 
 <h2 id="gaps">Known gaps</h2>
-<p>29 open differences that were <em>not</em> chosen: things deferred, not yet gated, or
+<p>27 open differences that were <em>not</em> chosen: things deferred, not yet gated, or
 blocked on data the releases do not publish. None of them is hidden below the line — they are listed
 here so the signature covers what is missing as well as what is done. 3 more
 (G-25, G-24, G-23) were found here and have SINCE been fixed — kept in the
@@ -403,18 +403,8 @@ does not disappear with the fix.</p>
 <td class="owner">F1 round (atlas-8 phase review M1)</td>
 <td class="dim">open</td>
 <td class="dim"><a href="#S-10">S-10</a>, <a href="#S-12">S-12</a></td></tr>
-<tr id="G-28" class=""><td class="id"><a href="#G-28">G-28</a></td>
-<td class="text"><b>The &quot;Report&quot; tool and the top-bar &quot;Report&quot; button are both a placeholder</b><div class="note">Both open the SAME rail panel, whose body is the literal string <code>TOOL_BODY.report</code> (&quot;The report builder arrives in a later phase.&quot;, <code>src/shell/tools.ts:44</code>); <code>Shell.svelte</code>'s <code>onReport()</code> just sets <code>activeTool = &quot;report&quot;</code>. This is unrelated to <code>report.html</code> (ID-04/ID-13, which IS fully built) — there is simply no in-app report-builder panel behind the rail tool or the top-bar button.</div></td>
-<td class="owner">atlas-8/9</td>
-<td class="dim">open</td>
-<td class="dim">—</td></tr>
 <tr id="G-29" class=""><td class="id"><a href="#G-29">G-29</a></td>
 <td class="text"><b>No legend on a phone viewport, either lens</b><div class="note">Both <code>ScoresLegend.svelte</code> and <code>SpeciesLegend.svelte</code> set <code>display: none</code> under <code>max-width: 899px</code> — there is no room beside the bottom rail and bottom sheet at that breakpoint (the same trade-off the on-map About card already makes, <code>docs/design/spec.md</code> §14). A phone user has color on the map with no key to it.</div></td>
-<td class="owner">atlas-8/9</td>
-<td class="dim">open</td>
-<td class="dim">—</td></tr>
-<tr id="G-30" class=""><td class="id"><a href="#G-30">G-30</a></td>
-<td class="text"><b>The theme default is <code>auto</code>; the Shiny apps always opened dark</b><div class="note"><code>DEFAULT_SEL.theme</code> is <code>&quot;auto&quot;</code> (<code>src/lib/state/types.ts:175</code>), which follows the OS/browser <code>prefers-color-scheme</code> (resolving to navy when that signal is unavailable). A first-time visitor whose system is set to light therefore sees a paper map by default, where every Shiny app opened dark regardless of the OS setting.</div></td>
 <td class="owner">atlas-8/9</td>
 <td class="dim">open</td>
 <td class="dim">—</td></tr>
@@ -1105,7 +1095,7 @@ above, and I accept them as the basis for retiring the Shiny apps (atlas-9 cutov
 <tr><td>atlas-5 · Species lens</td><td style="width:6rem;text-align:center">☐</td><td style="height:2.2rem"></td></tr>
 <tr><td>atlas-7 · Report</td><td style="width:6rem;text-align:center">☐</td><td style="height:2.2rem"></td></tr>
 <tr><td>Intentional differences (18)</td><td style="text-align:center">☐</td><td></td></tr>
-<tr><td>Known gaps (32)</td><td style="text-align:center">☐</td><td></td></tr>
+<tr><td>Known gaps (30)</td><td style="text-align:center">☐</td><td></td></tr>
 </tbody></table>
 <p style="margin-top:1.25rem">Reviewed by <span class="line">&nbsp;</span> &nbsp; on <span class="line" style="min-width:10rem">&nbsp;</span></p>
 </div>

@@ -47,7 +47,9 @@ export const RUNTIME_WORKER_BUDGET_BYTES = 150 * 1024; // 150 KB gzip (F3) — a
 // SOURCE-level scan for a static `import ... from "d3-hierarchy"` declaration, the same pattern
 // `tests/raster/ramps.wiring.test.ts` uses for "no second ramp defined outside ramps.ts". Keep
 // that in mind before adding a dependency to this list and assuming it is now covered.
-export const FORBIDDEN_LAZY_MARKERS = ["duckdb", "terra-draw", "docx", "shp", "treemap"];
+// "driver" (U6, round 2): the guided tour's driver.js -- reached ONLY through
+// src/shell/tourRuntime.ts's dynamic import(), never the static critical path.
+export const FORBIDDEN_LAZY_MARKERS = ["duckdb", "terra-draw", "docx", "shp", "treemap", "driver"];
 
 /**
  * Walk a Vite manifest from `entryKey`, following only STATIC `imports` (never `dynamicImports`),
