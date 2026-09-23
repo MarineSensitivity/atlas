@@ -5,7 +5,7 @@
   // range — `Legend.svelte` itself only knows how to draw a continuous ramp, so the categorical case
   // gets its own small markup here rather than forcing a one-stop ramp through it.
   import Legend from "../../lib/ui/Legend.svelte";
-  import type { SpeciesLegend } from "./mapInputs";
+  import { formatSpeciesLegendValue, type SpeciesLegend } from "./mapInputs";
 
   interface Props {
     legend: SpeciesLegend;
@@ -16,7 +16,12 @@
 
 {#if legend?.kind === "continuous"}
   <div class="species-legend" data-testid="species-legend">
-    <Legend title={legend.title} stops={legend.stops} unit={legend.unit} />
+    <Legend
+      title={legend.title}
+      stops={legend.stops}
+      unit={legend.unit}
+      formatValue={formatSpeciesLegendValue}
+    />
   </div>
 {:else if legend?.kind === "categorical"}
   <div class="species-legend species-legend--categorical" data-testid="species-legend">
@@ -38,6 +43,19 @@
     border-radius: var(--radius-control);
     background: var(--surface-raised);
     box-shadow: var(--elev-2);
+  }
+
+  /* the phone viewport has no room for this beside the bottom rail (centered, also anchored at
+     `bottom: var(--space-3)`) and the bottom sheet -- the SAME "no room" trade-off Shell.svelte's
+     on-map About card already makes at this breakpoint (shell.css's own `.about-region { display:
+     none }`, cited there as an open item, not blocking, docs/design/spec.md §14). Undocumented
+     until atlas-4/5's defect fix gave the scores lens a floating legend too and a phone axe check
+     first exercised this combination (measured: the legend overlapping the rail produced a
+     `bgOverlap` color-contrast `incomplete` axe cannot resolve, e2e/shell.a11y.spec.ts). */
+  @media (max-width: 899px) {
+    .species-legend {
+      display: none;
+    }
   }
 
   .species-legend--categorical h2 {

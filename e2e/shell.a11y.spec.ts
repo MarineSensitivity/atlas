@@ -53,9 +53,21 @@ async function gotoShell(page: import("@playwright/test").Page, theme: string, p
 // token pair (`--text-secondary`/`--icon-muted` on `--surface-panel-basis`/`--surface-sunken`) is
 // among the pairs `node scripts/contrast.mjs` independently resolves and passes; none of the new
 // nodes cited a reason outside the two already allow-listed below.
+//
+// RE-TRIAGED 2026-09-23 (atlas-4/5 defect fix), desktop 16 -> 15: the in-panel legend note moved
+// OUT of the Layers panel into a floating region over the map (ScoresLegend.svelte, same slot the
+// species lens' own floating legend uses) -- net one FEWER unresolvable node at desktop (the
+// floating legend's own text sits over the SAME glass-over-canvas `imgNode` background the panel's
+// text already did, but there is less of it than the removed in-panel copy had). Phone stays at 10,
+// unchanged: the floating legend (both lenses') is `display: none` below 900px (no room beside the
+// bottom rail/sheet -- the SAME trade-off the on-map About card already makes there, see
+// SpeciesLegend.svelte/ScoresLegend.svelte's own header comments) -- measured WITHOUT that
+// exclusion, phone briefly rose to 12 and cited a THIRD reason, `bgOverlap` (the legend's box
+// visually overlapping the centered bottom rail, both anchored at the same `bottom` offset), which
+// is why phone keeps the two-reason allow-list below rather than growing a third entry.
 const COLOR_CONTRAST_INCOMPLETE_CEILING: Record<string, number> = {
   phone: 10,
-  desktop: 16,
+  desktop: 15,
 };
 // `imgNode` joined `pseudoContent` in the same re-triage: axe reports it when the element's
 // background resolves to an IMAGE it cannot sample — here the map's WebGL canvas behind the glass

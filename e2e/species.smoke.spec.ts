@@ -295,3 +295,43 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
       .toContain("WORMS_137077");
   });
 });
+
+test.describe("atlas-4/5 defect fix: the topbar search field no longer overflows (the 'US only' switch)", () => {
+  test("the search field stays at its designed (closed) height, with no descendant overflowing it", async ({
+    page,
+  }) => {
+    await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
+    const field = page.locator('[data-control="search"]');
+    const fieldBox = (await field.boundingBox())!;
+    // the fault this pins: "Only species in US waters" used to be a static third row inside this
+    // fixed-height pill, which grew (and visually overflowed) the field on every load, whether or
+    // not the picker had ever been opened -- so this checks the CLOSED state, before any focus.
+    expect(fieldBox.height).toBeLessThanOrEqual(36); // shell.css's `.search-field { height: 32px }` + slack
+    const descendantBoxes = await field.locator("*").evaluateAll((els) =>
+      els.map((el) => {
+        const r = el.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, tag: el.tagName };
+      }),
+    );
+    for (const box of descendantBoxes) {
+      expect(box.top).toBeGreaterThanOrEqual(fieldBox.y - 0.5);
+      expect(box.bottom).toBeLessThanOrEqual(fieldBox.y + fieldBox.height + 0.5);
+    }
+  });
+
+  test("the 'US only' switch is reachable by keyboard from the field, inside the opened dropdown", async ({
+    page,
+  }) => {
+    await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
+    const input = page.locator(".picker-input");
+    await input.focus();
+    // the picker's taxa index loads asynchronously (fetched on first focus) -- wait for the
+    // dropdown to actually be open, same as e2e/species.smoke.spec.ts's other us-only test above.
+    await expect
+      .poll(() => page.locator(".picker-option").count(), { timeout: 10_000 })
+      .toBeGreaterThan(0);
+    await expect(page.locator(".us-only input[type='checkbox']")).toBeVisible();
+    await page.keyboard.press("Tab");
+    await expect(page.locator(".us-only input[type='checkbox']")).toBeFocused();
+  });
+});

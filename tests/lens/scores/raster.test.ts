@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { layerByKey } from "../../../src/lens/scores/boot";
+import { formatScoresLegendValue } from "../../../src/lens/scores/mapInputs";
 import {
   OUTSIDE_PRA_OVERLAY_ID,
   SCORE_RASTER_ID,
@@ -66,5 +67,27 @@ describe("rasterLegend", () => {
     const legend = rasterLegend(BOOT_V7, primprod, "viridis");
     expect(legend.unavailable).toBe(true);
     expect(legend.stops).toEqual([]);
+  });
+
+  // atlas-4 defect fix (the exact case the owner's screenshot motivated): a small-magnitude
+  // rescale where a naive `toLocaleString`/`toFixed` re-round loses the third significant digit.
+  // signif(0.0123456, 3) = 0.0123, signif(98.7654, 3) = 98.8 — this pins the END-TO-END label
+  // (rasterLegend's own rounding + the legend's formatValue), not just one half of it.
+  it("a small-magnitude rescale labels '0.0123' and '98.8' (never re-rounded by formatValue)", () => {
+    const layer = {
+      metric_key: "tiny",
+      category: "raw",
+      order: 1,
+      by_subregion: {
+        FULL: {
+          cog: "https://s3.example/tiny.tif",
+          rescale: [0.0123456, 98.7654] as [number, number],
+        },
+      },
+    };
+    const legend = rasterLegend(BOOT_V7, layer, "spectral_r");
+    expect(legend.unavailable).toBe(false);
+    expect(formatScoresLegendValue(legend.stops[0].value)).toBe("0.0123");
+    expect(formatScoresLegendValue(legend.stops.at(-1)!.value)).toBe("98.8");
   });
 });

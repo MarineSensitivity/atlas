@@ -1,3 +1,35 @@
+# atlas 0.10.12
+
+Three owner-reported UI defects, screenshots in hand: an overcrowded legend, a missing Scores
+legend, and an overcrowded species search field.
+
+- **Legend labels overcrowd fixed.** `Legend.svelte` used to print one label per palette stop (11
+  for a continuous ramp, e.g. "1.00 10.90 20.80 ... 100.00"). It now takes a `ticks` prop (default
+  2, spec.md's continuous-ramp rule: both ENDPOINTS, optionally a midpoint) and renders only that
+  many labels — the gradient itself still paints every stop. Species legend labels are integers
+  ("1"/"100", new `formatSpeciesLegendValue`); the scores legend's endpoints print the pre-rounded
+  `signif(rescale,3)`/`round(range,1)` values verbatim (new `formatScoresLegendValue` — a plain
+  stringify, never `toLocaleString`'s implicit 3-fraction-digit re-round, which turned
+  `signif(0.0123456,3) = 0.0123` into "0.012"). `tests/raster/ramps.test.ts`
+  (`legendTicks`), `tests/lens/species/mapInputs.test.ts`, `tests/lens/scores/{mapInputs,raster}.test.ts`.
+- **The Scores lens now has a floating legend.** It never had one at all outside the Layers panel
+  (and never for the zone-choropleth branch): `mapInputs.ts`'s `scoresMapInputs()` now also returns
+  a `legend` (raster branch: `signif(rescale,3)` endpoints; zone branch: `round(range,1)` endpoints,
+  11-bin swatches; plus `unavailable`/`empty` reasons), rendered by the new `ScoresLegend.svelte`
+  through the SAME floating "lens legend" region over the map the species lens already used
+  (Shell.svelte: one slot, keyed on `sel.lens`, both lazy). The in-panel copy in `LayersPanel.svelte`
+  is removed (spec.md: one legend on screen at a time). `e2e/scores.firstpaint.spec.ts` (floating
+  legend with title + 2 endpoints, both versions) and a new lens-switch test (scores legend swaps
+  out for species); `tests/lens/scores/{mapInputs,zoneFill}.test.ts`.
+- **The species search field no longer overflows.** "Only species in US waters" used to be a third
+  static row inside the topbar's fixed-height search pill, always rendered — moved into the
+  picker's own dropdown (`.picker-dropdown`, opens under the field on focus) as its header, the
+  first focusable element after the input, never part of the field's static box. Kept in the
+  picker rather than the Layers panel: it filters what the SEARCH shows, and stays reachable by Tab
+  from the field. Also fixed `.picker-input`'s own `height: 44px` override, which alone already
+  overflowed the 32 px pill. `e2e/species.smoke.spec.ts` (closed-state height/no-overflow, and
+  keyboard reachability from the field).
+
 # atlas 0.10.9
 
 `atlas-7` fix round 2 (Opus review of main@0ec0eb3): four static section narratives, D7b's own
