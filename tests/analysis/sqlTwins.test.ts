@@ -27,9 +27,13 @@ const SQL_DIR = new URL("../../sql/", import.meta.url);
 const ALL = readdirSync(SQL_DIR).filter((f) => f.endsWith(".sql"));
 // `smoke_count.sql` is the one file in here that is NOT a twin of anything: atlas-2 Step 3's Sonnet
 // half shipped it to prove placeholder substitution / lit() escaping end to end against a real
-// DuckDB-WASM connection. The `value` scan still covers it; the twin-header and placeholder-set
-// rules are about the ported queries and would be meaningless against a probe.
-const TWINS = ALL.filter((f) => f !== "smoke_count.sql");
+// DuckDB-WASM connection. `cell_value.sql` (atlas-4 fix round 3, the scores click popup) is the
+// second: it reads ONE column of the wide `cell` tile for a cell the release's grid already
+// resolved, which has no msens twin because the R app read that same value from a COG pixel
+// instead (`cog_point_value()`) -- the very thing plan D4 forbids here. The `value` scan still
+// covers both; the twin-header and placeholder-set rules are about the PORTED queries and would be
+// meaningless against a probe or a UI-only read with nothing in msens to cite.
+const TWINS = ALL.filter((f) => f !== "smoke_count.sql" && f !== "cell_value.sql");
 const FILES = ALL;
 const text = (f: string) => readFileSync(new URL(f, SQL_DIR), "utf8");
 

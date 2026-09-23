@@ -6,18 +6,22 @@
   // click -> selection wiring, the clicked cell's engine-backed flower, and the species/zones/
   // composition table. "places" and "report" still fall back to the shell's own placeholder text
   // — those tools belong to other phases.
+  import type { Popup } from "maplibre-gl";
   import type { MapHandle } from "../../lib/map/map";
   import { mapClick, type QueryableMap } from "../../lib/map/interaction";
+  import { createPopup } from "../../lib/map/popup";
   import type { Sel } from "../../lib/state/types";
   import type { SelStore } from "../../lib/state/sel.svelte";
   import type { ScoresMapInputs } from "./mapInputs";
   import { scoresMapInputs } from "./mapInputs";
   import { effectiveLyr, effectiveUnit } from "./fallback";
+  import { layerByKey, zoneRows } from "./boot";
   import { cellRing, formatCellToken, formatZoneToken, parseScoresSelection } from "./selection";
   import { gridFromBoot, tileOf } from "../../lib/grid/grid";
-  import { componentMetricKeys } from "../../lib/analysis/queries";
+  import { cellValue, componentMetricKeys } from "../../lib/analysis/queries";
   import { cellFlowerComponents, type CellComponentRow, type DedupResult } from "./flower";
   import { getAnalysisSources } from "./engine";
+  import { cellPopupText, zonePopupText } from "./popup";
   import LayersPanel from "./LayersPanel.svelte";
   import FlowerPanel from "./FlowerPanel.svelte";
   import TablePanel from "./TablePanel.svelte";
@@ -95,6 +99,57 @@
   // on the CURRENT branch — the cell branch always resolves to a cell (even one that also grazes a
   // zone outline), the zone-choropleth branch only reacts to an actual zone hit and otherwise does
   // nothing (matching the ported app's separate `map_click`/`map_feature_click` events).
+  //
+  // fix round 3: the click also shows the shared themed popup (map/popup.ts) — cell id, lon/lat
+  // (3 dp) and the displayed layer's value on a cell (atlas-4 subplan's Selection checklist), or
+  // "{name}: {round(value)}" on a zone (parity doc §6.4's tooltip rule, wired to a click here since
+  // this app has no hover). The cell's VALUE is a `cellValue()` read of the wide `cell` tile
+  // (plan D4) — never a raster pixel; `tests/lens/scores/no-readpixels.test.ts` is the source scan
+  // that holds that.
+  let mapLibrePopup: Popup | null = null;
+  let popupToken = 0;
+
+  function clearPopup(): void {
+    mapLibrePopup?.remove();
+    mapLibrePopup = null;
+  }
+
+  function showPopup(lngLat: { lng: number; lat: number }, html: string): void {
+    const handle = mapHandle;
+    clearPopup();
+    if (!handle) return;
+    mapLibrePopup = createPopup()
+      .setLngLat([lngLat.lng, lngLat.lat])
+      .setHTML(html)
+      .addTo(handle.map);
+  }
+
+  async function showCellPopup(
+    cellId: number,
+    lngLat: { lng: number; lat: number },
+    token: number,
+  ): Promise<void> {
+    const bootObj = boot as Record<string, unknown>;
+    let value: number | null = null;
+    try {
+      if (ver && lyr) {
+        const grid = gridFromBoot(bootObj);
+        const tile = tileOf(cellId, grid);
+        const sources = await getAnalysisSources(ver, bootObj);
+        await sources.cellTiles([tile]);
+        value = await cellValue(sources.db, sources.templates, { cellId, metricKey: lyr });
+      }
+    } catch {
+      value = null; // no engine / no tile for this cell (off-grid, unscored) — "no value", not a throw
+    }
+    if (token !== popupToken) return; // a later click superseded this one
+    const label = layerByKey(bootObj, lyr)?.label ?? lyr ?? "value";
+    showPopup(
+      lngLat,
+      cellPopupText({ cellId, lon: lngLat.lng, lat: lngLat.lat, layerLabel: label, value }),
+    );
+  }
+
   $effect(() => {
     const handle = mapHandle;
     if (!handle) return;
@@ -114,14 +169,28 @@
       // -shape cast, not a behaviour change.
       const queryable = handle.map as unknown as QueryableMap;
       const result = mapClick(queryable, e.lngLat, e.point, { grid, units: mapExtra.zones ?? [] });
+      const token = ++popupToken;
+      clearPopup(); // closes on the next click, whatever it resolves to
       if (unit === "cell") {
-        if (result.cellId !== null) selStore.set({ sel: formatCellToken(result.cellId) });
+        if (result.cellId !== null) {
+          selStore.set({ sel: formatCellToken(result.cellId) });
+          void showCellPopup(result.cellId, e.lngLat, token);
+        }
       } else if (result.zone) {
         selStore.set({ sel: formatZoneToken(result.zone.unit, result.zone.key) });
+        showPopup(e.lngLat, zonePopupText(zoneRows(boot, result.zone.unit), lyr, result.zone));
       }
     }
+    function onKeydown(e: KeyboardEvent) {
+      if (e.key === "Escape") clearPopup(); // "the popup closes on the next click or Esc"
+    }
     handle.map.on("click", onClick);
-    return () => handle.map.off("click", onClick);
+    document.addEventListener("keydown", onKeydown);
+    return () => {
+      handle.map.off("click", onClick);
+      document.removeEventListener("keydown", onKeydown);
+      clearPopup();
+    };
   });
 
   // --- a clicked cell's flower (step 2): the wide `cell` tile fetched through the engine

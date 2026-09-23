@@ -10,10 +10,11 @@
 // effect here refuses to run while it is true. So the very first taxon fetch this module ever makes
 // already carries the resolved `in`, not the URL's naive default.
 import { untrack } from "svelte";
-import { Popup } from "maplibre-gl";
+import type { Popup } from "maplibre-gl";
 import { gridFromBoot } from "../../lib/grid/grid";
 import type { MapHandle } from "../../lib/map/map";
 import type { CameraBoundsInput } from "../../lib/map/camera";
+import { createPopup } from "../../lib/map/popup";
 import { mapClick, type LngLat, type QueryableMap } from "../../lib/map/interaction";
 import { createTitilerValueSource, type ValueSource } from "../../lib/raster/point";
 import { paletteStopsFromBoot, type PaletteName } from "../../lib/raster/ramps";
@@ -391,7 +392,7 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
         const handle = deps.mapHandle();
         mapLibrePopup?.remove();
         mapLibrePopup = handle
-          ? new Popup({ closeButton: true, closeOnClick: true, maxWidth: "260px" })
+          ? createPopup()
               .setLngLat([lngLat.lng, lngLat.lat])
               .setHTML(popupHtml(content))
               .addTo(handle.map)
