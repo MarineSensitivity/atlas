@@ -159,11 +159,18 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     mapLibrePopup = null;
   }
 
-  function showPopup(lngLat: { lng: number; lat: number }, html: string, announceText: string): void {
+  function showPopup(
+    lngLat: { lng: number; lat: number },
+    html: string,
+    announceText: string,
+  ): void {
     const handle = deps.mapHandle();
     clearPopup();
     if (!handle) return;
-    mapLibrePopup = createPopup().setLngLat([lngLat.lng, lngLat.lat]).setHTML(html).addTo(handle.map);
+    mapLibrePopup = createPopup()
+      .setLngLat([lngLat.lng, lngLat.lat])
+      .setHTML(html)
+      .addTo(handle.map);
     announce(announceText);
   }
 

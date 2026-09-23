@@ -30,7 +30,16 @@ const BOOT = {
   ver: VER,
   built_at: "2026-09-23T00:00:00Z",
   id_field: "mdl_key",
-  grid: { nc: NC, nr: NC, xmin: -125, ymax: 42, resx: 0.05, resy: 0.05, lon360: false, tile: { size: TILE } },
+  grid: {
+    nc: NC,
+    nr: NC,
+    xmin: -125,
+    ymax: 42,
+    resx: 0.05,
+    resy: 0.05,
+    lon360: false,
+    tile: { size: TILE },
+  },
   layers: [{ metric_key: METRIC, category: "component" }],
   tables: {},
 };
