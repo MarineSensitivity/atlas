@@ -298,6 +298,35 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4397" },
   },
+  // M4 fix round 2 (orchestrator's own seeded fault): the FIRST report-map-no-score-color fault
+  // above proved the "places layer colours by score" branch can fail; it never proved the OPACITY
+  // itself can go to zero without the gate noticing -- because, before this fix, the gate's own
+  // "expected" blend was computed from `PLACE_CIRCLE_OPACITY` imported from the SAME file this
+  // patch edits. With opacity 0 the "expected" colour collapsed onto the pure background too (an
+  // invisible circle IS the background), so the pixel count passed trivially -- proven directly:
+  // this exact patch stayed GREEN against `e2e/report.spec.ts`'s "map image not blank" test before
+  // `e2e/report-hermetic.ts` was changed to blend against a fixed literal
+  // (`EXPECTED_PLACE_CIRCLE_OPACITY`) instead of that import. This patch (opacity 0.85 -> 0) must
+  // now turn the SAME gate red.
+  {
+    id: "report-map-circle-invisible",
+    patch: "tests/faults/report-map-circle-invisible.patch",
+    describe:
+      "PLACE_CIRCLE_OPACITY drops to 0 -- every place circle is fully transparent, painting " +
+      "nothing over the basemap (the fault the gate's OWN expectation used to derive from, " +
+      "replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.spec.ts",
+      "-g",
+      "map image not blank",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4386" },
+  },
 ];
 
 function run(cmd, args, cwd, env) {
