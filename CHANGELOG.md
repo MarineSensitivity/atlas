@@ -9,7 +9,7 @@ fix and the ArrowDown combobox fix this round found had no test.
   file long claimed "step 3" added these, and it never had. A new `analytics-privacy` job runs
   `npm run e2e:analytics-privacy` (the GA4 Enhanced Measurement history-event-leak gate). The
   `parity` job now runs v7 alongside v9 (`run.mjs` already defaulted to both; `tests/fixtures/
-  parity/v7/*.json` were already committed) and `node scripts/parity/faults.mjs`, the seeded-fault
+parity/v7/*.json` were already committed) and `node scripts/parity/faults.mjs`, the seeded-fault
   proof for the SQL-twins parity gate — `faults.mjs` gained a `--base <url>` flag (forwarded to
   every `run.mjs` invocation) so it can target the real bucket in CI instead of its previous
   laptop-only local mirror (`ensureMirror()`'s `.claude/worktrees/contract/...` /
