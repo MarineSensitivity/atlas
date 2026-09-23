@@ -332,6 +332,31 @@ const FAULTS = [
       /✘\s+\d+ \[chromium\] › e2e\/places\.concurrency\.spec\.ts/u,
     ],
   },
+  // 0.10.22's own defect, replayed: `styleQueue.ts` settled an issued style only on `"idle"` (or
+  // its 4 s fallback), which MapLibre withholds while any tile loads or the camera moves -- so the
+  // species raster's style, composed a few ms after the basemap-arrival recompose, was parked
+  // behind it for the whole species camera flight (the bimodal ~1 s first-paint regression in
+  // e2e/species.timing.spec.ts). This patch drops the in-flight style's own `"style.load"` settle
+  // and must turn the deterministic gate in e2e/species.smoke.spec.ts red (basemap tiles hung, so
+  // the map never goes idle: the raster can only be released by the 4 s fallback).
+  {
+    id: "style-settle-on-idle",
+    patch: "tests/faults/style-settle-on-idle.patch",
+    describe:
+      "an issued style settles only on idle/the 4 s fallback again, never on its own style.load " +
+      "-- the species raster is parked behind the basemap's setStyle (0.10.20's settle cycle, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/species.smoke.spec.ts",
+      "-g",
+      "before the basemap's 4 s fallback could release it",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4397" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

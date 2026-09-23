@@ -163,8 +163,9 @@ export function createMap(container: HTMLElement, opts: CreateMapOptions): MapHa
 
   return {
     map,
-    // see styleQueue.ts's own header for the "idle", not "style.load" bug this fixes, and
-    // tests/map/styleQueue.test.ts for its regression test.
+    // see styleQueue.ts's own header: a parked style waits for "idle" (never for the initial
+    // style's one-off "style.load"), while an ISSUED style settles on its own "style.load"
+    // (0.10.22); tests/map/styleQueue.test.ts holds the regression tests for both.
     applyStyle: applyQueuedStyle,
     setProjection(projection: Projection) {
       // deferred until a style exists: `setProjection` on a map whose first style has not loaded

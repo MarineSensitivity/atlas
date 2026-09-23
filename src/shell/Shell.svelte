@@ -439,7 +439,9 @@
   // landing at a network-timed moment used to expose a MapLibre-level mis-ordering, because
   // `map/styleQueue.ts` only queued while `!map.isStyleLoaded()` and the map's first, source-less
   // `blankStyle()` is trivially "loaded". That queue now holds "at most one `setStyle` in flight"
-  // unconditionally, so this extra recompose costs one settle cycle and nothing else.
+  // unconditionally; since 0.10.22 a flight ends on the issued style's own "style.load" (not
+  // "idle"), and a recompose identical to the last issued style -- the INACTIVE theme reporting
+  // in -- is not issued at all, so this costs nothing measurable (see styleQueue.ts's header).
   //
   // BOTH themes are warmed unconditionally, on mount -- not reactively per `resolvedTheme` change.
   // A theme TOGGLE therefore never itself kicks off a fetch: it reads state that is already there.

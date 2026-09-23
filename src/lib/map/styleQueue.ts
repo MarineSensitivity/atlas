@@ -36,14 +36,52 @@
 // therefore recompose as often as they like, from a promise or from a reactive effect, without
 // having to reason about MapLibre's internal timing — an extra recompose costs at most one more
 // cycle, never a mis-ordered pair of diffs.
+//
+// 0.10.22 — SETTLE ON THE STYLE'S OWN LOAD, NOT ON "idle". The 0.10.20 cycle was right to hold
+// "at most one `setStyle` in flight", but it ended the flight on `"idle"`, and MapLibre withholds
+// `"idle"` for as long as ANY tile of ANY source is loading or the camera is moving. That is not
+// "the style has been applied": it is "the whole map has finished drawing". Measured (instrumented
+// `e2e/species.timing.spec.ts`, 10 cold loads per tree): on a species deep link the shell recomposes
+// when CARTO's style.json lands, and the species raster's own style — composed 2-7 ms later, once
+// the taxon shard resolves — was PARKED behind it for the whole of the species camera flight
+// (+528..+750 ms after the shard in 9/10 loads, +1,899 ms in one), because `"idle"` cannot fire
+// while `flyTo` is animating. 0.10.19 issued the same style +2..+7 ms after the shard. Pushed past
+// one of the timing gate's `expect.poll` back-off steps, that delay is the ~1 s bimodal regression
+// (1.3-1.5 s -> 2.3-3.2 s median). Worse, the in-flight style in 9/10 of those loads was a NO-OP:
+// the INACTIVE theme's style.json reporting in recomposes an identical style, MapLibre's diff finds
+// nothing to change and fires no event at all — so only `"idle"` could ever end that cycle.
+//
+// So "in flight" now means exactly what MapLibre means by it:
+//  - an issued style SETTLES on its own `"style.load"`. MapLibre fires it at the end of a diff that
+//    changed something (synchronously, inside `setStyle`) and at the end of a from-scratch rebuild
+//    (asynchronously, once the rebuilt style has loaded). After it, the style is diffable again —
+//    tiles still loading are not a `setStyle` in flight. `"idle"` and the bounded fallback stay as
+//    the backstops for a style that never reports (a failed validation), exactly as before.
+//  - a style IDENTICAL to the one last handed to MapLibre is not issued at all (and supersedes
+//    anything parked): its diff is empty, it would fire nothing, and nothing needs applying.
+//  - "may this style be diffed against yet?" is a LATCH (the map's style has loaded once — seen via
+//    `"idle"`, a confirmed issue, or `isStyleLoaded()`), not a fresh `isStyleLoaded()` on every call:
+//    that one is false while any tile loads, and parking on it re-created the same wait.
+//  - the ONE part of a diff `"style.load"` does not cover is a changed `sprite`: MapLibre fetches it
+//    afterwards, and maplibre-gl 6.10's `Style#_loadSprite` does not abort an earlier fetch, so two
+//    sprite changes in flight at once land in whichever order the network answers (a double theme
+//    toggle could end on the wrong theme's icons). A style that changes the sprite AGAIN while the
+//    last change is still loading therefore waits for `"idle"`, exactly as 0.10.20 made every style
+//    wait. A style that keeps the sprite — the species raster behind the basemap's arrival — does not.
+// Every 0.10.20 guarantee holds: one `setStyle` in flight (a parked style still waits for the
+// in-flight one to be APPLIED), latest style wins, a stale listener (any cycle's `"idle"` OR
+// `"style.load"`) no-ops, the 4 s fallback still bounds a hung map, and 0.10.10's rule that a stale
+// queued style can never clobber a newer one is unchanged (`issue()` clears the queue and bumps the
+// cycle). `tests/map/styleQueue.test.ts` "0.10.22" cases are the regression gate.
 import type { StyleSpecification } from "./types";
 
 /** the narrow slice of MapLibre's `Map` this queue needs. `isStyleLoaded()`'s own real return type
  * is `boolean | void` (a MapLibre typing quirk) — matched here, not narrowed, so the real `Map`
- * satisfies this structurally without a cast at the call site. */
+ * satisfies this structurally without a cast at the call site. `"style.load"` is MapLibre's own
+ * "this style has been applied" event (0.10.22 — see the header). */
 export interface QueuedStyleTarget {
   isStyleLoaded(): boolean | void;
-  once(event: "idle", cb: () => void): unknown;
+  once(event: "idle" | "style.load", cb: () => void): unknown;
 }
 
 /** how long to wait for `"idle"` before applying a queued style anyway (fix round 3 #4). */
@@ -62,15 +100,19 @@ export interface CreateStyleApplierOptions {
 /**
  * Build the `applyStyle` function `map.ts`'s `MapHandle` exposes.
  *
- * One rule: **at most one `setStyle` in flight**. A call that arrives while nothing is settling and
- * the style is loaded is applied immediately; any other call parks the LATEST style (an older
- * parked one is simply overwritten — the caller only ever wants "what should be on screen now") and
- * it is issued when the current cycle settles, on `"idle"` or after `fallbackMs`, whichever comes
- * first.
+ * One rule: **at most one `setStyle` in flight**. A call that arrives while nothing is in flight
+ * and the map's style can take a diff is issued immediately; any other call parks the LATEST style
+ * (an older parked one is simply overwritten — the caller only ever wants "what should be on screen
+ * now"). The in-flight style settles on its own `"style.load"` (0.10.22), or on `"idle"`, or after
+ * `fallbackMs`, whichever comes first — and then the parked style, if any, is issued.
+ *
+ * A style identical to the one last issued is never re-issued (0.10.22): MapLibre's diff would be
+ * empty and would report nothing, which used to hold the queue until the map next went idle.
  *
  * Every armed listener/timer carries the cycle it belongs to, so a stale one — MapLibre's `once`
- * has no cancel this narrow interface exposes, and a `once("idle")` registered for a superseded
- * cycle still fires — compares unequal and is a no-op rather than an early, out-of-turn flush.
+ * has no cancel this narrow interface exposes, and a `once("idle")`/`once("style.load")` registered
+ * for a superseded cycle still fires — compares unequal and is a no-op rather than an early,
+ * out-of-turn flush.
  */
 export function createStyleApplier(
   map: QueuedStyleTarget,
@@ -81,9 +123,19 @@ export function createStyleApplier(
   const setTimer = opts.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
   const clearTimer = opts.clearTimer ?? ((h) => clearTimeout(h));
 
-  let queued: StyleSpecification | undefined;
-  /** true between issuing a `setStyle` and that style settling — the "in flight" flag. */
+  let queued: { style: StyleSpecification; key: string } | undefined;
+  /** true between issuing a `setStyle` and MapLibre confirming it — the "in flight" flag. */
   let settling = false;
+  /** latched once the map's style is known to have loaded: from then on a diff is valid even while
+   * tiles load (MapLibre's own precondition is the style's JSON, not its tiles). */
+  let diffable = false;
+  /** the serialized form of the style last handed to `apply` — the no-op check. */
+  let lastIssued: string | undefined;
+  /** the last issued style's `sprite` (serialized; `""` for none — the blank first style has none),
+   * and whether a CHANGE to it may still be loading (only `"idle"`/the fallback clear this: the
+   * style's own `"style.load"` fires before its sprite has arrived). */
+  let lastSprite = "";
+  let spriteLoading = false;
   /** bumped on every state change, so listeners/timers armed for an older cycle no-op. */
   let cycle = 0;
   /** the cycle a listener + timer are currently armed for, or `-1` when nothing is armed. */
@@ -97,47 +149,84 @@ export function createStyleApplier(
     }
   }
 
+  /** wait for the current cycle to settle: `"idle"` (which implies a loaded style) or the bounded
+   * fallback. An ISSUED style also listens for its own `"style.load"` — see `issue()`. */
   function arm(): void {
     if (armedCycle === cycle) return; // already waiting on this cycle
     armedCycle = cycle;
     const armedFor = cycle;
     map.once("idle", () => {
-      if (armedFor === cycle) settle();
+      if (armedFor === cycle) settle("idle");
     });
     fallbackHandle = setTimer(() => {
-      if (armedFor === cycle) settle();
+      if (armedFor === cycle) settle("fallback");
     }, fallbackMs);
   }
 
-  /** the in-flight style (or the not-yet-loaded initial one) has settled: issue whatever is parked. */
-  function settle(): void {
+  /** the in-flight style (or the not-yet-loaded initial one) has settled: offer whatever is parked.
+   * `"idle"` and `"style.load"` prove the map's style is loaded; only `"idle"` proves its sprite is
+   * too; the fallback proves nothing and only bounds the wait, so it issues the parked style
+   * regardless (a hung map must never block a lens forever — fix round 3 #4). */
+  function settle(by: "idle" | "style.load" | "fallback"): void {
     cycle += 1;
     armedCycle = -1;
     clearFallback();
     settling = false;
+    if (by !== "fallback") diffable = true;
+    if (by !== "style.load") spriteLoading = false;
     const next = queued;
     queued = undefined;
-    if (next) issue(next);
+    if (!next) return;
+    if (by === "fallback") issue(next.style, next.key);
+    else offer(next.style, next.key); // may still wait: a second sprite change needs "idle"
   }
 
   /** the ONE place `apply` is called: starts a fresh cycle, so anything armed for the previous one
    * (including a listener this interface cannot unregister) can no longer cut it short. */
-  function issue(style: StyleSpecification): void {
+  function issue(style: StyleSpecification, key: string): void {
     cycle += 1;
     armedCycle = -1;
     clearFallback();
     queued = undefined;
     settling = true;
+    lastIssued = key;
+    const sprite = spriteKey(style);
+    if (sprite !== lastSprite) spriteLoading = sprite !== "";
+    lastSprite = sprite;
+    const issuedFor = cycle;
+    // registered BEFORE `apply`: a diff that changes anything fires it synchronously, inside
+    // `setStyle`, so this is usually settled by the time `apply` returns.
+    map.once("style.load", () => {
+      if (issuedFor === cycle) settle("style.load");
+    });
     apply(style);
-    arm();
+    if (issuedFor === cycle) arm(); // not confirmed yet (a rebuild, or a style MapLibre rejected)
   }
 
-  return function applyQueued(style: StyleSpecification): void {
-    if (settling || !map.isStyleLoaded()) {
-      queued = style;
+  function spriteKey(style: StyleSpecification): string {
+    return style.sprite === undefined ? "" : JSON.stringify(style.sprite);
+  }
+
+  /** issue `style` now if nothing forbids it, else park it (the latest parked style wins). */
+  function offer(style: StyleSpecification, key: string): void {
+    if (!diffable && map.isStyleLoaded()) diffable = true;
+    if (spriteLoading && map.isStyleLoaded()) spriteLoading = false;
+    if (settling || !diffable || (spriteLoading && spriteKey(style) !== lastSprite)) {
+      queued = { style, key };
       arm();
       return;
     }
-    issue(style);
+    issue(style, key);
+  }
+
+  return function applyQueued(style: StyleSpecification): void {
+    const key = JSON.stringify(style);
+    if (key === lastIssued) {
+      // already what MapLibre has (or is applying): nothing to issue, and anything parked is
+      // older than this call, so it is superseded — the latest request wins, as always.
+      queued = undefined;
+      return;
+    }
+    offer(style, key);
   };
 }

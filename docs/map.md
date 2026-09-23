@@ -93,20 +93,28 @@ one absent `before_id` cascaded into "a map with nothing but labels" cannot happ
   a zone label OR the basemap's own place/road labels need them (CARTO's real style always carries
   symbol layers; the minimal test fixture may not). `tests/map/no-raster-basemap.test.ts` is the
   source-scan gate that the old raster literals (`dark_all`/`light_all`) never come back.
-  - **`composeStyle()` never awaits the fetch, and nothing forces an extra recompose the moment it
-    resolves either** — both were tried and both measurably broke a real e2e regression test
-    (`Shell.svelte`'s own header comment above its basemap-warming `onMount` has the full story):
-    an EXTRA `setStyle(diff:true)` call whose timing is driven by a promise resolving via the
-    browser's real network/route stack, landing at an unpredictable moment inside another
-    critical window (two rapid species switches; a theme toggle), is what exposed a real
-    MapLibre-level mis-ordering — not a bug in the caller, and not something
-    `map/styleQueue.ts`'s "queue while `!isStyleLoaded()`" guards against (the map's first,
-    source-less `blankStyle()` is trivially "loaded"). The fix: `Shell.svelte` (and
-    `reportMap.ts#buildReportMapStyle`, a one-shot sequential flow with no such race) call
-    `loadBasemapStyle()` themselves, ahead of time, fire-and-forget, and rely on the next
-    _unrelated_ reactive change (zones/raster/selection all change within the first second of any
-    real load) to pick up the by-then-warm cache — the call PATTERN into MapLibre never changes
-    shape from before this fix existed.
+  - **`composeStyle()` never awaits the fetch; the resolved style is an ordinary reactive input.**
+    `layers/basemap.ts#warmBasemapStyles()` warms both themes on mount and reports each one;
+    `Shell.svelte` holds them in `$state` and passes the active theme's to `composeStyle()`
+    (0.10.20 — between 0.10.11 and 0.10.19 nothing recomposed when the fetch resolved, and a
+    style.json landing after the last reactive change meant the basemap NEVER painted). What made
+    that extra recompose safe is `map/styleQueue.ts`: **at most one `setStyle` in flight**.
+  - **"In flight" ends on the issued style's own `"style.load"`, not on `"idle"` (0.10.22).**
+    MapLibre fires `"style.load"` at the end of a diff that changed something (synchronously, inside
+    `setStyle`) and when a from-scratch rebuild has loaded; `"idle"` waits for every tile of every
+    source AND for the camera to stop. Settling on `"idle"` parked the species raster's style behind
+    the basemap-arrival recompose for the whole species camera flight — the bimodal ~1 s regression
+    in `e2e/species.timing.spec.ts` (0.10.19 1.3–1.5 s median; 0.10.20/0.10.21 up to 3.2 s). Two
+    more rules came with it: a style identical to the one last issued is not issued at all (the
+    INACTIVE theme's style.json reporting in recomposes an identical style, whose empty diff fires
+    no event), and "may this style be diffed yet?" is a latch set once the map's style has loaded,
+    not `isStyleLoaded()` (false while any tile loads). A changed `sprite` is the one part of a
+    diff `"style.load"` does not cover (MapLibre fetches it afterwards and never aborts an earlier
+    fetch), so a style that changes the sprite AGAIN while the last change loads still waits for
+    `"idle"`. `"idle"` and the 4 s fallback remain the backstops. Gates:
+    `tests/map/styleQueue.test.ts` ("0.10.22") and `e2e/species.smoke.spec.ts` (basemap tiles hung
+    so the map can never go idle: the raster must reach the style before the basemap's 4 s
+    fallback could release it); seeded fault `tests/faults/style-settle-on-idle.patch`.
 - **Numbers never come from the tile server** (plan D4). `titiler.ts` builds _display_ tiles;
   scores, cell ids and zonal statistics come from Parquet. `tileUrlLeaksStudyArea()` is the gate that
   a study-area key never reaches a URL — the study area is a camera, not a filter.

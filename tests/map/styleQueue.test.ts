@@ -290,3 +290,242 @@ describe("createStyleApplier — hung tile fallback", () => {
     expect(applied).toEqual([STYLE_A, STYLE_B]);
   });
 });
+
+/**
+ * A fake that models what 0.10.22 depends on in real MapLibre (`Map#setStyle(style, {diff:true})`,
+ * maplibre-gl 6.10 `Style#setState`): a diff that CHANGES something fires `"style.load"`
+ * SYNCHRONOUSLY, inside `setStyle`, once the operations have been applied; an EMPTY diff returns
+ * early and fires nothing; and a style with sources leaves `isStyleLoaded()` false for as long as
+ * its tiles load — during which (like a camera flight) `"idle"` does not fire until the test says
+ * so. The test decides when `"idle"` fires; the fake never emits it on its own.
+ */
+const SPRITE_PAPER = "https://example.test/positron/sprite";
+const SPRITE_NAVY = "https://example.test/dark-matter/sprite";
+
+class DiffingFakeMap implements QueuedStyleTarget {
+  private listeners = new Map<string, Array<() => void>>();
+  /** what MapLibre currently holds, serialized — an equal style is an empty diff. */
+  private current = "";
+  /** false while the last applied style's tiles are "loading". */
+  tilesLoaded = true;
+  /** every `setStyle` MapLibre actually received, in order. */
+  readonly setStyleCalls: StyleSpecification[] = [];
+
+  isStyleLoaded(): boolean {
+    return this.tilesLoaded;
+  }
+
+  once(event: string, cb: () => void): void {
+    const list = this.listeners.get(event) ?? [];
+    list.push(cb);
+    this.listeners.set(event, list);
+  }
+
+  emit(event: string): void {
+    const list = this.listeners.get(event) ?? [];
+    this.listeners.set(event, []);
+    for (const cb of list) cb();
+  }
+
+  /** the `apply` the queue is built with: `setStyle(style, {diff: true})`. */
+  setStyle = (style: StyleSpecification): void => {
+    this.setStyleCalls.push(style);
+    const next = JSON.stringify(style);
+    if (next === this.current) return; // empty diff: `setState` returns false, no event
+    this.current = next;
+    this.tilesLoaded = false; // the new sources' tiles are now in flight
+    this.emit("style.load"); // `setState` fires MapStyleLoadEvent at the end of a real diff
+  };
+}
+
+/** a style with one raster source per id, standing in for "the basemap" / "the species raster". */
+function styleWith(...ids: string[]): StyleSpecification {
+  return {
+    version: 8,
+    ...(ids.includes("basemap") ? { sprite: SPRITE_PAPER } : {}),
+    sources: Object.fromEntries(
+      ids.map((id) => [id, { type: "raster", tiles: [`https://x/${id}/{z}/{x}/{y}.png`] }]),
+    ),
+    layers: ids.map((id) => ({ id, type: "raster", source: id })),
+  } as unknown as StyleSpecification;
+}
+
+// 0.10.22 — the species first-paint regression (1.3-1.5 s median on 0.10.19 -> a bimodal
+// 1.4-3.2 s on 0.10.20/0.10.21). Instrumented: the basemap-arrival recompose was issued, and the
+// species raster style composed 2-7 ms later was PARKED until the map next went `"idle"` — which
+// MapLibre withholds for the whole species camera flight and while any tile loads (+528..+1,899 ms
+// after the shard). These fixtures never emit `"idle"` during the window that matters, and use fake
+// timers so the 4 s fallback cannot be what rescues them: under 0.10.20's queue every one is red.
+describe("createStyleApplier — 0.10.22: a style settles on its own style.load, not on idle", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("REGRESSION: a style parked behind an in-flight one is issued on that style's style.load — no idle, no fallback", () => {
+    vi.useFakeTimers();
+    const map = new DiffingFakeMap();
+    const applied: StyleSpecification[] = [];
+    // a "rebuild" first: this apply does NOT report synchronously, so the next call must park
+    let deferLoad = true;
+    const applyQueued = createStyleApplier(map, (s) => {
+      applied.push(s);
+      if (deferLoad) return; // a from-scratch rebuild: style.load comes later, asynchronously
+      map.setStyle(s);
+    });
+    const basemap = styleWith("basemap");
+    const raster = styleWith("basemap", "species-raster");
+
+    applyQueued(basemap); // issued: the map's blank style is loaded
+    expect(applied).toEqual([basemap]);
+    applyQueued(raster); // the basemap style has not reported yet -> parked (one in flight)
+    expect(applied).toEqual([basemap]);
+
+    deferLoad = false;
+    map.emit("style.load"); // the basemap style is APPLIED — tiles still loading, no idle
+    expect(applied).toEqual([basemap, raster]);
+    vi.advanceTimersByTime(0);
+    expect(applied).toEqual([basemap, raster]); // and not via a timer either
+  });
+
+  it("REGRESSION: a style arriving while the previous one's TILES load (camera moving, no idle) is issued at once", () => {
+    vi.useFakeTimers();
+    const map = new DiffingFakeMap();
+    const applyQueued = createStyleApplier(map, map.setStyle);
+    const basemap = styleWith("basemap");
+    const raster = styleWith("basemap", "species-raster");
+
+    applyQueued(basemap); // the basemap-arrival recompose: a real diff, reports synchronously
+    expect(map.isStyleLoaded()).toBe(false); // its tiles are loading, and "idle" never comes here
+    applyQueued(raster); // the shard's recompose, 2-7 ms later in the measured timeline
+    expect(map.setStyleCalls).toEqual([basemap, raster]);
+    vi.advanceTimersByTime(DEFAULT_STYLE_FALLBACK_MS * 2);
+    expect(map.setStyleCalls).toEqual([basemap, raster]); // exactly two setStyle calls, ever
+  });
+
+  it("REGRESSION: an identical recompose (the INACTIVE theme's style.json reporting in) is not issued and opens no cycle", () => {
+    vi.useFakeTimers();
+    const map = new DiffingFakeMap();
+    const applyQueued = createStyleApplier(map, map.setStyle);
+    const basemap = styleWith("basemap");
+    const raster = styleWith("basemap", "species-raster");
+
+    applyQueued(basemap);
+    // a NEW object with identical content: MapLibre's diff would be empty and fire nothing, so if
+    // it were issued, only "idle" could end its cycle — 9 of the 10 measured slow loads.
+    applyQueued(styleWith("basemap"));
+    expect(map.setStyleCalls).toEqual([basemap]);
+    applyQueued(raster);
+    expect(map.setStyleCalls).toEqual([basemap, raster]);
+  });
+
+  it("an identical recompose while a newer style is parked supersedes it — the latest request wins", () => {
+    const map = new MutableFakeMap(); // never reports style.load: everything stays in flight
+    map.loaded = true;
+    const applied: StyleSpecification[] = [];
+    const applyQueued = createStyleApplier(map, (s) => applied.push(s));
+
+    applyQueued(STYLE_A); // in flight
+    applyQueued(STYLE_B); // parked
+    applyQueued({ ...STYLE_A }); // "back to exactly what is in flight"
+    map.emit("idle");
+    expect(applied).toEqual([STYLE_A]); // STYLE_B was superseded, never issued
+  });
+
+  it("still at most one setStyle in flight: a style that does not report keeps later ones parked until it does", () => {
+    const map = new DiffingFakeMap();
+    const applied: StyleSpecification[] = [];
+    const applyQueued = createStyleApplier(map, (s) => applied.push(s)); // never reports
+    applyQueued(STYLE_A);
+    applyQueued(STYLE_B);
+    applyQueued(styleWith("c"));
+    expect(applied).toEqual([STYLE_A]);
+    map.emit("style.load"); // STYLE_A reports -> the LATEST parked style is issued, once
+    expect(applied).toEqual([STYLE_A, styleWith("c")]);
+  });
+
+  it("before the map's first style has loaded, a style still waits (the latch starts closed)", () => {
+    const map = new MutableFakeMap(); // isStyleLoaded() false: the blank initial style is loading
+    const applied: StyleSpecification[] = [];
+    const applyQueued = createStyleApplier(map, (s) => applied.push(s));
+    applyQueued(STYLE_A);
+    expect(applied).toEqual([]);
+    map.emit("idle");
+    expect(applied).toEqual([STYLE_A]);
+  });
+
+  it("a stale style.load (a superseded cycle's) cannot settle the current one early", () => {
+    const map = new MutableFakeMap();
+    map.loaded = true;
+    const applied: StyleSpecification[] = [];
+    const applyQueued = createStyleApplier(map, (s) => applied.push(s)); // never reports itself
+    applyQueued(STYLE_A); // cycle for A armed: style.load + idle
+    map.emit("idle"); // A settles by idle; A's once("style.load") is still registered (stale)
+    applyQueued(STYLE_B); // issued: B is in flight, with its own style.load listener
+    const c = styleWith("c");
+    applyQueued(c); // parked behind B
+    // ONE style.load fires both A's stale listener and B's live one: exactly one flush
+    map.emit("style.load");
+    expect(applied).toEqual([STYLE_A, STYLE_B, c]);
+    // ...and c is now the one in flight: had the stale listener been allowed to settle a cycle
+    // too, the queue would believe nothing is in flight and issue d beside c
+    const d = styleWith("d");
+    applyQueued(d);
+    expect(applied).toEqual([STYLE_A, STYLE_B, c]);
+    map.emit("style.load"); // c reports -> d, once
+    expect(applied).toEqual([STYLE_A, STYLE_B, c, d]);
+  });
+
+  it("a style that changes the SPRITE again while the last sprite change is loading waits for idle", () => {
+    // `"style.load"` fires before MapLibre has fetched a new sprite, and maplibre-gl 6.10's
+    // `_loadSprite` does not abort an earlier fetch: two sprite changes in flight land in network
+    // order, not issue order. So a double theme toggle keeps 0.10.20's wait for "idle".
+    vi.useFakeTimers();
+    const map = new DiffingFakeMap();
+    const applyQueued = createStyleApplier(map, map.setStyle);
+    const paper = styleWith("basemap"); // sprite: positron
+    const navy = { ...styleWith("basemap"), sprite: SPRITE_NAVY } as StyleSpecification;
+
+    applyQueued(paper); // the basemap arrives: a sprite change, confirmed by style.load
+    applyQueued(navy); // a theme toggle before paper's sprite has loaded
+    expect(map.setStyleCalls).toEqual([paper]); // parked: one sprite fetch in flight
+    applyQueued(styleWith("basemap", "species-raster")); // ...a raster on the SAME sprite would go,
+    // but it is now the latest request, so it simply replaces the parked toggle
+    expect(map.setStyleCalls).toEqual([paper, styleWith("basemap", "species-raster")]);
+
+    applyQueued(navy); // toggle again, still before any idle
+    expect(map.setStyleCalls).toHaveLength(2);
+    map.emit("idle"); // paper's sprite (and everything else) has loaded
+    expect(map.setStyleCalls).toEqual([paper, styleWith("basemap", "species-raster"), navy]);
+  });
+
+  it("a sprite change goes at once when the map already reports the last one loaded", () => {
+    const map = new DiffingFakeMap();
+    const applyQueued = createStyleApplier(map, map.setStyle);
+    const paper = styleWith("basemap");
+    const navy = { ...styleWith("basemap"), sprite: SPRITE_NAVY } as StyleSpecification;
+    applyQueued(paper);
+    map.tilesLoaded = true; // everything, sprite included, has loaded (no idle listener needed)
+    applyQueued(navy);
+    expect(map.setStyleCalls).toEqual([paper, navy]);
+  });
+
+  it("a second sprite change parked behind an unconfirmed style still waits for idle once that style reports", () => {
+    const map = new DiffingFakeMap();
+    let deferLoad = true;
+    const applied: StyleSpecification[] = [];
+    const applyQueued = createStyleApplier(map, (s) => {
+      applied.push(s);
+      if (deferLoad)
+        map.tilesLoaded = false; // a rebuilt style is not loaded until it reports
+      else map.setStyle(s);
+    });
+    const paper = styleWith("basemap");
+    const navy = { ...styleWith("basemap"), sprite: SPRITE_NAVY } as StyleSpecification;
+
+    applyQueued(paper); // a rebuild: unconfirmed, and it changes the sprite
+    applyQueued(navy); // parked: paper is in flight
+    deferLoad = false;
+    map.emit("style.load"); // paper is applied -- but its sprite is still being fetched
+    expect(applied).toEqual([paper]);
+    map.emit("idle");
+    expect(applied).toEqual([paper, navy]);
+  });
+});
