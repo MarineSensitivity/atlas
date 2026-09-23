@@ -164,18 +164,20 @@ test.describe("map module, first paint with **/*.wasm blocked", () => {
 
     // atlas-8 fix round 1 (root cause, instrumented with page.on("response")/a monkey-patched
     // applyStyle, not guessed): Shell.svelte's own `$effect` re-applies ITS composed style
-    // (`raster: lensMapExtra.raster ?? null`) whenever `lensMapExtra` changes -- and
-    // ScoresLens.svelte, lazy-loaded (`import("../lens/scores/...")`) and mounted by DEFAULT
-    // (lens="scores", activeTool="layers" are both defaults), runs its OWN `$effect` exactly once
-    // on mount: `mapExtra = scoresMapInputs({...})`. That whole-object reassignment (via
-    // `bind:mapExtra`) is what re-triggers Shell's effect and wipes out ANY raster this test
-    // injects before that lazy chunk finishes fetching+parsing+mounting -- a race this repo's own
+    // (`raster: scoresLens?.mapExtra.raster ?? null`) whenever `scoresLens` changes -- and
+    // `../lens/scores/state.svelte`, lazy-loaded (`import("../lens/scores/state.svelte")`) and
+    // instantiated by DEFAULT (lens="scores" is the default), flips `scoresLens` from `null` to
+    // the real store exactly once, the moment that chunk resolves (0.10.21 fix 1: this used to be
+    // `ScoresLens.svelte`'s own `$effect`/`bind:mapExtra` -- the PANEL component, before the
+    // map-input store moved to a lens-level module the panel being mounted has no bearing on).
+    // That state flip is what re-triggers Shell's effect and wipes out ANY raster this test
+    // injects before that lazy chunk finishes fetching+parsing+running -- a race this repo's own
     // module-loading timing usually won on Chromium and reproducibly lost on WebKit/Firefox
     // (measured: "no tile manager with ID 'r_lyr'" once the layer was removed out from under an
     // in-flight tile). `map.loaded()` and even "boot's zones arrived" say nothing about whether
-    // that lazy mount has ALSO finished, so the fix is not a longer wait for a single event but a
+    // that lazy store has ALSO resolved, so the fix is not a longer wait for a single event but a
     // self-healing one: (re-)inject the raster as part of EVERY poll iteration, not once before
-    // it, so the injection that survives is always the LAST one relative to the lens's mount,
+    // it, so the injection that survives is always the LAST one relative to the store's resolve,
     // whichever engine's module-loading timing wins that race.
     const injectRaster = (cog: string) =>
       page.evaluate((cogUrl) => {

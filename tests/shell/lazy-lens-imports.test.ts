@@ -59,6 +59,12 @@ describe("Shell.svelte never statically imports a lens/places .svelte panel comp
       "../lens/scores/ScoresLens.svelte",
       "../lens/scores/VersionPickerModal.svelte",
       "../lens/scores/WelcomeModal.svelte",
+      // 0.10.21 fix 1: the scores lens' MAP-INPUT store (`.svelte.ts`, not an SFC -- see
+      // `isLensOrPlacesSvelteImport`'s own comment) is dynamic here TOO, unlike species'
+      // `state.svelte` below. It must exist whenever `sel.lens === "scores"` regardless of
+      // whether `ScoresLens.svelte` (the panel body) has ever mounted -- that gap (map inputs
+      // living only where a possibly-collapsed panel could compute them) was the 0.10.17 bug.
+      "../lens/scores/state.svelte",
       "../lens/species/SpeciesLens.svelte",
       "../lens/species/SpeciesPicker.svelte",
       "../lens/species/SpeciesLegend.svelte",
@@ -77,10 +83,35 @@ describe("Shell.svelte never statically imports a lens/places .svelte panel comp
     expect(statics).toContain("../places/placesMap.svelte");
   });
 
+  // 0.10.21 fix 1: `isLensOrPlacesSvelteImport`'s own disambiguation (a `*.svelte.ts` module is
+  // NEVER flagged, on purpose, so species'/places' data layers above can stay static) means a
+  // static import of the SCORES lens' `.svelte.ts` data layer would slip past the "no static
+  // import of a .svelte panel component" test silently -- extending the scan here, in the source
+  // (not only in Shell.svelte's own comment), states the rule this repo actually wants: unlike
+  // species, the scores lens' map-input store is heavy enough (pulls `mapInputs.ts`/`boot.ts`/
+  // `raster.ts`/`zoneFill.ts` -- `state.svelte.ts`'s own header) that it must be gated OUT of a
+  // species-only session's bundle exactly like a `.svelte` panel component would be.
+  it("0.10.21: unlike species, the scores lens' data-layer module stays OUT of the statics", () => {
+    const statics = staticImportsOf(SHELL_SVELTE);
+    expect(statics).not.toContain("../lens/scores/state.svelte");
+  });
+
   it("SEEDED FAULT: the same scan flags a reintroduced static import of ScoresLens.svelte", () => {
     const seeded =
       'import ScoresLens from "../lens/scores/ScoresLens.svelte";\nexport const x = ScoresLens;\n';
     const statics = staticImportsOf(seeded).filter(isLensOrPlacesSvelteImport);
     expect(statics).toContain("../lens/scores/ScoresLens.svelte");
+  });
+
+  // 0.10.21: the SAME seeded-fault technique, for the `.svelte.ts` case the test just above polices
+  // -- a reintroduced static import of the scores data layer must show up in the raw statics list
+  // (not filtered through `isLensOrPlacesSvelteImport`, which would wrongly clear it, per that
+  // function's own comment).
+  it("SEEDED FAULT: the same scan flags a reintroduced static import of scores/state.svelte", () => {
+    const seeded =
+      'import { createScoresLens } from "../lens/scores/state.svelte";\n' +
+      "export const x = createScoresLens;\n";
+    const statics = staticImportsOf(seeded);
+    expect(statics).toContain("../lens/scores/state.svelte");
   });
 });

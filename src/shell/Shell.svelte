@@ -57,6 +57,14 @@
   // it") -- it never imports a `.svelte` file itself, so it stays a static import even though every
   // lens PANEL component below is now lazy (see "lazy lens/panel chunks" below).
   import { createSpeciesLens } from "../lens/species/state.svelte";
+  // 0.10.21 fix 1 -- type-only (erased at build time, never pulls the scores lens' runtime module
+  // into the static bundle): the scores lens' equivalent of `createSpeciesLens` above, EXCEPT the
+  // runtime module is loaded dynamically, keyed on `sel.lens === "scores"` (see "lazy lens/panel
+  // chunks" below) -- unlike species' `state.svelte.ts`, it pulls in `mapInputs.ts`/`boot.ts`/
+  // `raster.ts`/`zoneFill.ts` (`state.svelte.ts`'s own header explains why that weight must stay
+  // out of a species-only session's bundle). `tests/shell/lazy-lens-imports.test.ts` asserts this
+  // file never imports the RUNTIME module statically.
+  import type { ScoresLens as ScoresLensState } from "../lens/scores/state.svelte";
   // atlas-6 step 1: the Places panel mounts here (the shell's one reserved panel slot); it never
   // touches MapLibre directly -- `placesMap` is the reactive bridge this file's own composeStyle
   // effect (below) folds into the ONE `selection` input, per docs/map.md. `placesMap.svelte.ts` is
@@ -64,15 +72,7 @@
   // same reason `state.svelte.ts` does above: `placesSelection` (below) reads it unconditionally,
   // even when the Places PANEL itself (`../places/Places.svelte`, lazy) has never been opened.
   import { createPlacesMapStore } from "../places/placesMap.svelte";
-  import type {
-    RasterLayerSpec,
-    ResolvedTheme,
-    SelectionSpec,
-    ZoneUnitSpec,
-  } from "../lib/map/types";
-  // type-only: erased at build time (never pulls the scores lens' runtime module into the static
-  // bundle -- the SAME reason RasterLayerSpec/SelectionSpec/ZoneUnitSpec above are type-only).
-  import type { ScoresLegend as ScoresLegendType } from "../lens/scores/mapInputs";
+  import type { ResolvedTheme, ZoneUnitSpec } from "../lib/map/types";
 
   const selStore = createSelStore(location);
   const sel = selStore.sel;
@@ -302,32 +302,35 @@
         : `${sel.lens === "species" ? "Species" : "Scores"} · MarineSensitivity Atlas`;
   });
 
-  // atlas-4: the ACTIVE lens' own composeStyle contribution (raster, overlays, zone fills/
-  // highlights, selection). A lens computes it and hands it back through this one bucket -- the
-  // shell still owns the ONE `applyStyle` call (below), so a lens never touches MapLibre itself
-  // (docs/map.md). `zones` here REPLACES the shell's outline-only `zoneUnits` when a lens supplies
-  // its own (choropleth fills/highlights included); `undefined` on any field falls back to "the
-  // shell's own base view" so a lens that has not loaded yet (or a species view, which does not
-  // use this bucket the same way) never blanks the map.
-  let lensMapExtra = $state<{
-    zones?: ZoneUnitSpec[];
-    raster?: RasterLayerSpec | null;
-    overlays?: RasterLayerSpec[];
-    selection?: SelectionSpec | null;
-    // atlas-4 defect fix: the scores lens' floating-legend contribution -- rendered through the
-    // SAME "lens legend" region species' `speciesLens.mapInputs.legend` already uses below (one
-    // slot, keyed on `sel.lens`), never inside LayersPanel.svelte any more.
-    legend?: ScoresLegendType;
-  }>({});
+  // 0.10.21 fix 1 -- the scores lens' own composeStyle contribution (raster, overlays, zone
+  // fills/highlights, selection, the floating legend), now a lens-level store
+  // (`../lens/scores/state.svelte`'s `createScoresLens()`) the shell instantiates whenever
+  // `sel.lens === "scores"` -- NOT a `bind:mapExtra` prop `ScoresLens.svelte` (the PANEL body)
+  // used to own. `Panel.svelte` renders its children only while `!geometry.collapsed`
+  // (`src/lib/ui/Panel.svelte`), so a collapsed desktop panel used to mean `ScoresLens.svelte`
+  // never mounted at all -- `mapExtra` stayed `{}` forever and the score raster (and its floating
+  // legend) never painted, even though the map itself was fully visible (the owner's live 0.10.17
+  // report; `e2e/scores.collapsed-panel.spec.ts` is the regression gate). Rule: map inputs belong
+  // to a lens-level store the shell instantiates whenever the lens is selected; the panel renders
+  // UI only. `null` before the lazy chunk resolves (see "lazy lens/panel chunks" below) --
+  // every read of it below is null-safe and falls back to "the shell's own base view", same as
+  // the old `{}` default did.
+  let scoresLens = $state<ScoresLensState | null>(null);
 
   // G-25 fix: `Sel.out`'s ONE effect on the map, applied to whichever `zones` array (the shell's
-  // own outline-only `zoneUnits`, or a lens' richer `lensMapExtra.zones`) is about to reach
-  // `composeStyle()` below -- see `zoneUnitsWithOutline`'s own header. This is the ONLY place
-  // `sel.out` touches the map; BOTH `composeStyle()` call sites (the automation seam and the
-  // reactive effect, below) read THIS, never `zoneUnits`/`lensMapExtra.zones` directly, so the
-  // outline choice can never drift between the two.
+  // own outline-only `zoneUnits`, or the scores lens' richer `scoresLens.mapExtra.zones`) is about
+  // to reach `composeStyle()` below -- see `zoneUnitsWithOutline`'s own header. This is the ONLY
+  // place `sel.out` touches the map; BOTH `composeStyle()` call sites (the automation seam and the
+  // reactive effect, below) read THIS, never `zoneUnits`/`scoresLens.mapExtra.zones` directly, so
+  // the outline choice can never drift between the two. 0.10.21 fix 1: gated EXPLICITLY on
+  // `sel.lens === "scores"` -- species must never receive the scores lens' zones (choropleth
+  // fills/highlights), which used to be true only incidentally, because `ScoresLens.svelte` was
+  // never mounted on a species view in the first place.
   const zonesForStyle = $derived<ZoneUnitSpec[]>(
-    zoneUnitsWithOutline(lensMapExtra.zones ?? zoneUnits, sel.out),
+    zoneUnitsWithOutline(
+      sel.lens === "scores" ? (scoresLens?.mapExtra.zones ?? zoneUnits) : zoneUnits,
+      sel.out,
+    ),
   );
 
   onMount(() => {
@@ -367,10 +370,14 @@
         projection: sel.proj,
         zones: zonesForStyle,
         raster:
-          sel.lens === "scores" ? (lensMapExtra.raster ?? null) : speciesLens.mapInputs.raster,
+          sel.lens === "scores"
+            ? (scoresLens?.mapExtra.raster ?? null)
+            : speciesLens.mapInputs.raster,
         range: sel.lens === "species" ? speciesLens.mapInputs.range : null,
-        overlays: lensMapExtra.overlays ?? [],
-        selection: placesSelection ?? lensMapExtra.selection ?? null,
+        overlays: sel.lens === "scores" ? (scoresLens?.mapExtra.overlays ?? []) : [],
+        selection:
+          placesSelection ??
+          (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
       }),
     };
     // the species lens' own test/automation seam, same spirit as __atlasMap just above: it exposes
@@ -464,10 +471,12 @@
         basemapStyle: basemapStyles[resolvedTheme],
         projection: sel.proj,
         zones: zonesForStyle,
-        raster: sel.lens === "scores" ? (lensMapExtra.raster ?? null) : raster,
+        raster: sel.lens === "scores" ? (scoresLens?.mapExtra.raster ?? null) : raster,
         range,
-        overlays: lensMapExtra.overlays ?? [],
-        selection: placesSelection ?? lensMapExtra.selection ?? null,
+        overlays: sel.lens === "scores" ? (scoresLens?.mapExtra.overlays ?? []) : [],
+        selection:
+          placesSelection ??
+          (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
       }),
     );
   });
@@ -576,6 +585,20 @@
     // a scores deep link downloads both together rather than waiting on the panel to mount first.
     if (!ScoresLegendComp) {
       import("../lens/scores/ScoresLegend.svelte").then((mod) => (ScoresLegendComp = mod.default));
+    }
+    // 0.10.21 fix 1 -- the scores lens' MAP-INPUT store, loaded (and instantiated) the SAME way as
+    // the two chunks above, so it exists whenever `sel.lens === "scores"` regardless of whether
+    // the panel/sheet has ever mounted `ScoresLensComp` (this is the actual fix; the panel chunk
+    // above only owns UI). `boot`/`manifest` are read through getters so the lens always sees the
+    // CURRENT value, the same reason `createSpeciesLens`'s own deps are getters (above).
+    if (!scoresLens) {
+      import("../lens/scores/state.svelte").then((mod) => {
+        scoresLens = mod.createScoresLens({
+          selStore,
+          boot: () => boot,
+          manifest: () => manifest,
+        });
+      });
     }
   });
 
@@ -791,7 +814,7 @@
           <p>{TOOL_BODY[activeTool]}</p>
         {/if}
       {:else if sel.lens === "scores"}
-        {#if ScoresLensComp}
+        {#if ScoresLensComp && scoresLens}
           {@const Comp = ScoresLensComp}
           <Comp
             {sel}
@@ -802,7 +825,7 @@
             {mapHandle}
             {activeTool}
             fallbackBody={TOOL_BODY[activeTool]}
-            bind:mapExtra={lensMapExtra}
+            lens={scoresLens}
           />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
@@ -832,7 +855,7 @@
     <Comp legend={speciesLens.mapInputs.legend} />
   {:else if sel.lens === "scores" && ScoresLegendComp}
     {@const Comp = ScoresLegendComp}
-    <Comp legend={lensMapExtra.legend ?? null} />
+    <Comp legend={scoresLens?.mapExtra.legend ?? null} />
   {/if}
 
   <div class="about-region" id="about-region" data-tour="about" data-control="about">
