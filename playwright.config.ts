@@ -17,8 +17,24 @@ const FIREFOX_WEBGL_PREFS: Record<string, string | number | boolean> = Object.fr
   ).filter(([k]) => !k.startsWith("_")),
 );
 
-/** run Firefox headed (under `pages.yml`'s xvfb) -- see the firefox project's own comment. */
-const FIREFOX_HEADED = process.platform === "linux" && !!process.env.DISPLAY;
+/**
+ * Run Firefox HEADED (under `pages.yml`'s `xvfb-run`) -- see the firefox project's own comment.
+ *
+ * 0.10.14 fix round 1: this used to be INFERRED (`platform === "linux" && !!DISPLAY`), and an
+ * inference cannot tell "no display, so headless is correct" apart from "someone forgot
+ * `xvfb-run` on this step, so headless is a silent WebGL2-less run". That second case is exactly
+ * what happened (run 35823503729: the suite step was wrapped, the timing-gate step was not).
+ * It is now an EXPLICIT opt-in that validates itself: `FIREFOX_HEADED=1` with no `$DISPLAY`
+ * throws here, before a single browser launches.
+ */
+const FIREFOX_HEADED = process.env.FIREFOX_HEADED === "1";
+if (FIREFOX_HEADED && !process.env.DISPLAY) {
+  throw new Error(
+    "playwright.config: FIREFOX_HEADED=1 but $DISPLAY is unset — headed Firefox needs a display. " +
+      'Wrap the command in `xvfb-run -a --server-args="-screen 0 1280x1024x24" ...` (see ' +
+      ".github/workflows/pages.yml), or unset FIREFOX_HEADED to run headless (no WebGL2 on linux).",
+  );
+}
 
 // atlas-0 Deliverable 5: one smoke spec (shell paints, zero console errors) across the three
 // engines. `webServer` builds then serves the real production bundle (`vite preview`), the same

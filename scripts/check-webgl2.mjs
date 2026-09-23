@@ -26,6 +26,24 @@ const prefs = Object.fromEntries(
 const names = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 const wanted = names.length ? names : ["chromium", "firefox", "webkit"];
 
+// the SAME explicit switch playwright.config.ts reads, validated the same way -- this script has
+// to launch firefox exactly as the suite does or it is gating a different browser than it tests.
+const FIREFOX_HEADED = process.env.FIREFOX_HEADED === "1";
+if (FIREFOX_HEADED && !process.env.DISPLAY) {
+  console.error(
+    "check-webgl2: FIREFOX_HEADED=1 but $DISPLAY is unset — headed Firefox needs a display. " +
+      'Wrap this command in `xvfb-run -a --server-args="-screen 0 1280x1024x24" ...`.',
+  );
+  process.exit(1);
+}
+
+// print the launch conditions BEFORE launching anything: when this gate and the suite disagree,
+// this line is what says which of them was headed and on what display (fix round 1).
+console.log(
+  `check-webgl2: platform=${process.platform} DISPLAY=${process.env.DISPLAY ?? "(unset)"} ` +
+    `FIREFOX_HEADED=${process.env.FIREFOX_HEADED ?? "(unset)"} -> firefox headless=${!FIREFOX_HEADED}`,
+);
+
 let failed = 0;
 for (const name of wanted) {
   const launcher = LAUNCHERS[name];
@@ -36,15 +54,10 @@ for (const name of wanted) {
   }
   let browser;
   try {
-    // firefox: same launch shape playwright.config.ts uses -- prefs, and HEADED whenever a
-    // virtual display is available on linux (headless Playwright Firefox has no WebGL there).
+    // firefox: the same launch shape playwright.config.ts uses -- the same prefs file and the
+    // same explicit FIREFOX_HEADED switch (headless Playwright Firefox has no WebGL on linux).
     browser = await launcher.launch(
-      name === "firefox"
-        ? {
-            firefoxUserPrefs: prefs,
-            headless: !(process.platform === "linux" && !!process.env.DISPLAY),
-          }
-        : {},
+      name === "firefox" ? { firefoxUserPrefs: prefs, headless: !FIREFOX_HEADED } : {},
     );
     const page = await browser.newPage();
     const info = await page.evaluate(() => {

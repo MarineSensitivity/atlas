@@ -28,6 +28,17 @@ CI, and no console-error allow-list was widened.
   creates a real WebGL2 context, prints the renderer, and runs BEFORE the suite — one explicit red
   saying "firefox: no WebGL2" instead of six specs failing for a reason none of them is about.
   Nothing here relaxes an assertion.
+  - **What actually kept the job red after all of that** (fix round 1): the `timing` project
+    declares `dependencies: ["chromium", "webkit", "firefox"]`, and `npx playwright test
+--project=timing` runs a project's dependencies first — so the "timing gate" step was
+    silently re-running the **entire three-engine matrix a second time**, and it was the one
+    browser step not wrapped in `xvfb-run`. Its headless firefox had no WebGL2 and reported the
+    same six failures the real suite step had just PASSED (run 35823503729: step 9 success, step
+    10 failure, identical test list). That step now runs `--no-deps` under `xvfb-run` — which
+    also halves the job, since those 249 tests were being run twice. And the headed switch is no
+    longer inferred from `$DISPLAY`: `pages.yml` sets `FIREFOX_HEADED=1` on every browser step,
+    and both `playwright.config.ts` and `scripts/check-webgl2.mjs` **throw** if it is set with no
+    display — forgetting `xvfb-run` on a step is now a loud failure, not a silent WebGL2-less run.
 - **`document.fonts.ready` as a wait is unbounded, and on WebKit/linux it did not settle**
   (`e2e/shell.cls.spec.ts`). All six WebKit geometry-equality cases died as
   `page.evaluate: Test ended.` on that one line. `document.fonts.ready` is a whole-document

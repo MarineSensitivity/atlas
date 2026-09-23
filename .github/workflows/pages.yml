@@ -154,10 +154,17 @@ jobs:
       # the gate for the two steps above and for scripts/firefox-webgl-prefs.json: one explicit
       # red saying "firefox: no WebGL2" instead of six specs failing for a reason none of them is
       # about. Runs BEFORE the suite, so a broken GL stack is never mistaken for a broken app.
-      # Under `xvfb-run` because playwright.config.ts runs firefox HEADED when $DISPLAY exists.
+      #
+      # EVERY step below that launches a browser carries the SAME two things -- `xvfb-run` and
+      # `FIREFOX_HEADED=1` -- because that pair is what gives Firefox WebGL2 here, and a step that
+      # has one without the other is the bug this round fixed (run 35823503729). `FIREFOX_HEADED`
+      # is read by playwright.config.ts AND scripts/check-webgl2.mjs, and both throw if it is set
+      # with no $DISPLAY: forgetting `xvfb-run` is now a loud failure, never a silent headless
+      # launch with no WebGL.
       - run: xvfb-run -a --server-args="-screen 0 1280x1024x24" node scripts/check-webgl2.mjs chromium firefox webkit
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
+          FIREFOX_HEADED: "1"
 
       # atlas-8 step 3: the root suite (e2e/**, minus the fixtures/gallery/timing carve-outs
       # playwright.config.ts's own testIgnore already documents) on all three engines in ONE
@@ -168,14 +175,26 @@ jobs:
       - run: xvfb-run -a --server-args="-screen 0 1280x1024x24" npx playwright test --project=chromium --project=webkit --project=firefox
         env:
           LIBGL_ALWAYS_SOFTWARE: "1" # firefox: use Mesa's software path, never probe for a GPU
+          FIREFOX_HEADED: "1"
 
       # its OWN step, after the three engines above finish (playwright.config.ts's `dependencies:`
       # on the "timing" project already enforces this ordering even within one `npx playwright
       # test` invocation, run here as an explicit second step for a clearly separated CI log/
       # failure, matching atlas-0's hand-over: "Put the map gate into CI here and record the
       # runner's number" — see docs/performance.md for what this run measured).
+      #
+      # `--no-deps` (0.10.14): the "timing" project DEPENDS ON chromium+webkit+firefox, and a
+      # `--project=timing` invocation runs a project's dependencies first -- so this step was
+      # silently re-running the ENTIRE three-engine matrix a second time, doubling the job. The
+      # step above already ran them; the dependency exists to order them inside ONE invocation,
+      # which is not what this is. That hidden second run is also what kept this job red after
+      # the real suite went green: it was the one browser step with no `xvfb-run`, so its firefox
+      # had no WebGL2 and reported the same six failures the step above had just passed.
       - name: timing gate (species.timing.spec.ts, alone)
-        run: npx playwright test --project=timing
+        run: xvfb-run -a --server-args="-screen 0 1280x1024x24" npx playwright test --project=timing --no-deps
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          FIREFOX_HEADED: "1"
 
       - uses: actions/upload-artifact@v4
         if: failure()
