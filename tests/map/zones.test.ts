@@ -226,6 +226,42 @@ describe("boot.json readers", () => {
     expect(zoneUnitsFromBoot({ units: "nope" })).toEqual([]);
   });
 
+  // B3 (docs/usability.md): pick mode could resolve a click on a Program Area's 1-px BORDER but
+  // never its interior, because `zoneQueryLayerIds` only includes a unit's `_fill` layer id when
+  // `u.fill` is set, and outline-only units carried none. Every unit `zoneUnitsFromBoot` returns
+  // now gets an invisible (`opacity: 0`) query fill by default, so the `_fill` layer always exists
+  // in the composed style and pick mode can query it -- ON SCREEN this is unchanged (opacity 0),
+  // proven by `zoneFillLayer`'s "the fill is a match ... default colour last" case above still
+  // passing with `stops: []` (nothing but the invisible default ever paints).
+  it("every unit gets an invisible query fill by default (B3) -- visually still outline-only", () => {
+    const boot = {
+      units: [
+        {
+          fld: "programarea_key",
+          label: "Program areas",
+          pmtiles: "https://a",
+          source_layer: "programarea",
+        },
+      ],
+    };
+    const [u] = zoneUnitsFromBoot(boot);
+    expect(u.fill).toEqual({
+      keyProperty: "programarea_key",
+      stops: [],
+      defaultColor: "#000000",
+      opacity: 0,
+      outlineColor: "#000000",
+    });
+    // the layer this makes queryable is the SAME one pick mode needs, and it is invisible: a
+    // `match` expression with zero stops always falls through to `defaultColor` at `opacity: 0`.
+    expect(zoneQueryLayerIds([u])).toEqual(["programarea_fill", "programarea_ln"]);
+    expect(zoneFillLayer(u)?.paint).toEqual({
+      "fill-color": ["match", ["get", "programarea_key"], "#000000"],
+      "fill-opacity": 0,
+      "fill-outline-color": "#000000",
+    });
+  });
+
   it("label points come back as a FeatureCollection keyed by `key`", () => {
     const boot = {
       zones: {

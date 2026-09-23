@@ -4,7 +4,7 @@ import { defaultLayerKey } from "../../../src/lens/scores/boot";
 import { BOOT_V7, MANIFEST_OVERLAYS_V7 } from "./fixtures";
 
 describe("scoresMapInputs — cell branch", () => {
-  it("raster + overlay populated, zones outline-only (no fill)", () => {
+  it("raster + overlay populated, zones VISUALLY outline-only (B3: an invisible opacity-0 query fill, not undefined)", () => {
     const out = scoresMapInputs({
       boot: BOOT_V7,
       overlays: MANIFEST_OVERLAYS_V7,
@@ -16,7 +16,11 @@ describe("scoresMapInputs — cell branch", () => {
     });
     expect(out.raster?.id).toBe("r_lyr");
     expect(out.overlays).toHaveLength(1);
-    expect(out.zones[0].fill).toBeUndefined();
+    // B3 fix: `zoneUnitsFromBoot` (layers/zones.ts) now attaches `queryFillFor`'s invisible
+    // placeholder to every unit, so pick mode can query a polygon's interior even in the "raster
+    // cells" spatial-unit branch this test covers. `opacity: 0` keeps it invisible on screen.
+    expect(out.zones[0].fill?.opacity).toBe(0);
+    expect(out.zones[0].fill?.stops).toEqual([]);
     expect(out.selection).toBeNull();
   });
 

@@ -14,6 +14,7 @@ import type { Feature, FeatureCollection, Point } from "geojson";
 import type { Outline } from "../../state/types";
 import { GLYPHS_URL, LABEL_FONT } from "./basemap";
 import {
+  QUERY_FILL_COLOR,
   SELECTION_COLOR,
   ZONE_LABEL_BLACK,
   ZONE_LABEL_HALO_DARK,
@@ -26,6 +27,7 @@ import {
 import type {
   LayerSpecification,
   SourceSpecification,
+  ZoneFillSpec,
   ZoneLabelSpec,
   ZoneUnitSpec,
 } from "../types";
@@ -247,11 +249,37 @@ export function zoneNameProperty(unit: string): string {
 }
 
 /**
+ * B3 fix (`docs/usability.md`): an invisible (`opacity: 0`) `ZoneFillSpec` so `zoneQueryLayerIds`
+ * always has a `{unit}_fill` layer to query, and that layer always exists in the composed style
+ * (every `zoneUnitsFromBoot` caller — `Shell.svelte`'s own base `zoneUnits` AND the scores lens'
+ * `scoresMapInputs`, `mapInputs.ts` — starts from this function's output). Before this fix, an
+ * outline-only unit's ONLY queryable layer was its 1-px `{unit}_ln` line, so pick mode
+ * (`places/pickInstall.ts`) could resolve a click on a Program Area's BORDER but never its
+ * interior — "Add to places" stayed disabled for every interior click, in every spatial-unit
+ * mode, because `scoresMapInputs` only overwrites this placeholder with REAL colours when the
+ * unit is both the selected spatial unit AND has values to show (`mapInputs.ts`'s `if (choro.fill)
+ * out = {...}`); otherwise `out = u` keeps exactly this fill. `stops: []` + a `defaultColor` means
+ * `zoneFillLayer`'s `match` expression falls straight through to that (invisible) default for
+ * every key, so this has zero visual effect wherever nothing more specific overrides it.
+ */
+function queryFillFor(unit: string): ZoneFillSpec {
+  return {
+    keyProperty: zoneKeyProperty(unit),
+    stops: [],
+    defaultColor: QUERY_FILL_COLOR,
+    opacity: 0,
+    outlineColor: QUERY_FILL_COLOR,
+  };
+}
+
+/**
  * Read `boot.units[]` (atlas-1's contract: `zone_set_key, fld, label, pmtiles, source_layer`) into
- * outline-only `ZoneUnitSpec`s, in boot's own order — Program Areas first, then finest first, which
- * is the order the publisher already sorted them into (atlas-4 §2.4). A row missing `fld`,
- * `pmtiles` or `source_layer` is SKIPPED, never defaulted: a guessed source layer renders an empty
- * outline that looks exactly like "this release has no zones".
+ * `ZoneUnitSpec`s, in boot's own order — Program Areas first, then finest first, which is the
+ * order the publisher already sorted them into (atlas-4 §2.4). A row missing `fld`, `pmtiles` or
+ * `source_layer` is SKIPPED, never defaulted: a guessed source layer renders an empty outline that
+ * looks exactly like "this release has no zones". Outline-only ON SCREEN is still the default —
+ * every unit gets `queryFillFor`'s invisible placeholder `fill` (B3), never a visible one; a
+ * caller that wants a real choropleth (the scores lens) overwrites it explicitly.
  */
 export function zoneUnitsFromBoot(boot: unknown): ZoneUnitSpec[] {
   const rows = (boot as { units?: unknown } | null | undefined)?.units;
@@ -263,11 +291,13 @@ export function zoneUnitsFromBoot(boot: unknown): ZoneUnitSpec[] {
     if (typeof fld !== "string" || typeof pmtiles !== "string" || typeof sourceLayer !== "string")
       continue;
     if (!fld || !pmtiles || !sourceLayer) continue;
+    const unit = unitFromFld(fld);
     out.push({
-      unit: unitFromFld(fld),
+      unit,
       pmtiles,
       sourceLayer,
       label: typeof label === "string" ? label : undefined,
+      fill: queryFillFor(unit),
     });
   }
   return out;
