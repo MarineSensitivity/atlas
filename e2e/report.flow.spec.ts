@@ -101,6 +101,7 @@ test.describe("Report: a place list present", () => {
       { kind: "upload", name: "upload-test", digest: "abc12345" } satisfies UploadPlace,
     ];
     const pl = hashFromPlaces(places);
+    if (!pl) throw new Error("hashFromPlaces() returned no hash for a non-empty place list");
     // `pl` carries the g1 codec's OWN percent-escapes (model.ts's `reportHash()` header: a space
     // in a place name is already a literal "%20" INSIDE the token). A real deep link reaches the
     // address bar through `formatSel()` (one MORE layer of encoding, `URLSearchParams.toString()`)

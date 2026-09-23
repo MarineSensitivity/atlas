@@ -906,10 +906,13 @@
     <!-- an ordinary disclosure region (About.svelte's own aria-expanded/aria-controls pattern),
          NOT role="menu" -- a real ARIA menu widget promises arrow-key/Home/End roving focus this
          does not implement, which would be a WORSE a11y contract than none at all. Tab/Shift+Tab
-         reaches "Take a tour" then "Docs" in document order, same as any other disclosure. -->
+         reaches "Take a tour" then "Docs" in document order, same as any other disclosure.
+         role="group" (axe: aria-prohibited-attr -- a plain <div> has no role that permits
+         aria-label at all; "group" is the same role the panel-size control group already uses). -->
     <div
       class="help-menu"
       id="help-menu"
+      role="group"
       aria-label="Help"
       hidden={!helpOpen}
       bind:this={helpMenuEl}

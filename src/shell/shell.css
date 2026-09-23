@@ -347,7 +347,16 @@ button.chip {
   box-shadow: var(--elev-3);
   display: flex;
   flex-direction: column;
+  /* [hidden] and .help-menu are equal specificity (one attribute selector, one class selector) --
+     an author `display: flex` above otherwise wins over the UA default `[hidden]{display:none}`
+     regardless of source order (author origin beats user-agent origin), so a "closed" menu still
+     occupied space and intercepted clicks over whatever sat beneath it (measured: it ate every
+     click meant for the panel's own header controls). `[hidden]`, one extra selector, always wins
+     on SPECIFICITY instead, which is robust either way. */
   gap: var(--space-3);
+}
+.help-menu[hidden] {
+  display: none;
 }
 .help-menu-item {
   display: block;
