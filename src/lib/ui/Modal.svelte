@@ -55,7 +55,12 @@
   // before the event ever reaches that ancestor, so stopping it here actually stops it.
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
-      event.preventDefault();
+      // NOT preventDefault() here: measured (chromium AND firefox), calling it suppresses the
+      // browser's own "Escape closes a modal <dialog>" default action entirely, so the dialog
+      // never closes at all -- that behaviour is tied to the keydown's default action, not (as
+      // MDN's `cancel`-event guidance might suggest) a separate mechanism. stopPropagation() alone
+      // is enough to stop an ancestor Panel's Esc-collapses-it listener from also seeing this
+      // event, without touching the platform's own close.
       event.stopPropagation();
       return;
     }

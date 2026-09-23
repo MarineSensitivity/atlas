@@ -152,7 +152,14 @@
     if (railFocusObserver || !panelRegionEl) return;
     railFocusObserver = new MutationObserver(() => {
       if (!railFocusTarget || Date.now() > railFocusDeadline) return;
-      if (document.activeElement === document.body) focusRailButton(railFocusTarget);
+      const active = document.activeElement;
+      // measured on webkit: giving `#rail-region` its own `tabindex="-1"` (fix list #6) changed
+      // WHERE this exact focus loss lands -- instead of falling all the way back to `<body>`, it
+      // now settles on the nearest ancestor that IS focusable, `#rail-region` itself (the nav).
+      // Both are "focus was lost, not deliberately moved" for this purpose.
+      if (active === document.body || active?.id === "rail-region") {
+        focusRailButton(railFocusTarget);
+      }
     });
     railFocusObserver.observe(panelRegionEl, { childList: true, subtree: true });
   }
