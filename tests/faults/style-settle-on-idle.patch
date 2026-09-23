@@ -1,8 +1,8 @@
 diff --git a/src/lib/map/styleQueue.ts b/src/lib/map/styleQueue.ts
-index 24ec3da..0f53a2c 100644
+index 63c98e6..cd12212 100644
 --- a/src/lib/map/styleQueue.ts
 +++ b/src/lib/map/styleQueue.ts
-@@ -191,11 +191,10 @@ export function createStyleApplier(
+@@ -194,11 +194,10 @@ export function createStyleApplier(
      if (sprite !== lastSprite) spriteLoading = sprite !== "";
      lastSprite = sprite;
      const issuedFor = cycle;
