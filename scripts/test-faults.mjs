@@ -154,6 +154,32 @@ const FAULTS = [
   // G-25 (docs/parity.html, atlas-8): `Sel.out` used to round-trip in the URL with nothing
   // reading it. This patch reintroduces exactly that -- `zoneUnitsWithOutline()` accepts `out`
   // but no longer consults it -- and must turn tests/map/style.test.ts's own G-25 cases red.
+  // 0.10.20: the basemap that silently never painted. `composeStyle()` reads the resolved CARTO
+  // style SYNCHRONOUSLY; before this round nothing told the app when that style had landed, so a
+  // style.json arriving after the last reactive recompose was never read again -- the map showed
+  // the data over the flat `--surface-map` colour, forever. This patch reinstates exactly that
+  // (drops `basemapStyle` from Shell.svelte's own composeStyle input, back onto the non-reactive
+  // cache read) and must turn the new slow-style.json gate red. Chromium only: the defect is
+  // reactive-wiring, not engine timing -- it reproduces on every engine, and one is enough to
+  // prove the gate can fail.
+  {
+    id: "basemap-not-reactive",
+    patch: "tests/faults/basemap-not-reactive.patch",
+    describe:
+      "Shell.svelte stops passing the resolved CARTO style into composeStyle -- a slow " +
+      "style.json means the basemap NEVER paints (0.10.20's real defect, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.firstpaint.spec.ts",
+      "-g",
+      "paints OVER the basemap even when style.json answers late",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4395" },
+  },
   {
     id: "out-outline-ignored",
     patch: "tests/faults/out-outline-ignored.patch",
