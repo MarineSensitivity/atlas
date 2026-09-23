@@ -104,6 +104,15 @@ describe("scoresTable", () => {
     expect(scoresTable([place("A", [comp("bird", 40, null, null)])]).footnotes).toEqual([]);
   });
 
+  // fix round 2, item 4: the footnote text is a claim ("scored over X% of the place") -- a coverage
+  // of 0.998740 rounds UP to "99.9%" (Math.round), which the place's actual 99.874% does not
+  // exceed. The footnote must FLOOR instead, so "over 99.8%" is always true.
+  it("never overstates the footnote's 'over X%' claim (0.998740 floors to 99.8%, not round()'s 99.9%)", () => {
+    const t = scoresTable([place("A", [comp("bird", 40, 0.99874, 40.05)])]);
+    expect(t.footnotes[0].text).toContain("over 99.8% of the place");
+    expect(t.footnotes[0].text).not.toContain("99.9%");
+  });
+
   it("footnote ids are assigned row-major, in reference order", () => {
     const t = scoresTable([
       place("A", [comp("bird", 1, 0.5), comp("fish", 2, 0.5)]),

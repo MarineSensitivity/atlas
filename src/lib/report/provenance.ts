@@ -74,10 +74,21 @@ export interface ReproduceTarget {
  * Zone places take the precomputed path (`zone_metric` / `zone_taxon`), custom places the D7b
  * clipped path -- the same split the document itself made, so a reader who runs this gets the
  * number printed above it and not a different-but-defensible one.
+ *
+ * fix round 2 (Opus review): two corrections. (1) `msensVersion` (the release's own `boot.msens`,
+ * threaded in by `buildProvenance` below) prints a `# requires msens >= {version}` line -- three of
+ * these functions (`scores_for_pra`, `species_for_zone`, `cells_in_study_area`) are unexported on
+ * `main` as of this writing, so "paste this into R" silently fails without knowing which msens
+ * checkout to build first. (2) the custom-place path no longer calls `cells_in_study_area()` as its
+ * own step: `scores_for_cells(..., denominator = "study_area")` already clips to the study area
+ * internally (that IS what the `denominator` argument means), so the extra call recomputed the
+ * same clip a second time for nothing -- it never changed the result, only the reader's confidence
+ * that TWO cell sets were involved.
  */
-export function reproduceInR(t: ReproduceTarget): string {
+export function reproduceInR(t: ReproduceTarget, msensVersion?: string | null): string {
   const head = [
     "# every number in this report, recomputed outside the browser",
+    ...(msensVersion ? [`# requires msens >= ${msensVersion}`] : []),
     `con <- msens::sdm_db_con(version = ${q(t.ver)}, read_only = TRUE)`,
   ];
   if (t.zoneKeys && t.zoneKeys.length > 0) {
@@ -93,8 +104,7 @@ export function reproduceInR(t: ReproduceTarget): string {
     ...head,
     `g     <- msens::place_decode(${q(t.token ?? "")})[[1]]$geometry`,
     `cells <- msens::cells_in_polygon_grid(g, ${grid})`,
-    "cells <- msens::cells_in_study_area(con, cells)  # D7b: one cell set drives everything",
-    'msens::scores_for_cells(con, cells, blend = TRUE, denominator = "study_area")',
+    'msens::scores_for_cells(con, cells, blend = TRUE, denominator = "study_area")  # D7b: clips internally',
     "msens::species_for_cells(con, cells)",
   ].join("\n");
 }
@@ -138,6 +148,7 @@ export interface ProvenanceInput {
 
 export function buildProvenance(input: ProvenanceInput): Provenance {
   const boot = input.boot as { built_at?: unknown; msens?: unknown } | null | undefined;
+  const msens = typeof boot?.msens === "string" ? boot.msens : null;
   return {
     ver: input.ver,
     status: input.status,
@@ -146,9 +157,9 @@ export function buildProvenance(input: ProvenanceInput): Provenance {
     duckdbWasm: input.duckdbWasm ?? null,
     generatedAt: isoInstant(input.now),
     releaseBuiltAt: typeof boot?.built_at === "string" ? boot.built_at : null,
-    msens: typeof boot?.msens === "string" ? boot.msens : null,
+    msens,
     tables: tablesRead(input.boot, input.tables),
     sql: [...input.sql],
-    reproduceInR: input.targets.map(reproduceInR),
+    reproduceInR: input.targets.map((t) => reproduceInR(t, msens)),
   };
 }

@@ -414,7 +414,27 @@ describe("provenance -- what replaces session_info()", () => {
     expect(snippet).toContain('msens::place_decode("g1.My%20box.AAAA")[[1]]$geometry');
     expect(snippet).toContain('msens::grid_spec_for("global05")');
     expect(snippet).toContain("blend = TRUE");
-    expect(snippet).toContain("cells_in_study_area");
+    expect(snippet).toContain('denominator = "study_area"');
+  });
+
+  // fix round 2 (Opus review): `cells_in_study_area()` used to run as its own extra step, but
+  // `scores_for_cells(..., denominator = "study_area")` already clips to the study area internally
+  // -- the extra call recomputed the same clip a second time for nothing. Regression test named
+  // after the fix: this line must never come back.
+  it("never calls cells_in_study_area() as a redundant second clip", () => {
+    expect(build().provenance.reproduceInR[0]).not.toContain("cells_in_study_area");
+  });
+
+  // fix round 2 (Opus review): three of these functions are unexported on `main` as of this
+  // writing -- "paste this into R" silently fails without knowing which msens checkout to build.
+  it("names the msens version the snippet requires, from boot.msens", () => {
+    const snippet = build().provenance.reproduceInR[0];
+    expect(snippet).toContain("# requires msens >= 0.43.0");
+  });
+
+  it("no msens version on the boot -> no requires line (never a bare '>= null')", () => {
+    const snippet = reproduceInR({ ver: "v9", gridId: "global05", token: "g1.x.AAAA" }, null);
+    expect(snippet).not.toContain("requires msens");
   });
 
   it("a zone place gets the PRECOMPUTED path instead -- the one the document itself used", () => {

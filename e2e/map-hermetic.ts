@@ -116,6 +116,39 @@ export const BASEMAP_RGB: [number, number, number] = [0, 102, 153];
 /** the score raster's fixture colour — distinct from the basemap's, so a probe can tell them apart. */
 export const RASTER_RGB: [number, number, number] = [255, 127, 42];
 
+/** a tile with REAL pixel variance (a coarse checkerboard of two contrasting blues), unlike every
+ * `solidPng()` fixture above -- fix round 2, item 6: a reviewer's captured report map PNG was
+ * 896x360 of one flat colour (the hermetic basemap tile has none), which a luminance-only guard let
+ * through. `report.spec.ts`'s own map-PNG-capture assertions route this in (Playwright matches
+ * routes in reverse registration order, so registering it AFTER `routeBucket()`'s flat default
+ * wins) so the capture under test is a real, non-degenerate one. */
+export function variedPng(size = 256): Buffer {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // colour type: truecolour, no alpha
+  const rows: Buffer[] = [];
+  for (let y = 0; y < size; y++) {
+    const row = Buffer.alloc(1 + size * 3);
+    for (let x = 0; x < size; x++) {
+      const dark = (Math.floor(x / 32) + Math.floor(y / 32)) % 2 === 0;
+      const [r, g, b] = dark ? [8, 40, 84] : [176, 208, 232];
+      row[1 + x * 3] = r;
+      row[2 + x * 3] = g;
+      row[3 + x * 3] = b;
+    }
+    rows.push(row);
+  }
+  const idat = deflateSync(Buffer.concat(rows));
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", idat),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
 /**
  * Serve the PMTiles archive with real HTTP range support: the `pmtiles://` protocol reads the
  * header, then the directory, then each tile with a `Range` header, and a handler that ignored it
