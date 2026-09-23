@@ -1,6 +1,6 @@
 # Atlas — round-2 status (updated by the orchestrator at every push)
 
-Last update: 2026-09-24 00:05 CEST · plan: `workflows/.claude/plans/2026-09-23 atlas app plan, round 2.md` ·
+Last update: 2026-09-24 00:20 CEST (parity page re-shot against the live 0.10.27: 14/14 states) ·
 dated log: `workflows/.claude/plans_todo/atlas-8 verification, accessibility, performance.md` (Progress log) ·
 user-facing changes per version: `CHANGELOG.md`.
 

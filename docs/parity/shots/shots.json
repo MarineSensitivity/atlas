@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-23T08:08:48.702Z",
+  "generated": "2026-09-23T22:18:18.189Z",
   "viewport": {
     "width": 1280,
     "height": 800
@@ -12,7 +12,12 @@
       "id": "scores-default",
       "title": "Scores · default view",
       "caption": "The landing view of each app on v7: the FULL-study-area camera, the composite score raster over the same COG, the same rescale endpoints in the legend.",
-      "rows": ["S-01", "S-03", "S-05", "S-13"],
+      "rows": [
+        "S-01",
+        "S-03",
+        "S-05",
+        "S-13"
+      ],
       "atlasOnly": false,
       "ok": true,
       "shiny": {
@@ -28,8 +33,8 @@
         "side": "atlas",
         "file": "shots/scores-default-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&theme=dark",
-        "ms": 4616,
-        "bytes": 92317,
+        "ms": 25807,
+        "bytes": 92656,
         "ok": true,
         "reason": null
       }
@@ -38,7 +43,11 @@
       "id": "scores-programareas",
       "title": "Scores · Program Areas choropleth",
       "caption": "Spatial unit switched to Program Areas. Both draw all 20 areas from the same PMTiles; the atlas fills them with the 11-bin rule and rounds the legend to 1 dp.",
-      "rows": ["S-02", "S-04", "S-07"],
+      "rows": [
+        "S-02",
+        "S-04",
+        "S-07"
+      ],
       "atlasOnly": false,
       "ok": true,
       "shiny": {
@@ -54,8 +63,8 @@
         "side": "atlas",
         "file": "shots/scores-programareas-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&unit=programarea&theme=dark",
-        "ms": 4582,
-        "bytes": 85475,
+        "ms": 33142,
+        "bytes": 85965,
         "ok": true,
         "reason": null
       }
@@ -64,7 +73,10 @@
       "id": "scores-component-layer",
       "title": "Scores · a component layer (fish, rescaled by ecoregion)",
       "caption": "The layer select, grouped by category. `extrisk_fish_ecoregion_rescaled` on both sides, same COG, same 0–100 rescale.",
-      "rows": ["S-03", "S-05"],
+      "rows": [
+        "S-03",
+        "S-05"
+      ],
       "atlasOnly": false,
       "ok": true,
       "shiny": {
@@ -80,8 +92,8 @@
         "side": "atlas",
         "file": "shots/scores-component-layer-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&lyr=extrisk_fish_ecoregion_rescaled&theme=dark",
-        "ms": 4581,
-        "bytes": 89702,
+        "ms": 31529,
+        "bytes": 90002,
         "ok": true,
         "reason": null
       }
@@ -90,7 +102,9 @@
       "id": "scores-study-area-ak",
       "title": "Scores · study area Alaska",
       "caption": "The study area is a CAMERA, not a filter: both fly to Alaska and both keep drawing the FULL COG (no study-area key ever reaches a tile or data URL — `tileUrlLeaksStudyArea` is the gate).",
-      "rows": ["S-01"],
+      "rows": [
+        "S-01"
+      ],
       "atlasOnly": false,
       "ok": true,
       "shiny": {
@@ -106,8 +120,8 @@
         "side": "atlas",
         "file": "shots/scores-study-area-ak-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&area=AK&theme=dark",
-        "ms": 4580,
-        "bytes": 92169,
+        "ms": 41578,
+        "bytes": 92532,
         "ok": true,
         "reason": null
       }
@@ -116,7 +130,10 @@
       "id": "scores-flower",
       "title": "Scores · flower plot, nothing selected",
       "caption": "The default flower, centre 24 on both sides. Shiny reads an unversioned CSV and draws the ring on a full tab; the atlas reads this release's own `flower_default` (ID-08), gives `primary producer` a real colour (ID-09) and draws the ring inside the side panel — so it is SMALLER here, with every component's exact value written out beneath it (that text is also the figure's accessible summary) and a \"Show table\" toggle for the numbers.",
-      "rows": ["S-13", "S-14"],
+      "rows": [
+        "S-13",
+        "S-14"
+      ],
       "atlasOnly": false,
       "ok": true,
       "shiny": {
@@ -132,8 +149,8 @@
         "side": "atlas",
         "file": "shots/scores-flower-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&theme=dark",
-        "ms": 7620,
-        "bytes": 95278,
+        "ms": 27914,
+        "bytes": 95291,
         "ok": true,
         "reason": null
       }
@@ -142,7 +159,12 @@
       "id": "scores-species-table",
       "title": "Scores · species table",
       "caption": "The species table for the full study area: the same twelve columns in the same order, the same number formats, the same taxon/model links. The atlas adds per-column filters and keyboard cell navigation.",
-      "rows": ["S-15", "S-16", "S-17", "S-18"],
+      "rows": [
+        "S-15",
+        "S-16",
+        "S-17",
+        "S-18"
+      ],
       "atlasOnly": false,
       "ok": true,
       "shiny": {
@@ -158,7 +180,7 @@
         "side": "atlas",
         "file": "shots/scores-species-table-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&theme=dark",
-        "ms": 12862,
+        "ms": 30722,
         "bytes": 108568,
         "ok": true,
         "reason": null
@@ -168,7 +190,9 @@
       "id": "scores-composition",
       "title": "Scores · composition treemap",
       "caption": "Composition of the same selection. The atlas's treemap is ONE level (species category); the Shiny app's has six WoRMS ranks (gap G-06).",
-      "rows": ["S-19"],
+      "rows": [
+        "S-19"
+      ],
       "atlasOnly": false,
       "ok": true,
       "shiny": {
@@ -184,8 +208,8 @@
         "side": "atlas",
         "file": "shots/scores-composition-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&theme=dark",
-        "ms": 11805,
-        "bytes": 103970,
+        "ms": 27471,
+        "bytes": 100075,
         "ok": true,
         "reason": null
       }
@@ -194,7 +218,9 @@
       "id": "scores-zones-table",
       "title": "Scores · zones table (new)",
       "caption": "Every zone of the release's one unit, ranked by the current layer, with all components — the keyboard and screen-reader equivalent of the choropleth, and the \"report on selected\" entry point. The Shiny apps have no equivalent (ID-13).",
-      "rows": ["S-22"],
+      "rows": [
+        "S-22"
+      ],
       "atlasOnly": true,
       "ok": true,
       "shiny": null,
@@ -202,8 +228,8 @@
         "side": "atlas",
         "file": "shots/scores-zones-table-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&unit=programarea&theme=dark",
-        "ms": 11600,
-        "bytes": 90510,
+        "ms": 48620,
+        "bytes": 101185,
         "ok": true,
         "reason": null
       }
@@ -211,8 +237,13 @@
     {
       "id": "species-default",
       "title": "Species · default taxon",
-      "caption": "Both open on Dermochelys coriacea (Leatherback Turtle), the merged model, drawn from the same COG through the same titiler at opacity 0.8. Note the outlines — the atlas draws the release's Program Areas (white) on every species map where Shiny drew Ecoregions and let you choose (ID-11) — and the camera, which frames the study area because v7 publishes no bbox (ID-12).",
-      "rows": ["P-01", "P-04", "P-08", "P-15"],
+      "caption": "Both open on Dermochelys coriacea (Leatherback Turtle), the merged model, from the same COG through the same titiler. Four things to compare. **The surface:** the atlas paints it on load; the Shiny app opens on a study-area globe with the taxon out of view and offers \"Zoom to layer\" (ID-12, G-02). **The inputs:** all six are SELECTABLE pills in Shiny, struck through in the atlas — because **v7 publishes no surface for any of them**, and the atlas says so in each pill's title rather than letting you pick one and see nothing (P-05; this is also why the plan's \"viewing one input\" state cannot be shown on a public release — the PMTiles range branch, P-09, is exercised against v9 fixtures in `e2e/species.smoke.spec.ts`). **The outlines:** Program Areas in white on the atlas, Ecoregions in black on Shiny, which also lets you change them (ID-11, G-25). **The card:** the same facts, ESA/IUCN/WoRMS/MMPA and the Values tree, in a panel instead of a drawer.",
+      "rows": [
+        "P-01",
+        "P-04",
+        "P-08",
+        "P-15"
+      ],
       "atlasOnly": false,
       "ok": true,
       "shiny": {
@@ -228,8 +259,8 @@
         "side": "atlas",
         "file": "shots/species-default-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&lens=species&theme=dark",
-        "ms": 4482,
-        "bytes": 94235,
+        "ms": 51127,
+        "bytes": 88818,
         "ok": true,
         "reason": null
       }
@@ -238,7 +269,10 @@
       "id": "species-deeplink",
       "title": "Species · legacy deep link (?mdl_seq=54383 → Walrus)",
       "caption": "The SAME legacy query on both sides. Shiny rewrites it to `?mdl_key=54383`; the atlas resolves it through the release's alias shard to `?sp=…`, logs `deeplink_mdl_key{resolution}` and rewrites the URL.",
-      "rows": ["P-16", "P-11"],
+      "rows": [
+        "P-16",
+        "P-11"
+      ],
       "atlasOnly": false,
       "ok": true,
       "shiny": {
@@ -254,8 +288,8 @@
         "side": "atlas",
         "file": "shots/species-deeplink-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&lens=species&mdl_seq=54383&theme=dark",
-        "ms": 4533,
-        "bytes": 88353,
+        "ms": 41946,
+        "bytes": 81383,
         "ok": true,
         "reason": null
       }
@@ -264,7 +298,10 @@
       "id": "species-picker",
       "title": "Species · the picker, open",
       "caption": "The species picker with its list open: grouped by category, labelled `{sp_cat}: {scientific} (common)`, \"Only species in US waters\" on by default. The atlas searches ~22 k rows client-side (folded diacritics, scientific and common).",
-      "rows": ["P-01", "P-02"],
+      "rows": [
+        "P-01",
+        "P-02"
+      ],
       "atlasOnly": false,
       "ok": true,
       "shiny": {
@@ -280,8 +317,8 @@
         "side": "atlas",
         "file": "shots/species-picker-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&lens=species&theme=dark",
-        "ms": 7082,
-        "bytes": 101566,
+        "ms": 22117,
+        "bytes": 98417,
         "ok": true,
         "reason": null
       }
@@ -290,7 +327,13 @@
       "id": "report-gaa",
       "title": "Report · a Program Area (GAA)",
       "caption": "Left: the Shiny Report tab — a FORM that POSTs to the API and renders server-side in \"a couple of minutes\". Right: the atlas report, recomputed in the browser from the release the moment the URL opens, with its own export bar (ID-04).",
-      "rows": ["R-01", "R-02", "R-03", "R-21", "R-27"],
+      "rows": [
+        "R-01",
+        "R-02",
+        "R-03",
+        "R-21",
+        "R-27"
+      ],
       "atlasOnly": false,
       "ok": true,
       "shiny": {
@@ -306,8 +349,8 @@
         "side": "atlas",
         "file": "shots/report-gaa-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/report.html?ver=v7&theme=dark#pl=z.pa.GAA&t=Gulf%20of%20Alaska%20Program%20Area",
-        "ms": 5185,
-        "bytes": 102208,
+        "ms": 5245,
+        "bytes": 102164,
         "ok": true,
         "reason": null
       }
@@ -316,7 +359,11 @@
       "id": "report-figures",
       "title": "Report · map and flower (new)",
       "caption": "The report's own figures: places filled by mean score over a ramp that spans THIS report (widened ±0.5 when equal), and one flower per place whose centre is the table's Overall. No Shiny equivalent was captured — the old report exists only after a server render.",
-      "rows": ["R-16", "R-17", "R-28"],
+      "rows": [
+        "R-16",
+        "R-17",
+        "R-28"
+      ],
       "atlasOnly": true,
       "ok": true,
       "shiny": null,
@@ -324,7 +371,7 @@
         "side": "atlas",
         "file": "shots/report-figures-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/report.html?ver=v7&theme=dark#pl=z.pa.GAA&t=Gulf%20of%20Alaska%20Program%20Area",
-        "ms": 7965,
+        "ms": 7944,
         "bytes": 57170,
         "ok": true,
         "reason": null
@@ -350,8 +397,8 @@
         "side": "atlas",
         "file": "shots/theme-paper-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&theme=light",
-        "ms": 4597,
-        "bytes": 86188,
+        "ms": 19521,
+        "bytes": 86523,
         "ok": true,
         "reason": null
       }
