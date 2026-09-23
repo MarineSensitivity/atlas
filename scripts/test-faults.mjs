@@ -214,6 +214,66 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4396" },
   },
+  // atlas-8 review round 2 (M4): `.map-print img` used to be proven only by "is an <img> visible"
+  // (report.spec.ts), which passes on the basemap alone. This patch makes `scoreColorExpression()`
+  // always return `REPORT_NODATA_COLOR` -- every place, scored or not, draws the SAME flat grey --
+  // and must turn the new pixel-proof (`e2e/report-hermetic.ts#mapPrintRampPixelCount`, driven from
+  // `e2e/report.spec.ts`'s "map image not blank" test) red.
+  {
+    id: "report-map-no-score-color",
+    patch: "tests/faults/report-map-no-score-color.patch",
+    describe:
+      "scoreColorExpression() always returns REPORT_NODATA_COLOR -- the report map's places " +
+      "layer never actually colours by score (M4's real gap, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.spec.ts",
+      "-g",
+      "map image not blank",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4397" },
+  },
+  // atlas-8 review round 2 (M5): both fixture themes used to route to the SAME `BASEMAP_RGB`, so a
+  // theme switch could be proven only by the DECLARED style JSON's `sprite` string, never a painted
+  // pixel. This patch collapses `BASEMAP_RGB_NAVY` back onto `BASEMAP_RGB` and must turn
+  // `e2e/map.spec.ts`'s own theme-switch test red.
+  {
+    id: "map-hermetic-same-theme-color",
+    patch: "tests/faults/map-hermetic-same-theme-color.patch",
+    describe:
+      "the navy fixture basemap colour collapses back to the paper one -- a theme switch can no " +
+      "longer be told apart by a painted pixel (M5's real gap, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/map.spec.ts",
+      "-g",
+      "theme switch",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4398" },
+  },
+  // atlas-8 review round 2 (M6): `sel=zone:*` states used to assert only the BASE zone outline
+  // (`programarea_ln`, every zone's line at once), never that the ONE selected zone's own
+  // highlight (`${unit}_highlight_ln`, `zoneHighlightLayer()`) actually rendered. This patch makes
+  // `zoneHighlightLayer()` always return `null` and must turn `scripts/verify.mjs`'s own
+  // `zoneSelectionProbe` red on a real `sel=zone:*` state, while the base outline (a DIFFERENT
+  // layer, still fed by all four zones) stays green -- exactly the blind spot the review named.
+  {
+    id: "zone-highlight-lost",
+    patch: "tests/faults/zone-highlight-lost.patch",
+    describe:
+      "zoneHighlightLayer() always returns null -- a selected zone's own highlight never " +
+      "renders, while the base outline (every zone's line) still does (M6's real gap, replayed)",
+    gate: ["node", "scripts/verify.mjs", "--engines=chromium", "--states=sel=zone:GAA proj=globe"],
+    env: { VERIFY_BASE_URL: "http://localhost:4399" },
+  },
 ];
 
 function run(cmd, args, cwd, env) {

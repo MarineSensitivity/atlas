@@ -111,10 +111,28 @@ export function solidPng(r: number, g: number, b: number, size = 256, a = 255): 
   ]);
 }
 
-/** the basemap's fixture colour (both themes route to it: the spec asserts the SOURCE changed, and
- * separately that the background token changed). */
+/** the "paper" (light) theme's basemap fixture colour — UNCHANGED by M5 (atlas-8 review round 2):
+ * every spec/script that never sets `theme=` (scoresRasterProbe, species.timing.spec.ts's
+ * `BLENDED_RASTER_RGB`, scores.firstpaint.spec.ts, scores.collapsed-panel.spec.ts, ...) resolves
+ * `"auto"` to `"paper"` here (`resolveTheme("auto", prefersDark)` -> paper whenever `prefersDark`
+ * is a real `false`, which every headless engine in this repo reports — verified against all
+ * three), so their blend math must keep reading exactly this value. */
 export const BASEMAP_RGB: [number, number, number] = [0, 102, 153];
-/** the score raster's fixture colour — distinct from the basemap's, so a probe can tell them apart. */
+/** the "navy" (dark) theme's basemap fixture colour — M5: before this, both themes routed to the
+ * SAME `BASEMAP_RGB`, so a theme switch could be proven only by the DECLARED style JSON containing
+ * a different `sprite` string, never by a painted pixel (the review's exact finding: "proves
+ * neither the swap nor the paint"). Distinct enough from `BASEMAP_RGB` that no plausible blend or
+ * anti-aliasing edge could confuse the two. Only a spec that explicitly requests `theme=dark`/
+ * `theme=navy` ever sees this colour. */
+export const BASEMAP_RGB_NAVY: [number, number, number] = [10, 20, 40];
+/** fixture water colour by RESOLVED theme (`document.documentElement.dataset.theme`), for a probe
+ * that already knows which theme it is looking at rather than assuming `BASEMAP_RGB`. */
+export const BASEMAP_RGB_BY_THEME: Record<"navy" | "paper", [number, number, number]> = {
+  paper: BASEMAP_RGB,
+  navy: BASEMAP_RGB_NAVY,
+};
+/** the score raster's fixture colour — distinct from either basemap colour, so a probe can tell
+ * them apart. */
 export const RASTER_RGB: [number, number, number] = [255, 127, 42];
 
 /**
@@ -173,23 +191,27 @@ function rgbHex([r, g, b]: readonly [number, number, number]): string {
 /** a MINIMAL CARTO-shaped style.json: one `background` layer + one `water` fill on the "carto"
  * vector source — real CARTO ships 93 layers; this is enough to exercise `style.ts#composeStyle`'s
  * real merge (sources/sprite/glyphs/layers, namespaced, "basemap" role FIRST) without shipping the
- * whole style into a test fixture. Both themes' fixture uses the SAME fill colour (`BASEMAP_RGB`)
- * on purpose — the theme-distinguishing field is `sprite` (CARTO's own, theme-named path), which
- * `e2e/map.spec.ts`'s theme-switch test asserts on. */
+ * whole style into a test fixture. M5 (atlas-8 review round 2): each theme's fixture now paints its
+ * OWN colour (`BASEMAP_RGB_BY_THEME`) — before this, both themes routed to the same `BASEMAP_RGB`
+ * and a theme switch could only be proven by the DECLARED style JSON containing a different
+ * `sprite` string, never by a painted pixel. `sprite` (CARTO's own, theme-named path) is still the
+ * theme-distinguishing field of the STYLE, asserted against the real `map.getStyle()` now (not a
+ * recomposed style object) by `e2e/map.spec.ts`'s theme-switch test, alongside the new pixel probe. */
 function basemapStyleFixture(theme: "navy" | "paper") {
+  const rgb = rgbHex(BASEMAP_RGB_BY_THEME[theme]);
   return {
     version: 8,
     sources: { carto: { type: "vector", url: BASEMAP_TILES_JSON_URL } },
     sprite: `https://tiles.basemaps.cartocdn.com/gl/${theme === "navy" ? "dark-matter" : "positron"}-gl-style/sprite`,
     glyphs: "https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf",
     layers: [
-      { id: "background", type: "background", paint: { "background-color": rgbHex(BASEMAP_RGB) } },
+      { id: "background", type: "background", paint: { "background-color": rgb } },
       {
         id: "water",
         type: "fill",
         source: "carto",
         "source-layer": "water",
-        paint: { "fill-color": rgbHex(BASEMAP_RGB) },
+        paint: { "fill-color": rgb },
       },
     ],
   };
@@ -291,8 +313,11 @@ export async function routeBasemapStyle(page: Page, opts: { styleJsonDelayMs?: n
 const BASEMAP_VARIED_TILE_PATH = fileURLToPath(
   new URL("./fixtures/map/basemap-water-varied.pbf", import.meta.url),
 );
-const VARIED_DARK: [number, number, number] = [8, 40, 84];
-const VARIED_LIGHT: [number, number, number] = [176, 208, 232];
+/** exported (M4, atlas-8 review round 2) so `e2e/report-hermetic.ts`'s pixel-proof can compute the
+ * exact alpha-blended colour a place's score-coloured circle paints OVER this checkerboard,
+ * instead of asserting only that the captured image is non-blank. */
+export const VARIED_DARK: [number, number, number] = [8, 40, 84];
+export const VARIED_LIGHT: [number, number, number] = [176, 208, 232];
 
 function variedBasemapStyleFixture(theme: "navy" | "paper") {
   return {

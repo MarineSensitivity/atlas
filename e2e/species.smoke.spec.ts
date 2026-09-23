@@ -20,6 +20,7 @@ import {
   waitForHydration,
 } from "./hermetic";
 import { blockWasm, routeGlyphs, routeZonesPmtiles } from "./map-hermetic";
+import { DEFAULT_STYLE_FALLBACK_MS } from "../src/lib/map/styleQueue";
 import {
   LEATHERBACK_SP,
   WALRUS_AM_MDL_KEY,
@@ -78,6 +79,19 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
       .poll(sourceUrl, { message: "species-raster source URL", timeout: 10_000 })
       .toContain("WORMS_137077");
     // walrus's merged COG (ms_merge_WORMS_137077.tif), never leatherback's stranded first request
+    expect(await sourceUrl()).not.toContain("WORMS_137209");
+
+    // m10 (atlas-8 review round 2): the poll above only proves walrus's raster was written at
+    // SOME point -- it stops reading the moment that first happens. A STALE flush is a real,
+    // separate failure mode this never covered: `styleQueue.ts` can still be holding leatherback's
+    // own (first, url-driven) `applyStyle` call queued behind walrus's, and if that stale entry
+    // flushes on its own `"idle"`/fallback AFTER walrus's already landed, it silently overwrites
+    // the source back to leatherback -- anywhere from ~100ms (a fast `"idle"`) up to
+    // `DEFAULT_STYLE_FALLBACK_MS` (styleQueue.ts's own 4000ms ceiling) later. Re-reading once,
+    // past that whole window (+1s margin), is what actually proves the SECOND species' raster
+    // survives, not just that it briefly existed.
+    await page.waitForTimeout(DEFAULT_STYLE_FALLBACK_MS + 1_000);
+    expect(await sourceUrl()).toContain("WORMS_137077");
     expect(await sourceUrl()).not.toContain("WORMS_137209");
   });
 

@@ -28,6 +28,7 @@ const { routeBucket, routeSealFixture, routeSession, waitForHydration } =
   await import("../e2e/hermetic.ts");
 const {
   BASEMAP_RGB,
+  BASEMAP_RGB_NAVY,
   RASTER_RGB,
   SCORE_COG_URL,
   ZONES_PMTILES_URL,
@@ -38,6 +39,8 @@ const {
   routeZonesPmtiles,
 } = await import("../e2e/map-hermetic.ts");
 const { SCORE_RASTER_OPACITY } = await import("../src/lib/map/layers/raster.ts");
+const { zoneHighlightId } = await import("../src/lib/map/layers/zones.ts");
+const { SPECIES_RASTER_OPACITY } = await import("../src/lens/species/mapInputs.ts");
 const { gotoSpecies, LEATHERBACK_SP, WALRUS_AM_MDL_KEY, WRYBILL_SP } =
   await import("../e2e/species-hermetic.ts");
 
@@ -250,8 +253,16 @@ function blend(under, over, alpha) {
   return under.map((u, i) => Math.round(u * (1 - alpha) + over[i] * alpha));
 }
 
-function scoresRasterProbe(cog = RASTER_RGB, opacity = SCORE_RASTER_OPACITY) {
-  const expected = blend(BASEMAP_RGB, cog, opacity);
+// m10 (atlas-8 review round 2): exported so e2e/verify.faults.spec.ts:98 can call the REAL probe
+// the state matrix runs, instead of a hand-rolled `!= RASTER_RGB` check that would pass on ANY
+// wrong colour, not just "the basemap alone, never the raster" -- the exact same "the gate and its
+// seeded fault run the SAME code" rule tests/map/no-fitbounds.test.ts's own header states.
+export function scoresRasterProbe(
+  cog = RASTER_RGB,
+  opacity = SCORE_RASTER_OPACITY,
+  basemapRgb = BASEMAP_RGB,
+) {
+  const expected = blend(basemapRgb, cog, opacity);
   return async (page) => {
     const problems = [];
     await page
@@ -287,6 +298,128 @@ function zoneVectorProbe() {
       await page.waitForTimeout(500);
     }
     return count > 0 ? [] : [`zone vector layer never rendered a feature (count=${count})`];
+  };
+}
+
+// ---- M6 (atlas-8 review round 2): the 22 layout-only states get real assertions -----------------
+// `verify.mjs` used to check LAYOUT for 22 states (17 species, 3 shell, 2 `scores sel=cell:*`) and
+// nothing else -- a 404'd species raster, an empty selection layer, or a `sel=zone:*` state that
+// renders the base zone LINE but never the selected zone's own highlight all read as a pass. The
+// probes below close that gap: a real rendered-feature/painted-pixel check for every one of them.
+
+/** `map/style.ts#selectionLayers` -- the clicked-cell ring, the selected zone's highlight, a
+ * Places pick/drawn outline, or "show analysis cells" (`SELECTION_SOURCE_ID = "selection"`). */
+export async function selectionFeatureCount(page) {
+  return page.evaluate(() => {
+    const map = window.__atlasMap?.handle.map;
+    if (!map || !map.getLayer("selection-line")) return -1;
+    if (!map.isSourceLoaded("selection")) return -1;
+    return map.queryRenderedFeatures({ layers: ["selection-line"] }).length;
+  });
+}
+
+function selectionLineProbe() {
+  return async (page) => {
+    let count = -1;
+    for (let i = 0; i < 20; i++) {
+      count = await selectionFeatureCount(page);
+      if (count > 0) break;
+      await page.waitForTimeout(500);
+    }
+    return count > 0 ? [] : [`selection-line layer never rendered a feature (count=${count})`];
+  };
+}
+
+/** `sel=zone:*` used to assert only the BASE zone outline (`programarea_ln`, every zone in the
+ * unit), never that the ONE selected zone's own highlight actually rendered. A zone highlight is
+ * NOT the generic `selection`/`selection-line` role at all (that is the cell-ring/Places case
+ * only) -- `src/lens/scores/mapInputs.ts` resolves a zone selection into a `highlightKey` on the
+ * ZONE UNIT itself, and `zoneHighlightLayer()` (`layers/zones.ts`) filters the SAME vector
+ * source/layer the base outline already uses into a second line layer,
+ * `${unit}_highlight_ln` (`zoneHighlightId()`, imported -- not restated -- so this probe cannot
+ * drift from the real id). The two (base outline vs highlight) are different layers fed by
+ * different data, and a regression that broke only the highlight would have read green forever. */
+function zoneSelectionProbe(unit = "programarea") {
+  const highlightLayer = zoneHighlightId(unit);
+  return async (page) => {
+    const base = await zoneVectorProbe()(page);
+    if (base.length) return base;
+    let count = -1;
+    for (let i = 0; i < 20; i++) {
+      count = await page.evaluate((layer) => {
+        const map = window.__atlasMap?.handle.map;
+        if (!map || !map.getLayer(layer)) return -1;
+        return map.queryRenderedFeatures({ layers: [layer] }).length;
+      }, highlightLayer);
+      if (count > 0) break;
+      await page.waitForTimeout(500);
+    }
+    return count > 0
+      ? []
+      : [
+          `${highlightLayer} (the selected zone's own highlight) never rendered a feature (count=${count})`,
+        ];
+  };
+}
+
+/** the species lens' raster, blended over the basemap at `SPECIES_RASTER_OPACITY` (0.8 -- distinct
+ * from the scores lens' 0.6) -- same technique as `scoresRasterProbe`/`e2e/species.timing.spec.ts`'s
+ * own `BLENDED_RASTER_RGB`, generalized: probe the map's own CENTER (`map.getCenter()`), which is
+ * always inside the camera `flyToBounds()` just fit, rather than a fixed lon/lat tuned for one
+ * species' extent -- the fixture raster (`routeTitilerTiles`'s `solidPng`) is one flat colour for
+ * ANY tile, so wherever the camera centers is a valid probe point. `basemapRgb` defaults to the
+ * PAPER fixture colour (every state below that never sets `theme=` resolves there); the two
+ * `theme=dark` states pass `BASEMAP_RGB_NAVY` (M5's own per-theme fixture colour). */
+function speciesRasterProbe(
+  cog = RASTER_RGB,
+  opacity = SPECIES_RASTER_OPACITY,
+  basemapRgb = BASEMAP_RGB,
+) {
+  const expected = blend(basemapRgb, cog, opacity);
+  return async (page) => {
+    let ready = false;
+    for (let i = 0; i < 40; i++) {
+      ready = await page.evaluate(() => {
+        const map = window.__atlasMap?.handle.map;
+        return !!map && !!map.getLayer("species-raster") && map.isSourceLoaded("species-raster");
+      });
+      if (ready) break;
+      await page.waitForTimeout(500);
+    }
+    if (!ready) return ["species raster layer/source never loaded"];
+    const center = await page.evaluate(() => {
+      const c = window.__atlasMap.handle.map.getCenter();
+      return [c.lng, c.lat];
+    });
+    let px = null;
+    for (let i = 0; i < 20; i++) {
+      px = await readPixel(page, center[0], center[1]);
+      if (px && expected.every((e, k) => Math.abs(e - px[k]) <= 1)) return [];
+      await page.waitForTimeout(500);
+    }
+    return [
+      `species raster probe at map centre ${center} expected ~rgb(${expected.join(",")}), ` +
+        `got ${px ? `rgb(${px.slice(0, 3).join(",")})` : "no WebGL context to read back"}`,
+    ];
+  };
+}
+
+/** the species lens' PMTiles range fill (`SPECIES_RANGE_ID = "species-range"`, the OTHER of the
+ * two surfaces `mapInputs.ts` ever draws -- always exactly one, never both). */
+function speciesRangeProbe() {
+  return async (page) => {
+    let count = -1;
+    for (let i = 0; i < 20; i++) {
+      count = await page.evaluate(() => {
+        const map = window.__atlasMap?.handle.map;
+        if (!map || !map.getLayer("species-range")) return -1;
+        if (!map.isSourceLoaded("species-range")) return -1;
+        return map.queryRenderedFeatures({ layers: ["species-range"] }).length;
+      });
+      if (count > 0) break;
+      await page.waitForTimeout(500);
+    }
+    return count > 0 ? [] : [`species-range layer never rendered a feature (count=${count})`];
   };
 }
 
@@ -334,17 +467,44 @@ function scoresOutlineProbe(out) {
   };
 }
 
+// M6: the shell states are ordinary `unit=cell` scores states (the default), so the SAME
+// `scoresRasterProbe` every other default-raster state below gets applies here too -- just
+// theme-aware, since `?theme=dark` now paints over a DIFFERENT basemap colour (M5,
+// `BASEMAP_RGB_NAVY`) than the default/`?theme=light` paper fixture.
 const SHELL_STATES = [
-  { name: "shell (default)", kind: "scores", path: "/" },
-  { name: "shell (theme=dark)", kind: "scores", path: "/?theme=dark" },
-  { name: "shell (theme=light)", kind: "scores", path: "/?theme=light" },
+  { name: "shell (default)", kind: "scores", path: "/", assert: scoresRasterProbe() },
+  {
+    name: "shell (theme=dark)",
+    kind: "scores",
+    path: "/?theme=dark",
+    assert: scoresRasterProbe(RASTER_RGB, SCORE_RASTER_OPACITY, BASEMAP_RGB_NAVY),
+  },
+  {
+    name: "shell (theme=light)",
+    kind: "scores",
+    path: "/?theme=light",
+    assert: scoresRasterProbe(),
+  },
 ];
 
 const PROJECTIONS = ["globe", "mercator"];
 const OUTLINES = ["programarea", "ecoregion", "none"];
 const AREAS = ["FULL", "GA"];
 const PALETTES = ["spectral_r", "viridis", "cividis", "magma"];
-const ZONE_KEYS = ["GAA", "MDA", "CGA", "CAA"];
+// `map=` (added M6, alongside `zoneSelectionProbe`): the same `label_pt`s BOOT_FIXTURE_SCORES
+// already carries. Without a camera override, the default "FULL" globe camera (zoom 2.16) does
+// not actually show every zone's label_pt on screen -- measured, wiring this probe in: MDA
+// (-72,38) and CGA (-155,57) read 0 highlighted features at `proj=globe` (GAA/CAA, both closer to
+// the FULL camera's own centre -101.3,46.9, happened to pass) while the AGGREGATE base-outline
+// check (`zoneVectorProbe`, checking every zone's line at once) stayed green throughout -- a real
+// globe-projection-at-low-zoom framing limit, not an app bug, and exactly the kind of false
+// negative `e2e/places.deeplink-outline.spec.ts`'s own header warns a camera-less probe risks.
+const ZONE_KEYS = [
+  { key: "GAA", lon: -90, lat: 27 },
+  { key: "MDA", lon: -72, lat: 38 },
+  { key: "CGA", lon: -155, lat: 57 },
+  { key: "CAA", lon: -125, lat: 38 },
+];
 
 const SCORES_STATES = [
   // projection x outline x area: every combination is a real, valid, independently-composed
@@ -384,44 +544,107 @@ const SCORES_STATES = [
       assert: scoresRasterProbe(),
     })),
   ),
-  // every zone, selected, on both projections -- 4 x 2 = 8
-  ...ZONE_KEYS.flatMap((key) =>
+  // every zone, selected, on both projections -- 4 x 2 = 8. M6: `zoneSelectionProbe` checks BOTH
+  // the base zone outline (as before) AND the selected zone's OWN highlight (`selection-line`) --
+  // the review's own finding: this used to assert only the former, so a regression that broke
+  // only the selection ring read green forever.
+  ...ZONE_KEYS.flatMap(({ key, lon, lat }) =>
     PROJECTIONS.map((proj) => ({
       name: `scores sel=zone:${key} proj=${proj}`,
       kind: "scores",
-      path: `/?unit=programarea&proj=${proj}&sel=${encodeURIComponent(`zone:programarea:${key}`)}`,
-      assert: zoneVectorProbe(),
+      path:
+        `/?unit=programarea&proj=${proj}&sel=${encodeURIComponent(`zone:programarea:${key}`)}` +
+        `&map=${lon},${lat},5`,
+      assert: zoneSelectionProbe(),
     })),
   ),
-  // two arbitrary cell selections (ring drawn from a plain cell id -- no probe needed beyond layout)
-  { name: "scores sel=cell:1500000", kind: "scores", path: "/?sel=cell:1500000" },
-  { name: "scores sel=cell:100", kind: "scores", path: "/?sel=cell:100" },
+  // two arbitrary cell selections -- M6: a `selection-line` feature count > 0 (the ring drawn
+  // from the plain cell id), where this used to be layout-only. `map=` centers the camera ON the
+  // cell (grid.ts#cellLonLat, by hand: cell 1500000 -> -156.375,50.575; cell 100 ->
+  // 146.075,74.725, both real BOOT_FIXTURE_SCORES grid math) -- without it, the DEFAULT "FULL"
+  // camera (centre -101.3,46.9, zoom 2.16, globe projection) never actually shows either cell's
+  // tiny 0.05deg ring, and `queryRenderedFeatures` -- a real VIEWPORT query, not a source-content
+  // one -- legitimately returns 0 for a feature that exists in the source but is off-screen
+  // (measured while wiring this probe in: 0 both times, `map.getStyle().sources.selection.data`
+  // showed the real ring polygon present regardless).
+  {
+    name: "scores sel=cell:1500000",
+    kind: "scores",
+    path: "/?sel=cell:1500000&map=-156.375,50.575,8",
+    assert: selectionLineProbe(),
+  },
+  {
+    name: "scores sel=cell:100",
+    kind: "scores",
+    path: "/?sel=cell:100&map=146.075,74.725,8",
+    assert: selectionLineProbe(),
+  },
 ];
 
+// M6: `param` fixes a real bug this matrix's assertions immediately surfaced -- `WALRUS_AM_MDL_KEY`
+// is a raw INPUT key (`am|...`), and `?sp=am|...` is not a species key the app resolves at all (it
+// needs `?mdl_key=`, which redirects to the canonical `sp=ms_merge|...&in=am` -- verified against
+// `e2e/species.smoke.spec.ts`'s own "?mdl_key=am|... on v9 lands on the right taxon AND selects
+// that input" case). Under the OLD `sp=` construction, every walrus state silently rendered
+// NOTHING -- not even the basemap -- and "layout only" never noticed (this IS the review's "a
+// 404'd species raster passes" finding, one layer up: nothing published at all, not just a 404).
 const SPECIES_KEYS = [
-  { label: "leatherback (merged)", token: LEATHERBACK_SP },
-  { label: "walrus (am)", token: WALRUS_AM_MDL_KEY },
-  { label: "wrybill (non-US)", token: WRYBILL_SP },
+  { label: "leatherback (merged)", token: LEATHERBACK_SP, param: "sp" },
+  { label: "walrus (am)", token: WALRUS_AM_MDL_KEY, param: "mdl_key" },
+  { label: "wrybill (non-US)", token: WRYBILL_SP, param: "sp" },
 ];
+
+// M6: `rep=` does NOT pick apart these three fixture taxa the way the review's illustrative fix
+// text describes ("speciesRasterProbe on rep=model, species-range on rep=native") -- verified
+// empirically (debug harness, atlas-8 review round 2): leatherback's and wrybill's MERGED pill
+// carries exactly ONE asset, hardcoded `rep: "native"` (`layerBar.ts:190-193`, `MergedSurface.type`
+// is ALWAYS `"cog"` -- there is no vector merged surface to fall through to), so `rep=model` and
+// `rep=native` resolve to the identical COG either way; walrus's own `am` input carries `model`/
+// `native` COGs (TWO distinct rasters, never a range) and its `mdl_key=` redirect additionally
+// drops an explicit `rep=` override, always landing on `native`. None of the 12 core states is
+// EVER pmtiles-backed as constructed. The one real vector-range asset among these three fixtures
+// is wrybill's OWN `bl` (BirdLife) input (`native: pmtiles`, no `model` asset at all) -- so
+// wrybill's two `rep=native` states additionally select it (`in=bl`), which is what actually
+// exercises `species-range`; every other state (10 of 12, plus the default pick and both theme
+// states) is a real, asserted RASTER.
+function speciesCoreAssert(label, rep) {
+  if (label.startsWith("wrybill") && rep === "native") return speciesRangeProbe();
+  return speciesRasterProbe();
+}
 
 const SPECIES_STATES = [
-  { name: "species (default pick)", kind: "species", path: "/?lens=species" },
+  {
+    name: "species (default pick)",
+    kind: "species",
+    path: "/?lens=species",
+    assert: speciesRasterProbe(), // resolves to the leatherback merged COG (verified empirically)
+  },
   // species key x us-only x representation -- 3 x 2 x 2 = 12
-  ...SPECIES_KEYS.flatMap(({ label, token }) =>
+  ...SPECIES_KEYS.flatMap(({ label, token, param }) =>
     [true, false].flatMap((us) =>
       ["native", "model"].map((rep) => ({
         name: `species sp=${label} us=${us ? 1 : 0} rep=${rep}`,
         kind: "species",
-        path: `/?lens=species&sp=${token}&us=${us ? 1 : 0}&rep=${rep}`,
+        path:
+          `/?lens=species&${param}=${token}&us=${us ? 1 : 0}&rep=${rep}` +
+          (label.startsWith("wrybill") && rep === "native" ? "&in=bl" : ""),
+        assert: speciesCoreAssert(label, rep),
       })),
     ),
   ),
-  // two of the above, again under an explicit theme (dark/light) -- 2 x 2 = 4
-  ...SPECIES_KEYS.slice(0, 2).flatMap(({ label, token }) =>
+  // two of the above, again under an explicit theme (dark/light) -- 2 x 2 = 4. Both keys here
+  // (leatherback, walrus) default to `rep=native`, which for BOTH is a real COG asset (see the
+  // comment above) -- a theme-aware raster probe, matching the shell states' own M5/M6 pairing.
+  ...SPECIES_KEYS.slice(0, 2).flatMap(({ label, token, param }) =>
     ["dark", "light"].map((theme) => ({
       name: `species sp=${label} theme=${theme}`,
       kind: "species",
-      path: `/?lens=species&sp=${token}&theme=${theme}`,
+      path: `/?lens=species&${param}=${token}&theme=${theme}`,
+      assert: speciesRasterProbe(
+        RASTER_RGB,
+        SPECIES_RASTER_OPACITY,
+        theme === "dark" ? BASEMAP_RGB_NAVY : BASEMAP_RGB,
+      ),
     })),
   ),
 ];

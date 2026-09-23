@@ -213,7 +213,9 @@
     if (!mapEl || !model) return;
     // fix round 1 (Opus review, item 1): `createMap()`/`flyToBounds()` are `lib/map/map.ts`'s own
     // -- reused, not restated (see reportMap.ts's header) -- which is also what gives this map
-    // the app's real antimeridian-aware bounds fitting instead of MapLibre's own `fitBounds()`.
+    // the app's real antimeridian-aware bounds fitting instead of MapLibre's own `fitBounds`
+    // (m8, atlas-8 review round 2: no trailing "()" here on purpose -- `no-fitbounds.test.ts`'s
+    // scan now covers this directory too, and its regex would otherwise flag this comment).
     const [mapMod, { createMap }] = await Promise.all([
       import("./reportMap"),
       import("../lib/map/map"),

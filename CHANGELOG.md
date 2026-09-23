@@ -1,3 +1,56 @@
+# atlas 0.10.23
+
+atlas-8 review round 2 (Opus 5.5 review of 0.10.21): six items — three MAJOR ("element exists"
+assertions that never proved DATA), two MINOR gate-scope widenings, and one pinned-wording gate.
+
+- **M4: the report map's DATA layer is now pixel-proven, not just "an `<img>` is visible."**
+  `.map-print img` used to pass on the basemap alone (`captureRejectionReason` only rejects a
+  blank/flat capture). `e2e/report-hermetic.ts#mapPrintRampPixelCount` draws the captured PNG onto
+  a canvas, reads its pixels back, and counts how many match a colour ONLY a real place's
+  score-coloured circle could paint (GAA/ALA are, by construction, exactly the fixture's ramp
+  domain endpoints); the fixture also gained a real `label_pt` per place (`report-hermetic.ts`) --
+  without one, the places layer was silently an EMPTY FeatureCollection and the capture was 100%
+  basemap the whole time. `reportMap.ts` names `PLACE_CIRCLE_OPACITY` (was an inline `0.85`) so the
+  pixel-proof can compute the same alpha-blend a real capture paints.
+- **M5: a theme switch is now proven by a PAINTED pixel, not a recomposed style object.**
+  `e2e/map.spec.ts`'s theme-switch test used to read `JSON.stringify(composeStyle(inputs()))`
+  (never necessarily what the map applied) and treat any non-null `readPixel()` as "painted."
+  Navy and paper now carry DIFFERENT fixture water colours (`BASEMAP_RGB_NAVY`,
+  `e2e/map-hermetic.ts`; paper's own `BASEMAP_RGB` is unchanged, so every spec that never sets
+  `theme=` keeps reading exactly the value it already did), and the test reads the REAL
+  `map.getStyle()` plus a real painted pixel before/after the toggle.
+- **M6: `scripts/verify.mjs`'s 22 layout-only states get real assertions.** `speciesRasterProbe`
+  (a theme-aware basemap/raster blend, probed at the map's own centre) covers every species
+  raster state; `speciesRangeProbe` covers wrybill's real BirdLife (`in=bl`) vector range;
+  `selectionLineProbe` covers `sel=cell:*`; a new `zoneSelectionProbe` checks the SELECTED zone's
+  own highlight layer (`${unit}_highlight_ln`, `zoneHighlightLayer()`) on `sel=zone:*`, not just
+  the base outline every zone's line already draws (the review's own finding: the old assertion
+  couldn't tell a broken highlight from a healthy one). Two real bugs surfaced while wiring these
+  in: `?sp=am|...` (a raw AquaMaps input key) is not a species key the app resolves at all -- it
+  needs `?mdl_key=`, so every walrus state was silently rendering nothing; and the default "FULL"
+  globe camera does not actually put every cell/zone selection on screen at zoom 2.16, so
+  `sel=cell:*` and the MDA/CGA zone states now carry a `map=` camera override centred on what they
+  select. Three new `e2e/places.spec.ts` tests cover the Places pick-mode highlight, a
+  drawn/entered place's outline, and "show analysis cells" -- all three render through the same
+  `selection-line` layer and had no rendered-feature assertion anywhere before this.
+- **m7: `Composition.svelte`'s `valueLabel` is pinned to G-23's real wording** (a source-scan
+  regression, `tests/lens/scores/composition-valueLabel.test.ts`) -- nothing previously stopped it
+  reverting to a bare `"species"` count label, G-23's exact original symptom.
+- **m8: `no-fitbounds`/`no-readpixels` widened to their real scope.** `no-fitbounds` now also scans
+  `src/places` and `src/report` (both build a camera from a bbox, same as a lens); `no-readpixels`
+  now scans all of `src/` (plan D4 -- "numbers never come from the tile server" -- is app-wide, not
+  `src/lens/scores`-scoped).
+- **m10: two gates tightened to catch what they were meant to.**
+  `e2e/species.smoke.spec.ts`'s switch-species-twice test now re-reads the raster source once more
+  after `DEFAULT_STYLE_FALLBACK_MS` + 1s, so a stale queued style flushing LATE and silently
+  reverting the source is caught, not just "the second species' raster existed at some point."
+  `e2e/verify.faults.spec.ts`'s 404-raster fault now calls the real exported `scoresRasterProbe`
+  instead of a hand-rolled `readPixel(...) != RASTER_RGB` check, which would have passed on any
+  wrong colour, not specifically "the basemap alone, never the raster."
+
+New `tests/faults/*.patch` entries wired into `npm run test:faults`: `report-map-no-score-color`
+(M4), `map-hermetic-same-theme-color` (M5), `zone-highlight-lost` (M6).
+
 # atlas 0.10.21
 
 The owner's live report on 0.10.17: no score raster on desktop, raster fine on the phone. Two
