@@ -20,6 +20,7 @@ import {
 } from "./hermetic";
 import {
   BOOT_FIXTURE,
+  SCORE_COG_URL,
   blockWasm,
   routeBasemapStyle,
   routeGlyphs,
@@ -54,12 +55,23 @@ declare global {
 }
 
 /** the shared 4-feature Program Area fixture (map-hermetic.ts), augmented with one metric on
- * every zone -- the SAME shape e2e/scores.outlines.spec.ts's own `bootFixture()` uses, for the
- * SAME reason (the choropleth branch needs a value per zone to paint at all). */
+ * every zone (the choropleth branch needs a value per zone to paint at all -- the SAME shape
+ * e2e/scores.outlines.spec.ts's own `bootFixture()` uses) AND a `by_subregion.FULL` COG/rescale
+ * (the raster/cell-legend branch needs a rescale to build a legend at all -- without one,
+ * `rasterLegend()` returns `{stops: [], unavailable: false}`, a "raster" legend with nothing in
+ * it, which is a DIFFERENT bug from M2's and not what this spec is proving). */
 function bootFixture() {
   return {
     ...BOOT_FIXTURE,
-    layers: [{ metric_key: "score", label: "Score", category: "composite", order: 1 }],
+    layers: [
+      {
+        metric_key: "score",
+        label: "Score",
+        category: "composite",
+        order: 1,
+        by_subregion: { FULL: { cog: SCORE_COG_URL, rescale: [0, 90] as [number, number] } },
+      },
+    ],
     zones: {
       ...BOOT_FIXTURE.zones,
       programarea: BOOT_FIXTURE.zones.programarea.map((z, i) => ({
