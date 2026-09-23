@@ -6,6 +6,7 @@ import {
   legendStops,
   legendTicks,
   paletteStopsFromBoot,
+  paletteStopsWithFallback,
   type PaletteStops,
 } from "../../src/lib/raster/ramps";
 
@@ -46,6 +47,50 @@ describe("paletteStopsFromBoot (reads boot.palettes with a runtime guard)", () =
     expect(paletteStopsFromBoot({ palettes: { viridis: "not-an-array" } }, "viridis")).toBeNull();
     expect(paletteStopsFromBoot({ palettes: { viridis: [1, 2, 3] } }, "viridis")).toBeNull();
     expect(paletteStopsFromBoot({ palettes: { viridis: [] } }, "viridis")).toBeNull();
+  });
+});
+
+// M2 fix (docs/usability.md): today's boot.palettes carries ONLY spectral_r (every release's own
+// choice, per zoneFill.ts/raster.ts's comments) -- picking Viridis/Cividis/Magma used to paint
+// every Program Area flat grey and drop the legend. One case per palette in the picker (PALETTES,
+// state/types.ts), so a palette that ever loses its fallback shows up as exactly the row that broke.
+describe("paletteStopsWithFallback — one case per palette in the picker (M2)", () => {
+  it("spectral_r: returns the published stops verbatim when the release has them (no fallback needed)", () => {
+    const boot = { palettes: { spectral_r: SPECTRAL_R_11 } };
+    expect(paletteStopsWithFallback(boot, "spectral_r")).toEqual(SPECTRAL_R_11);
+  });
+
+  it("spectral_r: unpublished is still null -- this palette has no fallback anchor (never needs one today)", () => {
+    expect(paletteStopsWithFallback({ palettes: {} }, "spectral_r")).toBeNull();
+    expect(paletteStopsWithFallback(null, "spectral_r")).toBeNull();
+  });
+
+  for (const name of ["viridis", "cividis", "magma"] as const) {
+    it(`${name}: falls back to 11 real, distinct stops when the release publishes none`, () => {
+      const stops = paletteStopsWithFallback({ palettes: {} }, name);
+      expect(stops).not.toBeNull();
+      expect(stops).toHaveLength(11);
+      expect(stops!.every((s) => /^#[0-9a-fA-F]{6}$/.test(s))).toBe(true);
+      // a REAL gradient, not 11 copies of one flat colour (the exact pre-fix symptom).
+      expect(new Set(stops)).not.toHaveLength(1);
+      // monotonic progression, not a random scatter: consecutive stops are never identical.
+      for (let i = 1; i < stops!.length; i++) expect(stops![i]).not.toBe(stops![i - 1]);
+    });
+
+    it(`${name}: still prefers a release's OWN published stops over the fallback, when it has them`, () => {
+      const published: PaletteStops = Array.from({ length: 11 }, (_, i) => `#${(i + 1)
+        .toString(16)
+        .padStart(6, "0")}`);
+      const boot = { palettes: { [name]: published } };
+      expect(paletteStopsWithFallback(boot, name)).toEqual(published);
+    });
+  }
+
+  it("a missing/null boot still resolves every fallback-bearing palette (no boot.json required)", () => {
+    for (const name of ["viridis", "cividis", "magma"] as const) {
+      expect(paletteStopsWithFallback(null, name)).toHaveLength(11);
+      expect(paletteStopsWithFallback(undefined, name)).toHaveLength(11);
+    }
   });
 });
 

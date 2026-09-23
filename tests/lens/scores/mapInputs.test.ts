@@ -45,7 +45,11 @@ describe("scoresMapInputs — cell branch", () => {
     }
   });
 
-  it("legend: kind 'unavailable' when the release has not published this palette's stops", () => {
+  // M2 fix (docs/usability.md): the raster legend used to go "unavailable" the moment a palette
+  // (today: anything but spectral_r) had no published boot.palettes stops -- even though titiler
+  // was already painting the tiles correctly server-side. `rasterLegend` (raster.ts) now falls back
+  // to ramps.ts's own fixed ramp, so `scoresMapInputs` carries a real "raster" legend here too.
+  it("legend: kind 'raster' (M2 fallback) even when the release has not published this palette's stops", () => {
     const out = scoresMapInputs({
       boot: BOOT_V7,
       overlays: MANIFEST_OVERLAYS_V7,
@@ -55,7 +59,11 @@ describe("scoresMapInputs — cell branch", () => {
       showOutsidePra: false,
       selection: null,
     });
-    expect(out.legend).toEqual({ kind: "unavailable", title: "Overall score" });
+    expect(out.legend?.kind).toBe("raster");
+    if (out.legend?.kind === "raster") {
+      expect(out.legend.title).toBe("Overall score");
+      expect(out.legend.stops).toHaveLength(11);
+    }
   });
 
   it("a cell selection draws a ring polygon at the given colour", () => {

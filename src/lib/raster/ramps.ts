@@ -154,3 +154,47 @@ export function colorForValue(
   ];
   return rgbToHex(mixed);
 }
+
+// --- M2 fix: a fallback ramp for a palette the release has not published stops for ---------------
+//
+// docs/usability.md M2: every release today publishes `boot.palettes` for `spectral_r` ONLY
+// (zoneFill.ts's own comment). Picking Viridis/Cividis/Magma painted every Program Area flat grey
+// (`zoneChoropleth()`'s `!stopsColors` branch) and replaced BOTH the zone and raster legends with
+// "This release has not published a legend ramp for this palette yet" — the viewer lost the scale
+// on a palette the PICKER itself offered as a live choice.
+//
+// These are the standard, widely-published anchor colors for each colormap family (matplotlib's
+// perceptually-uniform Viridis/Cividis/Magma), resampled to 11 stops with THIS module's own
+// `colorForValue()` interpolation — never a second ramp/interpolation algorithm, and this stays the
+// one file `tests/raster/ramps.wiring.test.ts` polices for that. `spectral_r` needs no entry: every
+// release publishes it, so `paletteStopsFromBoot` never falls through for it today.
+const FALLBACK_RAMP_ANCHORS: Partial<Record<PaletteName, PaletteStops>> = {
+  viridis: ["#440154", "#414487", "#2a788e", "#22a884", "#7ad151", "#fde725"],
+  cividis: ["#00204d", "#414d6b", "#7c7b78", "#b9a468", "#ffea46"],
+  magma: ["#000004", "#3b0f70", "#8c2981", "#de4968", "#fe9f6d", "#fcfdbf"],
+};
+
+/** 11 evenly-spaced stops resampled from `anchors`, via `colorForValue()` — the same interpolation
+ * every click-popup/legend color already runs through, just fed a fixed anchor set instead of a
+ * release's own 11 published stops. */
+function resampleTo11(anchors: PaletteStops): PaletteStops {
+  return Array.from({ length: 11 }, (_, i) => colorForValue(anchors, i, 0, 10));
+}
+
+/**
+ * `paletteStopsFromBoot()`, falling back to a FIXED, client-side ramp (never derived from release
+ * data — `FALLBACK_RAMP_ANCHORS` above) when the release publishes none for `name` (M2). `null`
+ * only for a palette this module has neither published-data NOR a fallback for, which cannot
+ * happen for any `PaletteName` today (every entry in `PALETTES` either is always published
+ * (`spectral_r`) or has a fallback here) — kept so a caller need not special-case that
+ * impossibility separately from "boot hasn't loaded yet".
+ */
+export function paletteStopsWithFallback(
+  boot: { palettes?: unknown } | null | undefined,
+  name: PaletteName,
+): PaletteStops | null {
+  const published = paletteStopsFromBoot(boot, name);
+  if (published) return published;
+  const anchors = FALLBACK_RAMP_ANCHORS[name];
+  return anchors ? resampleTo11(anchors) : null;
+}

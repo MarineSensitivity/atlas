@@ -66,12 +66,23 @@ describe("zoneChoropleth", () => {
     expect(colorOf("HIGH")).toBe(stops[10]);
   });
 
-  it("no published stops for the palette: every zone drawn as the default colour, legend unavailable", () => {
+  // M2 fix (docs/usability.md): picking Viridis/Cividis/Magma (no release publishes stops for
+  // them, BOOT_V7's own fixture included) used to draw every zone `lightgrey` with `legend: null` —
+  // a real Program Area choropleth going flat the moment the picker offered a palette no release
+  // happened to publish. `zoneChoropleth` now falls back to ramps.ts's own fixed ramp.
+  it("falls back to ramps.ts's own ramp when the release has not published stops for the palette", () => {
     const values = zoneValuesFor(zoneRows(BOOT_V7, "programarea"), COMPOSITE);
     const out = zoneChoropleth("programarea", values, BOOT_V7, "viridis");
     expect(out.empty).toBe(false);
-    expect(out.legend).toBeNull();
-    expect(out.fill!.stops.every((s) => s.color === "lightgrey")).toBe(true);
+    // still a real legend, with the SAME rounded range spectral_r would have produced.
+    expect(out.legend).toEqual({
+      min: 12,
+      max: 33.1,
+      stops: expect.arrayContaining([expect.stringMatching(/^#/)]),
+    });
+    // NOT every zone painted the flat default colour anymore -- a real (if approximate) gradient.
+    expect(out.fill!.stops.every((s) => s.color === "lightgrey")).toBe(false);
+    expect(new Set(out.fill!.stops.map((s) => s.color)).size).toBeGreaterThan(1);
   });
 });
 

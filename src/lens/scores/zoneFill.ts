@@ -7,7 +7,7 @@ import { roundHalfEven } from "../../lib/geo/round";
 import {
   binColor,
   legendStops,
-  paletteStopsFromBoot,
+  paletteStopsWithFallback,
   type LegendStop,
   type PaletteName,
 } from "../../lib/raster/ramps";
@@ -65,14 +65,18 @@ export function zoneChoropleth(
 ): ZoneChoropleth {
   if (values.length === 0) return { fill: null, legend: null, empty: true };
 
-  const stopsColors = paletteStopsFromBoot(boot, palette);
+  // M2 fix: falls back to ramps.ts's own fixed anchor ramp when the release publishes no stops for
+  // `palette` (today: every release publishes ONLY spectral_r) — every palette the picker offers
+  // now paints a real choropleth and has a legend, not flat grey with "not published yet".
+  const stopsColors = paletteStopsWithFallback(boot, palette);
   const min = Math.min(...values.map((v) => v.value));
   const max = Math.max(...values.map((v) => v.value));
   const round1 = (x: number) => roundHalfEven(x * 10) / 10;
 
   if (!stopsColors) {
-    // no published stops for this palette (today: every release publishes ONLY spectral_r) — draw
-    // every zone as the default colour rather than guess a ramp; the legend is unavailable too.
+    // neither published NOR a known fallback (ramps.ts: cannot happen for a real PaletteName
+    // today) — draw every zone as the default colour rather than guess a ramp; the legend is
+    // unavailable too.
     return {
       fill: {
         keyProperty: zoneKeyProperty(unit),

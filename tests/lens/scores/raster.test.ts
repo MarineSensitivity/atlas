@@ -63,10 +63,23 @@ describe("rasterLegend", () => {
     expect(legend.stops[10].value).toBeCloseTo(11000); // signif(11033.6953, 3)
   });
 
+  // M2 fix (docs/usability.md): a release publishing no stops for a palette (today: every release
+  // publishes ONLY spectral_r) used to make the raster legend "unavailable" even though titiler was
+  // already painting the tiles correctly server-side -- the viewer lost the scale on a palette the
+  // picker itself offered. `rasterLegend` now falls back to ramps.ts's own fixed ramp instead. The
+  // title is kept VERBATIM (not renamed to "falls back to...") because docs/parity.html's S-03 row
+  // (scripts/parity-page/status.mjs, out of scope for this round) cites this exact test title as
+  // its evidence -- renaming it would silently break that checklist's own "does this test still
+  // exist" gate (tests/parity-page/checklist.test.ts).
   it("unavailable when the release has not published this palette's stops (today: viridis/cividis/magma)", () => {
     const legend = rasterLegend(BOOT_V7, primprod, "viridis");
-    expect(legend.unavailable).toBe(true);
-    expect(legend.stops).toEqual([]);
+    expect(legend.unavailable).toBe(false);
+    expect(legend.stops).toHaveLength(11);
+    // still real ENDPOINT values from the layer's own rescale, not a fallback for those too.
+    expect(legend.stops[0].value).toBeCloseTo(35.1);
+    expect(legend.stops[10].value).toBeCloseTo(11000);
+    // every stop a real, distinct color -- not the "unavailable" empty array, and not one flat grey.
+    expect(new Set(legend.stops.map((s) => s.color)).size).toBeGreaterThan(1);
   });
 
   // atlas-4 defect fix (the exact case the owner's screenshot motivated): a small-magnitude
