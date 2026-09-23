@@ -9,7 +9,8 @@
 // the live document's own CSS can. Put a new report color here or nowhere; never a bare literal in
 // another report/** file.
 export const REPORT_NODATA_COLOR = "#b6bfd0"; // tokens.css's --cat-other
-export const REPORT_MAP_BACKGROUND = "#eef2f6";
+// the background/basemap layers reuse composeStyle()'s own colors (fix round 1) -- no
+// REPORT_MAP_BACKGROUND literal here any more.
 export const REPORT_MAP_OUTLINE = "#333333";
 export const REPORT_MAP_LABEL_TEXT = "#1a1f29";
 export const REPORT_MAP_LABEL_HALO = "#ffffff";

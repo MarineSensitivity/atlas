@@ -1,3 +1,43 @@
+# atlas 0.10.7
+
+`atlas-7` fix round 1 (Opus review): no second copy of the map; the checklist's real gates against
+real Parquet fixtures; five seeded faults as tests, not arguments.
+
+- **No second copy of the map.** `reportMap.ts` no longer restates the basemap tile URL or a
+  zone's `label_pt` lookup, and `mapWiring.ts` is deleted: `Report.svelte` now imports `createMap`
+  (`lib/map/map.ts`) and `composeStyle`/`basemapForTheme`/`zoneLabelsFromBoot` (`lib/map/style.ts`,
+  `layers/{basemap,zones}.ts`) directly, same as the app. Accepted the ~6 KB gzip this puts back on
+  `index.html` (see the size line below).
+  `tests/report/noSecondMapCopy.wiring.test.ts` (seeded fault: a restated basemap host, a
+  hand-built `new MapLibreMap(...)`, or a hardcoded glyphs URL under `src/report/` is caught) is
+  the mechanical guard against it recurring.
+- **Real Parquet fixtures, real gates.** `e2e/fixtures/report/*.parquet` (`generate.sql`, the
+  duckdb CLI, same "generate once, commit the binary" convention as `e2e/fixtures/places/`): a
+  synthetic 48x48 grid with FOUR `cell`/`cell_model` partition tiles, real `taxon`/`zone_taxon`
+  rows. `e2e/report.spec.ts` gained: (a) 20 zone places rendering complete in < 10 s; (b) a 4-tile
+  custom (drawn) place's scores AND species rendering complete, cold, in < 15 s, combining all
+  four `cell_model` batches; (c) `page.pdf()` + `pdf-parse`: place/table labels present, the
+  PREVIEW watermark present for v9/preview and absent for v7 (the rotated watermark text comes
+  back letter-per-line from pdfjs — matched whitespace-stripped); (d) the downloaded HTML opens
+  with every http(s) request routed to a hard abort and still shows map/flowers/tables; (e) the
+  permalink reproduces byte-identical `scores.csv`/`species.csv` (compared via `fflate#unzipSync`)
+  across a **fresh browser context**. Needed `npm run duckdb:fetch-ext` locally (CI already runs
+  this before `vite build`) — DuckDB-WASM's `read_parquet()` autoloads the `parquet` extension and
+  the self-hosted mirror under `public/duckdb-ext/` is gitignored, dev-only.
+- **Five seeded faults, as tests**: `tests/report/noHtmlDirective.wiring.test.ts` (`{@html name}`
+  in any `src/report/**/*.svelte`); `tests/report/windowOpenSync.wiring.test.ts` (an `await` before
+  `window.open()` in either entry point's handler); `tests/report/rampDomainFromPlaces.wiring.test.ts`
+  (a release-wide rescale reference feeding the map's color domain instead of `model.map.domain`);
+  `tests/report/printBreakInside.test.ts` (`break-inside: avoid` missing from `table tr` under
+  `@media print`); the watermark-absent-for-restricted and table-row-break faults are additionally
+  exercised live by `e2e/report.spec.ts`'s `page.pdf()` block above.
+- Gates: `tsc` 0 · `svelte-check` 0/0 · `vitest` 163 files / 2501 tests, all green · `eslint` 0 ·
+  `prettier` clean · `vite build` succeeds · `size-budget --entry index.html` 415.2 KB gzip static
+  - 140.5 KB worker = 555.7 KB combined (budget 600 KB; up from 0.10.6's 414.8 KB now that the map
+    wiring is shared code again, not a restatement) · `size-budget --entry report.html --allow-marker
+duckdb` 52.6 KB gzip static, 0 worker (unchanged) · `e2e/report.spec.ts` 15/15 green (chromium) ·
+    `e2e/shell.smoke.spec.ts` 4/4 still green.
+
 # atlas 0.10.6
 
 `atlas-7` step 4: the two entry points into the report.

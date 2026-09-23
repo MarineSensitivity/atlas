@@ -9,64 +9,47 @@
 // same way duckdb/terra-draw are lazy for index.html -- this repo's existing rule for "a big
 // dependency that is not needed before first interaction," just applied to a second entry point.
 //
-// Map CONSTRUCTION goes through `./mapWiring.ts`'s own `createReportMap()`, never
-// `lib/map/map.ts#createMap()` -- see that file's header for why: `lib/map/map.ts` (and
-// `lib/map/layers/zones.ts`, `layers/basemap.ts`, ...) are reachable STATICALLY from index.html
-// already, so report.html importing any of them too would share a Rollup chunk with index.html's
-// own entry and grow ITS committed static-budget baseline with code only report.html needs
-// (measured, before this file existed in its current form: +6.3 KB gzip). This module's basemap
-// tile URL and its `zonePointFromBoot()` below are therefore small, deliberate re-statements of
-// two `lib/map/layers/{basemap,zones}.ts` facts, not imports of those files.
+// FIX ROUND 1 (Opus review, item 1): this module used to restate the basemap tile URL and the
+// zone `label_pt` lookup by hand, to keep `lib/map/{basemap,zones}.ts` off index.html's static
+// graph. That is exactly the "no second copy" rule the phase's own review checklist forbids (a
+// duplicated basemap URL or label rule WILL drift), so it is reverted: `composeStyle()`,
+// `basemapForTheme()` and `zoneLabelsFromBoot()` are imported and reused verbatim. The map
+// CONSTRUCTION (`createMap()`) is reused the same way, from `Report.svelte`'s own dynamic import
+// (see that file). The accepted cost is ~6 KB gzip on index.html's static budget (414.8 KB of 450,
+// still comfortable) -- `tests/report/noSecondMapCopy.wiring.test.ts` is the seeded-fault-backed
+// proof that this module and `Report.svelte` never restate a basemap URL, a MapLibre constructor
+// call or a glyphs endpoint again.
 import type { AreaGeometry } from "../lib/geo/types";
 import { bboxOf } from "../lib/geo/types";
 import { pointOnSurface } from "./pointOnSurface";
 import type { LegendStop, PaletteStops } from "../lib/raster/ramps";
 import { legendStops } from "../lib/raster/ramps";
+import { composeStyle } from "../lib/map/style";
+import { GLYPHS_URL } from "../lib/map/layers/basemap";
+import { zoneLabelsFromBoot } from "../lib/map/layers/zones";
+import type { StyleSpecification } from "../lib/map/types";
 import {
-  REPORT_MAP_BACKGROUND,
   REPORT_MAP_LABEL_HALO,
   REPORT_MAP_LABEL_TEXT,
   REPORT_MAP_OUTLINE,
   REPORT_NODATA_COLOR,
 } from "./colors";
 
-interface RawZoneLabelRow {
-  key?: unknown;
-  label_pt?: unknown;
-}
-
-function labelPointOf(raw: unknown): [number, number] | null {
-  if (Array.isArray(raw) && raw.length >= 2) {
-    const [lon, lat] = raw;
-    return typeof lon === "number" && typeof lat === "number" ? [lon, lat] : null;
-  }
-  if (raw && typeof raw === "object") {
-    const o = raw as Record<string, unknown>;
-    const lon = typeof o.lon === "number" ? o.lon : typeof o.lng === "number" ? o.lng : null;
-    const lat = typeof o.lat === "number" ? o.lat : null;
-    return lon !== null && lat !== null ? [lon, lat] : null;
-  }
-  return null;
-}
-
 /**
- * `boot.zones[unit][key].label_pt`, unwrapped past 180 deg the same way
- * `lib/map/layers/zones.ts#zoneLabelsFromBoot` does -- restated here rather than imported (this
- * module's own header explains why). `null` for a release that publishes no label point for this
- * zone (the report simply omits that place from the map rather than guessing a centroid).
+ * `boot.zones[unit][key].label_pt`, via the SAME reader the shell's own zone label layer uses
+ * (`lib/map/layers/zones.ts#zoneLabelsFromBoot`) -- never a second parser of that field.
  */
 export function zonePointFromBoot(
   boot: unknown,
   unit: string,
   key: string,
 ): [number, number] | null {
-  const zones = (boot as { zones?: Record<string, unknown> } | null | undefined)?.zones;
-  const rows = zones && typeof zones === "object" ? zones[unit] : undefined;
-  if (!Array.isArray(rows)) return null;
-  const row = (rows as RawZoneLabelRow[]).find((r) => r && String(r.key) === key);
-  const pt = labelPointOf(row?.label_pt);
-  if (!pt) return null;
-  return [pt[0] > 180 ? pt[0] - 360 : pt[0], pt[1]];
+  const spec = zoneLabelsFromBoot(boot, unit);
+  if (!spec) return null;
+  const feature = spec.points.features.find((f) => f.properties?.key === key);
+  if (!feature || feature.geometry.type !== "Point") return null;
+  const [lon, lat] = feature.geometry.coordinates as [number, number];
+  return [lon, lat];
 }
 
 export interface ReportMapFeatureInput {
@@ -158,65 +141,34 @@ export interface BuildReportMapStyleOptions {
   paletteStops: PaletteStops | null;
 }
 
-// CARTO's keyless positron raster basemap -- the SAME endpoint `lib/map/layers/basemap.ts` uses
-// for the `paper` theme, but NOT imported from there: that module is reachable STATICALLY from
-// index.html (Shell.svelte), so report.html importing it too would pull it (and everything it
-// transitively imports) into a chunk SHARED with index.html's own entry, growing index.html's
-// static critical path with code only report.html needs (measured: +6.3 KB gzip before this
-// module existed -- see mapWiring.ts's header, which this file's basemap section mirrors for the
-// identical reason). Two literal constants, kept in sync by eye rather than by import, is the
-// accepted cost of report.html and index.html sharing ONE `vite build` graph
-// (`tests/size-budget-gallery-isolation.test.ts` pins that they must).
-const REPORT_BASEMAP_TILES = ["https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"];
-const REPORT_BASEMAP_ATTRIBUTION = "© OpenStreetMap contributors © CARTO";
-
-/** composes the ONE style this map ever applies -- background, positron basemap, the places
- * fill/circle layers, and their label layer. Built by hand (not `map/style.ts#composeStyle`,
- * which is shaped around the shell's PMTiles zone/raster inputs): a standalone report page with
- * one GeoJSON source has no need for that machinery, and "exactly one composed style, applied
- * once" holds trivially for a page that never calls `setStyle` a second time. */
-export function buildReportMapStyle(opts: BuildReportMapStyleOptions) {
-  const basemap = {
-    id: "basemap",
-    tiles: REPORT_BASEMAP_TILES,
-    tileSize: 256,
-    maxzoom: 20,
-    attribution: REPORT_BASEMAP_ATTRIBUTION,
-  };
+/**
+ * Composes the ONE style this map ever applies: `composeStyle()` (background + positron basemap,
+ * theme-driven, `lib/map/style.ts`/`layers/basemap.ts` -- the app's own function, not a copy of
+ * it) with three report-specific layers appended on top (places fill/circle by score, and their
+ * label layer) -- `composeStyle()` has no notion of "an arbitrary GeoJSON polygon colored by its
+ * own data value", so that part is genuinely new, not a restatement of anything existing.
+ */
+export function buildReportMapStyle(opts: BuildReportMapStyleOptions): {
+  style: StyleSpecification;
+} {
+  const base = composeStyle({ theme: opts.theme ?? "paper", projection: "mercator", zones: [] });
   const color =
     opts.domain && opts.paletteStops
       ? scoreColorExpression(opts.paletteStops, opts.domain)
       : REPORT_NODATA_COLOR;
 
-  const style = {
-    version: 8 as const,
-    projection: { type: "mercator" as const }, // a static print/export map never wants a globe crop
+  const style: StyleSpecification = {
+    ...base,
     sources: {
-      [basemap.id]: {
-        type: "raster" as const,
-        tiles: [...basemap.tiles],
-        tileSize: basemap.tileSize,
-        maxzoom: basemap.maxzoom,
-        attribution: basemap.attribution,
-      },
-      places: { type: "geojson" as const, data: placesFeatureCollection(opts.places) },
-      "place-labels": { type: "geojson" as const, data: labelsFeatureCollection(opts.places) },
+      ...base.sources,
+      places: { type: "geojson", data: placesFeatureCollection(opts.places) },
+      "place-labels": { type: "geojson", data: labelsFeatureCollection(opts.places) },
     },
     layers: [
-      {
-        id: "background",
-        type: "background" as const,
-        paint: { "background-color": REPORT_MAP_BACKGROUND },
-      },
-      {
-        id: basemap.id,
-        type: "raster" as const,
-        source: basemap.id,
-        paint: { "raster-opacity": 1 },
-      },
+      ...base.layers,
       {
         id: "places-fill",
-        type: "fill" as const,
+        type: "fill",
         source: "places",
         filter: ["==", ["geometry-type"], "Polygon"],
         paint: {
@@ -227,7 +179,7 @@ export function buildReportMapStyle(opts: BuildReportMapStyleOptions) {
       },
       {
         id: "places-circle",
-        type: "circle" as const,
+        type: "circle",
         source: "places",
         filter: ["==", ["geometry-type"], "Point"],
         paint: {
@@ -240,7 +192,7 @@ export function buildReportMapStyle(opts: BuildReportMapStyleOptions) {
       },
       {
         id: "place-labels",
-        type: "symbol" as const,
+        type: "symbol",
         source: "place-labels",
         layout: {
           "text-field": ["get", "name"],
@@ -254,9 +206,13 @@ export function buildReportMapStyle(opts: BuildReportMapStyleOptions) {
         },
       },
     ],
-    glyphs: "https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf",
+    // a label layer here always needs glyphs -- report places always carry a `name` (unlike the
+    // shell's zone labels, which are conditional on `zonesNeedGlyphs()`), and composeStyle() only
+    // sets `glyphs` when ITS OWN zone labels need it -- `GLYPHS_URL` imported (not restated) is
+    // the same endpoint it would have used.
+    glyphs: base.glyphs ?? GLYPHS_URL,
   };
-  return { style, attribution: REPORT_BASEMAP_ATTRIBUTION };
+  return { style };
 }
 
 export interface CapturedMapPng {

@@ -196,7 +196,13 @@
 
   async function mountMap() {
     if (!mapEl || !model) return;
-    const [mapMod, wiring] = await Promise.all([import("./reportMap"), import("./mapWiring")]);
+    // fix round 1 (Opus review, item 1): `createMap()`/`flyToBounds()` are `lib/map/map.ts`'s own
+    // -- reused, not restated (see reportMap.ts's header) -- which is also what gives this map
+    // the app's real antimeridian-aware bounds fitting instead of MapLibre's own `fitBounds()`.
+    const [mapMod, { createMap }] = await Promise.all([
+      import("./reportMap"),
+      import("../lib/map/map"),
+    ]);
     const paletteStops = paletteStopsFromBoot(boot as { palettes?: unknown }, "spectral_r");
     const features = stubs.map((s, i) => ({
       name: model!.map.places[i]?.name ?? s.name,
@@ -212,23 +218,12 @@
       domain: model.map.domain,
       paletteStops,
     });
+    const handle = createMap(mapEl, { theme: "paper", projection: "mercator" });
+    handle.applyStyle(style);
     const bounds = mapMod.combinedBbox(features);
-    const center = bounds
-      ? [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]
-      : [0, 20];
-    const map = wiring.createReportMap(mapEl, {
-      style: style as never,
-      center: center as [number, number],
-      zoom: 2,
-    });
-    // `fitBounds` is MapLibre's own bounds-fitter -- `docs/map.md`'s ban on it is for the LIVE,
-    // interactive app (it re-wraps longitudes across the antimeridian, which would fight D8's
-    // unwrapped-geometry convention on every camera move). This map is a one-shot static camera
-    // for a single PNG capture, never touched again, so that failure mode cannot compound the way
-    // it would in the shell; a dateline-spanning place's framing may be imperfect, not wrong data.
-    if (bounds) map.fitBounds(bounds, { padding: 40, animate: false });
+    if (bounds) handle.flyToBounds(bounds, { padding: 40 });
     try {
-      const png = await mapMod.captureMapPng(map as never);
+      const png = await mapMod.captureMapPng(handle.map as never);
       mapPngUrl = png.dataUrl;
     } catch {
       mapCaptureFailed = true;
