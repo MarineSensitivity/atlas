@@ -1,5 +1,6 @@
 {
-  "extracted": "2026-09-23T07:35:36.772Z",
+  "extracted": "2026-09-23T08:16:50.509Z",
+  "note": "planSha256 is informative only: the build compares the extracted SLICE, never the whole plan file. Nothing reads this file.",
   "sources": [
     {
       "file": "atlas-4-scores.md",

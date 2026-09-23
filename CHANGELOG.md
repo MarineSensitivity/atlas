@@ -33,6 +33,14 @@ atlas-8 step 5 / Deliverable 2: `docs/parity.html`, the page the cutover is sign
   the three real checklists (72 = 22 + 22 + 28), ids stable and in file order, the drift guard, and
   a **permanent red case** (`tests/fixtures/parity-page/status-fault-done-no-test.mjs`) proving that
   a line claiming `done` with "no test" as evidence fails the consistency check.
+- **`--check` compares the page MODULO its volatile fields** (fix, found on merge commit `609982b`):
+  the page prints the git HEAD sha and two timestamps, so `parity:page:check` was stale on every
+  commit AFTER the one that rendered it, with no edit anywhere — a check nobody can keep green is a
+  check everyone learns to ignore. Those three values are now marked in the HTML
+  (`data-volatile="sha|generated|shots-generated"`) and `canonicalizeHtml()` blanks exactly them on
+  both sides; every status, note, caption, URL and byte count still compares literally.
+  `sources.json`'s `planSha256` is documented — and tested — as INFORMATIVE ONLY: the build compares
+  the extracted checklist SLICE, so appending progress-log lines to a plan file never fails a build.
 - New scripts: `npm run parity:page`, `npm run parity:page:check`, `npm run parity:shots`.
 
 # atlas 0.10.16

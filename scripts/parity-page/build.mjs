@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 
 import { GAPS, INTENTIONAL } from "./content.mjs";
 import { countCheckboxLines, extractChecklistSection, parseChecklist } from "./checklist-core.mjs";
-import { renderPage } from "./render.mjs";
+import { VOLATILE_FIELDS, canonicalizeHtml, renderPage } from "./render.mjs";
 import { checkConsistency, mergeStatus } from "./status.mjs";
 import { buildTestIndex, verifyEvidence } from "./test-index-core.mjs";
 
@@ -99,7 +99,19 @@ function syncChecklists(plansDir) {
   }
   writeFileSync(
     join(CHECKLIST_DIR, "sources.json"),
-    `${JSON.stringify({ extracted: new Date().toISOString(), sources }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        extracted: new Date().toISOString(),
+        // `planSha256` is INFORMATIVE ONLY, and nothing reads this file back. The plans get
+        // progress-log lines appended to them continually, so gating on a whole-file hash would
+        // turn every orchestrator note into a red build. `loadPhases()` re-extracts the checklist
+        // SECTION and compares that slice; only a change inside the section can refuse a build.
+        note: "planSha256 is informative only: the build compares the extracted SLICE, never the whole plan file. Nothing reads this file.",
+        sources,
+      },
+      null,
+      2,
+    )}\n`,
   );
   return sources;
 }
@@ -269,12 +281,19 @@ export async function build({ sync = false, check = false } = {}) {
 
   if (check) {
     const current = existsSync(OUT) ? readFileSync(OUT, "utf8") : "";
-    // the generated stamp moves every run; compare everything else
-    const strip = (s) => s.replace(/<dd>[^<]*UTC<\/dd>/, "");
-    if (strip(current) !== strip(html)) {
-      throw new Error("docs/parity.html is stale — re-run `node scripts/parity-page/build.mjs`");
+    if (!current) throw new Error("docs/parity.html does not exist — run `npm run parity:page`");
+    // Compare MODULO the volatile fields (git sha, render stamp, screenshot-run stamp): those move
+    // on every commit with no content change, and a check that is red on every later commit is one
+    // nobody can keep green. Everything else compares literally.
+    if (canonicalizeHtml(current) !== canonicalizeHtml(html)) {
+      throw new Error(
+        "docs/parity.html is stale — re-run `node scripts/parity-page/build.mjs`. " +
+          `(Compared ignoring only: ${VOLATILE_FIELDS.join(", ")}.)`,
+      );
     }
-    console.log("docs/parity.html is up to date");
+    console.log(
+      `docs/parity.html is up to date (compared ignoring ${VOLATILE_FIELDS.length} volatile fields: ${VOLATILE_FIELDS.join(", ")})`,
+    );
     return { html, phases, rows };
   }
 

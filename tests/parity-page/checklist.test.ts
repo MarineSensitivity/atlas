@@ -5,10 +5,11 @@
 // an upstream edit, a line called "done" with nothing asserting it, and an Evidence cell naming a
 // test that does not exist.
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   countCheckboxLines,
@@ -20,6 +21,7 @@ import { INTENTIONAL } from "../../scripts/parity-page/content.mjs";
 import { PHASES, loadPhases } from "../../scripts/parity-page/build.mjs";
 import { checkConsistency, mergeStatus } from "../../scripts/parity-page/status.mjs";
 import { buildTestIndex, verifyEvidence } from "../../scripts/parity-page/test-index-core.mjs";
+import { VOLATILE_FIELDS, canonicalizeHtml } from "../../scripts/parity-page/render.mjs";
 import { FAULTY_STATUS, FIXED_STATUS } from "../fixtures/parity-page/status-fault-done-no-test.mjs";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
@@ -143,6 +145,94 @@ describe("the consistency rule's seeded fault (a permanent red case)", () => {
   it("does NOT flag `partial` or `deferred` with 'no test' — honesty is not the fault", () => {
     const problems = checkConsistency(mergeStatus(rows, FIXED_STATUS));
     expect(problems).toEqual([]);
+  });
+});
+
+describe("`--check`'s canonicalization (the fix for a check that could never stay green)", () => {
+  // Found on merge commit 609982b: the page embeds the git HEAD sha and two timestamps, so
+  // `--check` was stale on every commit AFTER the one that rendered it — with no edit anywhere.
+  const page = (sha: string, stamp: string, shots: string, status = "done") =>
+    `<dd>0.10.17 · commit <code data-volatile="sha">${sha}</code></dd>` +
+    `<dd><span data-volatile="generated">${stamp}</span></dd>` +
+    `<dd>taken <span data-volatile="shots-generated">${shots}</span></dd>` +
+    `<td class="status"><span class="pill ${status}">${status}</span></td>`;
+
+  it("two renders of the SAME content at different commits/times compare equal", () => {
+    const a = page("748de16c7d", "2026-09-23 07:41 UTC", "2026-09-23T08:00:00.000Z");
+    const b = page("609982bfff", "2026-09-24 11:02 UTC", "2026-09-24T09:30:00.000Z");
+    expect(a).not.toBe(b);
+    expect(canonicalizeHtml(a)).toBe(canonicalizeHtml(b));
+  });
+
+  it("a REAL content change (a row's status) still compares different", () => {
+    const a = page("748de16c7d", "t1", "s1", "done");
+    const b = page("748de16c7d", "t1", "s1", "partial");
+    expect(canonicalizeHtml(a)).not.toBe(canonicalizeHtml(b));
+  });
+
+  it("blanks only the marked fields, and leaves every other span/code alone", () => {
+    const canon = canonicalizeHtml(page("abc", "t", "s"));
+    expect(canon).not.toContain("abc");
+    expect(canon.match(/<!--volatile-->/g)).toHaveLength(VOLATILE_FIELDS.length);
+    expect(canonicalizeHtml("<code>docs/parity/checklists/atlas-4-scores.md</code>")).toContain(
+      "atlas-4-scores.md",
+    );
+  });
+
+  it("the REAL page carries exactly the volatile fields VOLATILE_FIELDS names", () => {
+    const html = readFileSync(join(ROOT, "docs/parity.html"), "utf8");
+    const found = [...html.matchAll(/data-volatile="([^"]+)"/g)].map((m) => m[1]);
+    expect(found.sort()).toEqual([...VOLATILE_FIELDS].sort());
+    expect(canonicalizeHtml(html)).not.toBe(html);
+  });
+});
+
+describe("the plan files' progress logs must never fail a build", () => {
+  // The orchestrator appends progress-log lines to those plans continually. `loadPhases()` compares
+  // the extracted checklist SLICE, never the whole file, and `sources.json`'s `planSha256` is
+  // informative only — this proves both, against a SCRATCH copy (the real plans are read-only).
+  let dir: string | null = null;
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+    dir = null;
+  });
+
+  /** a synthetic plan dir: front matter + the committed slice + a progress log, per phase. */
+  function scratchPlans(mutate: (slice: string) => string = (s) => s): string {
+    dir = mkdtempSync(join(tmpdir(), "atlas-plans-"));
+    for (const phase of PHASES) {
+      const slice = readFileSync(join(ROOT, "docs/parity/checklists", phase.file), "utf8");
+      const path = join(dir, phase.plan);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(
+        path,
+        `# ${phase.plan}\n\nPreamble the build never reads.\n\n${mutate(slice)}\n## Progress log (orchestrator)\n- an existing line\n`,
+      );
+    }
+    return dir;
+  }
+
+  it("loads cleanly from a plan file that wraps the slice in other sections", () => {
+    const phases = loadPhases({ plansDir: scratchPlans() });
+    expect(phases.flatMap((p) => p.rows)).toHaveLength(72);
+  });
+
+  it("APPENDING a progress-log line does not fail it (the whole-file hash is not a gate)", () => {
+    const plans = scratchPlans();
+    for (const phase of PHASES) {
+      const path = join(plans, phase.plan);
+      writeFileSync(
+        path,
+        `${readFileSync(path, "utf8")}- 2026-09-24 · another orchestrator note\n`,
+      );
+    }
+    expect(() => loadPhases({ plansDir: plans })).not.toThrow();
+    expect(loadPhases({ plansDir: plans }).flatMap((p) => p.rows)).toHaveLength(72);
+  });
+
+  it("but a change INSIDE the checklist slice does fail it", () => {
+    const plans = scratchPlans((s) => s.replace("- [ ] Study area:", "- [ ] Study areas:"));
+    expect(() => loadPhases({ plansDir: plans })).toThrow(/no longer matches/);
   });
 });
 

@@ -24,6 +24,29 @@ function inline(s) {
     .replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
+/**
+ * Blank out the VOLATILE fields so two renders of the same content compare equal.
+ *
+ * Why this exists (fix, 2026-09-23, found on the merge commit `609982b`): the page prints the git
+ * HEAD sha, the render timestamp and the screenshot run's timestamp. Every one of those moves
+ * without anything about the CONTENT changing, so `--check` was red on every commit after the one
+ * that rendered the page — a check nobody can keep green is a check everyone learns to ignore.
+ *
+ * The volatile values are marked in the HTML itself (`data-volatile="..."`) rather than matched by
+ * a regex over prose, so adding a fourth one is an attribute, not a new pattern here. Everything
+ * else — every status, note, caption, url, byte count and wall time — still compares literally, so
+ * a real edit is still caught (`tests/parity-page/checklist.test.ts`).
+ */
+export function canonicalizeHtml(html) {
+  return html.replace(
+    /(<(?:span|code)\b[^>]*\bdata-volatile="[^"]*"[^>]*>)[^<]*(<\/(?:span|code)>)/g,
+    "$1<!--volatile-->$2",
+  );
+}
+
+/** the volatile field names this page carries, for the test and the `--check` message. */
+export const VOLATILE_FIELDS = ["sha", "generated", "shots-generated"];
+
 function evidenceCell(evidence) {
   if (!evidence?.length) return '<span class="no-test">no test</span>';
   return evidence
@@ -250,12 +273,12 @@ and the Atlas side by side at the same view. <b>atlas-9's cutover is gated on th
 
 <div class="meta">
 <dl>
-  <dt>Atlas version</dt><dd>${esc(meta.version)} · generated against commit <code>${esc(meta.sha)}</code> (the commit that ADDS this page is its child)</dd>
-  <dt>Generated</dt><dd>${esc(meta.generated)}</dd>
+  <dt>Atlas version</dt><dd>${esc(meta.version)} · generated against commit <code data-volatile="sha">${esc(meta.sha)}</code> (the commit that ADDS this page is its child)</dd>
+  <dt>Generated</dt><dd><span data-volatile="generated">${esc(meta.generated)}</span></dd>
   <dt>Release compared</dt><dd><b>v7</b> — today's <code>latest.txt</code>, the only release both hosts serve publicly</dd>
   <dt>Shiny host</dt><dd><code>${esc(meta.shinyBase ?? "https://app.marinesensitivity.org/v7")}</code></dd>
   <dt>Atlas host</dt><dd><code>${esc(meta.atlasBase ?? "https://marinesensitivity.org/atlas")}</code></dd>
-  <dt>Screenshots</dt><dd>${pairs.length} states · ${compared.length} Shiny-vs-Atlas pairs · ${pairs.length - compared.length} atlas-only · <b>${failedPairs.length} failed</b>${shots?.generated ? ` · taken ${esc(shots.generated)}` : ""}, chromium ${esc(shots?.viewport?.width ?? 1280)}×${esc(shots?.viewport?.height ?? 800)}</dd>
+  <dt>Screenshots</dt><dd>${pairs.length} states · ${compared.length} Shiny-vs-Atlas pairs · ${pairs.length - compared.length} atlas-only · <b>${failedPairs.length} failed</b>${shots?.generated ? ` · taken <span data-volatile="shots-generated">${esc(shots.generated)}</span>` : ""}, chromium ${esc(shots?.viewport?.width ?? 1280)}×${esc(shots?.viewport?.height ?? 800)}</dd>
   <dt>Checklist sources</dt><dd>${phases.map((p) => `<code>${esc(p.source)}</code>`).join("<br>")}</dd>
 </dl>
 </div>
