@@ -163,9 +163,10 @@ export function createStyleApplier(
     }, fallbackMs);
   }
 
-  /** the in-flight style (or the not-yet-loaded initial one) has settled: issue whatever is parked.
+  /** the in-flight style (or the not-yet-loaded initial one) has settled: offer whatever is parked.
    * `"idle"` and `"style.load"` prove the map's style is loaded; only `"idle"` proves its sprite is
-   * too; the fallback proves nothing and only bounds the wait (a hung map must never block). */
+   * too; the fallback proves nothing and only bounds the wait, so it issues the parked style
+   * regardless (a hung map must never block a lens forever — fix round 3 #4). */
   function settle(by: "idle" | "style.load" | "fallback"): void {
     cycle += 1;
     armedCycle = -1;
@@ -175,7 +176,9 @@ export function createStyleApplier(
     if (by !== "style.load") spriteLoading = false;
     const next = queued;
     queued = undefined;
-    if (next) issue(next.style, next.key);
+    if (!next) return;
+    if (by === "fallback") issue(next.style, next.key);
+    else offer(next.style, next.key); // may still wait: a second sprite change needs "idle"
   }
 
   /** the ONE place `apply` is called: starts a fresh cycle, so anything armed for the previous one
@@ -204,14 +207,8 @@ export function createStyleApplier(
     return style.sprite === undefined ? "" : JSON.stringify(style.sprite);
   }
 
-  return function applyQueued(style: StyleSpecification): void {
-    const key = JSON.stringify(style);
-    if (key === lastIssued) {
-      // already what MapLibre has (or is applying): nothing to issue, and anything parked is
-      // older than this call, so it is superseded — the latest request wins, as always.
-      queued = undefined;
-      return;
-    }
+  /** issue `style` now if nothing forbids it, else park it (the latest parked style wins). */
+  function offer(style: StyleSpecification, key: string): void {
     if (!diffable && map.isStyleLoaded()) diffable = true;
     if (spriteLoading && map.isStyleLoaded()) spriteLoading = false;
     if (settling || !diffable || (spriteLoading && spriteKey(style) !== lastSprite)) {
@@ -220,5 +217,16 @@ export function createStyleApplier(
       return;
     }
     issue(style, key);
+  }
+
+  return function applyQueued(style: StyleSpecification): void {
+    const key = JSON.stringify(style);
+    if (key === lastIssued) {
+      // already what MapLibre has (or is applying): nothing to issue, and anything parked is
+      // older than this call, so it is superseded — the latest request wins, as always.
+      queued = undefined;
+      return;
+    }
+    offer(style, key);
   };
 }

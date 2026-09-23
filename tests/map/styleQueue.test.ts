@@ -506,4 +506,26 @@ describe("createStyleApplier — 0.10.22: a style settles on its own style.load,
     applyQueued(navy);
     expect(map.setStyleCalls).toEqual([paper, navy]);
   });
+
+  it("a second sprite change parked behind an unconfirmed style still waits for idle once that style reports", () => {
+    const map = new DiffingFakeMap();
+    let deferLoad = true;
+    const applied: StyleSpecification[] = [];
+    const applyQueued = createStyleApplier(map, (s) => {
+      applied.push(s);
+      if (deferLoad)
+        map.tilesLoaded = false; // a rebuilt style is not loaded until it reports
+      else map.setStyle(s);
+    });
+    const paper = styleWith("basemap");
+    const navy = { ...styleWith("basemap"), sprite: SPRITE_NAVY } as StyleSpecification;
+
+    applyQueued(paper); // a rebuild: unconfirmed, and it changes the sprite
+    applyQueued(navy); // parked: paper is in flight
+    deferLoad = false;
+    map.emit("style.load"); // paper is applied -- but its sprite is still being fetched
+    expect(applied).toEqual([paper]);
+    map.emit("idle");
+    expect(applied).toEqual([paper, navy]);
+  });
 });
