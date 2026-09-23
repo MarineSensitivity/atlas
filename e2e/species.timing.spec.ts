@@ -47,15 +47,21 @@ const BLENDED_RASTER_RGB = RASTER_RGB.map((c, i) => Math.round(c * 0.8 + BASEMAP
 // slower than the laptop number above — GitHub's standard `ubuntu-latest` runners are 2-core/7 GB
 // shared VMs, and titiler tile latency is itself network-RTT-bound").
 //
-// 0.10.14 fix round 1: it has now run there, for the first time. MEASURED, run 35824811030 on
-// ubuntu-latest, the gate alone in its own step (`--project=timing --no-deps` under xvfb), three
-// attempts: medians **3281 ms, 2629 ms, 3261 ms** — against the laptop's 1579 ms. So:
+// 0.10.14 fix round 1: it has now run there, for the first time. MEASURED on ubuntu-latest, the
+// gate alone in its own step (`--project=timing --no-deps` under xvfb):
+//
+//   run 35824811030: medians 3281 / 2629 / 3261 ms (its three retry attempts)
+//   run 35825712215: median  1906 ms (samples 2173, 1897, 1906)
+//
+// Identical code, same nominal hardware, minutes apart: a 1.7x SPREAD, with the good run beating
+// the laptop's own budget. That spread — a 2-core shared VM whose dominant cost is network-RTT-
+// bound tile latency — is the whole reason the number has to differ per machine. So:
 //
 //   - the LAPTOP budget stays exactly 2500 ms. Nothing about the development gate is relaxed.
-//   - CI gets its own, calibrated number: 4000 ms, ~22% over the worst median actually observed
-//     there. That is a real gate, not a rubber stamp — a regression that added one second to the
-//     cold path would land near 4.3 s and go red, and the laptop:runner ratio (~2.0x) means the
-//     CI number tracks the laptop one rather than floating free of it.
+//   - CI gets its own number: 4000 ms, ~22% above the WORST median observed (not the mean —
+//     against that spread, a mean-calibrated cap is just a coin flip). Still a real gate: a
+//     regression adding ~1 s to the cold path lands near 4.3 s on a good run and far past it on
+//     a bad one.
 //
 // When this changes, re-measure and update docs/performance.md's own table in the same commit —
 // a budget whose provenance is not written down stops being a budget.

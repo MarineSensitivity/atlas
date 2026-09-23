@@ -22,8 +22,11 @@ atlas-0's own wiring.
 ## The timing gate (`e2e/species.timing.spec.ts`, its own "timing" Playwright project)
 
 Rule (this subplan's own pyramid + atlas-8's 2026-09-21 handover): the gate runs ALONE
-(`workers: 1`, `dependencies: ["chromium","webkit","firefox"]` in `playwright.config.ts` so it
-starts only once those finish), gates on the MEDIAN of N ≥ 3 cold runs, never a single sample.
+(`workers: 1`; in CI it is its own `pages.yml` step, after the step that runs the three engine
+projects), and gates on the MEDIAN of N ≥ 3 cold runs, never a single sample. That CI step passes
+`--no-deps`: the `timing` project's `dependencies: ["chromium","webkit","firefox"]` orders the
+projects inside ONE invocation, but in a separate invocation it just re-runs the whole matrix
+again — which is what it was silently doing until 0.10.14 fix round 1.
 
 **Laptop, this dispatch** (`npx playwright test --project=timing --no-deps`, machine otherwise
 idle): three cold runs of **1711 ms, 1497 ms, 1579 ms — median 1579 ms**, against the 2.5 s budget
@@ -34,28 +37,36 @@ inside their own budgets.
 
 **CI runner: OBSERVED, 2026-09-23 (0.10.14 fix round 1).** atlas-0's review (F6) found "the ≤ 2.5 s
 first-data-frame gate has never run on the CI runner" and asked this phase to put it into CI and
-record the runner's number. It has now actually run there — run **35824811030**, `ubuntu-latest`,
-the gate alone in its own step (`npx playwright test --project=timing --no-deps` under `xvfb-run`,
-after the three engine projects finished in the step before):
+record the runner's number. It has now actually run there, on `ubuntu-latest`, alone in its own
+step (`npx playwright test --project=timing --no-deps` under `xvfb-run`, after the three engine
+projects finished in the step before) — twice, with instructive disagreement:
 
-| where                           | cold medians (3 runs each)                 | budget        |
-| ------------------------------- | ------------------------------------------ | ------------- |
-| laptop (macOS, idle)            | **1579 ms** (1711/1497/1579)               | ≤ **2500 ms** |
-| `ubuntu-latest` (2-core shared) | **3281 / 2629 / 3261 ms** (three attempts) | ≤ **4000 ms** |
+| where                            | cold median (of 3 runs)                              | budget        |
+| -------------------------------- | ---------------------------------------------------- | ------------- |
+| laptop (macOS, idle)             | **1579 ms** (1711/1497/1579)                         | ≤ **2500 ms** |
+| `ubuntu-latest`, run 35824811030 | **3281 / 2629 / 3261 ms** (its three retry attempts) | ≤ **4000 ms** |
+| `ubuntu-latest`, run 35825712215 | **1906 ms** (2173/1897/1906)                         | ≤ **4000 ms** |
 
-F6's expectation was right: the runner is ~2.0× the laptop. So the budget is now per machine
-(`e2e/species.timing.spec.ts`'s `LAPTOP_BUDGET_MS` / `CI_BUDGET_MS`, selected on `process.env.CI`).
-The laptop number is unchanged at 2500 ms; the CI number is 4000 ms, ~22% over the worst median
-actually observed there, which still goes red on a regression of ~1 s in the cold path. The spec
-prints its samples and median on a PASS as well as a failure, so this table can be re-transcribed
-from any green run rather than only from a red one.
+**The headline here is the SPREAD, not any single number.** Two runs of identical code on the same
+nominal hardware, minutes apart, produced medians of 3281 ms and 1906 ms — a 1.7× swing, and the
+faster of them beats the laptop's own 2500 ms budget. That is what a 2-core shared VM with
+network-RTT-bound tile latency does, and it is why this gate cannot carry a laptop-calibrated
+number on CI: with a 2500 ms cap the suite would be red perhaps half the time, for no reason
+related to the app.
 
-Two caveats worth keeping in view. First, until this run that step was also silently re-running the
-whole three-engine matrix before the timing test (the `timing` project's `dependencies`), so the
-"runs alone" rule was only half true in CI — `--no-deps` is what made it true, and these are the
-first numbers measured under it. Second, titiler tile latency (the dominant cost per S2) is
-network-RTT-bound from whatever region the runner lands in, so expect more spread here than on the
-laptop; that spread, not the app, is most of the 2629→3281 ms range above.
+So the budget is now per machine (`e2e/species.timing.spec.ts`'s `LAPTOP_BUDGET_MS` /
+`CI_BUDGET_MS`, selected on `process.env.CI`). The laptop number is unchanged at 2500 ms; the CI
+number is 4000 ms — ~22% above the worst median actually observed, chosen against the worst rather
+than the mean precisely because of that spread. It is still a real gate: a regression adding ~1 s
+to the cold path lands near 4.3 s on a good run and well past it on a bad one. The spec prints its
+samples and median on a PASS as well as a failure, so every future green run adds a row here; if
+several more land near 1900 ms the cap should come down, and this table is the evidence to do it
+with.
+
+One caveat worth keeping in view: titiler tile latency (the dominant cost per S2) is
+network-RTT-bound from whatever region the runner lands in, which is the most likely explanation
+for the 1906→3281 ms gap above. Both rows are "the gate alone", so neither is contaminated by the
+old double-run of the engine matrix.
 
 ## `scripts/verify.mjs`'s state matrix — laptop, chromium (full run)
 

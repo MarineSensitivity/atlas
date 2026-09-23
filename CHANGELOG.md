@@ -42,13 +42,17 @@ CI, and no console-error allow-list was widened.
 - **The cold first-paint timing gate has run on the CI runner for the first time, and its budget is
   now per machine** (`e2e/species.timing.spec.ts`, `docs/performance.md`). `docs/performance.md`
   had said in as many words that the ≤ 2.5 s gate "has never run on the CI runner … expect it to
-  run slower"; once `--no-deps` let it actually reach the assertion there, it did: measured medians
-  of **3281 / 2629 / 3261 ms** on `ubuntu-latest` (run 35824811030) against the laptop's 1579 ms,
-  i.e. F6's predicted ~2× for a 2-core shared VM with network-RTT-bound tile latency. The
-  **laptop budget is unchanged at 2500 ms**; CI gets its own calibrated 4000 ms, ~22% over the
-  worst median actually observed, which still goes red on a ~1 s cold-path regression. The spec now
-  prints its samples and median on a PASS too, so `docs/performance.md`'s table (updated with the
-  real numbers, per atlas-0 review F6's original ask) can be re-transcribed from a green run.
+  run slower"; once `--no-deps` let it actually reach the assertion there, it did. The finding is
+  the **spread**, not a single number: medians of **3281 / 2629 / 3261 ms** (run 35824811030) and
+  then **1906 ms** (run 35825712215) — identical code, same nominal hardware, minutes apart, a 1.7×
+  swing, with the good run beating the laptop's own 2500 ms budget. That is a 2-core shared VM
+  whose dominant cost is network-RTT-bound tile latency, and it is why a laptop-calibrated cap
+  would have made this suite red roughly half the time for no reason related to the app. The
+  **laptop budget is unchanged at 2500 ms**; CI gets its own 4000 ms, ~22% above the _worst_
+  median observed (not the mean — against that spread a mean is a coin flip), which still goes red
+  on a ~1 s cold-path regression. The spec now prints its samples and median on a PASS too, so
+  every green run adds a row to `docs/performance.md`'s table (updated with the real numbers, per
+  atlas-0 review F6's original ask) and the cap can be lowered later on evidence.
 - **`document.fonts.ready` as a wait is unbounded, and on WebKit/linux it did not settle**
   (`e2e/shell.cls.spec.ts`). All six WebKit geometry-equality cases died as
   `page.evaluate: Test ended.` on that one line. `document.fonts.ready` is a whole-document
