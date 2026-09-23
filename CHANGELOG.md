@@ -1,3 +1,8 @@
+# atlas 0.10.8
+
+- `e2e/report.spec.ts`'s `page.pdf()` block is skipped on webkit and firefox (`page.pdf()` exists only
+  in headless Chromium); it had failed there, not skipped, on the first full three-engine run.
+
 # atlas 0.10.7
 
 `atlas-7` fix round 1 (Opus review): no second copy of the map; the checklist's real gates against

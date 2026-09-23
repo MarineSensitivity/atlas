@@ -448,6 +448,10 @@ function containsWatermark(text: string): boolean {
 }
 
 test.describe("page.pdf() (chromium): labels, table headers, watermark, map image", () => {
+  // page.pdf() exists only in headless Chromium ("PDF generation is only supported for Headless
+  // Chromium"): on webkit/firefox these are skipped, not failed. The other engines still run the
+  // document, exports and round-trip specs above.
+  test.skip(({ browserName }) => browserName !== "chromium", "page.pdf() is Chromium-only");
   test("v9 preview: place/table labels present, PREVIEW watermark present, map image not blank", async ({
     page,
   }) => {
