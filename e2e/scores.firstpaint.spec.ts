@@ -375,8 +375,12 @@ for (const ver of ["v7", "v9"] as const) {
       await expect
         .poll(
           () =>
+            // the `getLayer` guard before `isSourceLoaded`: see e2e/map.spec.ts's
+            // `zoneFeatureCount` header (0.10.14) -- `isSourceLoaded` on a source the style does
+            // not currently hold fires a MapLibre ErrorEvent straight into `console.error`.
             page.evaluate(() => {
               const map = window.__atlasMap!.handle.map;
+              if (!map.getLayer("programarea_ln")) return -1;
               if (!map.isSourceLoaded("programarea_src")) return -1;
               return map.queryRenderedFeatures({ layers: ["programarea_ln"] }).length;
             }),

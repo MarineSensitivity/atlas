@@ -225,6 +225,7 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
                 __atlasMap: {
                   handle: {
                     map: {
+                      getLayer(id: string): unknown;
                       isSourceLoaded(id: string): boolean;
                       queryRenderedFeatures(opts: { layers: string[] }): unknown[];
                     };
@@ -232,6 +233,9 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
                 };
               }
             ).__atlasMap.handle.map;
+            // `getLayer` first: see e2e/map.spec.ts's `zoneFeatureCount` header (0.10.14) --
+            // `isSourceLoaded` on an absent source fires a MapLibre ErrorEvent into console.error.
+            if (!map.getLayer("species-range")) return -1;
             if (!map.isSourceLoaded("species-range")) return -1;
             return map.queryRenderedFeatures({ layers: ["species-range"] }).length;
           });

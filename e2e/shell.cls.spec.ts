@@ -125,8 +125,55 @@ async function captureBoxes(page: Page, keys: KeySpec[], side: "skeleton" | "hyd
   return boxes;
 }
 
+// The two SELF-HOSTED brand faces (src/lib/brand/fonts.css) in the weights the shell paints, as
+// CSS font shorthands `document.fonts.load()`/`check()` accept. These are the only faces whose
+// metrics can move a box between the skeleton and the hydrated frame; the licensed
+// Century Gothic / Calibri faces above them in fonts.css are `local()`-only and simply are not
+// present on any CI runner.
+const BRAND_FACES = [
+  '400 1em "Jost"',
+  '700 1em "Jost"',
+  '400 1em "Carlito"',
+  '700 1em "Carlito"',
+] as const;
+
+/** how long a single face gets to load before this helper gives up and NAMES it. */
+const FACE_LOAD_TIMEOUT_MS = 10_000;
+
+/**
+ * Wait for the brand faces, then assert they are actually loaded.
+ *
+ * 0.10.14: this used to be `await page.evaluate(() => document.fonts.ready)`, which on
+ * WebKit/linux never settled inside the test's budget — all six WebKit cases died as
+ * `page.evaluate: Test ended.` at this line (run 35819393922), three of them on every retry.
+ * `document.fonts.ready` is a whole-document promise: it is only as prompt as the SLOWEST face
+ * in the set (and re-arms on every new font request), so as a wait it is both unbounded and
+ * uninformative — when it does not settle there is nothing to report but a timeout.
+ *
+ * Awaiting the SPECIFIC faces the geometry depends on is bounded and engine-independent, and the
+ * failure names the face instead of the line: `document.fonts.load(spec)` races a timer, and
+ * whatever is still not `check()`-able afterwards is reported BY NAME. A face that genuinely
+ * never loads is therefore a loud, diagnosable red — never a silent 30 s test timeout.
+ */
 async function settleFonts(page: Page) {
-  await page.evaluate(() => document.fonts.ready);
+  const unloaded = await page.evaluate(
+    async ({ specs, timeoutMs }) => {
+      await Promise.all(
+        specs.map((spec) =>
+          Promise.race([
+            document.fonts.load(spec).catch(() => undefined),
+            new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+          ]),
+        ),
+      );
+      return specs.filter((spec) => !document.fonts.check(spec));
+    },
+    { specs: [...BRAND_FACES], timeoutMs: FACE_LOAD_TIMEOUT_MS },
+  );
+  expect(
+    unloaded,
+    `brand face(s) never finished loading within ${FACE_LOAD_TIMEOUT_MS} ms: ${unloaded.join(", ")}`,
+  ).toEqual([]);
 }
 
 for (const theme of THEMES) {

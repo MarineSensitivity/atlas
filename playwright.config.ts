@@ -54,7 +54,31 @@ export default defineConfig({
     {
       name: "firefox",
       testIgnore: ["fixtures/**", "gallery.spec.ts", "species.timing.spec.ts"],
-      use: { ...devices["Desktop Firefox"] },
+      use: {
+        ...devices["Desktop Firefox"],
+        // 0.10.14: on a GPU-less ubuntu-latest runner Firefox BLOCKLISTS its software (llvmpipe)
+        // GL driver, so `canvas.getContext("webgl2")` returns null and maplibre-gl throws
+        // `GPUInitializationError: WebGL2 is required to display this map` before the map object
+        // ever exists. That was 5 of the 9 reds in run 35819393922 -- every firefox spec that
+        // waits on `window.__atlasMap`, `window.__atlasSpecies` or a rendered `.map-print img`,
+        // plus the two shell-smoke "zero console errors" gates. It is invisible on macOS, where
+        // Firefox gets a real accelerated context.
+        //
+        // These prefs give the runner's Firefox the SAME thing chromium already has there
+        // (headless SwiftShader, see this file's atlas-8 note): a real, software-rasterized
+        // WebGL2 context. They do not relax any assertion -- if WebGL2 still cannot be created,
+        // the identical GPUInitializationError comes straight back and the specs stay red.
+        launchOptions: {
+          firefoxUserPrefs: {
+            "webgl.force-enabled": true, // bypass the "software renderer" blocklist entry
+            "webgl.disabled": false,
+            "webgl.disable-fail-if-major-performance-caveat": true, // accept a slow context
+            "webgl.out-of-process": false, // headless linux has no GPU process to delegate to
+            "gfx.webrender.all": true,
+            "gfx.webrender.software": true, // SWGL compositor, no accelerated driver required
+          },
+        },
+      },
     },
     // the timing gate's own project (atlas-8's rule, see species.timing.spec.ts's header for the
     // full reasoning): `workers: 1` + `fullyParallel: false` cap concurrency WITHIN this project,
