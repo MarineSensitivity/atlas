@@ -1,7 +1,7 @@
 {
   "name": "atlas",
   "private": true,
-  "version": "0.10.2",
+  "version": "0.10.3",
   "description": "MarineSensitivity Atlas: scores, species, places and reports for U.S. marine areas.",
   "license": "MIT",
   "type": "module",
@@ -19,6 +19,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "e2e": "playwright test",
+    "e2e:gallery": "playwright test --config=playwright.gallery.config.ts",
     "verify": "node scripts/verify.mjs",
     "e2e:analytics-privacy": "playwright test --config e2e/fixtures/analytics-privacy/playwright.config.ts",
     "size-budget": "node scripts/size-budget.mjs",

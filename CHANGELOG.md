@@ -1,3 +1,22 @@
+# atlas 0.10.3
+
+`atlas-8` step 3: budgets and the browser suites in CI; `docs/performance.md`.
+
+- **`.github/workflows/pages.yml`, six new jobs**: `e2e` (the root Playwright suite, all three
+  engines, then the `timing` project as its own step after them), `e2e-gallery`, `e2e-engine`,
+  `e2e-opfs`, and `parity` (v9 against the real bucket — verified PASS, max|Δ| < 1e-9 on every
+  quantity, before this job was written). `publish` now depends on all of them, plus `checks` and
+  `test-faults` (0.10.1).
+- **`docs/performance.md`** — what every budget/timing gate measured on this laptop (size-budget:
+  409.4/140.5/549.9 KB gzip; the timing gate: median 1579 ms of 3 cold runs against a 2.5s budget)
+  and an honest accounting of what has NOT yet been observed on a real CI runner (this session has
+  no CI access) — the jobs are wired, not yet run for real; atlas-0's F6 ask ("record the runner's
+  number") is half-done until the first real `main` run's numbers are pasted back in.
+- **The three slowest `verify.mjs` states, profiled**: all three are early-in-the-run desktop
+  states within 500-1150ms of each other regardless of what they render — cost is dominated by
+  per-page browser/hydration overhead, not by any state's own data. No fix indicated.
+- `scripts/verify.mjs` now times every state and prints the slowest 3 at the end of a run.
+
 # atlas 0.10.2
 
 `atlas-8` step 2: the Playwright state matrix, widened to three engines.

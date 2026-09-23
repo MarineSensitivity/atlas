@@ -423,6 +423,7 @@ async function main() {
 
   let failed = false;
   const summary = {}; // engine -> {pass, fail}
+  const timings = []; // { label, ms } -- atlas-8 step 3's "profile the three slowest states"
 
   for (const engineName of engines) {
     const launcher = ENGINES[engineName];
@@ -438,8 +439,10 @@ async function main() {
         for (const state of states) {
           const page = await browser.newPage({ viewport: VIEWPORTS[viewportName] });
           const label = `${state.name} @ ${viewportName} [${engineName}]`;
+          const t0 = performance.now();
           try {
             const problems = await runState(page, baseURL, state, viewportName);
+            timings.push({ label, ms: performance.now() - t0 });
             if (problems.length) {
               failed = true;
               summary[engineName].fail++;
@@ -450,6 +453,7 @@ async function main() {
               process.stdout.write(`✓ ${label}\n`);
             }
           } catch (err) {
+            timings.push({ label, ms: performance.now() - t0 });
             failed = true;
             summary[engineName].fail++;
             process.stderr.write(`✗ ${label} — threw: ${err?.message ?? err}\n`);
@@ -466,6 +470,11 @@ async function main() {
   process.stdout.write("\nverify: summary\n");
   for (const [engineName, { pass, fail }] of Object.entries(summary)) {
     process.stdout.write(`  ${engineName}: ${pass} pass, ${fail} fail\n`);
+  }
+
+  process.stdout.write("\nverify: slowest 3 states\n");
+  for (const t of timings.toSorted((a, b) => b.ms - a.ms).slice(0, 3)) {
+    process.stdout.write(`  ${t.ms.toFixed(0)}ms  ${t.label}\n`);
   }
 
   process.exit(failed ? 1 : 0);

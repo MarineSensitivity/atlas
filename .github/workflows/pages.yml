@@ -121,9 +121,147 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
 
+  e2e:
+    name: e2e (chromium, webkit, firefox)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # same reason as the `checks` job: without this mirror, a spec that boots the real DuckDB
+      # engine (e.g. e2e/places.spec.ts's fresh-profile round trip) falls back to fetching the
+      # parquet extension from extensions.duckdb.org on the runner instead of same-origin.
+      - run: node scripts/fetch-duckdb-extensions.mjs
+
+      - run: npx playwright install --with-deps chromium firefox webkit
+
+      # atlas-8 step 3: the root suite (e2e/**, minus the fixtures/gallery/timing carve-outs
+      # playwright.config.ts's own testIgnore already documents) on all three engines in ONE
+      # invocation -- chromium under headless SwiftShader is enough for the gl.readPixels probes
+      # (atlas-8 subplan). The "timing" project is excluded here on purpose: it has its own step
+      # below, alone, per the pyramid's rule that a cold-load timing gate must never share the
+      # runner with anything else touching titiler.
+      - run: npx playwright test --project=chromium --project=webkit --project=firefox
+
+      # its OWN step, after the three engines above finish (playwright.config.ts's `dependencies:`
+      # on the "timing" project already enforces this ordering even within one `npx playwright
+      # test` invocation, run here as an explicit second step for a clearly separated CI log/
+      # failure, matching atlas-0's hand-over: "Put the map gate into CI here and record the
+      # runner's number" — see docs/performance.md for what this run measured).
+      - name: timing gate (species.timing.spec.ts, alone)
+        run: npx playwright test --project=timing
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  e2e-gallery:
+    name: e2e (gallery)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm run e2e:gallery
+
+  e2e-engine:
+    name: e2e (DuckDB-WASM engine, eh/mvp x chromium/firefox/webkit)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium firefox webkit
+
+      # docs/engine.md's own invocation: the mirror has to exist before this harness's specs run,
+      # the same way it has to exist before the real app's first read_parquet().
+      - run: npm run duckdb:fetch-ext && npm run e2e:engine
+
+  e2e-opfs:
+    name: e2e (OPFS store tier, fallback matrix)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium firefox webkit
+
+      - run: npm run duckdb:fetch-ext && npm run e2e:opfs
+
+  parity:
+    name: parity (v9 vs msens, max|Δ| < 1e-9)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # scripts/parity/run.mjs shells out to the `duckdb` CLI (native, not duckdb-wasm) -- the
+      # official install script drops a pinned-version binary on PATH.
+      - run: |
+          curl -fsSL https://install.duckdb.org | sh
+          echo "$HOME/.duckdb/cli/latest" >> "$GITHUB_PATH"
+
+      # against the real bucket, not scripts/parity/mirror.mjs's local dry-run stand-in (that
+      # script reads laptop-only paths -- .claude/worktrees/contract/... and ~/_big/msens/derived
+      # -- that do not exist on a runner). `--base` being an https:// URL makes run.mjs load the
+      # CLI's own `httpfs` extension and read v9's published objects directly; the (bundled)
+      # duckdb-wasm parquet mirror above is unrelated to this native CLI and not needed here.
+      #
+      # Verified 2026-09-23 (this dispatch, laptop, real network): mirror.mjs's own header once
+      # said v9's `app/` objects were "not on S3 yet" -- they are now. A real `v9 --base
+      # https://.../marine-atlas/` run PASSED here (max|delta| < 1e-9 on every quantity,
+      # 14,238-cell GAA composite included) before this job was written, so this is wired as a
+      # real gate, not a hopeful one.
+      - run: node scripts/parity/run.mjs v9 --base https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/
+
   publish:
     name: publish dist/ to gh-pages
-    needs: [checks, test-faults]
+    needs: [checks, test-faults, e2e, e2e-gallery, e2e-engine, e2e-opfs, parity]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
