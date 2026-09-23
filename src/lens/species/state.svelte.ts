@@ -288,9 +288,11 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     };
   });
 
-  $effect(() => {
-    if (docTitle) document.title = docTitle;
-  });
+  // `docTitle` above is exposed (the getter below) but NOT written to `document.title` here --
+  // atlas-8 fix: this used to be a second, independent `$effect` writing it directly, racing
+  // Shell.svelte's own title effect with no ordering guarantee. Shell.svelte is now the ONE writer
+  // (tests/shell/documentTitle.test.ts); it reads this lens' `docTitle` when `sel.lens ===
+  // "species"`.
 
   $effect(() => {
     if (resolving || !card) return;

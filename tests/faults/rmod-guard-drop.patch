@@ -1,0 +1,14 @@
+diff --git a/src/lib/geo/coverage.ts b/src/lib/geo/coverage.ts
+index 1a56cb4..218c2ea 100644
+--- a/src/lib/geo/coverage.ts
++++ b/src/lib/geo/coverage.ts
+@@ -195,8 +195,7 @@ function accumulate(rings: Ring[], grid: GridSpec, frac: Map<number, number>): v
+  */
+ export function rmod(x: number, y: number): number {
+   const t = x - Math.floor(x / y) * y;
+-  const q = Math.floor(t / y);
+-  return q === 0 ? t : t - q * y;
++  return t;
+ }
+ 
+ /** cell id from a 0-based (row, column) index pair, or null when it is off this grid. */

@@ -98,9 +98,32 @@ jobs:
           path: dist
           retention-days: 7
 
+  test-faults:
+    name: test:faults (seeded-fault suite)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # atlas-8 step 1: scripts/test-faults.mjs applies each tests/faults/*.patch in its own
+      # `git worktree add --detach` copy of HEAD under $TMPDIR, runs the named gate, and expects
+      # RED -- a fault that stays green fails this job. Independent of the `checks` job above (it
+      # never touches dist/); gates `publish` the same way `checks` does (see that job's `needs:`).
+      - run: npm run test:faults
+        env:
+          TMPDIR: ${{ runner.temp }}
+
   publish:
     name: publish dist/ to gh-pages
-    needs: checks
+    needs: [checks, test-faults]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

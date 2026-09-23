@@ -1,3 +1,34 @@
+# atlas 0.10.1
+
+`atlas-8` step 1: gate inventory + the seeded-fault suite.
+
+- **`tests/GATES.md`** — every gate named across atlas-0…7/9's subplans and Progress logs, where it
+  lives, its committed seeded fault (or the rewrite that gave it one). ~95 gates inventoried; ~90
+  already self-prove on `npm test`; 4 were "CANNOT FAIL" and are fixed in this release.
+- **`npm run test:faults` (`scripts/test-faults.mjs`)** — the seeded faults that must be applied to
+  the REAL exported function (not a parallel copy in a test file): each one is a committed unified
+  diff under `tests/faults/*.patch`, applied in its own `git worktree add --detach` copy of HEAD
+  under `$TMPDIR`, run against its named gate, and asserted RED, then discarded. Ships with three
+  faults: `coverage-quadratic-scan` (the widened ratio gate below), `rmod-guard-drop`, and
+  `opfs-eviction-order`. Wired into `pages.yml` as its own job, gating `publish` the same way
+  `checks` does.
+- **The coverage vertex-ratio gate, widened** (`tests/geo/coverage.test.ts`) — the existing 600↔2400
+  vertex pair (threshold 8×) measured a real O(n²) fault at only ~2× (atlas-2's own closing-review
+  finding: too weak to be load-proof). Added a 600↔16,000-vertex pair, threshold 16× — the same
+  fault now measures 34–41× against a 5.4–7.6× baseline.
+- **Species lens source scan widened** (`tests/lens/species/sourceScan.test.ts`) — now also scans
+  `src/lib/map/**` (previously invisible to it), and follows one relative-import hop per file so a
+  forbidden grid constant re-exported from a sibling module is caught even when its literal digits
+  never appear in the scanned file's own text.
+- **`document.title` has exactly one writer** — `Shell.svelte` and the species lens
+  (`src/lens/species/state.svelte.ts`) each ran an independent effect writing it, racing on Svelte's
+  own effect-scheduling order. Consolidated to `Shell.svelte`; new source-scan gate
+  `tests/shell/documentTitle.test.ts`.
+- **Upload refusal-copy per-rule assertions** (`tests/geo/upload/messages.test.ts`) — the old
+  aggregate checks let a vague-but-grammatical "mysteryRule" through undetected. Added per-rule
+  tables: `what` must name the number/name that decided a count-based rule's outcome (13 rules);
+  `fix` must name a concrete format or tool (20 of 22 rules).
+
 # atlas 0.10.0
 
 `atlas-7` step 1: the report data model — one pure function from `(release, places)` to a plain
