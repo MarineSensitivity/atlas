@@ -22,6 +22,76 @@ atlas-8 Deliverable 4: beta feedback, zero backend.
   in by the caller (`Shell.svelte`, built from the reactive `Sel`, never `location.search`
   directly). Seeded fault: `tests/faults/feedback-location-href.patch` (`npm run test:faults`).
 
+# atlas 0.10.15
+
+atlas-8 step 3: accessibility. axe everywhere, a scripted no-pointer keyboard walk on three
+engines, the accessibility-tree review, two new seeded faults, and Deliverable 3 — the Section 508
+conformance note. **No app-side accessibility defect is fixed here** (a Sonnet round does the
+fixes, then re-audits); fourteen are found, reproduced and written up instead.
+
+- **axe on every matrix state, not nine of them (`e2e/matrix.a11y.spec.ts`, new).** The axe
+  coverage was four shell states, four gallery states and one report state. It is now **179
+  audits**: all 174 runs `scripts/verify.mjs` itself enumerates (58 named view states × {desktop
+  1280×800, phone 390×844, phoneNarrow 320×800}), plus both gallery themes, both `report.html`
+  access states and the auto-opened D15 denial dialog. The state list is **imported** from
+  `scripts/verify.mjs` (`STATE_MATRIX`, `VIEWPORTS`, and a new exported `gotoState()`), never
+  copied, so a state added there is audited here on the next run. Chromium only, by the plan's
+  wording; the webkit/firefox projects ignore the file so a full run reports 179 audits rather than
+  179 plus 358 skips. **Result: 179/179, zero serious/critical.**
+- **A scripted keyboard walk, pointer never used (`e2e/keyboard-walk.spec.ts`, new).** The plan's
+  sentence as a test: select a Program Area from the zones table, read its score, create a place by
+  coordinates, open the report and trigger an export — with Tab/Shift+Tab/Arrow/Enter/Space/Esc
+  only (Option+Tab on WebKit, whose default Tab sequence skips buttons). Every stop asserts that
+  `document.activeElement` is still a rendered, on-screen control **and** has an accessible name,
+  computed by Playwright's own accname implementation. The score assertion compares what the table
+  shows against the release's own published metric, not a second hand-typed literal. Runs on all
+  three engines: chromium 10 passed / 5 `fixme`, webkit 9/6, firefox 9/6 — every `fixme` is a
+  numbered finding, never a convenience skip.
+- **`npm run verify` was structurally broken and nothing said so — fixed.** The 2026-09-23 basemap
+  round deleted `routeBasemapTiles` (the keyed raster basemap) in favour of `routeBasemapStyle`, but
+  `scripts/verify.mjs` kept importing it by name. A missing named export resolves to `undefined`
+  rather than failing the load, so **every one of the 41 scores-lens states threw `TypeError:
+routeBasemapTiles is not a function`** before its first assertion, from `6a7d88b` until now. Two
+  lines.
+- **Two new seeded faults, wired into `npm run test:faults`** (`tests/faults/hexbutton-unnamed.patch`
+  — the tool rail's `HexButton` loses its `aria-label`, turning the axe sweep red;
+  `tests/faults/modal-focus-restore.patch` — a modal opened by setting the `open` attribute instead
+  of `showModal()`, so closing it restores focus to nothing, turning the keyboard walk red). These
+  are the first Playwright gates in that manifest: `playwright.config.ts` now honours a `PW_PORT`
+  env var and, when it is set, never reuses a server it did not start — otherwise the throwaway
+  worktree's gate would be served the unpatched build and quietly pass.
+- **`e2e/report-hermetic.ts` (new)** — `report.html`'s first-tier fixtures (`BOOT_V9`/`BOOT_V7`/
+  `PL`/`gotoReport`) extracted out of `e2e/report.spec.ts` so the axe sweep audits the same document
+  rather than a near-copy of it. No behaviour change to the existing report suite.
+- **`docs/accessibility.md` (new, Deliverable 3)** — the Section 508 / WCAG 2.1 AA conformance note:
+  every A and AA criterion with its status, and for each "Supports" the **file and test title** that
+  proves it; the known exceptions (the map canvas, whose equivalent is the zones table — with the
+  keyboard test that proves the equivalence, and the honest note that nothing points a screen-reader
+  user at it yet); a "not yet verified" section that names every criterion no test covers; the
+  per-region screen-reader walk notes; and the test evidence counts. The claim is **partially
+  supports**, and nothing is claimed that the matrix does not test.
+- **`docs/accessibility-fixes.md` (new)** — the numbered fix list for the Sonnet round: 14 items,
+  each with its SC number, `file:line`, what a user experiences, the fix, and a severity. Six are
+  serious, including two that only appear on one engine (WebKit drops focus to `<body>` on a rail
+  tool swap; Firefox's skip link lands _past_ the tool rail). Seven already have a committed failing
+  test.
+- **`npm run verify` is in CI** — its own `verify` job in `pages.yml`, gating `publish`. This is the
+  reason A11Y-0 lived for a day: the 58-state × 3-viewport matrix was the last gate with no CI job
+  at all, so nothing ran the script that had been throwing on every scores-lens state. Measured
+  before choosing the shape (laptop, serial by design): **chromium 174 runs in 134 s**, **all three
+  engines 522 runs in 315 s** — cost was not the deciding factor; firefox was. `verify.mjs` launches
+  browsers directly and never reads `playwright.config.ts`, so 0.10.14's `firefoxUserPrefs` +
+  `FIREFOX_HEADED` recipe does not reach it and a GPU-less runner's firefox has no WebGL2; the job
+  runs **chromium only** and says so, with teaching `verify.mjs` that recipe recorded as the
+  follow-up. The three-engine matrix stays covered by the `e2e` job. Proven to fail on a thrown
+  state, not just a failed assertion: `tests/faults/verify-missing-export.patch` reintroduces the
+  exact missing import (measured: baseline exit 0, faulted exit 1, six "✗ … — threw:" lines), and
+  `main()` now also has a `.catch()` so anything thrown _outside_ a state is a hard failure rather
+  than a bet on Node's unhandled-rejection default.
+- **`tests/GATES.md`** updated: the three new gates and their faults, and the `test:faults` count
+  4 → 7 (on the merged tree, beside Deliverable 4's `feedback-location-href`). The CI `test:faults`
+  job now installs chromium, since three of the seven faults drive a real browser.
+
 # atlas 0.10.14
 
 CI went red the first time the browser suites ran on a real GitHub `ubuntu-latest` runner

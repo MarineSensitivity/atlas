@@ -23,9 +23,18 @@ the property under test is about that exact function: it worktrees HEAD, applies
 diff under `tests/faults/*.patch`, runs the named gate, asserts RED, and discards the worktree.
 
 **Counts** (this table): **~95 gates** inventoried · **~90 already carry a committed, verified
-seeded fault** (pattern 1 or 2, self-proving on `npm test`) · **3 wired into `npm run test:faults`**
-(pattern 3, added this step) · **4 were "CANNOT FAIL" or scope-gapped before this step and are now
-rewritten** (marked ✅ FIXED below) · **0 remain CANNOT FAIL** as of 0.10.1.
+seeded fault** (pattern 1 or 2, self-proving on `npm test`) · **7 wired into `npm run test:faults`**
+(pattern 3; 3 added in step 1, 1 with Deliverable 4's feedback link, 3 added in step 3 — two
+accessibility ones and the `verify` job's) · **4 were "CANNOT FAIL" or scope-gapped before step 1
+and are now rewritten** (marked ✅ FIXED below) · **0 remain CANNOT FAIL** as of 0.10.16.
+
+Step 3's three faults are the first **browser-driven** entries in `test:faults`. They need a real
+browser against a real build of the patched tree, so each runs on its own port —
+`PW_PORT` for the two Playwright ones (`playwright.config.ts` honours it and, when it is set, never
+reuses a server it did not start) and `VERIFY_BASE_URL` for `verify-missing-export` (`verify.mjs`
+reuses a server it finds, by design). Without that, a `vite preview` already answering 4331 from the
+unpatched checkout would serve the wrong bytes and the fault would "pass". The CI `test:faults` job
+therefore installs chromium.
 
 ## Fixed this step (were CANNOT FAIL / scope-gapped; now real gates)
 
@@ -113,6 +122,8 @@ rewritten** (marked ✅ FIXED below) · **0 remain CANNOT FAIL** as of 0.10.1.
 | Treemap lazy import (d3-hierarchy never static)                                      | `tests/treemap-lazy-import.wiring.test.ts`                                                                                             | source-level scan (documented: the build-output size-budget scan cannot catch this class at all — tree-shaking leaves no literal marker)                      | Yes                                                                         |
 | tokens.json export == tokens.css                                                     | `tests/tokens-json.test.ts`                                                                                                            | change-without-re-export fault                                                                                                                                | Yes                                                                         |
 | Fonts / glyphs / icon-paths                                                          | `tests/{fonts,glyphs,icon-paths}.test.ts`                                                                                              | icon-map generator: pure-function test replaced a file-shelling generator after a real 0/16 near-miss                                                         | Yes                                                                         |
+| **axe on every matrix state + gallery + report** (zero serious/critical)             | `e2e/matrix.a11y.spec.ts` — drives `scripts/verify.mjs`'s own `STATE_MATRIX`/`gotoState`/`VIEWPORTS`, 179 audits, chromium             | `tests/faults/hexbutton-unnamed.patch` (the rail's HexButton loses `aria-label`) — **wired into `npm run test:faults`**                                       | Yes (chromium project of the root Playwright suite)                         |
+| **Scripted keyboard walk** (no pointer, three engines)                               | `e2e/keyboard-walk.spec.ts`                                                                                                            | `tests/faults/modal-focus-restore.patch` (a modal opened by setting `open` instead of `showModal()`) — **wired into `npm run test:faults`**                   | Yes (all three engine projects)                                             |
 
 ## Not yet wired into CI (all addressed in step 3, not step 1)
 
@@ -122,6 +133,13 @@ no `pages.yml` step yet — `svelte-check`, `eslint`, `prettier --check`, the ro
 `npm run parity`, `scripts/parity/faults.mjs`, and now `npm run test:faults` itself. None of these
 is "CANNOT FAIL" — they all have committed, verified faults — they are simply laptop-only today.
 Step 3 adds the CI jobs; this step adds `test:faults` to that list (see `.github/workflows/pages.yml`).
+
+**Step 3 addendum (0.10.15):** `node scripts/verify.mjs` — the 58-state × 3-viewport matrix — was
+the last gate with no `pages.yml` job at all, and that is exactly how A11Y-0 survived: the script
+had been throwing on every scores-lens state since the basemap round and nothing ran it. It now has
+its own `verify` job (chromium; see that job's comment for the measured cost and why firefox cannot
+run under `verify.mjs`'s own launcher on a GPU-less runner), it gates `publish`, and it carries the
+seeded fault `tests/faults/verify-missing-export.patch`.
 
 `scripts/smoke_release.mjs` is excluded from every count above: it is an atlas-1/atlas-9 deliverable,
 explicitly left unimplemented ("there is no release to smoke yet" — its own header), not a gate this

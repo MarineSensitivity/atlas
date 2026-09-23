@@ -113,6 +113,14 @@ jobs:
 
       - run: npm ci
 
+      # atlas-8 step 3: three of the six faults now drive a real browser (the two accessibility
+      # ones, and `verify-missing-export` which runs `scripts/verify.mjs`), so this job needs a
+      # chromium. Only chromium: every browser-driven fault pins `--project=chromium` /
+      # `--engines=chromium` on purpose, since what they prove (an unnamed button, a lost focus
+      # restore, a state that throws) is engine-independent and a three-engine install here would
+      # triple the job's setup for nothing.
+      - run: npx playwright install --with-deps chromium
+
       # atlas-8 step 1: scripts/test-faults.mjs applies each tests/faults/*.patch in its own
       # `git worktree add --detach` copy of HEAD under $TMPDIR, runs the named gate, and expects
       # RED -- a fault that stays green fails this job. Independent of the `checks` job above (it
@@ -244,6 +252,74 @@ jobs:
           path: test-results/
           retention-days: 7
 
+  verify:
+    name: verify (state matrix, 58 states x 3 viewports)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # CHROMIUM ONLY, and only chromium is installed. atlas-8 step 3 measured both options on a
+      # laptop (macOS, `node scripts/verify.mjs`; the states run SERIALLY, one page at a time, by
+      # design) before choosing:
+      #
+      #   --engines=chromium   174 runs (58 states x 3 viewports)   **134 s**  174 pass / 0 fail
+      #   (all three)          522 runs                             **315 s**  174 pass each, 0 fail
+      #
+      # So COST is NOT the reason -- both fit comfortably inside the ~10 min a job here should take.
+      # The reason is FIREFOX. `scripts/verify.mjs` launches browsers DIRECTLY (`chromium/webkit/
+      # firefox` from `@playwright/test`, its own `ENGINES` map, `launcher.launch()` with no
+      # options) -- it does not read `playwright.config.ts`, so none of 0.10.14's firefox work
+      # applies to it: no `firefoxUserPrefs`, no `headless: !FIREFOX_HEADED`. On a GPU-less runner
+      # that firefox has no WebGL2 at all, and every scores state's `gl.readPixels` / vector probe
+      # would fail for a reason that has nothing to do with the app (exactly the 0.10.14 class of
+      # red). It passes locally only because macOS Firefox gets a real accelerated context.
+      #
+      # FOLLOW-UP, not done here: teach verify.mjs the same prefs + `xvfb-run` + FIREFOX_HEADED
+      # recipe the `e2e` job uses, then run all three here (315 s locally says it would fit). Until
+      # then the three-engine matrix IS still covered in CI -- by the `e2e` job above, which runs
+      # the same specs through playwright.config.ts on all three engines with the working recipe.
+      #
+      # Run the full three-engine matrix locally before a release candidate:
+      #   node scripts/verify.mjs                      # all three, ~5 min
+      #   node scripts/verify.mjs --engines=chromium   # what this job runs, ~2 min
+      #
+      # Chromium needs no Mesa/xvfb: it ships SwiftShader and gets a real software WebGL2 context
+      # on a bare runner (the same reason the `e2e` job's chromium never needed the firefox recipe).
+      # No `duckdb:fetch-ext` either: every state this matrix visits goes through `blockWasm()`
+      # (scripts/verify.mjs's `gotoScores`, e2e/species-hermetic.ts's `gotoSpecies`), so the engine
+      # is never booted and the extension mirror is never read.
+      - run: npx playwright install --with-deps chromium
+
+      # `verify.mjs` builds dist/ and starts its own `vite preview` on VERIFY_BASE_URL's port if
+      # nothing answers there, and shuts down only a server it started. Nothing is listening on a
+      # fresh runner, so it does both.
+      #
+      # This job FAILS on a thrown state, not just on a failed assertion -- `runState`'s own
+      # try/catch counts a throw as a failure and `main()` exits 1, and `main()` now also has a
+      # `.catch()` for anything thrown OUTSIDE a state. That is the whole reason this job exists:
+      # `routeBasemapTiles` was deleted from e2e/map-hermetic.ts by the basemap round while
+      # verify.mjs kept importing it, so every scores state threw before its first assertion, and
+      # with verify.mjs in no CI job nothing said so for a day.
+      # Seeded fault: `tests/faults/verify-missing-export.patch` (`npm run test:faults`), which
+      # reintroduces exactly that import and must turn this command red.
+      - run: node scripts/verify.mjs --engines=chromium
+
+      # No `upload-artifact` step here, unlike the `e2e` jobs: `verify.mjs` is not Playwright's
+      # runner and writes no `test-results/` or trace at all -- its diagnostic IS its stdout (one
+      # `✗ <state> @ <viewport> [<engine>]` line per failure with the specific problem underneath,
+      # plus the per-engine summary and the slowest-3 table), which the job log already keeps.
+      # An `if: failure()` upload of a directory that never exists would only add a second, more
+      # confusing red (`upload-artifact@v4` errors when nothing matches its path).
+
   e2e-engine:
     name: e2e (DuckDB-WASM engine, eh/mvp x chromium/firefox/webkit)
     runs-on: ubuntu-latest
@@ -320,7 +396,7 @@ jobs:
 
   publish:
     name: publish dist/ to gh-pages
-    needs: [checks, test-faults, e2e, e2e-gallery, e2e-engine, e2e-opfs, parity]
+    needs: [checks, test-faults, e2e, e2e-gallery, verify, e2e-engine, e2e-opfs, parity]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

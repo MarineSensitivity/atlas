@@ -32,7 +32,7 @@ const {
   SCORE_COG_URL,
   ZONES_PMTILES_URL,
   blockWasm,
-  routeBasemapTiles,
+  routeBasemapStyle,
   routeGlyphs,
   routeTitilerTiles,
   routeZonesPmtiles,
@@ -137,7 +137,13 @@ async function gotoScores(page, path) {
   await routeSession(page, null);
   await routeSealFixture(page);
   await routeZonesPmtiles(page);
-  await routeBasemapTiles(page);
+  // atlas-8 step 3: `routeBasemapTiles` (the keyed RASTER basemap) was removed by the 2026-09-23
+  // basemap round, which replaced it with CARTO's vector style.json chain -- but this script kept
+  // importing it by name, so EVERY `node scripts/verify.mjs` scores state threw
+  // "routeBasemapTiles is not a function" before its first assertion. A named import of a missing
+  // export from a `.ts` module resolved through the bundler hook above is `undefined`, not a load
+  // error, so nothing said so until a state ran. Finding A11Y-0 in docs/accessibility-fixes.md.
+  await routeBasemapStyle(page);
   await routeTitilerTiles(page);
   await routeGlyphs(page);
   await page.goto(path);
@@ -461,13 +467,26 @@ async function ensureServer(baseURL) {
   };
 }
 
-async function runState(page, baseURL, state, viewportName) {
+/**
+ * Route this state's hermetic fixtures and navigate to it. Exported (atlas-8 step 3) so
+ * `e2e/matrix.a11y.spec.ts` can drive the SAME 174 states through axe without a second copy of the
+ * per-kind fixture wiring: the matrix and the way each of its states is reached are one definition,
+ * here, exactly as `assertLayout`/`VIEWPORTS` already are.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} baseURL
+ * @param {{ kind: string, path: string }} state
+ */
+export async function gotoState(page, baseURL, state) {
   const url = new URL(state.path, baseURL).toString();
   if (state.kind === "species") {
     await gotoSpecies(page, url, "v9");
   } else {
     await gotoScores(page, url);
   }
+}
+
+async function runState(page, baseURL, state, viewportName) {
+  await gotoState(page, baseURL, state);
   const problems = [...(await assertLayout(page))];
   // the pixel/vector probes are tuned against the DESKTOP camera (docs/map.md's default study-area
   // zoom is chosen for a 1280x800 aspect): at phone/phoneNarrow the same zoom+center shows a
@@ -569,6 +588,16 @@ async function main() {
 }
 
 // only run as a CLI, not when imported (tests import assertLayout/VIEWPORTS/STATE_MATRIX directly).
+//
+// The `.catch()` is not decoration (atlas-8 step 3, the A11Y-0 post-mortem): a throw INSIDE a state
+// is already counted and turns the exit code red (`runState`'s own try/catch above, proven by
+// `tests/faults/verify-missing-export.patch`), but a throw OUTSIDE one -- `ensureServer()` failing,
+// `launcher.launch()` failing, `browser.close()` failing -- would reject this promise and leave the
+// exit code to Node's default unhandled-rejection policy, which is a runtime flag, not something
+// this script should depend on. Now it is: any escape is printed and exits 1.
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main();
+  main().catch((err) => {
+    process.stderr.write(`verify: fatal — ${err?.stack ?? err}\n`);
+    process.exit(1);
+  });
 }
