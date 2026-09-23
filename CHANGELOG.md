@@ -41,6 +41,15 @@ atlas-8 step 5 / Deliverable 2: `docs/parity.html`, the page the cutover is sign
   both sides; every status, note, caption, URL and byte count still compares literally.
   `sources.json`'s `planSha256` is documented — and tested — as INFORMATIVE ONLY: the build compares
   the extracted checklist SLICE, so appending progress-log lines to a plan file never fails a build.
+- **The generator's modules carry JSDoc types** (fix: CI's `tsc --noEmit` was red on
+  `tests/parity-page/checklist.test.ts` — eight errors, because vitest does not type-check and
+  neither of us ran `npm run check`). `ChecklistRow`, `Status`, `Evidence`, `StatusEntry`,
+  `MergedRow` and `TestIndex` are now declared where they belong — on the modules that own them, the
+  same convention as `scripts/check-relative-assets-core.mjs` — and `STATUS` is typed as
+  `Record<string, StatusEntry>` rather than left as its own 72-key literal, which is what made a
+  four-row fixture "missing 68 properties". The fixture is typed with the exported `StatusEntry`. No
+  `any`, no `@ts-ignore`: a wrong status value from TypeScript is now
+  `Type '"nope"' is not assignable to type 'Status'`.
 - New scripts: `npm run parity:page`, `npm run parity:page:check`, `npm run parity:shots`.
 
 # atlas 0.10.16

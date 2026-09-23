@@ -13,7 +13,20 @@ import { join, relative } from "node:path";
  * (whose `${...}` parts stay literal — a dynamic title is matched on its static prefix). */
 const TITLE_RE = /\b(?:describe|it|test)(?:\.\w+)*\(\s*(["'`])((?:\\.|(?!\1)[\s\S])*?)\1/g;
 
-/** collect every spec/test file under `dir` (recursively). */
+/**
+ * A test index: every test file (repo-relative) mapped to the titles it declares.
+ *
+ * @typedef {Record<string, string[]>} TestIndex
+ */
+
+/**
+ * Collect every spec/test file under `dir` (recursively).
+ *
+ * @param {string} root
+ * @param {string} [dir]
+ * @param {string[]} [out]
+ * @returns {string[]} absolute paths
+ */
 export function listTestFiles(root, dir = root, out = []) {
   for (const name of readdirSync(dir)) {
     if (name === "node_modules" || name.startsWith(".")) continue;
@@ -24,15 +37,28 @@ export function listTestFiles(root, dir = root, out = []) {
   return out;
 }
 
-/** every `describe`/`it`/`test` title in one file, in source order. */
+/**
+ * Every `describe`/`it`/`test` title in one file, in source order.
+ *
+ * @param {string} source
+ * @returns {string[]}
+ */
 export function titlesIn(source) {
+  /** @type {string[]} */
   const out = [];
   for (const m of source.matchAll(TITLE_RE)) out.push(m[2]);
   return out;
 }
 
-/** build `{ "<relative path>": ["title", ...] }` for every test file under the repo root. */
+/**
+ * Build `{ "<relative path>": ["title", ...] }` for every test file under the repo root.
+ *
+ * @param {string} repoRoot
+ * @param {string[]} [dirs]
+ * @returns {TestIndex}
+ */
 export function buildTestIndex(repoRoot, dirs = ["tests", "e2e", "scripts"]) {
+  /** @type {TestIndex} */
   const index = {};
   for (const d of dirs) {
     let files;
@@ -51,11 +77,12 @@ export function buildTestIndex(repoRoot, dirs = ["tests", "e2e", "scripts"]) {
 /**
  * Check every evidence reference against the index.
  *
- * @param {{id: string, evidence: {file: string, name: string}[]}[]} rows
- * @param {Record<string, string[]>} index
+ * @param {{id: string, evidence?: import("./status.mjs").Evidence[]}[]} rows
+ * @param {TestIndex} index
  * @returns {string[]} human-readable problems; empty = every reference resolves
  */
 export function verifyEvidence(rows, index) {
+  /** @type {string[]} */
   const problems = [];
   for (const row of rows) {
     for (const ev of row.evidence ?? []) {

@@ -15,8 +15,34 @@
 // fails the build if the title is not there. `{ file: "no test" }` is the honest answer where
 // nothing asserts the line — never a test that does not exist.
 
+/**
+ * @typedef {"done" | "partial" | "deferred" | "intentional-difference"} Status
+ *
+ * @typedef {object} Evidence
+ * @property {string} file a repo-relative test file, or the literal `"no test"`
+ * @property {string} name the test's title, verified against the file by `verifyEvidence()`
+ *
+ * @typedef {object} StatusEntry
+ * @property {string} match a distinctive substring of the checklist line (the drift guard)
+ * @property {Status} status
+ * @property {Evidence[]} evidence
+ * @property {string} [note]
+ * @property {string[]} [diffs] ids of intentional-difference entries that explain this line
+ *
+ * @typedef {import("./checklist-core.mjs").ChecklistRow & {status: Status, evidence: Evidence[],
+ *   note: string, diffs: string[]}} MergedRow
+ */
+
+/** @type {Evidence[]} */
 const NO_TEST = [{ file: "no test", name: "" }];
 
+/**
+ * The verdict table. Typed as an INDEX (`Record<string, StatusEntry>`) rather than left to its own
+ * 72-key literal, so `mergeStatus()` accepts any table of the same shape — a fixture with four
+ * rows is not "missing 68 properties" (the tsc error this annotation fixes, CI on `b9d1c0c`).
+ *
+ * @type {Record<string, StatusEntry>}
+ */
 export const STATUS = {
   // ---------------------------------------------------------------- atlas-4 · scores lens
   "S-01": {
@@ -1413,8 +1439,10 @@ export const STATUS = {
   },
 };
 
+/** @type {Status[]} */
 export const STATUS_ORDER = ["done", "partial", "intentional-difference", "deferred"];
 
+/** @type {Record<Status, string>} */
 export const STATUS_LABEL = {
   done: "done",
   partial: "partial",
@@ -1425,6 +1453,10 @@ export const STATUS_LABEL = {
 /**
  * Attach the verdicts to the parsed rows.
  *
+ * @param {import("./checklist-core.mjs").ChecklistRow[]} rows
+ * @param {Record<string, StatusEntry>} [status] defaults to this file's own table; a test passes a
+ *   small fixture table of the same shape
+ * @returns {MergedRow[]}
  * @throws when an id has no entry, an entry has no row, or an entry's `match` is not in the row's
  *   own text (the positional-id drift guard described in this file's header).
  */
@@ -1458,6 +1490,9 @@ export function mergeStatus(rows, status = STATUS) {
 /**
  * The consistency rule this page is signed against: a line may not be called `done` while its
  * evidence says "no test". Returns a list of problems (empty = consistent).
+ *
+ * @param {{id: string, status: string, evidence?: Evidence[]}[]} rows
+ * @returns {string[]} one human-readable problem per offending row
  */
 export function checkConsistency(rows) {
   const problems = [];

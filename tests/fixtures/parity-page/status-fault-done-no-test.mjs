@@ -7,6 +7,12 @@
 //
 // Shaped to match `tests/fixtures/parity-page/sample-checklist.md`'s first two rows.
 
+/**
+ * Typed with the generator's own exported shape, so this fixture is checked against the real
+ * contract (`status` is the four-value union, not a bare string) instead of drifting from it.
+ *
+ * @type {Record<string, import("../../../scripts/parity-page/status.mjs").StatusEntry>}
+ */
 export const FAULTY_STATUS = {
   "S-01": {
     match: "Study area: FULL / AK presets",
@@ -34,8 +40,12 @@ export const FAULTY_STATUS = {
   },
 };
 
-/** the same table with the fault repaired — the control case, so the test proves the rule fires on
- * the fault rather than on anything about this fixture. */
+/**
+ * The same table with the fault repaired — the control case, so the test proves the rule fires on
+ * the fault rather than on anything about this fixture.
+ *
+ * @type {Record<string, import("../../../scripts/parity-page/status.mjs").StatusEntry>}
+ */
 export const FIXED_STATUS = {
   ...FAULTY_STATUS,
   "S-01": {

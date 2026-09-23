@@ -20,7 +20,12 @@ const HASH_HEADING_RE = /^(#{3,6})\s+(.+?)\s*$/;
 /** the section this module reads: `## Parity checklist ...` / `## 7. Parity checklist ...`. */
 const SECTION_RE = /^(#{2,3})\s+.*parity checklist/i;
 
-/** strip markdown emphasis/code/link syntax for a plain-text cell; keeps the words, drops `**`. */
+/**
+ * Strip markdown emphasis/code/link syntax for a plain-text cell; keeps the words, drops `**`.
+ *
+ * @param {string} md
+ * @returns {string}
+ */
 export function plainText(md) {
   return md
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
@@ -32,14 +37,29 @@ export function plainText(md) {
 }
 
 /**
+ * One parsed checklist line. The types live here, in JSDoc on the module that owns them (the same
+ * convention as `scripts/check-relative-assets-core.mjs`), so `tsc --noEmit` types the TypeScript
+ * that imports this module without a second declaration file to keep in step.
+ *
+ * @typedef {object} ChecklistRow
+ * @property {string} id positional and stable: `S-01`, `P-07`, `R-28`
+ * @property {string} phase the phase label this row belongs to
+ * @property {string} section the group heading above it (`Controls (§5.3)`)
+ * @property {string} text the line as plain text (markdown emphasis stripped)
+ * @property {string} raw the line as written, continuation lines joined
+ * @property {boolean} checked whether the box is `[x]`
+ * @property {number} line 1-based line number in `source`
+ * @property {string} source the file the row was parsed from
+ */
+
+/**
  * Parse ONE checklist section out of a markdown document.
  *
  * @param {string} md markdown source
  * @param {{phase: string, prefix: string, source: string}} opts
  *   `phase` is the label shown on the page, `prefix` the id prefix (`S`/`P`/`R`), `source` the
  *   repo-or-plan-relative path recorded on every row.
- * @returns {{id: string, phase: string, section: string, text: string, raw: string,
- *            checked: boolean, line: number, source: string}[]}
+ * @returns {ChecklistRow[]}
  */
 export function parseChecklist(md, opts) {
   const { phase, prefix, source } = opts;
@@ -116,7 +136,12 @@ export function parseChecklist(md, opts) {
   return rows;
 }
 
-/** count every `- [ ]`/`- [x]` line in a document, whatever section it is in (the drop detector). */
+/**
+ * Count every `- [ ]`/`- [x]` line in a document, whatever section it is in (the drop detector).
+ *
+ * @param {string} md
+ * @returns {number}
+ */
 export function countCheckboxLines(md) {
   return md.split(/\r?\n/).filter((l) => BOX_RE.test(l)).length;
 }
@@ -127,6 +152,9 @@ export function countCheckboxLines(md) {
  * `docs/parity/checklists/` so the page can be generated, and its test can run, without the plan
  * files (which live outside this repo); when they ARE reachable the build re-extracts and refuses
  * to run on a difference. Same discipline as `tests/geo/adoptedFixtures.test.ts`'s msens copies.
+ *
+ * @param {string} md
+ * @returns {string}
  */
 export function extractChecklistSection(md) {
   const lines = md.split(/\r?\n/);
