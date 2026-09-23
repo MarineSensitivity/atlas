@@ -2,7 +2,12 @@
 // layer's value (the Selection checklist), and the zone tooltip text (§6.4, `zoneFill.ts`'s
 // `zoneTooltip()`, now actually wired to something).
 import { describe, expect, it } from "vitest";
-import { cellPopupText, escapeHtml, zonePopupText } from "../../../src/lens/scores/popup";
+import {
+  cellPopupLoadingText,
+  cellPopupText,
+  escapeHtml,
+  zonePopupText,
+} from "../../../src/lens/scores/popup";
 import type { ZoneRow } from "../../../src/lens/scores/boot";
 
 describe("cellPopupText", () => {
@@ -96,5 +101,13 @@ describe("zonePopupText", () => {
 describe("escapeHtml", () => {
   it("escapes the four characters that matter in an innerHTML string", () => {
     expect(escapeHtml(`<a href="x">&</a>`)).toBe("&lt;a href=&quot;x&quot;&gt;&amp;&lt;/a&gt;");
+  });
+});
+
+// usability M9: the popup opens at once with this line, before the engine has answered.
+describe("cellPopupLoadingText", () => {
+  it("cell id, lon/lat at 3 dp, and a loading line -- no value yet, never a throw", () => {
+    const text = cellPopupLoadingText({ cellId: 123456, lon: -70.123456, lat: 41.987654 });
+    expect(text).toBe("Cell 123456 · lon -70.123, lat 41.988 · Loading value…");
   });
 });

@@ -134,6 +134,10 @@
   // never overridden (Panel.svelte's own collapse()/restore() re-establish focus the same way,
   // just for a swap that happens synchronously rather than on an async import's own schedule).
   let panelRegionEl: HTMLDivElement | undefined;
+  // usability M3: the desktop `<Panel>` instance, bound below -- `selectTool()` calls its exported
+  // `expand()` (the same instance-method pattern `Toast.svelte`'s own `push()` uses) so a rail
+  // click always un-collapses it. Undefined on the phone, where `<Sheet>` renders instead.
+  let panelRef = $state<ReturnType<typeof Panel> | undefined>(undefined);
   let railFocusObserver: MutationObserver | undefined;
   let railFocusDeadline = 0;
   // the observer below is created ONCE and lives for the shell's whole lifetime; this is what it
@@ -177,6 +181,10 @@
   function selectTool(name: string) {
     activeTool = name as ToolName;
     armRailFocusRestore(name);
+    // usability M3: a rail click used to leave a collapsed desktop panel collapsed -- only the
+    // pill's own label changed, so the tool the user just chose never actually rendered.
+    // `panelRef` is undefined on the phone (Sheet.svelte has no collapsed state to un-collapse).
+    panelRef?.expand();
   }
 
   // --- top bar: version chip, lens switch, search, Share / Report / Help / theme ---------------
@@ -351,11 +359,18 @@
     // atlas-5 §6.5: the species click. The shared map's raw click event -- never a second map
     // instance, never a second `on("click")` owner; a non-species lens ignores its own clicks
     // inside `handleMapClick` itself (checks `sel.lens` first).
+    // atlas-8 review round 2, item M1: the scores lens' click now wires here too, the SAME shape
+    // as species' own click (each self-guards on `sel.lens`) -- a collapsed desktop panel, or the
+    // Places tool open, no longer stops a scores click from writing `sel=cell:`/`sel=zone:` and
+    // showing its popup, because neither depends on `ScoresLens.svelte` (the PANEL body) being
+    // mounted at all. `scoresLens` is null until its lazy chunk resolves (see "lazy lens/panel
+    // chunks" below) -- a click in that brief window is a no-op, same as before this fix.
     const onMapClick = (e: {
       lngLat: { lng: number; lat: number };
       point: { x: number; y: number };
     }) => {
       void speciesLens.handleMapClick({ lng: e.lngLat.lng, lat: e.lngLat.lat }, e.point);
+      void scoresLens?.handleMapClick({ lng: e.lngLat.lng, lat: e.lngLat.lat }, e.point);
     };
     handle.map.on("click", onMapClick);
     // the map's public test/automation seam (docs/map.md): the handle plus the CURRENT composeStyle
@@ -365,23 +380,12 @@
     (window as unknown as { __atlasMap?: unknown }).__atlasMap = {
       handle,
       composeStyle,
-      inputs: () => ({
-        theme: resolvedTheme,
-        // same field the reactive effect below passes, so `composeStyle(inputs())` reproduces
-        // exactly what is on screen -- including whether the basemap has resolved yet (0.10.20).
-        basemapStyle: basemapStyles[resolvedTheme],
-        projection: sel.proj,
-        zones: zonesForStyle,
-        raster:
-          sel.lens === "scores"
-            ? (scoresLens?.mapExtra.raster ?? null)
-            : speciesLens.mapInputs.raster,
-        range: sel.lens === "species" ? speciesLens.mapInputs.range : null,
-        overlays: sel.lens === "scores" ? (scoresLens?.mapExtra.overlays ?? []) : [],
-        selection:
-          placesSelection ??
-          (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
-      }),
+      // item m6 (atlas-8 review round 2): `composeStyleInput` (below) is the SAME object the
+      // reactive effect below applies -- reading it here (a plain closure, so referencing a
+      // `const` declared later in this script is fine: it only runs once called, well after the
+      // whole component has initialized) reproduces exactly what is on screen, including whether
+      // the basemap has resolved yet (0.10.20), from the ONE place that object is built.
+      inputs: () => composeStyleInput,
     };
     // the species lens' own test/automation seam, same spirit as __atlasMap just above: it exposes
     // only `selectSpecies`, exactly what clicking a picker option already does through the UI (used
@@ -458,32 +462,34 @@
     });
   });
 
+  // item m6 (atlas-8 review round 2): this object used to be built TWICE -- once here for
+  // `applyStyle`, once again (nearly identically) as the automation seam's `inputs()` above -- two
+  // sites that could silently drift the moment `composeStyle` gained a new input. ONE `$derived`,
+  // read at both: this recomputes on exactly the same dependencies the old inline object read
+  // (`resolvedTheme`, `basemapStyles[resolvedTheme]`, `sel.proj`, `zonesForStyle`, the raster/
+  // range/overlays/selection branches below), and being a `$derived` (not read lazily inside an
+  // optional-chain call) means it is ALWAYS evaluated regardless of whether `mapHandle` happens to
+  // be null yet -- the same "defensive belt" the old local `raster`/`range` statements existed
+  // for, now structural rather than a comment to remember.
+  const composeStyleInput = $derived({
+    theme: resolvedTheme,
+    // the reactive half of the 0.10.20 basemap fix: reading this is what makes the effect below
+    // re-run (and the basemap actually appear) when the CARTO fetch resolves late.
+    basemapStyle: basemapStyles[resolvedTheme],
+    projection: sel.proj,
+    zones: zonesForStyle,
+    raster:
+      sel.lens === "scores"
+        ? (scoresLens?.mapExtra.raster ?? null)
+        : speciesLens.mapInputs.raster,
+    range: sel.lens === "species" ? speciesLens.mapInputs.range : null,
+    overlays: sel.lens === "scores" ? (scoresLens?.mapExtra.overlays ?? []) : [],
+    selection:
+      placesSelection ?? (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
+  });
+
   $effect(() => {
-    const isSpecies = sel.lens === "species";
-    // read raster/range as their OWN statements, not inline inside `mapHandle?.`'s optional
-    // chain: optional chaining short-circuits BEFORE evaluating a call's arguments, so an
-    // `applyStyle` call skipped by a still-null `mapHandle` would never even read
-    // `speciesLens.mapInputs` — a defensive belt beside the real fix for this exact symptom,
-    // which turned out to be map.ts's `applyStyle` queue (see its own comment: it was waiting on
-    // an event that only ever fires once).
-    const raster = isSpecies ? speciesLens.mapInputs.raster : null;
-    const range = isSpecies ? speciesLens.mapInputs.range : null;
-    mapHandle?.applyStyle(
-      composeStyle({
-        theme: resolvedTheme,
-        // the reactive half of the 0.10.20 basemap fix: reading this is what makes the effect
-        // re-run (and the basemap actually appear) when the CARTO fetch resolves late.
-        basemapStyle: basemapStyles[resolvedTheme],
-        projection: sel.proj,
-        zones: zonesForStyle,
-        raster: sel.lens === "scores" ? (scoresLens?.mapExtra.raster ?? null) : raster,
-        range,
-        overlays: sel.lens === "scores" ? (scoresLens?.mapExtra.overlays ?? []) : [],
-        selection:
-          placesSelection ??
-          (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
-      }),
-    );
+    mapHandle?.applyStyle(composeStyle(composeStyleInput));
   });
   const releaseNote = $derived(
     `Marine Sensitivity Atlas · release ${earlyVersion ?? "—"} · scores and species from the ` +
@@ -602,6 +608,11 @@
           selStore,
           boot: () => boot,
           manifest: () => manifest,
+          // item M1's `handleMapClick` needs both, the same getters `createSpeciesLens` above
+          // already reads for the identical reason: `ver`/`mapHandle` settle asynchronously,
+          // after this call site runs.
+          ver: () => earlyVersion,
+          mapHandle: () => mapHandle,
         });
       });
     }
@@ -844,7 +855,7 @@
         {@render panelBody()}
       </Sheet>
     {:else}
-      <Panel id="shell" title={TOOL_LABEL[activeTool]}>
+      <Panel id="shell" title={TOOL_LABEL[activeTool]} bind:this={panelRef}>
         {@render panelBody()}
       </Panel>
     {/if}
