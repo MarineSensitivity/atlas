@@ -49,6 +49,27 @@ export function hashFromPlaces(places: readonly Place[]): string | undefined {
   return hash.length > 0 ? hash : undefined;
 }
 
+/**
+ * B2 fix: the ONE encoder every report.html link builds its hash through (the footer's "Report"
+ * and each row's "Open in report" link, `Places.svelte`). `pl` already carries its OWN
+ * percent-escapes (`encodeName()`, `placeCodec.ts` -- a space in a place name becomes a literal
+ * "%20" inside the g1 token), so the hash needs exactly ONE further layer of percent-encoding,
+ * the same one `formatSel` (`lib/state/codec.ts`) applies when it writes `#pl=`/`#t=` normally.
+ * `report.html`'s `parseSel` reads the hash back through `URLSearchParams` too, so one layer
+ * written + one layer read round-trips the token byte-for-byte. The old footer code spliced
+ * `sel.pl` into the string directly (`#pl=${sel.pl}`) -- zero layers written, one layer read on
+ * the other end -- which silently turned "%20" back into a literal space and corrupted every
+ * place whose name contains one. `sel` is the optional `place:<n>` token a single-row link scopes
+ * itself to; omitted, the hash covers every place currently in `pl`.
+ */
+export function reportHash(pl: string | undefined, t: string | undefined, sel?: string): string {
+  const params = new URLSearchParams();
+  if (pl) params.set("pl", pl);
+  if (t) params.set("t", t);
+  if (sel) params.set("sel", sel);
+  return [...params.keys()].length > 0 ? `#${params.toString()}` : "";
+}
+
 /** `Sel.sel` -> the place index it names, or `null` when it does not name one (`place:<n>`, the
  * ONE token shape a row selection ever writes -- `Places.svelte`'s own `selectedIndex` and, 0.10.21,
  * `placesMap.svelte.ts`'s baseline outline restore both derive from this, so the token shape lives

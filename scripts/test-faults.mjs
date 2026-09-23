@@ -274,6 +274,30 @@ const FAULTS = [
     gate: ["node", "scripts/verify.mjs", "--engines=chromium", "--states=sel=zone:GAA proj=globe"],
     env: { VERIFY_BASE_URL: "http://localhost:4399" },
   },
+  // B3 (docs/usability.md, R2-P2): pick mode could resolve a click on a Program Area's 1-px
+  // BORDER but never its interior -- `zoneQueryLayerIds()` only includes a unit's `{unit}_fill`
+  // layer id in a pick/click query when the unit carries a `fill` spec, and outline-only units
+  // (`zoneUnitsFromBoot()`) carried none, in every spatial-unit mode. This patch reintroduces
+  // exactly that (drops `queryFillFor(unit)` from every unit `zoneUnitsFromBoot()` returns) and
+  // must turn e2e/places.pick.spec.ts red -- a REAL Playwright click at a polygon's centre,
+  // nowhere near its border, times out the same way the assessment's own report did ("Add to
+  // places" stays disabled).
+  {
+    id: "pick-no-query-fill",
+    patch: "tests/faults/pick-no-query-fill.patch",
+    describe:
+      "zoneUnitsFromBoot() stops attaching an invisible query fill -- pick mode can only " +
+      "resolve a click on a Program Area's 1-px border again (B3's real defect, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/places.pick.spec.ts",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4397" },
+  },
 ];
 
 function run(cmd, args, cwd, env) {

@@ -34,6 +34,26 @@ const REPORT_COLORS_FILE = join("src", "report", "colors.ts");
  * may never contain. (A count ceiling would not do: the file legitimately holds ~8 unrelated
  * single-purpose colours, and a palette is exactly 11.) */
 const RAMP_ARRAY_RE = /\[\s*"#[0-9a-fA-F]{3,8}"\s*(?:,\s*"#[0-9a-fA-F]{3,8}"\s*)+,?\s*\]/;
+const RAMPS_FILE = join("src", "lib", "raster", "ramps.ts");
+/** M2 fix (docs/usability.md): the one, NAMED, documented exception inside ramps.ts itself — a
+ * fixed fallback ramp for a palette (Viridis/Cividis/Magma) no release publishes stops for.
+ * Bounded by name, not "ramps.ts may hold ANY hex literal now" — see
+ * `hexLiteralsOutsideFallbackTable` below, which keeps this a check that can still fail. */
+const FALLBACK_TABLE_NAME = "FALLBACK_RAMP_ANCHORS";
+
+/** the hex literals in `content` that fall OUTSIDE the named `FALLBACK_RAMP_ANCHORS` object literal
+ * — `[]` is what "ramps.ts holds nothing but that one documented, bounded exception" now means (a
+ * blanket "zero hex literals anywhere in the file" stopped being true the moment M2 gave the ONE
+ * ramp-defining file an actual ramp to hold). A file with no such table at all reports every hex
+ * literal it has (nothing to exempt). */
+export function hexLiteralsOutsideFallbackTable(content: string): string[] {
+  const start = content.indexOf(`const ${FALLBACK_TABLE_NAME}`);
+  if (start === -1) return [...content.matchAll(HEX_LITERAL_RE)].map((m) => m[0]);
+  const end = content.indexOf("\n};", start);
+  const withoutTable =
+    end === -1 ? content.slice(0, start) : content.slice(0, start) + content.slice(end + 3);
+  return [...withoutTable.matchAll(HEX_LITERAL_RE)].map((m) => m[0]);
+}
 
 function walk(dir: string): string[] {
   let entries: string[];
@@ -52,7 +72,9 @@ function walk(dir: string): string[] {
 }
 
 /** scans `<rootDir>/src` (excluding src/lib/brand/**, ramps.ts's own governed exception) for a bare
- * hex color literal — the heuristic for "a second ramp or palette array". */
+ * hex color literal — the heuristic for "a second ramp or palette array". `ramps.ts` ITSELF is
+ * exempted too (M2): it is allowed a fallback ramp by design, and the narrower
+ * `hexLiteralsOutsideFallbackTable` check below is what still polices IT specifically. */
 export function findRampLiteralsOutsideRamps(
   rootDir: string,
 ): { path: string; line: number; match: string }[] {
@@ -62,6 +84,7 @@ export function findRampLiteralsOutsideRamps(
     if (rel.startsWith(BRAND_PREFIX)) continue;
     if (rel === MAP_COLORS_FILE) continue;
     if (rel === REPORT_COLORS_FILE) continue;
+    if (rel === RAMPS_FILE) continue;
     if (!/\.(ts|svelte|js)$/.test(file)) continue;
     const content = readFileSync(file, "utf8");
     content.split("\n").forEach((text, i) => {
@@ -78,9 +101,28 @@ describe("raster/ramps.ts is the only ramp/palette definition under src/ (brand/
     expect(findRampLiteralsOutsideRamps(REPO_ROOT)).toEqual([]);
   });
 
-  it("ramps.ts itself contains no hardcoded hex stops — palette colors come from boot.json only", () => {
-    const content = readFileSync(join(REPO_ROOT, "src/lib/raster/ramps.ts"), "utf8");
-    expect(content.match(HEX_LITERAL_RE)).toBeNull();
+  // M2 fix (docs/usability.md): before M2, ramps.ts held zero hex literals at all — every palette
+  // color came from boot.json, no exception. M2 gives it ONE bounded, named exception (a fallback
+  // ramp for a palette no release publishes), so the blanket "zero hex literals" claim is no longer
+  // true BY DESIGN; what still must be true is that nothing else in the file is ramp-shaped.
+  it("ramps.ts's own hex literals live ONLY inside the documented FALLBACK_RAMP_ANCHORS table (M2) — nowhere else in the file", () => {
+    const content = readFileSync(join(REPO_ROOT, RAMPS_FILE), "utf8");
+    expect(hexLiteralsOutsideFallbackTable(content)).toEqual([]);
+  });
+
+  it("the FALLBACK_RAMP_ANCHORS exception is not vacuous — it actually holds stops", () => {
+    const content = readFileSync(join(REPO_ROOT, RAMPS_FILE), "utf8");
+    expect(content).toContain(`const ${FALLBACK_TABLE_NAME}`);
+    const start = content.indexOf(`const ${FALLBACK_TABLE_NAME}`);
+    const end = content.indexOf("\n};", start);
+    expect(end).toBeGreaterThan(start);
+    const table = content.slice(start, end);
+    expect(table.match(HEX_LITERAL_RE)?.length ?? 0).toBeGreaterThanOrEqual(3);
+  });
+
+  it("SEEDED FAULT: a hex literal planted OUTSIDE the fallback table is still flagged", () => {
+    const rogue = `const ${FALLBACK_TABLE_NAME} = {\n  viridis: ["#440154"],\n};\nexport const rogue = "#123456";\n`;
+    expect(hexLiteralsOutsideFallbackTable(rogue)).toEqual(["#123456"]);
   });
 
   // the exemption above is narrow BECAUSE of this: the one exempt file may hold the map's fixed

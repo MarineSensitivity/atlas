@@ -4,7 +4,7 @@ import { defaultLayerKey } from "../../../src/lens/scores/boot";
 import { BOOT_V7, MANIFEST_OVERLAYS_V7 } from "./fixtures";
 
 describe("scoresMapInputs — cell branch", () => {
-  it("raster + overlay populated, zones outline-only (no fill)", () => {
+  it("raster + overlay populated, zones VISUALLY outline-only (B3: an invisible opacity-0 query fill, not undefined)", () => {
     const out = scoresMapInputs({
       boot: BOOT_V7,
       overlays: MANIFEST_OVERLAYS_V7,
@@ -16,7 +16,11 @@ describe("scoresMapInputs — cell branch", () => {
     });
     expect(out.raster?.id).toBe("r_lyr");
     expect(out.overlays).toHaveLength(1);
-    expect(out.zones[0].fill).toBeUndefined();
+    // B3 fix: `zoneUnitsFromBoot` (layers/zones.ts) now attaches `queryFillFor`'s invisible
+    // placeholder to every unit, so pick mode can query a polygon's interior even in the "raster
+    // cells" spatial-unit branch this test covers. `opacity: 0` keeps it invisible on screen.
+    expect(out.zones[0].fill?.opacity).toBe(0);
+    expect(out.zones[0].fill?.stops).toEqual([]);
     expect(out.selection).toBeNull();
   });
 
@@ -41,7 +45,11 @@ describe("scoresMapInputs — cell branch", () => {
     }
   });
 
-  it("legend: kind 'unavailable' when the release has not published this palette's stops", () => {
+  // M2 fix (docs/usability.md): the raster legend used to go "unavailable" the moment a palette
+  // (today: anything but spectral_r) had no published boot.palettes stops -- even though titiler
+  // was already painting the tiles correctly server-side. `rasterLegend` (raster.ts) now falls back
+  // to ramps.ts's own fixed ramp, so `scoresMapInputs` carries a real "raster" legend here too.
+  it("legend: kind 'raster' (M2 fallback) even when the release has not published this palette's stops", () => {
     const out = scoresMapInputs({
       boot: BOOT_V7,
       overlays: MANIFEST_OVERLAYS_V7,
@@ -51,7 +59,11 @@ describe("scoresMapInputs — cell branch", () => {
       showOutsidePra: false,
       selection: null,
     });
-    expect(out.legend).toEqual({ kind: "unavailable", title: "Overall score" });
+    expect(out.legend?.kind).toBe("raster");
+    if (out.legend?.kind === "raster") {
+      expect(out.legend.title).toBe("Overall score");
+      expect(out.legend.stops).toHaveLength(11);
+    }
   });
 
   it("a cell selection draws a ring polygon at the given colour", () => {

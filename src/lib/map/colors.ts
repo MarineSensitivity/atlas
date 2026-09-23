@@ -44,6 +44,12 @@ export const SELECTION_COLOR = "#ff00aa";
 /** `manifest.overlays._outside_pra`'s explicit colormap, `{"1":[34,34,34,255]}` (atlas-4 §6.3). */
 export const OUTSIDE_PRA_RGBA: readonly [number, number, number, number] = [34, 34, 34, 255];
 
+/** B3 fix (`docs/usability.md`): pick mode's invisible query fill, `zoneUnitsFromBoot`
+ * (`layers/zones.ts`) — its own `opacity: 0` already makes the actual colour irrelevant on
+ * screen, but `zoneFillLayer` still needs SOME `fill-color`/`fill-outline-color` string, and this
+ * is the one place the map module is allowed to write one (this file's own header). */
+export const QUERY_FILL_COLOR = "#000000";
+
 /** atlas-5's species "range" fill (`msens::add_fill_layer(fill_color = "#3388ff")`,
  * `atlas-refs/"parity species app.md"` §6.2's PMTiles branch) — a fixed data color, not a ramp
  * (one swatch, not 11 stops) and not brand chrome, so it lives here rather than in `ramps.ts` or

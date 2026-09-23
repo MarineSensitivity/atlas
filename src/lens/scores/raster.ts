@@ -12,7 +12,7 @@ import {
 import { SCORE_RASTER_OPACITY, OVERLAY_RASTER_OPACITY } from "../../lib/map/layers/raster";
 import {
   legendStops,
-  paletteStopsFromBoot,
+  paletteStopsWithFallback,
   type LegendStop,
   type PaletteName,
 } from "../../lib/raster/ramps";
@@ -74,17 +74,18 @@ export function outsidePraOverlaySpec(
 
 export interface RasterLegend {
   stops: LegendStop[];
-  /** `null` when the release has not published stops for this palette (today, every release
-   * publishes ONLY `spectral_r` — see boot.ts's module test / the atlas-4 report). The legend then
-   * shows a "not available" notice rather than guessing a ramp (ramps.ts's own contract: colors are
-   * DATA, never hardcoded in a lens). */
+  /** `true` only when the release has published no stops for this palette AND `ramps.ts` has no
+   * fallback for it either (cannot happen for a real `PaletteName` today, M2 fix) — the legend then
+   * shows a "not available" notice rather than guessing a ramp with no basis at all. */
   unavailable: boolean;
 }
 
 /**
  * The raster legend for `layer`/`palette`: endpoints `signif(rescale, 3)` (parity doc §6.2 step 6),
- * 11 stops from `boot.palettes[palette]`. `unavailable: true` (empty `stops`) when the release has
- * not published that palette's stops.
+ * 11 stops from `boot.palettes[palette]` when the release published them, else `ramps.ts`'s own
+ * fixed fallback ramp (M2: docs/usability.md — Viridis/Cividis/Magma used to lose the raster
+ * legend's scale too, on tiles that titiler was already painting correctly server-side).
+ * `unavailable: true` (empty `stops`) only when NEITHER exists.
  */
 export function rasterLegend(
   boot: { palettes?: unknown } | null | undefined,
@@ -92,7 +93,7 @@ export function rasterLegend(
   palette: PaletteName,
 ): RasterLegend {
   const full = layer ? fullSubregion(layer) : null;
-  const stopsColors = paletteStopsFromBoot(boot, palette);
+  const stopsColors = paletteStopsWithFallback(boot, palette);
   if (!full?.rescale || !stopsColors) return { stops: [], unavailable: !stopsColors };
   const [min, max] = full.rescale;
   return { stops: legendStops(stopsColors, signif3(min), signif3(max)), unavailable: false };

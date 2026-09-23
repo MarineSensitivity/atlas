@@ -35,7 +35,7 @@
   } from "../lib/report/format";
   import { bootEngine, loadPlaceData, sqlRunFor, tablesReadFor, DUCKDB_WASM_VERSION } from "./data";
   import { permalinkQrDataUrl } from "./qr";
-  import { downloadStandaloneHtml } from "./exportHtml";
+  import { downloadStandaloneHtml, fetchAsDataUrl } from "./exportHtml";
   import { downloadDataPackage } from "./exportZip";
   import { speciesCsv } from "./exportFiles";
   import "./report.css";
@@ -297,10 +297,10 @@
     window.print();
   }
 
-  function onDownloadHtml() {
+  async function onDownloadHtml() {
     if (!model) return;
-    downloadStandaloneHtml(model.header.fileStem, model.header.title, {
-      transform: (clone) => {
+    await downloadStandaloneHtml(model.header.fileStem, model.header.title, {
+      transform: async (clone) => {
         clone
           .querySelectorAll<HTMLElement>(".map-live")
           .forEach((el) => (el.style.display = "none"));
@@ -314,6 +314,21 @@
         clone
           .querySelectorAll<HTMLElement>(".flower-panel")
           .forEach((el) => el.removeAttribute("hidden"));
+        // B5 fix: `sealUrl` (above) is a REMOTE URL -- `cloneNode()` copies that same `src`
+        // attribute verbatim (and copies no event listener, so the live `<img>`'s own `onerror`
+        // fallback never comes along either), so the downloaded file showed a broken image the
+        // moment it was opened without network access. Inline it as a data URI instead; a failed
+        // fetch (offline, CORS) removes the image rather than shipping a dead `src` -- same
+        // "degrade, don't break" spirit as the live page's `onerror` handler. `showAgencyLockup`
+        // already gates whether `.agency-lockup` exists in the DOM at all (it wraps `VITE_SEAL` +
+        // the agency check, sealVisibility.ts), so this naturally does nothing when the seal is
+        // off -- no separate flag check needed here.
+        const sealImg = clone.querySelector<HTMLImageElement>(".agency-lockup img");
+        if (sealImg) {
+          const dataUrl = await fetchAsDataUrl(sealUrl);
+          if (dataUrl) sealImg.src = dataUrl;
+          else sealImg.remove();
+        }
       },
     });
     analytics.track("report_export", { format: "html" });

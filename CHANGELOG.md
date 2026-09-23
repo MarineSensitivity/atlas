@@ -1,3 +1,37 @@
+# atlas 0.10.26
+
+Six fixes from the round-2 usability assessment (`docs/usability.md`), all cited by their finding
+id below.
+
+- **B2 — Places footer "Report" dropped every place whose name contains a space.** The footer's
+  `onReport()` spliced `sel.pl` into the `report.html` link's hash with zero layers of
+  percent-encoding, while `report.html`'s parser reads the hash back through `URLSearchParams`
+  (one layer of decoding) — silently turning a place's own `%20` escape back into a literal space
+  and corrupting the token. Extracted `reportHash()` (`src/places/model.ts`) as the one encoder
+  both the footer and each row's existing "Open in report" link now build through.
+- **B3 — Pick mode could not pick a Program Area from its interior**, only its 1-px outline: the
+  query only ever asked the outline layer, in every "Spatial units" mode. `zoneUnitsFromBoot()`
+  (`src/lib/map/layers/zones.ts`) now attaches an invisible (`opacity: 0`) query fill to every
+  unit by default, so a click anywhere inside the polygon resolves, with no visual change.
+- **B5 — "Download HTML" was white text on a light page when opened offline, and its seal was
+  missing.** The exported document's `<html>` tag never carried `data-theme="paper"`, so every
+  themed colour resolved against the dark theme's values; the seal was a remote `<img src>` that
+  `cloneNode()` carried over verbatim. The export now sets `data-theme="paper"` +
+  `color-scheme: light` on the exported root and inlines the seal as a `data:` URI at export time.
+- **M2 — Viridis / Cividis / Magma painted every Program Area flat grey and dropped the legend.**
+  Every release publishes ramp stops for `spectral_r` only; the other three palettes in the picker
+  had nothing to fall back to. `src/lib/raster/ramps.ts` adds a fixed, client-side fallback ramp
+  for a palette a release has not published, so every palette in the picker now paints and has a
+  legend.
+- **M5 — `?tour=off` did not suppress the welcome modal, and the modal interrupted deep links.**
+  `WelcomeModal.svelte` now also checks `tour !== "off"` and a new `hasViewState()` helper
+  (`src/lib/state/codec.ts`) before opening, so a deep link (`?sp=…`, `?sel=…`, `#pl=…`) never
+  shows the "first-timer" welcome copy.
+- **B4 — the phone tool rail sat beneath the bottom sheet at every detent**, so only the default
+  Layers tool was reachable by touch. The sheet's region now reserves the rail's own row
+  (`--size-rail-row`, `src/shell/shell.css`), and the sheet's "Full height" detent shrinks to fit
+  above it (`src/lib/ui/Sheet.svelte`) instead of growing back down over it.
+
 # atlas 0.10.23
 
 atlas-8 review round 2 (Opus 5.5 review of 0.10.21): six items — three MAJOR ("element exists"

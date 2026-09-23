@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatSel, parseSel, type UrlLike } from "../../src/lib/state/codec";
+import { formatSel, hasViewState, parseSel, type UrlLike } from "../../src/lib/state/codec";
 import {
   DEFAULT_OUT_BY_LENS,
   DEFAULT_SEL,
@@ -477,5 +477,36 @@ describe("defaultLens/defaultOut are pure (used identically by parse and format)
   it("defaultLens", () => {
     expect(defaultLens(undefined)).toBe("scores");
     expect(defaultLens("x")).toBe("species");
+  });
+});
+
+// M5 fix (docs/usability.md): WelcomeModal.svelte's own "is this a deep link" check -- must agree
+// EXACTLY with formatSel's own "differs from default" rule (a hand-rolled second definition is
+// exactly how the two could silently drift).
+describe("hasViewState — WelcomeModal.svelte's 'is this a deep link' check (M5)", () => {
+  it("the bare default URL (no query, no hash) carries no view state", () => {
+    expect(hasViewState(EMPTY)).toBe(false);
+    expect(hasViewState({ search: "", hash: "" })).toBe(false);
+  });
+
+  it("a species deep link carries view state", () => {
+    expect(hasViewState({ search: "?lens=species&sp=54241", hash: "" })).toBe(true);
+  });
+
+  it("a scores cell selection carries view state", () => {
+    expect(hasViewState({ search: "?sel=cell:123", hash: "" })).toBe(true);
+  });
+
+  it("a places hash alone (no query) carries view state", () => {
+    expect(hasViewState({ search: "", hash: "#pl=z.pa.GAA" })).toBe(true);
+  });
+
+  it("?tour=off alone already counts as view state (tour differs from its default)", () => {
+    expect(hasViewState({ search: "?tour=off", hash: "" })).toBe(true);
+  });
+
+  it("an unrecognized/malformed query string still resolves to false, never throws", () => {
+    expect(() => hasViewState({ search: "?bogus=xyz&also=nope", hash: "" })).not.toThrow();
+    expect(hasViewState({ search: "?bogus=xyz&also=nope", hash: "" })).toBe(false);
   });
 });

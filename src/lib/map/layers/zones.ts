@@ -14,6 +14,7 @@ import type { Feature, FeatureCollection, Point } from "geojson";
 import type { Outline } from "../../state/types";
 import { GLYPHS_URL, LABEL_FONT } from "./basemap";
 import {
+  QUERY_FILL_COLOR,
   SELECTION_COLOR,
   ZONE_LABEL_BLACK,
   ZONE_LABEL_HALO_DARK,
@@ -26,6 +27,7 @@ import {
 import type {
   LayerSpecification,
   SourceSpecification,
+  ZoneFillSpec,
   ZoneLabelSpec,
   ZoneUnitSpec,
 } from "../types";
@@ -142,20 +144,37 @@ export { GLYPHS_URL, LABEL_FONT };
  * The choropleth fill (`app.R:2318`): a `match` expression on the unit's key property, one stop per
  * zone, `defaultColor` for a zone the lens had no value for. The stops are DATA — the lens computed
  * them from `boot.zones[unit]` with `ramps.ts`'s 11-bin rule; nothing about binning happens here.
+ *
+ * B3 fix: a MapLibre `match` expression needs at least ONE label/output pair before its fallback --
+ * `["match", input, fallback]` is invalid (`layers[…].paint.fill-color: Expected at least 4
+ * arguments, but found only 2`), a real runtime style-validation error a plain vitest fixture
+ * cannot catch (only e2e/scores.palettes.spec.ts's real MapLibre instance did, and the SAME broken
+ * style silently starved every other layer behind it: e2e/scores.firstpaint.spec.ts's raster probe
+ * and e2e/places.pick.spec.ts's own pick query both went red from this one cause). `queryFillFor()`
+ * (below) passes `stops: []` on purpose -- an invisible query fill has no per-zone colours to
+ * carry -- so an EMPTY `fill.stops` now skips the `match` wrapper entirely and paints the flat
+ * `defaultColor` directly, which is exactly what a zero-stop `match` was trying (and failing) to
+ * express anyway.
  */
 export function zoneFillLayer(u: ZoneUnitSpec): LayerSpecification | null {
   const fill = u.fill;
   if (!fill) return null;
-  const match: unknown[] = ["match", ["get", fill.keyProperty]];
-  for (const stop of fill.stops) match.push(stop.key, stop.color);
-  match.push(fill.defaultColor);
+  let fillColor: unknown;
+  if (fill.stops.length === 0) {
+    fillColor = fill.defaultColor;
+  } else {
+    const match: unknown[] = ["match", ["get", fill.keyProperty]];
+    for (const stop of fill.stops) match.push(stop.key, stop.color);
+    match.push(fill.defaultColor);
+    fillColor = match;
+  }
   return {
     id: zoneFillId(u.unit),
     type: "fill",
     source: zoneSourceId(u.unit),
     "source-layer": u.sourceLayer,
     paint: {
-      "fill-color": match as never,
+      "fill-color": fillColor as never,
       "fill-opacity": fill.opacity,
       "fill-outline-color": fill.outlineColor,
     },
@@ -247,11 +266,37 @@ export function zoneNameProperty(unit: string): string {
 }
 
 /**
+ * B3 fix (`docs/usability.md`): an invisible (`opacity: 0`) `ZoneFillSpec` so `zoneQueryLayerIds`
+ * always has a `{unit}_fill` layer to query, and that layer always exists in the composed style
+ * (every `zoneUnitsFromBoot` caller — `Shell.svelte`'s own base `zoneUnits` AND the scores lens'
+ * `scoresMapInputs`, `mapInputs.ts` — starts from this function's output). Before this fix, an
+ * outline-only unit's ONLY queryable layer was its 1-px `{unit}_ln` line, so pick mode
+ * (`places/pickInstall.ts`) could resolve a click on a Program Area's BORDER but never its
+ * interior — "Add to places" stayed disabled for every interior click, in every spatial-unit
+ * mode, because `scoresMapInputs` only overwrites this placeholder with REAL colours when the
+ * unit is both the selected spatial unit AND has values to show (`mapInputs.ts`'s `if (choro.fill)
+ * out = {...}`); otherwise `out = u` keeps exactly this fill. `stops: []` + a `defaultColor` means
+ * `zoneFillLayer`'s `match` expression falls straight through to that (invisible) default for
+ * every key, so this has zero visual effect wherever nothing more specific overrides it.
+ */
+function queryFillFor(unit: string): ZoneFillSpec {
+  return {
+    keyProperty: zoneKeyProperty(unit),
+    stops: [],
+    defaultColor: QUERY_FILL_COLOR,
+    opacity: 0,
+    outlineColor: QUERY_FILL_COLOR,
+  };
+}
+
+/**
  * Read `boot.units[]` (atlas-1's contract: `zone_set_key, fld, label, pmtiles, source_layer`) into
- * outline-only `ZoneUnitSpec`s, in boot's own order — Program Areas first, then finest first, which
- * is the order the publisher already sorted them into (atlas-4 §2.4). A row missing `fld`,
- * `pmtiles` or `source_layer` is SKIPPED, never defaulted: a guessed source layer renders an empty
- * outline that looks exactly like "this release has no zones".
+ * `ZoneUnitSpec`s, in boot's own order — Program Areas first, then finest first, which is the
+ * order the publisher already sorted them into (atlas-4 §2.4). A row missing `fld`, `pmtiles` or
+ * `source_layer` is SKIPPED, never defaulted: a guessed source layer renders an empty outline that
+ * looks exactly like "this release has no zones". Outline-only ON SCREEN is still the default —
+ * every unit gets `queryFillFor`'s invisible placeholder `fill` (B3), never a visible one; a
+ * caller that wants a real choropleth (the scores lens) overwrites it explicitly.
  */
 export function zoneUnitsFromBoot(boot: unknown): ZoneUnitSpec[] {
   const rows = (boot as { units?: unknown } | null | undefined)?.units;
@@ -263,11 +308,13 @@ export function zoneUnitsFromBoot(boot: unknown): ZoneUnitSpec[] {
     if (typeof fld !== "string" || typeof pmtiles !== "string" || typeof sourceLayer !== "string")
       continue;
     if (!fld || !pmtiles || !sourceLayer) continue;
+    const unit = unitFromFld(fld);
     out.push({
-      unit: unitFromFld(fld),
+      unit,
       pmtiles,
       sourceLayer,
       label: typeof label === "string" ? label : undefined,
+      fill: queryFillFor(unit),
     });
   }
   return out;
