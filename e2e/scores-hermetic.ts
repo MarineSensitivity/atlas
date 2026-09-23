@@ -31,6 +31,14 @@ export const ZONES20_PATH = fileURLToPath(
 export const ZONES20_URL =
   "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v7/zones/programarea_2026-01/zones.pmtiles";
 
+// e2e/scores.studyarea.spec.ts (the study-area CAMERA gate, S-01): the real, orchestrator-verified
+// `study_areas` rows (FULL/AK/AT/GA/PA -- `src/lib/map/layers/titiler.ts`'s `STUDY_AREA_KEYS`),
+// same fixture file `e2e/species-hermetic.ts` already reads for the species lens -- reused, never
+// re-typed, so the two lenses cannot silently drift onto different lon/lat/zoom presets.
+const STUDY_AREAS_FIXTURES = new URL("../tests/fixtures/species/", import.meta.url);
+export const STUDY_AREAS: Array<{ key: string; label: string; lon: number; lat: number; zoom: number }> =
+  JSON.parse(readFileSync(fileURLToPath(new URL("v7/study-areas.json", STUDY_AREAS_FIXTURES)), "utf8"));
+
 const COMPOSITE_KEY = "score_extriskspcat_primprod_ecoregionrescaled_equalweights";
 const ZONE_KEYS = [
   "ALA", "ALB", "BFT", "BOW", "CEC", "CHU", "COK", "GAA", "GAB", "GEO",
@@ -92,7 +100,7 @@ export function bootFor(ver: Ver) {
   const common = {
     schema: 1,
     ver,
-    study_areas: [{ key: "FULL", label: "All US waters", lon: -101.304, lat: 46.9, zoom: 2.16 }],
+    study_areas: STUDY_AREAS,
     units: [
       {
         fld: "programarea_key",

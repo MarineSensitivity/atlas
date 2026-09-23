@@ -1,3 +1,30 @@
+# atlas 0.10.35
+
+Fix S-01: the study-area camera did not move (owner report, live public v7, 2026-09-24).
+`https://marinesensitivity.org/atlas/?ver=v7&area=AK` rendered the DEFAULT camera (globe over
+North America, Layers panel showing "Study area: Alaska") instead of flying to Alaska — the
+study area is a CAMERA, not a filter.
+
+- **Root cause, two bugs stacked.** (1) `Shell.svelte` resolved the map's initial camera against a
+  literal `null` boot (`studyAreaFromBoot(null, sel.area)`), so it could never see a release's real
+  `study_areas` rows. (2) The ONLY place anything ever called `handle.flyTo(area)` was
+  `LayersPanel.svelte`'s `onchange` handler — the panel BODY, which never runs for a `sel.area`
+  arriving from the URL on load (or while the Layers panel is collapsed/unmounted).
+- **Fix.** `sel.area` now drives the camera from a shell-level `$effect` (`Shell.svelte`), calling
+  the new pure decision `src/lib/map/camera.ts#shouldFlyToArea` — unit-tested, and documenting the
+  precedence a later round touching the DEFAULT first-view camera must preserve: an explicit
+  `?area=` always wins over whatever framed the first paint, `sel.map` (an explicit camera) always
+  wins over `sel.area`, and a user's pan after the fly is never fought. `LayersPanel.svelte`'s
+  `onAreaChange` no longer calls `mapHandle.flyTo` itself — it only writes `sel`.
+- **Gates.** `e2e/scores.studyarea.spec.ts` drives the real, built app end-to-end (load, a select
+  change, `area=FULL` re-fitting the whole study area, a kept user pan, and the fix still working
+  with the Layers panel collapsed at load); `scripts/verify.mjs`'s `area=` states gained an
+  additive camera-bounds assertion; seeded fault `tests/faults/study-area-camera-ignored.patch`.
+  S-01's parity-page evidence (`docs/parity/checklists`, `scripts/parity-page/status.mjs`) is
+  rewritten: the old evidence (`flyToStudyArea`, which has no caller in `src/`) could not have
+  caught this; `tileUrlLeaksStudyArea` remains as the negative half (no study-area key ever reaches
+  a tile/data URL).
+
 # atlas 0.10.28
 
 Six fixes from the atlas-8 phase review round 2 (`workflows/.claude/plans_todo/atlas-refs/2026-09-23

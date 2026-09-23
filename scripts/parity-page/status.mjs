@@ -49,17 +49,49 @@ export const STATUS = {
     match: "Study area: FULL / AK / AT / GA / PA presets",
     status: "done",
     evidence: [
-      { file: "tests/map/interaction.test.ts", name: "flyToStudyArea" },
+      // e2e/scores.studyarea.spec.ts drives the REAL, BUILT app end-to-end — an Opus 5.5 audit
+      // found the evidence below (before this fix) could not have caught the owner's 2026-09-24
+      // live defect (`?area=AK` rendering the default camera): it spied on `flyTo` in isolation,
+      // and `flyToStudyArea` (`tests/map/interaction.test.ts`) has NO caller anywhere in `src/`.
       {
-        file: "tests/map/interaction.test.ts",
-        name: "is centre + zoom, marked programmatic so the URL is not rewritten mid-flight",
+        file: "e2e/scores.studyarea.spec.ts",
+        name: "?area=AK flies to Alaska on LOAD, not the default camera",
       },
       {
-        file: "tests/map/interaction.test.ts",
-        name: "an unknown ?area= clamps to FULL rather than erroring (state/codec.ts's rule)",
+        file: "e2e/scores.studyarea.spec.ts",
+        name: "changing the Study area select FULL -> AK flies there (real moveend) and writes area=AK to the URL",
+      },
+      {
+        file: "e2e/scores.studyarea.spec.ts",
+        name: "area=FULL (selected after another area) fits the whole study area again",
+      },
+      {
+        file: "e2e/scores.studyarea.spec.ts",
+        name: "a user pan after the fly is kept — not fought back to the study area",
+      },
+      {
+        file: "e2e/scores.studyarea.spec.ts",
+        name: "?area=AK still flies to Alaska with the Layers panel COLLAPSED at load",
+      },
+      {
+        file: "tests/map/camera.test.ts",
+        name: "shouldFlyToArea — sel.area drives the camera on load AND on change",
+      },
+      // the NEGATIVE half, kept alongside the positive one above, never a replacement for it.
+      {
+        file: "tests/map/titiler.test.ts",
+        name: "tileUrlLeaksStudyArea — no study-area key ever reaches a URL",
       },
     ],
-    note: "the study area is a camera only — `tileUrlLeaksStudyArea` proves no study-area key ever reaches a data or tile URL (apps#13/#14).",
+    note:
+      "fixed 2026-09-24 (owner report, live v7: `?area=AK` rendered the default camera). Root cause: " +
+      "the initial camera resolved `sel.area` against a literal `null` boot, and the ONLY `flyTo` " +
+      "call lived in LayersPanel.svelte's `onchange` — the panel BODY, which never runs for a URL- " +
+      "driven `sel.area` on load. Fixed in Shell.svelte's own `$effect` (`camera.ts#shouldFlyToArea`), " +
+      "a shell/lens-level store per docs/map.md's 0.10.21 rule — runs whether or not the Layers panel " +
+      "is mounted (see the COLLAPSED-panel case above). `tileUrlLeaksStudyArea` remains the negative " +
+      "half: the study area still moves the camera only, never a data or tile URL (apps#13/#14). " +
+      "Seeded fault: tests/faults/study-area-camera-ignored.patch.",
   },
   "S-02": {
     match: "Spatial units: Raster cells",
