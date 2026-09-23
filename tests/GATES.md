@@ -23,10 +23,10 @@ the property under test is about that exact function: it worktrees HEAD, applies
 diff under `tests/faults/*.patch`, runs the named gate, asserts RED, and discards the worktree.
 
 **Counts** (this table): **~95 gates** inventoried · **~90 already carry a committed, verified
-seeded fault** (pattern 1 or 2, self-proving on `npm test`) · **5 wired into `npm run test:faults`**
-(pattern 3; 3 added in step 1, 2 accessibility ones added in step 3) · **4 were "CANNOT FAIL" or
-scope-gapped before step 1 and are now rewritten** (marked ✅ FIXED below) · **0 remain CANNOT
-FAIL** as of 0.10.15.
+seeded fault** (pattern 1 or 2, self-proving on `npm test`) · **6 wired into `npm run test:faults`**
+(pattern 3; 3 added in step 1, 1 with Deliverable 4's feedback link, 2 accessibility ones added in
+step 3) · **4 were "CANNOT FAIL" or scope-gapped before step 1 and are now rewritten** (marked
+✅ FIXED below) · **0 remain CANNOT FAIL** as of 0.10.16.
 
 Step 3's two faults are the first **Playwright** entries in `test:faults`. They need a real browser
 against a real build of the patched tree, so each runs on its own `PW_PORT` (`playwright.config.ts`

@@ -362,6 +362,34 @@ button.chip {
   width: 372px;
 }
 
+/* atlas-8 Deliverable 4: "Report a problem" -- a small pill below the About card, same region
+   (bottom-anchored: `.about-region` has no `top`, only `bottom`, so its OWN height determines
+   where it starts -- adding this pushes the About card's top edge up by exactly this box's height
+   + margin. `.sk-feedback-link` below reproduces that same height/margin in the skeleton so BOTH
+   sides shift the About card up by the same amount -- e2e/shell.cls.spec.ts's "about-frame" key
+   compares only the FIRST child (the About card itself), so equal totals is what keeps it green;
+   see index.html's own comment on `.sk-feedback-link`). Explicit `height`, not just padding, for
+   the same reason `.tool`/`.chip` are: content changes (a longer/shorter label) must never move
+   this box's own footprint. */
+.feedback-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  height: 28px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  text-decoration: none;
+}
+.feedback-link:hover {
+  color: var(--text-primary);
+  background: var(--fill-control);
+}
+
 @media (max-width: 899px) {
   .rail-region {
     left: 50%;
@@ -645,4 +673,17 @@ button.chip {
   width: var(--size-touch);
   height: var(--size-touch);
   flex: none;
+}
+
+/* mirrors `.feedback-link`'s box model exactly (height + margin-top only -- width/content are
+   irrelevant to the geometry-equality gate, which never keys "feedback" itself, only the About
+   card's own box; see this file's `.feedback-link` comment and index.html's skeleton markup). */
+.sk-feedback-link {
+  display: block;
+  width: 140px;
+  height: 28px;
+  margin-top: var(--space-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
 }

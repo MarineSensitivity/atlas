@@ -83,10 +83,25 @@ async function gotoMap(page: Page) {
   await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
 }
 
-/** how many features the zones line layer is currently rendering. */
+/**
+ * How many features the zones line layer is currently rendering.
+ *
+ * 0.10.14: the `getLayer` guard is load-bearing, not defensive noise. `Map.isSourceLoaded(id)`
+ * FIRES AN ErrorEvent (`There is no tile manager with ID '<id>'`, maplibre-gl 6
+ * `Map.isSourceLoaded`) when the style does not currently hold that source, and an unhandled
+ * MapLibre ErrorEvent lands in `console.error` — i.e. in the very array the test below then
+ * asserts is empty. This polls from the instant `window.__atlasMap` exists, which is BEFORE the
+ * zones style is composed (boot.json's units are read first) and again across every
+ * `setStyle(diff:true)` rebuild, so on a slow runner the poll lands in that window and the PROBE
+ * manufactures the error it is about to fail on (ubuntu-latest, run 35819393922: 6-8 identical
+ * errors, while the poll itself still ended >0). `getLayer` returns `undefined` for an absent
+ * layer and fires nothing — the same guard `species.timing.spec.ts` already uses. The assertion
+ * is unweakened: the layer must exist, its source must be loaded, AND it must render a feature.
+ */
 function zoneFeatureCount(page: Page) {
   return page.evaluate(() => {
     const map = window.__atlasMap!.handle.map;
+    if (!map.getLayer("programarea_ln")) return -1;
     if (!map.isSourceLoaded("programarea_src")) return -1;
     return map.queryRenderedFeatures({ layers: ["programarea_ln"] }).length;
   });

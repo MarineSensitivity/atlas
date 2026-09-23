@@ -6,6 +6,9 @@ import pdfParse from "pdf-parse";
 import { unzipSync } from "fflate";
 import { BUCKET, collectRequests, routeBucket, routeSealFixture, routeSession } from "./hermetic";
 import { blockWasm } from "./map-hermetic";
+import { normalizePdfText } from "./pdfText";
+// `routeVariedBasemapStyle` moved with `gotoReport` into report-hermetic.ts (atlas-8 step 3); it is
+// no longer called from this file directly.
 import { BOOT_V7, BOOT_V9, gotoReport, PL } from "./report-hermetic";
 import { encodePlace, type Place } from "../src/lib/geo/placeCodec";
 
@@ -341,6 +344,23 @@ const CUSTOM_PLACE: Place = {
 };
 const CUSTOM_TOKEN = encodePlace(CUSTOM_PLACE);
 
+/**
+ * How long an ENGINE-backed report (real DuckDB-WASM boot + Parquet scan) gets to reach "Done"
+ * in a test whose subject is NOT performance.
+ *
+ * 0.10.14: the two waits in "the permalink reproduces byte-identical scores.csv/species.csv"
+ * carried no timeout at all, i.e. Playwright's 5 s per-assertion default — a machine-speed
+ * assumption that held on a laptop and not on ubuntu-latest (run 35819393922: both webkit
+ * attempts still read "Scoring TestPlace (1 of 1)…" at 5 s). The measured budget for exactly this
+ * place, cold, is the sibling gate 30 lines up: "a custom (drawn) 4-tile place: scores AND species
+ * render, cold, in < 15 s", which PASSED on webkit/linux in that same run. This test does that
+ * work TWICE — once in `page`, then again in a second, fresh context whose HTTP cache is empty
+ * while the first page is still alive (two DuckDB-WASM instances on a 2-core runner) — so it gets
+ * 2× that measured 15 s. Nothing here is a performance claim: the 15 s cold-load budget and
+ * species.timing.spec.ts are the gates that make one, and neither is relaxed.
+ */
+const ENGINE_DONE_TIMEOUT_MS = 30_000;
+
 async function gotoEngineReport(page: Page, pl: string) {
   await routeBucket(page, ENGINE_VER, ENGINE_BOOT);
   await routeEngineFixtures(page, ENGINE_VER);
@@ -395,14 +415,18 @@ test.describe("engine-backed paths (real DuckDB-WASM, real Parquet fixtures, fix
     }
 
     await gotoEngineReport(page, CUSTOM_TOKEN);
-    await expect(page.locator(".progress-line")).toContainText("Done");
+    await expect(page.locator(".progress-line")).toContainText("Done", {
+      timeout: ENGINE_DONE_TIMEOUT_MS,
+    });
     const first = await downloadZipEntries(page);
 
     const freshContext = await browser.newContext();
     try {
       const freshPage = await freshContext.newPage();
       await gotoEngineReport(freshPage, CUSTOM_TOKEN);
-      await expect(freshPage.locator(".progress-line")).toContainText("Done");
+      await expect(freshPage.locator(".progress-line")).toContainText("Done", {
+        timeout: ENGINE_DONE_TIMEOUT_MS,
+      });
       const second = await downloadZipEntries(freshPage);
 
       const scoresName = Object.keys(first).find((k) => k.startsWith("scores_"));
@@ -487,15 +511,26 @@ test.describe("page.pdf() (chromium): labels, table headers, watermark, map imag
 
     const pdfBuffer = await page.pdf({ printBackground: true, format: "Letter" });
     const { text, numpages } = await pdfParse(pdfBuffer);
+    // 0.10.14: `pdf-parse` joins RENDERED LINES with `\n`, so every prose assertion below runs
+    // against the whitespace-normalized text (see e2e/pdfText.ts) -- otherwise the assertion is
+    // really about where the runner's fonts happened to wrap the paragraph. Attached either way,
+    // so a future red on another platform shows the text instead of a truncated diff.
+    const flat = normalizePdfText(text);
+    await test.info().attach("pdf-text-normalized.txt", { body: flat, contentType: "text/plain" });
 
     expect(numpages).toBeGreaterThan(1); // a single-page PDF can't prove "on every page"
-    expect(text).toMatch(/page 1 of \d+/); // counter(page)/counter(pages) -- no JS page-counting
-    expect(text).toContain(permalinkHref);
+    expect(flat).toMatch(/page 1 of \d+/); // counter(page)/counter(pages) -- no JS page-counting
+    expect(flat).toContain(permalinkHref);
     // the ONE footer now, never the old fixed-position second copy.
-    expect(text).not.toContain("MarineSensitivity Atlas — printed report");
+    expect(flat).not.toContain("MarineSensitivity Atlas — printed report");
 
     // the Sources section's own last sentence, intact -- exactly what a page-3 overprint used to
-    // corrupt/drop (model.ts's SOURCES_TEXT, static and known).
-    expect(text).toContain("the governing extinction-risk score and the overlapping area.");
+    // corrupt/drop (model.ts's SOURCES_TEXT, static and known). The WHOLE sentence, not just its
+    // tail: a line-break-proof assertion must not also become a shorter one.
+    expect(flat).toContain(
+      "Species rows are every distribution model whose range overlaps the area, weighted by " +
+        "modelled habitat suitability, the governing extinction-risk score and the overlapping " +
+        "area.",
+    );
   });
 });

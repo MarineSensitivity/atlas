@@ -1,0 +1,9 @@
+{
+  "_why": "0.10.14: a GPU-less CI runner makes Firefox fall back to Mesa's software (llvmpipe) GL driver, which Firefox's own blocklist then disables -- canvas.getContext('webgl2') returns null and maplibre-gl throws GPUInitializationError before the map object exists (run 35819393922: 5 of 9 reds). These prefs give the runner's Firefox the same software-rasterized WebGL2 chromium already gets from headless SwiftShader. Read by BOTH playwright.config.ts (the firefox project's launchOptions.firefoxUserPrefs) and scripts/check-webgl2.mjs (the gate that proves it worked), so the two can never drift.",
+  "webgl.force-enabled": true,
+  "webgl.disabled": false,
+  "webgl.disable-fail-if-major-performance-caveat": true,
+  "webgl.out-of-process": false,
+  "gfx.webrender.all": true,
+  "gfx.webrender.software": true
+}

@@ -125,8 +125,67 @@ async function captureBoxes(page: Page, keys: KeySpec[], side: "skeleton" | "hyd
   return boxes;
 }
 
+// The two SELF-HOSTED brand families (src/lib/brand/fonts.css). These are the only faces whose
+// metrics can move a box between the skeleton and the hydrated frame; the licensed
+// Century Gothic / Calibri faces above them in fonts.css are `local()`-only and are simply not
+// present on a CI runner, so waiting on them would be waiting on nothing.
+const BRAND_FAMILIES = ["Jost", "Carlito"] as const;
+
+/** how long the brand faces get to finish loading before this helper gives up and NAMES them. */
+const FACE_LOAD_TIMEOUT_MS = 10_000;
+
+/**
+ * Wait for the brand faces, then assert each one actually reached `status === "loaded"`.
+ *
+ * 0.10.14: this used to be `await page.evaluate(() => document.fonts.ready)`, which on
+ * WebKit/linux did not settle inside the test's budget — all six WebKit cases died as
+ * `page.evaluate: Test ended.` on that one line (runs 35819393922 and 35821690181).
+ * `document.fonts.ready` is a whole-document promise: it is only as prompt as the slowest face in
+ * the set and re-arms on every new font request, so as a wait it is both unbounded and
+ * uninformative — when it does not settle there is nothing to report but a timeout.
+ *
+ * Two deliberate choices in what replaced it:
+ *
+ *   - it awaits the SPECIFIC `FontFace` objects the geometry depends on, each racing a bounded
+ *     timer, so a hung face costs `FACE_LOAD_TIMEOUT_MS` and not the whole test budget;
+ *   - it asserts each face's own `status`, NOT `document.fonts.check()`. `check()` is useless as a
+ *     gate here: measured on WebKit, it answers `true` for a family whose `@font-face` request
+ *     never responds at all (with `font-display: swap` the fallback is "available", so the check
+ *     can essentially never fail — a check that cannot fail is not a check). `FontFace.status`
+ *     reports `"loading"` / `"error"` for exactly those cases.
+ *
+ * A face that never loads is therefore a loud red naming the face, weight and status, never a
+ * silent 30 s timeout. Finding NO brand face at all is also a red: this page's layout does depend
+ * on them, so an empty set means the stylesheet moved, not that there is nothing to wait for.
+ */
 async function settleFonts(page: Page) {
-  await page.evaluate(() => document.fonts.ready);
+  const faces = await page.evaluate(
+    async ({ families, timeoutMs }) => {
+      const wanted = [...document.fonts].filter((f) =>
+        families.includes(f.family.replace(/^["']|["']$/g, "")),
+      );
+      await Promise.all(
+        wanted.map((f) =>
+          Promise.race([
+            f.load().catch(() => undefined),
+            new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+          ]),
+        ),
+      );
+      return wanted.map((f) => `${f.family} ${f.weight}: ${f.status}`);
+    },
+    { families: [...BRAND_FAMILIES] as string[], timeoutMs: FACE_LOAD_TIMEOUT_MS },
+  );
+  expect(
+    faces.length,
+    `no ${BRAND_FAMILIES.join("/")} @font-face is registered on this page at all — ` +
+      "src/lib/brand/fonts.css is what this wait exists for",
+  ).toBeGreaterThan(0);
+  const notLoaded = faces.filter((f) => !f.endsWith(": loaded"));
+  expect(
+    notLoaded,
+    `brand face(s) not loaded within ${FACE_LOAD_TIMEOUT_MS} ms: ${notLoaded.join("; ")}`,
+  ).toEqual([]);
 }
 
 for (const theme of THEMES) {

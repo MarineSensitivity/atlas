@@ -52,6 +52,18 @@ const FAULTS = [
       "planEviction() restored to the plan's literal 'tiles first' order (overruled by ruling 5)",
     gate: ["npx", "vitest", "run", "tests/engine/opfsPolicy.test.ts"],
   },
+  {
+    id: "feedback-location-href",
+    patch: "tests/faults/feedback-location-href.patch",
+    describe:
+      "pageUrlFromLocation() ignores its argument and reads the live location.href instead " +
+      "(atlas-8 Deliverable 4: leaks the hash into the 'Report a problem' link). This entry drives " +
+      "the mechanical (vitest) leg; `e2e/feedback.spec.ts` goes red under the same patch too " +
+      "(verified by hand -- see docs/feedback.md). It could now be a Playwright entry like the two " +
+      "below, which landed after it; the vitest leg is kept because it is a second or two rather " +
+      "than a minute, and the property under test is a pure function.",
+    gate: ["npx", "vitest", "run", "tests/feedback/noHash.test.ts"],
+  },
   // --- atlas-8 step 3: the two accessibility faults the plan's pyramid row names ------------------
   // These are the first PLAYWRIGHT gates in this manifest. They need a real browser against a real
   // build of the PATCHED tree, so each runs on its own `PW_PORT` (playwright.config.ts honours it

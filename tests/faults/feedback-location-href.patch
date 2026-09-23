@@ -1,0 +1,16 @@
+diff --git a/src/lib/feedback/issueUrl.ts b/src/lib/feedback/issueUrl.ts
+--- a/src/lib/feedback/issueUrl.ts
++++ b/src/lib/feedback/issueUrl.ts
+@@ -25,8 +25,10 @@ export interface PageLocationLike {
+  * builds it from the reactive `Sel`, via `formatSel(sel).search` -- never `location.search`
+  * directly -- so this recomputes whenever the view state changes, not just once at mount). */
+ export function pageUrlFromLocation(loc: PageLocationLike): string {
+-  const search = loc.search && !loc.search.startsWith("?") ? `?${loc.search}` : loc.search;
+-  return loc.origin + loc.pathname + search;
++  // SEEDED FAULT (tests/faults/feedback-location-href.patch): reads the live global directly,
++  // ignoring the caller's `loc` argument entirely -- in a real browser this is the SAME page
++  // location Shell.svelte already holds, so it silently leaks the hash (a drawn place's geometry).
++  return location.href;
+ }
+
+ export interface FeedbackContext {
