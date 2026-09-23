@@ -1,4 +1,40 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
+
+// 0.10.14: the firefox software-WebGL2 prefs, read from the one file `scripts/check-webgl2.mjs`
+// also reads (that script is the CI gate proving they worked). Its `_why` key is the explanation;
+// every other key is a real Firefox pref. Keeping them in JSON rather than inline here is what
+// makes the gate and the browser provably identical.
+const FIREFOX_WEBGL_PREFS: Record<string, string | number | boolean> = Object.fromEntries(
+  Object.entries(
+    JSON.parse(
+      readFileSync(
+        fileURLToPath(new URL("./scripts/firefox-webgl-prefs.json", import.meta.url)),
+        "utf8",
+      ),
+    ) as Record<string, string | number | boolean>,
+  ).filter(([k]) => !k.startsWith("_")),
+);
+
+/**
+ * Run Firefox HEADED (under `pages.yml`'s `xvfb-run`) -- see the firefox project's own comment.
+ *
+ * 0.10.14 fix round 1: this used to be INFERRED (`platform === "linux" && !!DISPLAY`), and an
+ * inference cannot tell "no display, so headless is correct" apart from "someone forgot
+ * `xvfb-run` on this step, so headless is a silent WebGL2-less run". That second case is exactly
+ * what happened (run 35823503729: the suite step was wrapped, the timing-gate step was not).
+ * It is now an EXPLICIT opt-in that validates itself: `FIREFOX_HEADED=1` with no `$DISPLAY`
+ * throws here, before a single browser launches.
+ */
+const FIREFOX_HEADED = process.env.FIREFOX_HEADED === "1";
+if (FIREFOX_HEADED && !process.env.DISPLAY) {
+  throw new Error(
+    "playwright.config: FIREFOX_HEADED=1 but $DISPLAY is unset — headed Firefox needs a display. " +
+      'Wrap the command in `xvfb-run -a --server-args="-screen 0 1280x1024x24" ...` (see ' +
+      ".github/workflows/pages.yml), or unset FIREFOX_HEADED to run headless (no WebGL2 on linux).",
+  );
+}
 
 // atlas-0 Deliverable 5: one smoke spec (shell paints, zero console errors) across the three
 // engines. `webServer` builds then serves the real production bundle (`vite preview`), the same
@@ -54,7 +90,31 @@ export default defineConfig({
     {
       name: "firefox",
       testIgnore: ["fixtures/**", "gallery.spec.ts", "species.timing.spec.ts"],
-      use: { ...devices["Desktop Firefox"] },
+      use: {
+        ...devices["Desktop Firefox"],
+        // 0.10.14: on a GPU-less ubuntu-latest runner Firefox BLOCKLISTS its software (llvmpipe)
+        // GL driver, so `canvas.getContext("webgl2")` returns null and maplibre-gl throws
+        // `GPUInitializationError: WebGL2 is required to display this map` before the map object
+        // ever exists. That was 5 of the 9 reds in run 35819393922 -- every firefox spec that
+        // waits on `window.__atlasMap`, `window.__atlasSpecies` or a rendered `.map-print img`,
+        // plus the two shell-smoke "zero console errors" gates. It is invisible on macOS, where
+        // Firefox gets a real accelerated context.
+        //
+        // `scripts/firefox-webgl-prefs.json` gives the runner's Firefox the SAME thing chromium
+        // already has there (headless SwiftShader, see this file's atlas-8 note): a real,
+        // software-rasterized WebGL2 context. Prefs alone are NOT enough -- unlike chromium,
+        // Firefox uses the SYSTEM GL stack, so the runner also needs Mesa's DRI drivers
+        // (`pages.yml` installs them and `scripts/check-webgl2.mjs` gates the result). None of
+        // this relaxes an assertion: if WebGL2 still cannot be created, that gate goes red first.
+        // ...and prefs are STILL not enough, because Playwright's Firefox has no WebGL at all in
+        // HEADLESS mode on linux (measured, run 35823275862: with libgl1-mesa-dri installed,
+        // `webgl.force-enabled` set and LIBGL_ALWAYS_SOFTWARE=1, `getContext("webgl2")` is still
+        // null; chromium and webkit on the same runner are fine). The documented workaround is to
+        // run Firefox HEADED under a virtual display -- `pages.yml` wraps the suite in
+        // `xvfb-run`. Only on linux CI: a local macOS run stays headless.
+        headless: !FIREFOX_HEADED,
+        launchOptions: { firefoxUserPrefs: FIREFOX_WEBGL_PREFS },
+      },
     },
     // the timing gate's own project (atlas-8's rule, see species.timing.spec.ts's header for the
     // full reasoning): `workers: 1` + `fullyParallel: false` cap concurrency WITHIN this project,
