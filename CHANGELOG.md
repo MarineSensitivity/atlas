@@ -1,3 +1,17 @@
+# atlas 0.10.27
+
+M4 fix round 2 (orchestrator's own seeded fault on `PLACE_CIRCLE_OPACITY = 0`): the M4 gate's
+expected colour was computed from `reportMap.ts`'s own `PLACE_CIRCLE_OPACITY`, the SAME constant
+the fault targets -- with opacity 0 the "expected" blend collapses onto the pure background
+colour too (an invisible circle IS the background), so the pixel count passed trivially. Proven
+red against the real patch (`PW_PORT=4365 ... -g "map image not blank"` stayed green before this
+fix). `e2e/report-hermetic.ts#mapPrintRampPixelCount` now blends against a fixed literal,
+`EXPECTED_PLACE_CIRCLE_OPACITY = 0.85` (never imported from the source constant -- a deliberate
+change to `PLACE_CIRCLE_OPACITY` must now ALSO deliberately update this one), and a new
+`assertTargetsAreFarFromTheirBackgrounds()` throws loudly if that literal is ever edited close
+enough to 0 to defang the gate again. New seeded fault:
+`tests/faults/report-map-circle-invisible.patch`, wired into `npm run test:faults`.
+
 # atlas 0.10.26
 
 Six fixes from the round-2 usability assessment (`docs/usability.md`), all cited by their finding
