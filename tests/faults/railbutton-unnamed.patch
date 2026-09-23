@@ -1,0 +1,12 @@
+diff --git a/src/lib/ui/RailButton.svelte b/src/lib/ui/RailButton.svelte
+index d20b92e..c60c62f 100644
+--- a/src/lib/ui/RailButton.svelte
++++ b/src/lib/ui/RailButton.svelte
+@@ -81,7 +81,6 @@
+     class="railitem"
+     class:is-on={pressed}
+     class:railitem--horizontal={orientation === "horizontal"}
+-    aria-label={label}
+     aria-current={pressed ? "true" : undefined}
+     aria-disabled={inactive ? "true" : undefined}
+     aria-describedby={inactive ? tooltipId : undefined}
