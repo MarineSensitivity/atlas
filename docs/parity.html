@@ -46,6 +46,7 @@ thead th { background: var(--panel); font-weight: 600; }
 .pill.intentional-difference { color: var(--intent); }
 .diff { border-left: 3px solid var(--intent); padding-left: .9rem; margin: 1.25rem 0; }
 .gaps td.owner { width: 12rem; font-size: .82rem; color: var(--dim); }
+.gaps tr.fixed td.text b { color: var(--dim); }
 .pair { margin: 2rem 0; }
 .pair.failed { border-left: 3px solid var(--bad); padding-left: .9rem; }
 .shots { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
@@ -84,8 +85,8 @@ and the Atlas side by side at the same view. <b>atlas-9's cutover is gated on th
 
 <div class="meta">
 <dl>
-  <dt>Atlas version</dt><dd>0.10.17 · generated against commit <code data-volatile="sha">609982b84c</code> (the commit that ADDS this page is its child)</dd>
-  <dt>Generated</dt><dd><span data-volatile="generated">2026-09-23 08:19 UTC</span></dd>
+  <dt>Atlas version</dt><dd>0.10.24 · generated against commit <code data-volatile="sha">89895b1c2b</code> (the commit that ADDS this page is its child)</dd>
+  <dt>Generated</dt><dd><span data-volatile="generated">2026-09-23 18:33 UTC</span></dd>
   <dt>Release compared</dt><dd><b>v7</b> — today's <code>latest.txt</code>, the only release both hosts serve publicly</dd>
   <dt>Shiny host</dt><dd><code>https://app.marinesensitivity.org/v7</code></dd>
   <dt>Atlas host</dt><dd><code>https://marinesensitivity.org/atlas</code></dd>
@@ -201,10 +202,10 @@ and where the Atlas behaviour is asserted.</p>
 <p class="dim">checklist lines: <a href="#S-08">S-08</a>, <a href="#P-07">P-07</a></p>
 </section>
 <section class="diff" id="ID-11">
-<h3>ID-11 · The species map draws Program-Area outlines; the Shiny app drew Ecoregions and let you choose</h3>
-<p><b>What differs.</b> The Shiny species app defaulted its Outlines select to Ecoregions (black) and offered Program Areas / Ecoregions / None. The atlas draws the release's ONE unit — Program Areas, white — on BOTH lenses (visible in the species pairs below), and has no Outlines select (G-02). The <code>out=</code> URL value exists and round-trips, but nothing reads it yet, so it cannot change what is drawn (G-25).</p>
+<h3>ID-11 · The species map's default draws no outline; the Shiny app defaulted to Ecoregions and let you choose</h3>
+<p><b>What differs.</b> The Shiny species app defaulted its Outlines select to Ecoregions (black) and offered Program Areas / Ecoregions / None. The atlas has no Outlines select (G-02, still open), but since 0.10.19 <code>Sel.out</code> DOES reach the rendered style on both lenses (G-25, fixed — <code>zoneUnitsWithOutline()</code>, <code>src/shell/Shell.svelte</code>'s <code>zonesForStyle</code>): a link carrying <code>out=programarea</code> now draws the release's one unit, white, on the species map too. What the Shiny app never had to choose, the species lens picks by DEFAULT rather than by control — <code>DEFAULT_OUT_BY_LENS.species</code> is <code>&quot;none&quot;</code> (<code>src/lib/state/types.ts:133-136</code>), so a plain species link draws no outline at all. The species screenshot pairs below were shot before this default existed (0.10.17, when the outline was drawn unconditionally); re-shot against 0.10.21 they will show NO outline on the atlas side unless the link explicitly carries <code>out=programarea</code>.</p>
 <p><b>Why.</b> The species-lens chrome was deferred (G-02) and D17 makes the release's one unit the only outline the app knows how to draw. <code>out</code>'s per-lens default (<code>none</code> for species, <code>programarea</code> for scores) was a documented interpretation taken in atlas-2 when no UI existed to confirm it against, pinned by a test so a later deliberate change shows as a diff rather than drift.</p>
-<p><b>Where the atlas behaviour is asserted.</b> <a href="https://github.com/MarineSensitivity/atlas/blob/main/tests/state/codec.test.ts"><code>tests/state/codec.test.ts</code></a> <span class="tname">defaultOut</span></p>
+<p><b>Where the atlas behaviour is asserted.</b> <a href="https://github.com/MarineSensitivity/atlas/blob/main/tests/state/codec.test.ts"><code>tests/state/codec.test.ts</code></a> <span class="tname">defaultOut</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/tests/map/zones.test.ts"><code>tests/map/zones.test.ts</code></a> <span class="tname">out=&quot;none&quot; hides every unit</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/e2e/scores.outlines.spec.ts"><code>e2e/scores.outlines.spec.ts</code></a> <span class="tname">out=none: the outline renders NOTHING, but the choropleth fill still does</span></p>
 <p class="dim">checklist lines: <a href="#P-07">P-07</a></p>
 </section>
 <section class="diff" id="ID-12">
@@ -243,10 +244,10 @@ and where the Atlas behaviour is asserted.</p>
 <p class="dim">checklist lines: <a href="#P-13">P-13</a></p>
 </section>
 <section class="diff" id="ID-17">
-<h3>ID-17 · The URL is the whole view, and a place never reaches a server</h3>
-<p><b>What differs.</b> Every input — release, lens, layer, palette, unit, study area, camera, species, input, representation, US-only, outlines, selection, theme — round-trips through the query string, and places live in the <code>#hash</code> under a versioned binary codec. The Shiny apps kept only <code>?ver=</code> across a reload, and a drawn polygon was POSTed as WKT to the API. Ordinary interaction uses <code>replaceState</code>, so a shared link reproduces its exact view and the Back button is not filled with view states.</p>
-<p><b>Why.</b> Master plan D8 and atlas-2's state rules; a fragment is never sent to a server or a referrer, which is why places live there.</p>
-<p><b>Where the atlas behaviour is asserted.</b> <a href="https://github.com/MarineSensitivity/atlas/blob/main/e2e/shell.url-state.spec.ts"><code>e2e/shell.url-state.spec.ts</code></a> <span class="tname">a full interaction walk never calls history.pushState, and never grows history.length</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/e2e/places.spec.ts"><code>e2e/places.spec.ts</code></a> <span class="tname">the hash is absent from every request the browser makes during the whole flow</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/e2e/places.spec.ts"><code>e2e/places.spec.ts</code></a> <span class="tname">fresh-profile round trip: copying the link and opening it elsewhere recomputes the SAME cell count and composite</span></p>
+<h3>ID-17 · The URL is (almost) the whole view, and a place never reaches a server</h3>
+<p><b>What differs.</b> Every input — release, lens, layer, palette, unit, study area, camera, species, input, representation, US-only, outlines, selection, theme — round-trips through the query string, and places live in the <code>#hash</code> under a versioned binary codec. The Shiny apps kept only <code>?ver=</code> across a reload, and a drawn polygon was POSTed as WKT to the API. Ordinary interaction uses <code>replaceState</code>, so a shared link reproduces its exact view and the Back button is not filled with view states. <strong>One map-visible input is the documented exception</strong>: the scores lens' &quot;cells outside Program Areas&quot; toggle (<code>showOutsidePra</code>) is plain component <code>$state</code>, not part of <code>sel</code> (<code>src/lens/scores/state.svelte.ts:27-30</code>, <code>:75</code>) — turning it on changes what the raster shows, but a copied link does not reproduce that; a reload or a shared link always opens with it off.</p>
+<p><b>Why.</b> Master plan D8 and atlas-2's state rules; a fragment is never sent to a server or a referrer, which is why places live there. <code>showOutsidePra</code> was a deliberate scope call (ephemeral chrome, same category as <code>Panel.svelte</code>'s collapsed/expanded geometry) rather than an oversight, but it is still a real gap against the URL-is-the-view rule this line otherwise claims without exception.</p>
+<p><b>Where the atlas behaviour is asserted.</b> <a href="https://github.com/MarineSensitivity/atlas/blob/main/e2e/shell.url-state.spec.ts"><code>e2e/shell.url-state.spec.ts</code></a> <span class="tname">a full interaction walk never calls history.pushState, and never grows history.length</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/e2e/places.spec.ts"><code>e2e/places.spec.ts</code></a> <span class="tname">the hash is absent from every request the browser makes during the whole flow</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/e2e/places.spec.ts"><code>e2e/places.spec.ts</code></a> <span class="tname">fresh-profile round trip: copying the link and opening it elsewhere recomputes the SAME cell count and composite</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/e2e/places.deeplink-outline.spec.ts"><code>e2e/places.deeplink-outline.spec.ts</code></a> <span class="tname">?sel=place:0#pl=... renders the selection outline with the Places tool never opened</span></p>
 
 </section>
 <section class="diff" id="ID-18">
@@ -258,112 +259,175 @@ and where the Atlas behaviour is asserted.</p>
 </section>
 
 <h2 id="gaps">Known gaps</h2>
-<p>25 differences that were <em>not</em> chosen: things deferred, not yet gated, or blocked
-on data the releases do not publish. None of them is hidden below the line — they are listed here so
-the signature covers what is missing as well as what is done.</p>
+<p>29 open differences that were <em>not</em> chosen: things deferred, not yet gated, or
+blocked on data the releases do not publish. None of them is hidden below the line — they are listed
+here so the signature covers what is missing as well as what is done. 3 more
+(G-25, G-24, G-23) were found here and have SINCE been fixed — kept in the
+table below, marked "Fixed in &lt;version&gt;", rather than deleted, so the record of what was wrong
+does not disappear with the fix.</p>
 <table class="rows gaps">
-<thead><tr><th scope="col">id</th><th scope="col">gap</th><th scope="col">owner</th><th scope="col">lines</th></tr></thead>
+<thead><tr><th scope="col">id</th><th scope="col">gap</th><th scope="col">owner</th><th scope="col">status</th><th scope="col">lines</th></tr></thead>
 <tbody>
-<tr id="G-01"><td class="id"><a href="#G-01">G-01</a></td>
+<tr id="G-01" class=""><td class="id"><a href="#G-01">G-01</a></td>
 <td class="text"><b>Zone rows carry no <code>name</code> and no <code>label_pt</code>, so the app shows keys and draws no zone labels</b><div class="note">Measured on every published boot (all eleven releases): the atlas-1 contract promised <code>{key, name, label_pt, …}</code>; msens's <code>app_zones()</code> writes neither. Tooltips, the species header and the CSV stem therefore read &quot;GAA&quot; where &quot;Gulf of Alaska&quot; belongs, and the label layer — which is built and tested — has nothing to draw.</div></td>
 <td class="owner">atlas-1 (msens <code>app_zones()</code>), then re-publish <code>app/</code></td>
+<td class="dim">open</td>
 <td class="dim"><a href="#S-04">S-04</a>, <a href="#S-07">S-07</a>, <a href="#S-15">S-15</a></td></tr>
-<tr id="G-02"><td class="id"><a href="#G-02">G-02</a></td>
+<tr id="G-02" class=""><td class="id"><a href="#G-02">G-02</a></td>
 <td class="text"><b>Map chrome: no fullscreen / navigation / scale controls, no geocoder, no minimap, no Outlines select, no &quot;Zoom to layer&quot;</b><div class="note">Neither lens built them: they are real buttons that would nest inside <code>#map[role=&quot;img&quot;]</code> and fail axe. One cross-lens decision (a toolbar outside the map element, or drop <code>role=&quot;img&quot;</code> for a labelled region) is owed before they land.</div></td>
 <td class="owner">atlas-8/9</td>
+<td class="dim">open</td>
 <td class="dim"><a href="#S-08">S-08</a>, <a href="#P-07">P-07</a></td></tr>
-<tr id="G-03"><td class="id"><a href="#G-03">G-03</a></td>
+<tr id="G-03" class=""><td class="id"><a href="#G-03">G-03</a></td>
 <td class="text"><b>The &quot;cell click ≤ 2 requests cold, 0 warm&quot; budget was never turned into a gate</b><div class="note">The click path is asserted; the request COUNT is not.</div></td>
 <td class="owner">atlas-8</td>
+<td class="dim">open</td>
 <td class="dim"><a href="#S-10">S-10</a></td></tr>
-<tr id="G-04"><td class="id"><a href="#G-04">G-04</a></td>
+<tr id="G-04" class=""><td class="id"><a href="#G-04">G-04</a></td>
 <td class="text"><b>The GAA species CSV is not compared byte-for-byte against the R fixture</b><div class="note">atlas-4's gate (&quot;the CSV's bytes equal the fixture CSV for the GAA Program Area on v7&quot;) has no fixture. The CSV's rules (columns, formats, quoting, filename) and the report's own species CSV round trip ARE asserted.</div></td>
 <td class="owner">atlas-8</td>
+<td class="dim">open</td>
 <td class="dim"><a href="#S-15">S-15</a></td></tr>
-<tr id="G-05"><td class="id"><a href="#G-05">G-05</a></td>
+<tr id="G-05" class=""><td class="id"><a href="#G-05">G-05</a></td>
 <td class="text"><b>Two literal rules have no test of their own: the species table's column ORDER, and the species eligibility filter's three conditions</b><div class="note">The column order is declared in <code>SpeciesTable.svelte</code>; the eligibility filter lives in <code>sql/species_for_cells.sql</code>, whose ANSWERS are diffed against msens at 1e-9 (so a changed filter goes red) but whose text is not asserted.</div></td>
 <td class="owner">atlas-8</td>
+<td class="dim">open</td>
 <td class="dim"><a href="#S-16">S-16</a>, <a href="#R-13">R-13</a></td></tr>
-<tr id="G-06"><td class="id"><a href="#G-06">G-06</a></td>
+<tr id="G-06" class=""><td class="id"><a href="#G-06">G-06</a></td>
 <td class="text"><b>The composition treemap is one level, not six WoRMS ranks</b><div class="note">Species category only; the Shiny app drew a six-rank hierarchy. Birds (BOTW taxa) carry no hierarchy in either.</div></td>
 <td class="owner">atlas-8</td>
+<td class="dim">open</td>
 <td class="dim"><a href="#S-19">S-19</a></td></tr>
-<tr id="G-07"><td class="id"><a href="#G-07">G-07</a></td>
+<tr id="G-07" class=""><td class="id"><a href="#G-07">G-07</a></td>
 <td class="text"><b>Neither lens reads <code>capabilities.cell_model</code></b><div class="note">On a release that publishes no cell-level species the scores header would not say so. The places panel DOES honour the same capability.</div></td>
 <td class="owner">atlas-8</td>
+<td class="dim">open</td>
 <td class="dim"><a href="#S-20">S-20</a></td></tr>
-<tr id="G-08"><td class="id"><a href="#G-08">G-08</a></td>
+<tr id="G-08" class=""><td class="id"><a href="#G-08">G-08</a></td>
 <td class="text"><b>No guided tour</b><div class="note">The Shiny apps had a 10-step (scores) and 5-step (species) driver.js tour. The atlas's &quot;Take a Tour&quot; button announces that there is no tour yet; <code>?tour=off</code> is honoured. driver.js is a new dependency against a 450 KB budget, so it was held.</div></td>
 <td class="owner">atlas-8/9</td>
+<td class="dim">open</td>
 <td class="dim"><a href="#S-21">S-21</a>, <a href="#P-19">P-19</a></td></tr>
-<tr id="G-09"><td class="id"><a href="#G-09">G-09</a></td>
+<tr id="G-09" class=""><td class="id"><a href="#G-09">G-09</a></td>
 <td class="text"><b>Five small behaviours are built but have no test of their own</b><div class="note">The species name copy buttons and their <code>execCommand</code> fallback; the phone fold of the layer pills (<code>{N} layers ▾</code>); Share / &quot;Download this layer&quot; in the card; the deep-linked-input &quot;jigger&quot; (no merged-surface flash), verified by hand in atlas-5 but never turned into a spec; and a lens switch with a place active (the places layer is composed for both lenses, so it cannot structurally be dropped — but nothing asserts it).</div></td>
 <td class="owner">atlas-8</td>
+<td class="dim">open</td>
 <td class="dim"><a href="#P-03">P-03</a>, <a href="#P-05">P-05</a>, <a href="#P-17">P-17</a>, <a href="#P-21">P-21</a>, <a href="#P-22">P-22</a></td></tr>
-<tr id="G-10"><td class="id"><a href="#G-10">G-10</a></td>
+<tr id="G-10" class=""><td class="id"><a href="#G-10">G-10</a></td>
 <td class="text"><b><code>capabilities.pmtiles_s3</code> is not honoured</b><div class="note">Ranges are drawn from the URL the shard gives; the documented preference for the S3 copy over <code>file.marinesensitivity.org</code> is unimplemented.</div></td>
 <td class="owner">atlas-8</td>
+<td class="dim">open</td>
 <td class="dim"><a href="#P-09">P-09</a></td></tr>
-<tr id="G-11"><td class="id"><a href="#G-11">G-11</a></td>
+<tr id="G-11" class=""><td class="id"><a href="#G-11">G-11</a></td>
 <td class="text"><b>Published shard bboxes are not minimal-span, and v7 has none</b><div class="note">v9: 48,378 bboxes, 5,053 spanning &gt; 300° (Pacific taxa written wrapped), only 16 with <code>xmax &gt; 180</code>, 38,448 null. v7: all 16,153 null. The lens compensates (ID-12); the fix is msens's.</div></td>
 <td class="owner">atlas-1 (msens <code>.app_bbox</code> / <code>lon_span_agg</code>), re-publish <code>app/</code></td>
+<td class="dim">open</td>
 <td class="dim"><a href="#P-11">P-11</a></td></tr>
-<tr id="G-12"><td class="id"><a href="#G-12">G-12</a></td>
+<tr id="G-12" class=""><td class="id"><a href="#G-12">G-12</a></td>
 <td class="text"><b>Three of the species lens's ten analytics events are not emitted</b><div class="note"><code>toggle_obis</code>, <code>select_outlines</code> and <code>open_about</code> belong to controls that are not built (G-02, G-13).</div></td>
 <td class="owner">atlas-8</td>
+<td class="dim">open</td>
 <td class="dim"><a href="#P-19">P-19</a></td></tr>
-<tr id="G-13"><td class="id"><a href="#G-13">G-13</a></td>
+<tr id="G-13" class=""><td class="id"><a href="#G-13">G-13</a></td>
 <td class="text"><b>No OBIS occurrence overlay</b><div class="note">The Shiny species app has an OBIS h3 tile overlay behind its own toggle and a 3 s service probe; the atlas has none.</div></td>
 <td class="owner">atlas-8/9</td>
+<td class="dim">open</td>
 <td class="dim"><a href="#P-20">P-20</a></td></tr>
-<tr id="G-14"><td class="id"><a href="#G-14">G-14</a></td>
+<tr id="G-14" class=""><td class="id"><a href="#G-14">G-14</a></td>
 <td class="text"><b>The ecoregion <code>norm_pct</code> blend is not re-tested in this repo</b><div class="note">The blend across multi-ecoregion cells (951 cells affected; 10,996 cells in no ecoregion produce no value) happens in msens at publish time and the atlas reads the published column. Nothing here re-implements it, and nothing here re-asserts it.</div></td>
 <td class="owner">msens (already has its own tests) / atlas-8 if it should be pinned from this side too</td>
+<td class="dim">open</td>
 <td class="dim"><a href="#R-15">R-15</a></td></tr>
-<tr id="G-15"><td class="id"><a href="#G-15">G-15</a></td>
+<tr id="G-15" class=""><td class="id"><a href="#G-15">G-15</a></td>
 <td class="text"><b>The per-version browser matrix (v1, v2, v3, v4b) was never run</b><div class="note">v7 is exercised end to end (it is <code>latest</code>), and v9 through hermetic fixtures and the preview path. Step 4 of atlas-4 and atlas-5 — unit list, default layer, a zone click, a cell click either side of 180°, the single-model taxon of §11.5 — is outstanding, including &quot;v1 renders Planning Areas with no console error&quot;.</div></td>
 <td class="owner">atlas-8</td>
+<td class="dim">open</td>
 <td class="dim"><a href="#R-22">R-22</a></td></tr>
-<tr id="G-16"><td class="id"><a href="#G-16">G-16</a></td>
+<tr id="G-16" class=""><td class="id"><a href="#G-16">G-16</a></td>
 <td class="text"><b>No end-to-end fixture of a place that intersects ZERO cells</b><div class="note">Every empty shape the report model can be handed is unit-tested; the whole-document path is not.</div></td>
 <td class="owner">atlas-8</td>
+<td class="dim">open</td>
 <td class="dim"><a href="#R-26">R-26</a></td></tr>
-<tr id="G-17"><td class="id"><a href="#G-17">G-17</a></td>
+<tr id="G-17" class=""><td class="id"><a href="#G-17">G-17</a></td>
 <td class="text"><b>The basemap is a third-party dependency on every page load</b><div class="note">CARTO's keyless vector styles (<code>dark-matter</code>, <code>positron</code>). A self-hosted PMTiles basemap on S3 would remove the dependency; CARTO's raster endpoints already started demanding a key once.</div></td>
 <td class="owner">atlas-8/9</td>
+<td class="dim">open</td>
 <td class="dim">—</td></tr>
-<tr id="G-18"><td class="id"><a href="#G-18">G-18</a></td>
+<tr id="G-18" class=""><td class="id"><a href="#G-18">G-18</a></td>
 <td class="text"><b>The OPFS table store is built and tested but not wired into the app</b><div class="note">The in-memory store is the default and the tested path. Whoever wires <code>openTableStoreBackend()</code> must pass <code>restrictedVersions</code>, or the ruled eviction order degrades to plain LRU.</div></td>
 <td class="owner">atlas-8/9</td>
+<td class="dim">open</td>
 <td class="dim">—</td></tr>
-<tr id="G-19"><td class="id"><a href="#G-19">G-19</a></td>
+<tr id="G-19" class=""><td class="id"><a href="#G-19">G-19</a></td>
 <td class="text"><b>Upload parsers run on the main thread</b><div class="note">Lazily imported, but not off-thread: 290 ms synchronous at 49 k vertices.</div></td>
 <td class="owner">atlas-8</td>
+<td class="dim">open</td>
 <td class="dim">—</td></tr>
-<tr id="G-20"><td class="id"><a href="#G-20">G-20</a></td>
+<tr id="G-20" class=""><td class="id"><a href="#G-20">G-20</a></td>
 <td class="text"><b>The places list shows &quot;—&quot; for coverage and composite on geometry places</b><div class="note"><code>rowFigures</code> is null for a drawn place in the list, though the report computes both.</div></td>
 <td class="owner">atlas-8</td>
+<td class="dim">open</td>
 <td class="dim">—</td></tr>
-<tr id="G-21"><td class="id"><a href="#G-21">G-21</a></td>
+<tr id="G-21" class=""><td class="id"><a href="#G-21">G-21</a></td>
 <td class="text"><b>v8's <code>zone_taxon</code> has no rows for subregion <code>AT</code></b><div class="note">Scored with 52,674 cells but 0 taxa (v9 has 7,562). The bundle carries <code>n_taxa = 0</code> and the species table says so rather than showing an empty list. v8 is restricted and superseded by v9.</div></td>
 <td class="owner">atlas-1 (rebuild or leave)</td>
+<td class="dim">open</td>
 <td class="dim">—</td></tr>
-<tr id="G-22"><td class="id"><a href="#G-22">G-22</a></td>
+<tr id="G-22" class=""><td class="id"><a href="#G-22">G-22</a></td>
 <td class="text"><b>Only the Spectral palette actually has stops</b><div class="note">The palette control offers all four choices the Shiny app does (Spectral / Viridis / Cividis / Magma), but every published release carries <code>boot.palettes.spectral_r</code> alone, so the other three render an &quot;unavailable&quot; legend rather than an invented ramp. The Shiny app drew all four (it held its own ramps in R).</div></td>
 <td class="owner">atlas-1 (publish the other three ramps) or atlas-8 (hide the choices until it does)</td>
+<td class="dim">open</td>
 <td class="dim"><a href="#S-03">S-03</a></td></tr>
-<tr id="G-23"><td class="id"><a href="#G-23">G-23</a></td>
-<td class="text"><b>Two copy defects on the composition treemap, both visible in the screenshot pair below</b><div class="note">Found by looking at the shots for this page, not by a test. (1) The summary line under the treemap reads &quot;210,671,300.041 <strong>species</strong> across 7 categories&quot; — that number is the summed <code>suit_er_area</code>, not a species count, and it is also the figure's accessible description (<code>Treemap.svelte#summaryText</code>). (2) The ported note &quot;the 'bird' component has yet to be added to this visualization&quot; is printed above a treemap that DOES show a Bird box: the note belongs to the six-rank WoRMS version (G-06), while the shipped one-level treemap groups by <code>sp_cat</code> and therefore includes birds.</div></td>
+<tr id="G-23" class="fixed"><td class="id"><a href="#G-23">G-23</a></td>
+<td class="text"><b>Two copy defects on the composition treemap, both visible in the screenshot pair below</b><div class="note">Found by looking at the shots for this page, not by a test. (1) The summary line under the treemap reads &quot;210,671,300.041 <strong>species</strong> across 7 categories&quot; — that number is the summed <code>suit_er_area</code>, not a species count, and it is also the figure's accessible description (<code>Treemap.svelte#summaryText</code>). (2) The ported note &quot;the 'bird' component has yet to be added to this visualization&quot; is printed above a treemap that DOES show a Bird box: the note belongs to the six-rank WoRMS version (G-06), while the shipped one-level treemap groups by <code>sp_cat</code> and therefore includes birds. Fixed in <code>describeTreemapSummary</code> (unit-aware, rounded) and <code>Composition.svelte</code> (the stale note removed); the bird-note fix was mislabelled &quot;G-24&quot; at the time (CHANGELOG.md, tests/GATES.md, tests/lens/scores/composition-note.test.ts) — it is this entry's second defect, relabelled &quot;G-23 (2)&quot;.</div></td>
 <td class="owner">atlas-8 (a one-line copy fix each, plus the gallery treemap test)</td>
+<td class="dim"><span class="pill done">Fixed in 0.10.19</span></td>
 <td class="dim"><a href="#S-19">S-19</a></td></tr>
-<tr id="G-24"><td class="id"><a href="#G-24">G-24</a></td>
-<td class="text"><b>The zones table's score column is headed by the metric's FULL label, which breaks the header</b><div class="note">Visible in the &quot;Scores · zones table&quot; shot below: the current layer's column header is the whole published <code>label</code> (&quot;Combined score of extinction risk per species category and primary productivity, equally weighted (and each previously rescaled [0,100] based on Ecoregional min/max values)&quot;), which wraps to one word per line inside the panel and pushes every data row out of view. The table itself is correct (<code>zonesTableRows</code> equals <code>boot.zones</code> exactly) — it is the header that needs a short name, with the full label as a <code>title</code>/tooltip.</div></td>
+<tr id="G-24" class="fixed"><td class="id"><a href="#G-24">G-24</a></td>
+<td class="text"><b>The zones table's score column is headed by the metric's FULL label, which breaks the header</b><div class="note">Visible in the &quot;Scores · zones table&quot; shot below: the current layer's column header is the whole published <code>label</code> (&quot;Combined score of extinction risk per species category and primary productivity, equally weighted (and each previously rescaled [0,100] based on Ecoregional min/max values)&quot;), which wraps to one word per line inside the panel and pushes every data row out of view. The table itself is correct (<code>zonesTableRows</code> equals <code>boot.zones</code> exactly) — it is the header that needs a short name, with the full label as a <code>title</code>/tooltip. Fixed: the header now reads &quot;Score&quot;, with the full label as <code>title</code> and as the <code>aria-label</code> (so it stays the accessible name), <code>src/lens/scores/ZonesTable.svelte</code>; <code>e2e/scores.zonesTableHeader.spec.ts</code>.</div></td>
 <td class="owner">atlas-8 (a short column label; the full text belongs in a tooltip)</td>
+<td class="dim"><span class="pill done">Fixed in 0.10.24</span></td>
 <td class="dim"><a href="#S-22">S-22</a></td></tr>
-<tr id="G-25"><td class="id"><a href="#G-25">G-25</a></td>
+<tr id="G-25" class="fixed"><td class="id"><a href="#G-25">G-25</a></td>
 <td class="text"><b><code>out=</code> is parsed and round-tripped, but nothing reads it</b><div class="note"><code>Sel.out</code> is written (and defaulted per lens) but no map code consumes it: the shell always composes the release's one zone unit, so a link carrying <code>out=none</code> or <code>out=ecoregion</code> still shows Program-Area outlines. Either wire it to <code>composeStyle</code>'s <code>zones</code> input with the Outlines select (G-02), or stop writing a value the view does not honour — a URL key that does not reproduce its view is exactly what the URL-is-the-view rule exists to prevent.</div></td>
 <td class="owner">atlas-8 (with G-02)</td>
+<td class="dim"><span class="pill done">Fixed in 0.10.19</span></td>
 <td class="dim"><a href="#P-07">P-07</a></td></tr>
+<tr id="G-26" class=""><td class="id"><a href="#G-26">G-26</a></td>
+<td class="text"><b>Zones have no hover — the atlas has no hover interaction at all</b><div class="note">The Shiny app repaints the hovered zone purple and shows its popup on mouseover, with no click needed. The atlas draws the zone tooltip/highlight on CLICK instead (<code>src/lens/scores/ScoresLens.svelte</code>'s own comment: &quot;wired to a click here since this app has no hover&quot;); a sighted mouse user gets no preview before committing to a selection. The zones TABLE (ID-13) is not affected — it is a keyboard/screen-reader equivalent of the choropleth, not of the hover repaint.</div></td>
+<td class="owner">atlas-8/9</td>
+<td class="dim">open</td>
+<td class="dim"><a href="#S-07">S-07</a></td></tr>
+<tr id="G-27" class=""><td class="id"><a href="#G-27">G-27</a></td>
+<td class="text"><b>A scores map click does nothing while the desktop panel is collapsed or the Places tool is open</b><div class="note">The click handler, selection write, popup and Esc listener all live inside <code>ScoresLens.svelte:133-182</code>, mounted only inside the panel BODY (<code>Panel.svelte</code> renders nothing while <code>geometry.collapsed</code>, <code>Shell.svelte:805-811</code> swaps the panel body for the Places tool). With the panel collapsed, or with Places open, clicking an ocean cell writes no <code>sel=cell:</code>, shows no popup and announces nothing — the species lens does not have this bug (its click handler is owned at Shell level). Reported by the atlas-8 phase review (M1); the fix (moving the handler to a lens-level store, matching how species does it) is the F1 round's, not this round's.</div></td>
+<td class="owner">F1 round (atlas-8 phase review M1)</td>
+<td class="dim">open</td>
+<td class="dim"><a href="#S-10">S-10</a>, <a href="#S-12">S-12</a></td></tr>
+<tr id="G-28" class=""><td class="id"><a href="#G-28">G-28</a></td>
+<td class="text"><b>The &quot;Report&quot; tool and the top-bar &quot;Report&quot; button are both a placeholder</b><div class="note">Both open the SAME rail panel, whose body is the literal string <code>TOOL_BODY.report</code> (&quot;The report builder arrives in a later phase.&quot;, <code>src/shell/tools.ts:44</code>); <code>Shell.svelte</code>'s <code>onReport()</code> just sets <code>activeTool = &quot;report&quot;</code>. This is unrelated to <code>report.html</code> (ID-04/ID-13, which IS fully built) — there is simply no in-app report-builder panel behind the rail tool or the top-bar button.</div></td>
+<td class="owner">atlas-8/9</td>
+<td class="dim">open</td>
+<td class="dim">—</td></tr>
+<tr id="G-29" class=""><td class="id"><a href="#G-29">G-29</a></td>
+<td class="text"><b>No legend on a phone viewport, either lens</b><div class="note">Both <code>ScoresLegend.svelte</code> and <code>SpeciesLegend.svelte</code> set <code>display: none</code> under <code>max-width: 899px</code> — there is no room beside the bottom rail and bottom sheet at that breakpoint (the same trade-off the on-map About card already makes, <code>docs/design/spec.md</code> §14). A phone user has color on the map with no key to it.</div></td>
+<td class="owner">atlas-8/9</td>
+<td class="dim">open</td>
+<td class="dim">—</td></tr>
+<tr id="G-30" class=""><td class="id"><a href="#G-30">G-30</a></td>
+<td class="text"><b>The theme default is <code>auto</code>; the Shiny apps always opened dark</b><div class="note"><code>DEFAULT_SEL.theme</code> is <code>&quot;auto&quot;</code> (<code>src/lib/state/types.ts:175</code>), which follows the OS/browser <code>prefers-color-scheme</code> (resolving to navy when that signal is unavailable). A first-time visitor whose system is set to light therefore sees a paper map by default, where every Shiny app opened dark regardless of the OS setting.</div></td>
+<td class="owner">atlas-8/9</td>
+<td class="dim">open</td>
+<td class="dim">—</td></tr>
+<tr id="G-31" class=""><td class="id"><a href="#G-31">G-31</a></td>
+<td class="text"><b>The scores-lens top-bar search input has no handler</b><div class="note">On the scores lens, the top-bar search is a bare <code>&lt;input type=&quot;search&quot; aria-label=&quot;Search species and places&quot;&gt;</code> with no <code>onInput</code>/<code>onChange</code>/<code>onSearchLogged</code> at all (<code>Shell.svelte:703-708</code>) — typing into it does nothing. The species lens gets a real, wired search (<code>SpeciesSearch</code>, P-02); the scores lens never had an equivalent feature to search FOR (no species/place index the scores map searches over), so the control is a leftover input rather than a built one.</div></td>
+<td class="owner">atlas-8/9</td>
+<td class="dim">open</td>
+<td class="dim">—</td></tr>
+<tr id="G-32" class=""><td class="id"><a href="#G-32">G-32</a></td>
+<td class="text"><b>No Docs/Home navigation link, and no preview sign-out control</b><div class="note"><code>Shell.svelte</code> has no link back to the docs site or the marketing home page, and no sign-out affordance for a signed-in preview reviewer (a preview session is left by leaving the tab/clearing Cloudflare Access, not by an in-app control). The Shiny apps carried both in their own chrome.</div></td>
+<td class="owner">atlas-8/9</td>
+<td class="dim">open</td>
+<td class="dim">—</td></tr>
 </tbody></table>
 
 <h2 id="shots">Screenshot pairs</h2>
@@ -620,7 +684,7 @@ retyped). Evidence links go to <code>https://github.com/MarineSensitivity/atlas/
 </tr>
 <tr id="S-07">
   <td class="id"><a href="#S-07">S-07</a></td>
-  <td class="text">Zone branch: ALL zones of the unit; fill by the 11-bin rule from ramps.ts, opacity 0.7, white outline, default lightgrey, hover purple; tooltip &quot;{name}: {round(value)}&quot;; legend endpoints round(range, 1); empty values → a notice and no draw (the Inf/-Inf legend guard).<div class="note">the whole rule is implemented and pinned; the tooltip prints the zone KEY (&quot;GAA: 40&quot;) rather than its name, because no published boot carries <code>name</code> — known gap G-01, and the code already falls back deliberately (&quot;falls back to the key when the zone carries no name&quot;).</div></td>
+  <td class="text">Zone branch: ALL zones of the unit; fill by the 11-bin rule from ramps.ts, opacity 0.7, white outline, default lightgrey, hover purple; tooltip &quot;{name}: {round(value)}&quot;; legend endpoints round(range, 1); empty values → a notice and no draw (the Inf/-Inf legend guard).<div class="note">the fill/legend rule is implemented and pinned; the tooltip prints the zone KEY (&quot;GAA: 40&quot;) rather than its name, because no published boot carries <code>name</code> — known gap G-01, and the code already falls back deliberately (&quot;falls back to the key when the zone carries no name&quot;). The atlas has NO hover interaction at all (<code>ScoresLens.svelte</code>'s own comment: &quot;this app has no hover&quot;) — the zone tooltip and highlight are wired to CLICK instead. The Shiny app repaints the hovered zone purple and shows its popup on mouseover, with no click needed; that repaint-on-hover behaviour is not built here (known gap G-26).</div></td>
   <td class="status"><span class="pill partial">partial</span></td>
   <td class="evidence"><a href="https://github.com/MarineSensitivity/atlas/blob/main/tests/lens/scores/zoneFill.test.ts"><code>lens/scores/zoneFill.test.ts</code></a> <span class="tname">the 11-bin rule: exact stop colours at the low/mid/high end, pinned against boot.palettes itself</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/tests/lens/scores/zoneFill.test.ts"><code>lens/scores/zoneFill.test.ts</code></a> <span class="tname">one stop per zone, keyProperty named for the unit, legend range rounded to 1 decimal</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/tests/lens/scores/zoneFill.test.ts"><code>lens/scores/zoneFill.test.ts</code></a> <span class="tname">empty values: the Inf/-Inf guard — no fill, no legend, empty:true</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/tests/lens/scores/popup.test.ts"><code>lens/scores/popup.test.ts</code></a> <span class="tname">'{name}: {round(value)}' — parity doc §6.4, verbatim (half-to-even, 0 dp)</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/tests/raster/ramps.test.ts"><code>raster/ramps.test.ts</code></a> <span class="tname">choroplethBin — clamp(roundHalfEven((v-min)/max(max-min,1e-6)*10)+1, 1, 11)</span></td>
 </tr>
@@ -692,7 +756,7 @@ retyped). Evidence links go to <code>https://github.com/MarineSensitivity/atlas/
 </tr>
 <tr id="S-19">
   <td class="id"><a href="#S-19">S-19</a></td>
-  <td class="text">Composition treemap over app/taxonomy.parquet (branchvalues: total semantics), themed; the &quot;birds are not in this view&quot; note stays until BOTW taxa gain a hierarchy (enhancement, not parity).<div class="note">the treemap is ONE level (species category), not the six WoRMS ranks the Shiny app drew (G-06) — and it carries two copy defects (G-23).</div></td>
+  <td class="text">Composition treemap over app/taxonomy.parquet (branchvalues: total semantics), themed; the &quot;birds are not in this view&quot; note stays until BOTW taxa gain a hierarchy (enhancement, not parity).<div class="note">the treemap is ONE level (species category), not the six WoRMS ranks the Shiny app drew (G-06). The two copy defects reported as G-23 (the summary line's mislabelled number, and the stale &quot;bird not added&quot; note) were fixed in 0.10.19 — see tests/ui/treemapLayout.test.ts and tests/lens/scores/composition-note.test.ts.</div></td>
   <td class="status"><span class="pill partial">partial</span></td>
   <td class="evidence"><a href="https://github.com/MarineSensitivity/atlas/blob/main/tests/lens/scores/composition.test.ts"><code>lens/scores/composition.test.ts</code></a> <span class="tname">groups by category, summed by suit_er_area</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/tests/lens/scores/composition.test.ts"><code>lens/scores/composition.test.ts</code></a> <span class="tname">drops a category with no positive sum, never a zero-size box</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/e2e/gallery.spec.ts"><code>gallery.spec.ts</code></a> <span class="tname">Treemap: every cell is keyboard-reachable and individually named</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/e2e/gallery.spec.ts"><code>gallery.spec.ts</code></a> <span class="tname">Treemap: an empty dataset shows the empty state, not a blank chart</span></td>
 </tr>
@@ -759,7 +823,7 @@ retyped). Evidence links go to <code>https://github.com/MarineSensitivity/atlas/
 </tr>
 <tr id="P-07">
   <td class="id"><a href="#P-07">P-07</a></td>
-  <td class="text">Outlines select: Program Areas (white) / Ecoregions (black, default) / None; Program-Area labels; Program-Area hover tooltip; globe (default) ↔ mercator; globe minimap; fullscreen, navigation, scale, Nominatim geocoder, layers control listing what exists; &quot;Zoom to layer&quot;.<div class="note">none of the species map's chrome is built: the Outlines select, Program-Area labels and hover tooltip, the globe minimap, fullscreen / navigation / scale, the Nominatim geocoder, the layers control and &quot;Zoom to layer&quot; (known gap G-02). Globe↔mercator IS in the URL and in the style. Outlines ARE drawn — the release's one unit, Program Areas in white, on both lenses — where Shiny defaulted to Ecoregions (ID-11); <code>out=</code> round-trips but nothing reads it (G-25).</div><div class="diffs">see <a href="#ID-10">ID-10</a>, <a href="#ID-11">ID-11</a></div></td>
+  <td class="text">Outlines select: Program Areas (white) / Ecoregions (black, default) / None; Program-Area labels; Program-Area hover tooltip; globe (default) ↔ mercator; globe minimap; fullscreen, navigation, scale, Nominatim geocoder, layers control listing what exists; &quot;Zoom to layer&quot;.<div class="note">none of the species map's chrome is built: the Outlines select, Program-Area labels and hover tooltip, the globe minimap, fullscreen / navigation / scale, the Nominatim geocoder, the layers control and &quot;Zoom to layer&quot; (known gap G-02). Globe↔mercator IS in the URL and in the style. <code>out=</code> reaches the rendered style on both lenses since 0.10.19 (G-25, fixed) — but the species lens DEFAULTS to <code>out=none</code>, so a plain species link draws no outline where Shiny defaulted to Ecoregions; <code>out=programarea</code> draws the release's one unit, white, same as the scores lens (ID-11).</div><div class="diffs">see <a href="#ID-10">ID-10</a>, <a href="#ID-11">ID-11</a></div></td>
   <td class="status"><span class="pill deferred">deferred</span></td>
   <td class="evidence"><span class="no-test">no test</span></td>
 </tr>
@@ -1041,7 +1105,7 @@ above, and I accept them as the basis for retiring the Shiny apps (atlas-9 cutov
 <tr><td>atlas-5 · Species lens</td><td style="width:6rem;text-align:center">☐</td><td style="height:2.2rem"></td></tr>
 <tr><td>atlas-7 · Report</td><td style="width:6rem;text-align:center">☐</td><td style="height:2.2rem"></td></tr>
 <tr><td>Intentional differences (18)</td><td style="text-align:center">☐</td><td></td></tr>
-<tr><td>Known gaps (25)</td><td style="text-align:center">☐</td><td></td></tr>
+<tr><td>Known gaps (32)</td><td style="text-align:center">☐</td><td></td></tr>
 </tbody></table>
 <p style="margin-top:1.25rem">Reviewed by <span class="line">&nbsp;</span> &nbsp; on <span class="line" style="min-width:10rem">&nbsp;</span></p>
 </div>

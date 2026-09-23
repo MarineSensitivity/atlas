@@ -188,7 +188,7 @@ export const STATUS = {
         name: "choroplethBin — clamp(roundHalfEven((v-min)/max(max-min,1e-6)*10)+1, 1, 11)",
       },
     ],
-    note: 'the whole rule is implemented and pinned; the tooltip prints the zone KEY ("GAA: 40") rather than its name, because no published boot carries `name` — known gap G-01, and the code already falls back deliberately ("falls back to the key when the zone carries no name").',
+    note: 'the fill/legend rule is implemented and pinned; the tooltip prints the zone KEY ("GAA: 40") rather than its name, because no published boot carries `name` — known gap G-01, and the code already falls back deliberately ("falls back to the key when the zone carries no name"). The atlas has NO hover interaction at all (`ScoresLens.svelte`\'s own comment: "this app has no hover") — the zone tooltip and highlight are wired to CLICK instead. The Shiny app repaints the hovered zone purple and shows its popup on mouseover, with no click needed; that repaint-on-hover behaviour is not built here (known gap G-26).',
   },
   "S-08": {
     match: "Layers control lists the layers that actually exist",
@@ -428,7 +428,7 @@ export const STATUS = {
         name: "Treemap: an empty dataset shows the empty state, not a blank chart",
       },
     ],
-    note: "the treemap is ONE level (species category), not the six WoRMS ranks the Shiny app drew (G-06) — and it carries two copy defects (G-23).",
+    note: 'the treemap is ONE level (species category), not the six WoRMS ranks the Shiny app drew (G-06). The two copy defects reported as G-23 (the summary line\'s mislabelled number, and the stale "bird not added" note) were fixed in 0.10.19 — see tests/ui/treemapLayout.test.ts and tests/lens/scores/composition-note.test.ts.',
   },
   "S-20": {
     match: "Cell species unavailable",
@@ -601,7 +601,7 @@ export const STATUS = {
     status: "deferred",
     diffs: ["ID-10", "ID-11"],
     evidence: NO_TEST,
-    note: "none of the species map's chrome is built: the Outlines select, Program-Area labels and hover tooltip, the globe minimap, fullscreen / navigation / scale, the Nominatim geocoder, the layers control and \"Zoom to layer\" (known gap G-02). Globe↔mercator IS in the URL and in the style. Outlines ARE drawn — the release's one unit, Program Areas in white, on both lenses — where Shiny defaulted to Ecoregions (ID-11); `out=` round-trips but nothing reads it (G-25).",
+    note: "none of the species map's chrome is built: the Outlines select, Program-Area labels and hover tooltip, the globe minimap, fullscreen / navigation / scale, the Nominatim geocoder, the layers control and \"Zoom to layer\" (known gap G-02). Globe↔mercator IS in the URL and in the style. `out=` reaches the rendered style on both lenses since 0.10.19 (G-25, fixed) — but the species lens DEFAULTS to `out=none`, so a plain species link draws no outline where Shiny defaulted to Ecoregions; `out=programarea` draws the release's one unit, white, same as the scores lens (ID-11).",
   },
   "P-08": {
     match: "COG branch: titiler tiles with the asset's own colormap",

@@ -65,7 +65,12 @@
           {/if}
           <th scope="col">Rank</th>
           <th scope="col">Zone</th>
-          <th scope="col">{metricLabel}</th>
+          <!-- G-24 fix (docs/parity.html): the header used to print the metric's WHOLE published
+               `label` (a full sentence on a real release), which wrapped to one word per line and
+               pushed every data row out of view. "Score" is a short, fixed header text; the full
+               label is still reachable as a hover `title` AND as the accessible name (`aria-label`)
+               so "Score" alone is never the only cue to which metric is ranked. -->
+          <th scope="col" title={metricLabel} aria-label={`Score (${metricLabel})`}>Score</th>
           {#if rows[0]}
             {#each rows[0].components as c (c.label)}
               <th scope="col">{c.label}</th>

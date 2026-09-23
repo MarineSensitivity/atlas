@@ -37,6 +37,13 @@ async function gotoGallery(page: Page, theme: (typeof THEMES)[number]) {
   await page.goto(`/gallery.html?theme=${theme}`, { waitUntil: "networkidle" });
 }
 
+// atlas-8 phase review M8 (SC 2.4.2 Page Titled): gallery.html is one of the three entry points
+// docs/accessibility.md claims a title for; nothing asserted the real, rendered `document.title`.
+test("gallery.html has its own descriptive title", async ({ page }) => {
+  await gotoGallery(page, "navy");
+  await expect(page).toHaveTitle("Atlas component gallery");
+});
+
 test.describe("screenshots: every section, both themes, phone and desktop widths", () => {
   for (const theme of THEMES) {
     for (const viewport of VIEWPORTS) {

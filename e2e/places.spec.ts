@@ -121,6 +121,30 @@ test("axe: zero serious/critical findings with the Places panel AND the coordina
   expect(bad, JSON.stringify(bad, null, 2)).toEqual([]);
 });
 
+// atlas-8 phase review M8 (SC 3.3.1 Error Identification): docs/accessibility.md cites
+// `CoordinateDialog.svelte:60`'s `role="alert"` refusal as evidence, but no test asserted a
+// refusal actually renders as one in a real browser -- `tests/geo/upload/messages.test.ts` covers
+// only the refusal COPY (`coords.ts`'s `R()` builders), never the live `role="alert"` wiring.
+test("an unrecognized coordinate entry refuses as a role=alert, verbatim what/why/fix", async ({
+  page,
+}) => {
+  await openPlaces(page);
+  await page.getByRole("button", { name: "Enter coordinates" }).click();
+  const textarea = page.getByLabel("Coordinates, bounding box, or WKT/GeoJSON");
+  await expect(textarea).toBeVisible();
+  await textarea.fill("this is not a coordinate");
+  await page.getByRole("button", { name: "Add place" }).click();
+
+  const alert = page.getByRole("alert");
+  await expect(alert).toBeVisible();
+  await expect(alert).toContainText(
+    'This text doesn\'t read as a bounding box, a list of coordinates or WKT/GeoJSON: "this is not a coordinate".',
+  );
+  await expect(alert).toContainText("four comma-separated numbers");
+  // never a submission: no place row is created from the refused text.
+  await expect(page.locator(".place-row")).toHaveCount(0);
+});
+
 test("the hash is absent from every request the browser makes during the whole flow", async ({
   page,
 }) => {

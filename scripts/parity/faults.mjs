@@ -6,7 +6,9 @@
 // runs `run.mjs --sql-dir <copy>` against it, and requires a NON-ZERO exit. The committed twins are
 // never touched.
 //
-// Usage: node scripts/parity/faults.mjs [v9 v7] [--only <id>]
+// Usage: node scripts/parity/faults.mjs [v9 v7] [--only <id>] [--base <dir-or-url>]
+// `--base` is forwarded to every run.mjs invocation (see run.mjs's own `--base` doc); CI passes
+// the real bucket URL so this gate runs there without the laptop-only local mirror.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -76,6 +78,13 @@ function edit(dir, file, pairs) {
 const args = process.argv.slice(2);
 const onlyAt = args.indexOf("--only");
 const only = onlyAt >= 0 ? args[onlyAt + 1] : null;
+// M3 (atlas-8 phase review): forwarded to every run.mjs invocation so this gate can be pointed at
+// the real bucket in CI -- without it, run.mjs falls back to ensureMirror()'s laptop-only paths
+// (.claude/worktrees/contract/... and ~/_big/msens/derived), which do not exist on a runner, and
+// every fault would turn "RED" for that reason instead of the seeded SQL mutation (the exact
+// red-for-the-wrong-reason failure mode M2 names for test-faults.mjs).
+const baseAt = args.indexOf("--base");
+const base = baseAt >= 0 ? args[baseAt + 1] : null;
 const vers = args.filter((a) => /^v\d/.test(a));
 
 let bad = 0;
@@ -88,7 +97,13 @@ for (const fault of FAULTS) {
   fault.apply(dir);
   const r = spawnSync(
     process.execPath,
-    [path.join(ROOT, "scripts/parity/run.mjs"), ...run, "--sql-dir", dir],
+    [
+      path.join(ROOT, "scripts/parity/run.mjs"),
+      ...run,
+      "--sql-dir",
+      dir,
+      ...(base ? ["--base", base] : []),
+    ],
     {
       cwd: ROOT,
       encoding: "utf8",
