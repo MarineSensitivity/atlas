@@ -13,13 +13,14 @@
 // Shared fixtures/helpers now live in e2e/species-hermetic.ts so the two files never duplicate them.
 import { expect, test } from "@playwright/test";
 import {
+  BUCKET,
   collectRequests,
   routeBucket,
   routeSealFixture,
   routeSession,
   waitForHydration,
 } from "./hermetic";
-import { blockWasm, routeGlyphs, routeZonesPmtiles } from "./map-hermetic";
+import { blockWasm, routeGlyphs, routeTitilerTiles, routeZonesPmtiles } from "./map-hermetic";
 import {
   LEATHERBACK_SP,
   WALRUS_AM_MDL_KEY,
@@ -470,5 +471,104 @@ test.describe("fix list #8 (SC 4.1.2 + 1.3.1): the species picker is a real comb
     await input.pressSequentially("walrus", { delay: 20 });
     // createSearchLogger's own debounce is 900ms; give it real margin.
     await expect(live).toContainText(/result.* for "walrus"/, { timeout: 3_000 });
+  });
+});
+
+// 0.10.22: the species first-paint regression, made deterministic. On 0.10.20/0.10.21 the shell's
+// basemap-arrival recompose opened a `styleQueue.ts` settle cycle that ended only on `"idle"`, and
+// the species raster's style (composed a few ms later, when the taxon shard resolved) was PARKED
+// behind it — for the whole species camera flight and every loading tile (+528..+1,899 ms after the
+// shard, instrumented), the ~1 s bimodal regression in `e2e/species.timing.spec.ts`. Here the
+// basemap's vector tiles never answer, so the map can NEVER go idle once the basemap is in the
+// style, and the shard is released only after it is: a queue that waits for idle parks the raster
+// until its 4 s fallback; one that settles on the in-flight style's own `"style.load"` issues it at
+// once. Both ends are timed IN THE PAGE (the shard's resource-timing `responseEnd`, and the
+// `"style.load"` whose style first holds the raster layer), so neither the harness's own polling
+// nor the route hand-off is part of the number. Seeded fault: `tests/faults/style-settle-on-idle.patch`.
+const RASTER_AFTER_SHARD_BUDGET_MS = 1_500;
+type GateWindow = {
+  __atlasMap?: {
+    handle: {
+      map: {
+        getStyle(): { layers: { id: string }[] } | undefined;
+        getLayer(id: string): unknown;
+        on(event: "style.load", cb: () => void): unknown;
+      };
+    };
+  };
+  __gate?: { released?: number; raster?: number };
+};
+test.describe("0.10.22: the species raster's style is issued when its shard lands, not when the map next goes idle", () => {
+  test("with the map unable to go idle (basemap tiles hung), the raster layer is in the style within 1.5 s of the shard", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await blockWasm(page);
+    await routeBucket(page, "v9", bootFor("v9"));
+    await routeSpeciesShards(page);
+    await routeSession(page, { preview: true, ver: "v9" });
+    await routeSealFixture(page);
+    await routeGlyphs(page);
+    await routeTitilerTiles(page);
+    // registered AFTER routeBucket's basemap chain, so it wins: every CARTO vector tile hangs, and
+    // MapLibre never reports the basemap source loaded -> `"idle"` never fires again.
+    await page.route(
+      (url) => /\/vectortiles\/carto\.streets\/v1\//.test(url.pathname),
+      () => {
+        /* never resolves */
+      },
+    );
+    // the taxon shard is held until the basemap is IN the composed style (the order the measured
+    // slow loads had), then handed on to routeSpeciesShards' fixture via `fallback()`.
+    let released = false;
+    await page.route(
+      (url) => url.href.startsWith(BUCKET) && url.href.includes("/app/taxon/"),
+      async (route) => {
+        await page.waitForFunction(
+          () =>
+            !!(window as unknown as GateWindow).__atlasMap?.handle.map
+              .getStyle()
+              ?.layers.some((l) => l.id.startsWith("basemap-")),
+          undefined,
+          { timeout: 30_000 },
+        );
+        await page.evaluate(() => {
+          const w = window as unknown as GateWindow;
+          const map = w.__atlasMap!.handle.map;
+          w.__gate = { released: performance.now() };
+          map.on("style.load", () => {
+            if (w.__gate!.raster === undefined && map.getLayer("species-raster"))
+              w.__gate!.raster = performance.now();
+          });
+        });
+        released = true;
+        await route.fallback();
+      },
+    );
+    await page.goto(`/?sp=${LEATHERBACK_SP}&ver=v9`);
+    await waitForHydration(page);
+
+    await page.waitForFunction(
+      () => (window as unknown as GateWindow).__gate?.raster !== undefined,
+      undefined,
+      { timeout: 30_000 },
+    );
+    expect(released, "the taxon shard was never requested").toBe(true);
+    const { shardAt, rasterAt } = await page.evaluate(() => {
+      const w = window as unknown as GateWindow;
+      const entry = performance
+        .getEntriesByType("resource")
+        .find((e) => e.name.includes("/app/taxon/")) as PerformanceResourceTiming | undefined;
+      // `responseEnd` excludes the route hand-off; an engine that records no entry for a routed
+      // request falls back to the (earlier, so stricter) moment the route released it.
+      return { shardAt: entry?.responseEnd || w.__gate!.released!, rasterAt: w.__gate!.raster! };
+    });
+    const afterShardMs = Math.round(rasterAt - shardAt);
+    expect(
+      afterShardMs,
+      `the species raster reached the style ${afterShardMs} ms after its shard: it was parked ` +
+        `behind the basemap's setStyle until the map went idle (or the 4 s fallback). An issued ` +
+        `style must settle on its own "style.load" -- see src/lib/map/styleQueue.ts (0.10.22).`,
+    ).toBeLessThan(RASTER_AFTER_SHARD_BUDGET_MS);
   });
 });
