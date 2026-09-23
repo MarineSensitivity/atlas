@@ -10,6 +10,7 @@
 // simply does not run" without it; running the SAME rule just outside that parameter is what the
 // synchronous/asynchronous mismatch requires.
 import { placeCells, tilesForCells } from "../lib/analysis/place";
+import { exclusive } from "../lib/analysis/exclusive";
 import { createPlaceCells, createStudyAreaCells } from "../lib/analysis/queries";
 import type { DataEngineContext } from "./dataEngine";
 import type { NormalizedPlace } from "../lib/geo/upload/normalize";
@@ -41,10 +42,14 @@ export async function touchesStudyArea(
 ): Promise<boolean> {
   const cells = placeCells(place.geometry, ctx.grid);
   if (!cells.length) return false;
-  await ctx.sources.cellTiles(tilesForCells(cells, ctx.grid));
-  await createPlaceCells(ctx.sources.db, cells);
-  const n = await createStudyAreaCells(ctx.sources.db, ctx.sources.templates);
-  return n > 0;
+  // usability B1: this rewrites the same `cell`/`place_cell`/`place_cell_sa` a running place
+  // analysis reads -- an upload arriving mid-analysis used to hand that place THIS place's cells
+  return exclusive(ctx.sources.db, async () => {
+    await ctx.sources.cellTiles(tilesForCells(cells, ctx.grid));
+    await createPlaceCells(ctx.sources.db, cells);
+    const n = await createStudyAreaCells(ctx.sources.db, ctx.sources.templates);
+    return n > 0;
+  });
 }
 
 /**

@@ -32,6 +32,72 @@ id below.
   (`--size-rail-row`, `src/shell/shell.css`), and the sheet's "Full height" detent shrinks to fit
   above it (`src/lib/ui/Sheet.svelte`) instead of growing back down over it.
 
+# atlas 0.10.25
+
+Usability assessment **B1** (`docs/usability.md` §3.4/§4, a hard stop on its own): "place analyses
+race on shared DuckDB tables: coverage reads 0 / 100 / 200 %, and a place can show another place's
+scores."
+
+- **The observation (live 0.10.21).** One drawn 18,354 km² box read 0.0 %, 100.0 % and 200.0 %
+  "inside the US study area" from run to run — "200.0 % … (1,344 of 672 cells)" — and an uploaded
+  Monterey box showed the Gulf box's 31.3 composite under its own name while `report.html` (which
+  analyses places one at a time) gave it 39 (`docs/usability/obs/obs-coverage-race.json`,
+  `obs-places.json`).
+- **Root cause 1: two analyses on one engine interleaved on shared objects.** Every place analysis
+  builds the same fixed-name objects the SQL twins read (`cell` over the place's tiles,
+  `place_cell`, `place_cell_sa`, `cell_model`, `cell_model_key`, `species_agg`, `species_sel`), one
+  statement per `await`, on ONE connection. `Engine`'s chain orders statements, not analyses, so
+  the Results panel's scores, "Show analysis cells", the species walk and an upload's study-area
+  check — all on the Places panel's one engine — interleaved: two `CREATE OR REPLACE place_cell`
+  then two `INSERT`s doubled the table (the 200 %), a replace between one analysis' insert and its
+  count emptied it (the 0 %), and a `cell` view redefined over another place's tiles handed one
+  place the other's numbers. Reproduced deterministically, not by timing:
+  `tests/analysis/concurrentPlaces.test.ts` drives the REAL `Engine` + `AnalysisSources` +
+  `places/results.ts`/`studyArea.ts` over a real DuckDB (the pinned duckdb-wasm's own node build,
+  `tests/analysis/nodeEngine.ts`, answering each query a macrotask later like the worker). Red on
+  0.10.21 in 5 of 6: place A analysed beside B came back as B (`nCellsStudyArea` 9 not 12,
+  composite 52.12 not 26.375); scores + analysed cells for one place read **32 of 16 cells —
+  exactly 200 %**; A's species list came back EMPTY beside B's scores.
+- **Root cause 2: the Results panel never re-ran for a newly selected place.** Its `$effect` read
+  `place` only after an `await`, so it never tracked it: selecting or uploading another place kept
+  the previous place's composite under the new name (the Monterey/Gulf swap).
+- **Fix.** `src/lib/analysis/exclusive.ts`: one FIFO queue per database; every caller that builds
+  and then reads those objects runs its whole sequence inside `exclusive()` —
+  `computeScoreResults`, `placeCellsInStudyArea`, `computeSpeciesResults` (`places/results.ts`),
+  `touchesStudyArea` (`places/studyArea.ts`), and the report's `zonePlaceSpecies`
+  (`report/data.ts`). Chosen over per-call table names (the twins' object names are the contract
+  with `msens`: parity runs these exact files, the report prints them, and `species_sel` is read by
+  a later `composition()` call) and over per-connection TEMP objects (the engine is deliberately
+  one connection, and the parity harness runs each statement in its own CLI process, where a TEMP
+  table would not survive). DuckDB-WASM runs one statement at a time in one worker anyway, so the
+  queue costs no throughput — it only fixes the order. `ResultsPanel.svelte` keys its analysis on
+  the place's geometry (a pan re-decoding `#pl=` into new objects re-runs nothing; a rename neither)
+  and stamps each run, so a place switched or removed mid-analysis drops its late result instead
+  of landing it on the row that replaced it (species too). **No SQL twin changed**: D7/D7b are
+  byte-identical, and `npm run parity` on v9 is unchanged.
+- **Not covered here, by ownership:** the scores lens runs its own engine
+  (`src/lens/scores/engine.ts`), and its click popup and cell species path
+  (`ScoresLens.svelte`, `speciesLoad.ts`) still build `cell`/`place_cell` outside the queue; they
+  should call `exclusive(sources.db, …)` the same way (`src/lens/**` belongs to another round).
+  Places' "Show analysis cells" can still paint a previous place's (now correct) cells if the
+  selection changes mid-load (`Places.svelte`, likewise another round's file).
+- **Gates.** `tests/analysis/concurrentPlaces.test.ts` (red → green, above) and
+  `tests/analysis/exclusive.test.ts` (FIFO, never-overlap, a rejection does not block the next, two
+  engines stay independent). New `e2e/places.concurrency.spec.ts` (three engines) against a tiny
+  real release (`e2e/fixtures/places-concurrency/generate.sql`: two places with different coverage
+  and composite): each place is first measured ALONE in a fresh profile, then the overlap is FORCED
+  by holding the first place's `cell` tile at the route until the second operation has started —
+  two places back to back, scores + "Show analysis cells" on one place, and a refused upload
+  mid-analysis — and every panel must equal its solo reading. Run against 0.10.21 it is red three
+  ways: B's panel read "120.5 % … (270 of 224 cells)" (A's corrupted result under B's name), the
+  toggle case read "137.5 % … (308 of 224 cells)" (a doubled cell set, 2 × 154), and the refused
+  upload was ACCEPTED (its study-area check counted A's cells). Seeded fault
+  `tests/faults/places-analysis-shared-tables.patch` (`exclusive()` back to a pass-through, the
+  0.10.21 shape) is wired into `npm run test:faults`; `scripts/test-faults.mjs` now provisions the
+  duckdb extension mirror for a fault whose gate boots a real engine (`duckdbExt`), and requires a
+  red for the RIGHT reason (`redMatches`: the solo baseline passed, a concurrency test failed), so
+  a broken engine can never count as the fault being caught.
+
 # atlas 0.10.24
 
 atlas-8 phase review (Opus 5.5) fix round: M3 (CI wiring), M7 (parity page content), M8 (the 508

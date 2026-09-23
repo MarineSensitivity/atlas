@@ -24,7 +24,7 @@
 // Usage: npm run test:faults  (needs $TMPDIR exported, and a clean `git status` for HEAD to be
 // meaningful -- it worktrees off HEAD, not the working tree, on purpose: see each patch's header).
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -298,7 +298,53 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4397" },
   },
+  // usability B1 (0.10.25): two place analyses on one DuckDB engine interleaved on the shared
+  // `cell`/`place_cell`/`place_cell_sa` objects -- the live 0.10.21 read "200.0 % ... (1,344 of 672
+  // cells)" and showed one place's scores under another's name. This patch turns
+  // `src/lib/analysis/exclusive.ts` back into a pass-through (every analysis runs the moment it is
+  // called, exactly the 0.10.21 shape) and must turn e2e/places.concurrency.spec.ts red.
+  //
+  // That spec boots a REAL DuckDB-WASM, so the patched tree needs the parquet extension mirror
+  // (`duckdbExt`: copied from this checkout's `public/duckdb-ext/`, else fetched + sha-verified by
+  // `scripts/fetch-duckdb-extensions.mjs` -- the CI job has no fetch step of its own). And a
+  // missing mirror, or any other boot failure, would ALSO turn it red, for the wrong reason: so
+  // `redMatches` requires the SOLO baseline test to have passed (the engine worked) and a
+  // concurrency test to have failed. `--reporter=list` pins the output those patterns read.
+  {
+    id: "places-analysis-shared-tables",
+    patch: "tests/faults/places-analysis-shared-tables.patch",
+    describe:
+      "exclusive() becomes a pass-through -- two place analyses on one engine interleave on the " +
+      "shared place_cell/cell objects again (usability B1's 200 % and swapped scores, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/places.concurrency.spec.ts",
+      "--workers=1",
+      "--reporter=list",
+    ],
+    env: { PW_PORT: "4397" },
+    duckdbExt: true,
+    redMatches: [
+      /✓\s+\d+ \[chromium\] › e2e\/places\.concurrency\.spec\.ts:\d+:\d+ › solo baselines/u,
+      /✘\s+\d+ \[chromium\] › e2e\/places\.concurrency\.spec\.ts/u,
+    ],
+  },
 ];
+
+/** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
+ * in its throwaway worktree, or the gate fails for a reason that has nothing to do with the fault. */
+function provisionDuckdbExt(worktreeDir) {
+  const mirror = join(ROOT, "public", "duckdb-ext");
+  if (existsSync(mirror)) {
+    cpSync(mirror, join(worktreeDir, "public", "duckdb-ext"), { recursive: true });
+    return null;
+  }
+  const fetched = run("node", ["scripts/fetch-duckdb-extensions.mjs"], worktreeDir);
+  return fetched.status === 0 ? null : `fetch-duckdb-extensions failed: ${fetched.stderr}`;
+}
 
 function run(cmd, args, cwd, env) {
   return spawnSync(cmd, args, {
@@ -345,6 +391,11 @@ function runOne(fault) {
       };
     }
 
+    if (fault.duckdbExt) {
+      const missing = provisionDuckdbExt(worktreeDir);
+      if (missing) return { ok: false, fault, reason: missing };
+    }
+
     const gate = run(fault.gate[0], fault.gate.slice(1), worktreeDir, fault.env);
     // status null = killed (timeout/signal), which is NOT the same thing as "the gate failed" --
     // report it as a fault that could not be judged rather than silently counting it as red.
@@ -357,13 +408,18 @@ function runOne(fault) {
       };
     }
     const wentRed = gate.status !== 0;
+    const output = gate.stdout + gate.stderr;
+    // red for the RIGHT reason: every `redMatches` pattern must appear in the gate's output
+    const wrongReason = wentRed ? (fault.redMatches ?? []).find((re) => !re.test(output)) : null;
     return {
-      ok: wentRed,
+      ok: wentRed && !wrongReason,
       fault,
-      reason: wentRed
-        ? undefined
-        : `the gate stayed GREEN with the fault applied -- it cannot fail, so it is not a check`,
-      output: gate.stdout + gate.stderr,
+      reason: !wentRed
+        ? `the gate stayed GREEN with the fault applied -- it cannot fail, so it is not a check`
+        : wrongReason
+          ? `the gate went red, but not for this fault's reason (no match for ${wrongReason})`
+          : undefined,
+      output,
     };
   } finally {
     // --force: the worktree holds an applied-but-uncommitted patch, which a plain `remove` refuses.
