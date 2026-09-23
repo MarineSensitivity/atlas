@@ -35,6 +35,7 @@
     placesFromHash,
     removePlaceAt,
     renamePlaceAt,
+    reportHash,
     selectedPlaceIndex,
     unitForZoneSet,
     zoneSetForUnit,
@@ -500,8 +501,7 @@
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const url = new URL("report.html", location.href);
     url.search = location.search;
-    const hash = new URLSearchParams({ pl: sel.pl ?? "", t: sel.t ?? "", sel: `place:${i}` });
-    url.hash = `#${hash.toString()}`;
+    url.hash = reportHash(sel.pl, sel.t, `place:${i}`);
     return url.toString();
   }
 
@@ -539,7 +539,13 @@
       announce("No places to report on yet.");
       return;
     }
-    const hash = sel.pl ? `#pl=${sel.pl}` : "";
+    // B2 fix: build the hash with the SAME encoder `reportHref()` (above) and `formatSel`
+    // (lib/state/codec.ts) use -- `reportHash()`, model.ts -- instead of the old
+    // `#pl=${sel.pl}`, which spliced `sel.pl` in with zero layers of percent-encoding while
+    // report.html's `parseSel` reads the hash back through `URLSearchParams` (one layer of
+    // decoding). That mismatch silently turned a g1 token's own internal "%20" escape back into
+    // a literal space, corrupting every place whose name contains one.
+    const hash = reportHash(sel.pl, sel.t);
     const query = ver ? `?ver=${encodeURIComponent(ver)}` : "";
     window.open(`./report.html${query}${hash}`, "_blank", "noopener");
   }

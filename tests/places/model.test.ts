@@ -11,12 +11,14 @@ import {
   placesFromHash,
   removePlaceAt,
   renamePlaceAt,
+  reportHash,
   selectedGeomPlaceGeometry,
   selectedPlaceIndex,
   unitForZoneSet,
   zoneSetForUnit,
 } from "../../src/places/model";
 import type { GeomPlace, Place, ZonePlace } from "../../src/lib/geo/placeCodec";
+import { parseSel } from "../../src/lib/state/codec";
 
 const SQUARE: GeomPlace = {
   kind: "geom",
@@ -214,5 +216,52 @@ describe("selectedGeomPlaceGeometry", () => {
     expect(selectedGeomPlaceGeometry(hash, undefined)).toBeNull();
     expect(selectedGeomPlaceGeometry(hash, "place:9")).toBeNull();
     expect(selectedGeomPlaceGeometry(undefined, "place:0")).toBeNull();
+  });
+});
+
+// B2: Places footer "Report" dropped every place whose name contains a space (docs/usability.md
+// finding B2 -- the assessment saw "Done -- 1 place" out of three: only the space-free name
+// survived). `reportHash` is the one encoder both the footer's "Report" (`onReport`) and each
+// row's "Open in report" link (`reportHref`) build the `#pl=`/`#t=` hash through; this proves it
+// round-trips through report.html's OWN parser (`parseSel`, lib/state/codec.ts), not a hand-rolled
+// stand-in.
+describe("reportHash", () => {
+  const drawn: GeomPlace = { kind: "geom", name: "Drawn place 1", geometry: SQUARE.geometry };
+  const coords: GeomPlace = { kind: "geom", name: "Coordinates entry", geometry: SQUARE.geometry };
+  const upload: GeomPlace = { kind: "geom", name: "upload-test", geometry: SQUARE.geometry };
+  const three: Place[] = [drawn, coords, upload];
+
+  it("round-trips all three places -- including names with spaces -- through report.html's parser", () => {
+    const pl = hashFromPlaces(three);
+    const hash = reportHash(pl, undefined);
+    const decoded = parseSel({ search: "", hash });
+    const places = placesFromHash(decoded.pl);
+    expect(places).toHaveLength(3);
+    expect(places.map((p) => (p as GeomPlace).name)).toEqual([
+      "Drawn place 1",
+      "Coordinates entry",
+      "upload-test",
+    ]);
+  });
+
+  it("carries an optional per-row `sel` token without disturbing `pl`", () => {
+    const pl = hashFromPlaces(three);
+    const hash = reportHash(pl, undefined, "place:0");
+    expect(hash).toContain("sel=place%3A0");
+    const decoded = parseSel({ search: "", hash });
+    expect(placesFromHash(decoded.pl)).toHaveLength(3);
+  });
+
+  it("is empty when there is nothing to carry", () => {
+    expect(reportHash(undefined, undefined)).toBe("");
+  });
+
+  it("regression: the pre-fix `#pl=${pl}` splice (zero layers of percent-encoding) loses a place " +
+    "once report.html's parser (one layer of decoding) reads it back", () => {
+    const pl = hashFromPlaces(three);
+    const oldStyleHash = `#pl=${pl}`;
+    const decoded = parseSel({ search: "", hash: oldStyleHash });
+    const places = placesFromHash(decoded.pl);
+    expect(places.length).toBeLessThan(3);
   });
 });
