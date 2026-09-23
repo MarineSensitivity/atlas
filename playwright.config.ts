@@ -17,6 +17,9 @@ const FIREFOX_WEBGL_PREFS: Record<string, string | number | boolean> = Object.fr
   ).filter(([k]) => !k.startsWith("_")),
 );
 
+/** run Firefox headed (under `pages.yml`'s xvfb) -- see the firefox project's own comment. */
+const FIREFOX_HEADED = process.platform === "linux" && !!process.env.DISPLAY;
+
 // atlas-0 Deliverable 5: one smoke spec (shell paints, zero console errors) across the three
 // engines. `webServer` builds then serves the real production bundle (`vite preview`), the same
 // thing size-budget.mjs and check-relative-assets.mjs run against — not the dev server, which
@@ -87,6 +90,13 @@ export default defineConfig({
         // Firefox uses the SYSTEM GL stack, so the runner also needs Mesa's DRI drivers
         // (`pages.yml` installs them and `scripts/check-webgl2.mjs` gates the result). None of
         // this relaxes an assertion: if WebGL2 still cannot be created, that gate goes red first.
+        // ...and prefs are STILL not enough, because Playwright's Firefox has no WebGL at all in
+        // HEADLESS mode on linux (measured, run 35823275862: with libgl1-mesa-dri installed,
+        // `webgl.force-enabled` set and LIBGL_ALWAYS_SOFTWARE=1, `getContext("webgl2")` is still
+        // null; chromium and webkit on the same runner are fine). The documented workaround is to
+        // run Firefox HEADED under a virtual display -- `pages.yml` wraps the suite in
+        // `xvfb-run`. Only on linux CI: a local macOS run stays headless.
+        headless: !FIREFOX_HEADED,
         launchOptions: { firefoxUserPrefs: FIREFOX_WEBGL_PREFS },
       },
     },

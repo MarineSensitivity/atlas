@@ -18,7 +18,12 @@ CI, and no console-error allow-list was widened.
   set, AND — unlike chromium, which ships its own SwiftShader — Firefox uses the SYSTEM GL stack,
   which `playwright install --with-deps` populates with libGL but not Mesa's actual DRI drivers.
   `pages.yml` now installs `libgl1-mesa-dri` (+ `libglx-mesa0`, `libegl-mesa0`) and runs the suite
-  with `LIBGL_ALWAYS_SOFTWARE=1`. **`scripts/check-webgl2.mjs` is the new gate that makes this
+  with `LIBGL_ALWAYS_SOFTWARE=1`. And even that is not enough: Playwright's Firefox has no WebGL
+  **in headless mode on linux at all** (measured, run 35823275862 — with the drivers installed and
+  the prefs applied, `getContext("webgl2")` is still `null`, while chromium and webkit on the same
+  runner are fine), so the suite now runs under `xvfb-run` with the firefox project HEADED
+  whenever `$DISPLAY` exists; a local macOS run is unchanged.
+  **`scripts/check-webgl2.mjs` is the new gate that makes this
   diagnosable**: it launches each engine with the same prefs file the Playwright config reads,
   creates a real WebGL2 context, prints the renderer, and runs BEFORE the suite — one explicit red
   saying "firefox: no WebGL2" instead of six specs failing for a reason none of them is about.

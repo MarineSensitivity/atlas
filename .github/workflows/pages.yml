@@ -148,13 +148,14 @@ jobs:
       # Mesa's actual DRI drivers -- so on a GPU-less runner Firefox had no WebGL2 at all and
       # maplibre-gl threw `GPUInitializationError` before the map existed (run 35819393922: 5 of
       # 9 reds, plus everything the serial describes then skipped behind them).
-      - name: mesa software GL drivers (firefox needs the system stack)
-        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dri libglx-mesa0 libegl-mesa0
+      - name: mesa software GL drivers + xvfb (firefox needs the system stack AND a display)
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dri libglx-mesa0 libegl-mesa0 xvfb
 
-      # the gate for the step above, and for scripts/firefox-webgl-prefs.json: one explicit red
-      # saying "firefox: no WebGL2" instead of six specs failing for a reason none of them is
+      # the gate for the two steps above and for scripts/firefox-webgl-prefs.json: one explicit
+      # red saying "firefox: no WebGL2" instead of six specs failing for a reason none of them is
       # about. Runs BEFORE the suite, so a broken GL stack is never mistaken for a broken app.
-      - run: node scripts/check-webgl2.mjs chromium firefox webkit
+      # Under `xvfb-run` because playwright.config.ts runs firefox HEADED when $DISPLAY exists.
+      - run: xvfb-run -a --server-args="-screen 0 1280x1024x24" node scripts/check-webgl2.mjs chromium firefox webkit
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
 
@@ -164,7 +165,7 @@ jobs:
       # (atlas-8 subplan). The "timing" project is excluded here on purpose: it has its own step
       # below, alone, per the pyramid's rule that a cold-load timing gate must never share the
       # runner with anything else touching titiler.
-      - run: npx playwright test --project=chromium --project=webkit --project=firefox
+      - run: xvfb-run -a --server-args="-screen 0 1280x1024x24" npx playwright test --project=chromium --project=webkit --project=firefox
         env:
           LIBGL_ALWAYS_SOFTWARE: "1" # firefox: use Mesa's software path, never probe for a GPU
 

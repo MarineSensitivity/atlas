@@ -36,7 +36,16 @@ for (const name of wanted) {
   }
   let browser;
   try {
-    browser = await launcher.launch(name === "firefox" ? { firefoxUserPrefs: prefs } : {});
+    // firefox: same launch shape playwright.config.ts uses -- prefs, and HEADED whenever a
+    // virtual display is available on linux (headless Playwright Firefox has no WebGL there).
+    browser = await launcher.launch(
+      name === "firefox"
+        ? {
+            firefoxUserPrefs: prefs,
+            headless: !(process.platform === "linux" && !!process.env.DISPLAY),
+          }
+        : {},
+    );
     const page = await browser.newPage();
     const info = await page.evaluate(() => {
       const canvas = document.createElement("canvas");
