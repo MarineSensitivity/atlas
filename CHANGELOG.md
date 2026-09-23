@@ -1,3 +1,40 @@
+# atlas 0.10.17
+
+atlas-8 step 5 / Deliverable 2: `docs/parity.html`, the page the cutover is signed against.
+
+- **`docs/parity.html`** — generated, not written: all 72 parity-checklist lines of atlas-4
+  (scores, `S-01`–`S-22`), atlas-5 (species, `P-01`–`P-22`) and atlas-7 (report, `R-01`–`R-28`),
+  each with its status (done / partial / intentional difference / deferred), the **test that asserts
+  it** (file + test name, linked to GitHub) or an explicit "no test", a summary table, the numbered
+  **intentional-differences** list, the **known-gaps** list with an owner each, the Shiny-vs-Atlas
+  screenshot pairs, a plain statement of what was NOT compared, and a signature block.
+- **`scripts/parity-page/`** — the generator. `checklist-core.mjs` parses the checklists out of the
+  plan files; `build.mjs --sync` copies each checklist section VERBATIM into
+  `docs/parity/checklists/` (with `sources.json` recording each plan file's sha256), so the page
+  builds and its test runs without the plans, and every later build re-extracts and refuses to run
+  on a difference. Three refusals guard the page: a row with no status (or a status whose `match`
+  no longer appears in the line — the positional-id drift guard), an Evidence cell naming a test
+  that does not exist, and a row called `done` whose evidence is "no test".
+- **`scripts/shots.mjs`** — Shiny-vs-Atlas screenshot pairs (chromium, 1280×800, public **v7**
+  only), one curated STATE per view: each is a URL on both sides, or a short scripted interaction
+  where the old app has no URL state. Waits are on real rendered elements (the Shiny apps take
+  9–13 s to paint), timeouts ≥ 60 s, 2 retries; a capture that did not render — blank, disconnected,
+  still recalculating, or with either app's **welcome modal over it** — is recorded and printed as a
+  **FAILED pair**, never shipped as though the comparison had happened. `--only` and
+  `--side shiny|atlas` merge into the existing manifest, so one state (or one half of every state)
+  can be re-shot without a 20-minute full run.
+- **Three defects the screenshots found**, now on the page as known gaps rather than fixed here:
+  the zones table's score column is headed by the metric's whole published label and wraps the
+  header open (`G-24`); the composition treemap's summary line calls a summed `suit_er_area`
+  "species" and keeps a "birds are not in this view" note above a treemap that does show birds
+  (`G-23`); and `out=` round-trips in the URL while nothing reads it, so the species map always
+  draws Program-Area outlines where Shiny drew Ecoregions and let you choose (`G-25`, `ID-11`).
+- **`tests/parity-page/checklist.test.ts`** — the loader's own gates: one row per `- [ ]` line over
+  the three real checklists (72 = 22 + 22 + 28), ids stable and in file order, the drift guard, and
+  a **permanent red case** (`tests/fixtures/parity-page/status-fault-done-no-test.mjs`) proving that
+  a line claiming `done` with "no test" as evidence fails the consistency check.
+- New scripts: `npm run parity:page`, `npm run parity:page:check`, `npm run parity:shots`.
+
 # atlas 0.10.16
 
 atlas-8 Deliverable 4: beta feedback, zero backend.
