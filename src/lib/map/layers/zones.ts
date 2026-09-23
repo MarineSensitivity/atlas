@@ -9,9 +9,13 @@
 // The colours themselves live in `../colors.ts` — the map module's ONE colour file, and the single
 // exception `tests/raster/ramps.wiring.test.ts` grants under `src/` outside `src/lib/brand/**`.
 // They are DATA colours (the zone_style table msens publishes), not brand chrome, so they must
-// never move into `src/lib/brand/tokens.css` either (spec.md §2).
+// never move into `src/lib/brand/tokens.css` either (spec.md §2) -- EXCEPT the white stroke itself
+// (R9, 2026-09-24, `colors.ts`'s own header): white reads fine against the dark-matter basemap
+// this table was designed against, but is near-invisible on the paper theme's light one, so
+// `zoneLineLayer` below substitutes `ZONE_OUTLINE_STROKE_BY_THEME[theme]` for a `ZONE_LINE_WHITE`
+// stroke specifically -- the parity-tested `ZONE_LINE_STYLE` table itself never changes.
 import type { Feature, FeatureCollection, Point } from "geojson";
-import type { Outline } from "../../state/types";
+import type { Outline, ResolvedTheme } from "../../state/types";
 import { GLYPHS_URL, LABEL_FONT } from "./basemap";
 import {
   QUERY_FILL_COLOR,
@@ -23,6 +27,7 @@ import {
   ZONE_LINE_BLACK,
   ZONE_LINE_GREY,
   ZONE_LINE_WHITE,
+  ZONE_OUTLINE_STROKE_BY_THEME,
 } from "../colors";
 import type {
   LayerSpecification,
@@ -181,10 +186,19 @@ export function zoneFillLayer(u: ZoneUnitSpec): LayerSpecification | null {
   };
 }
 
-export function zoneLineLayer(u: ZoneUnitSpec): LayerSpecification {
+/**
+ * R9 (owner, 2026-09-24): `theme` recolors ONLY a `ZONE_LINE_WHITE` stroke (programarea / planarea
+ * / the default row) to `ZONE_OUTLINE_STROKE_BY_THEME[theme]` -- ecoregion (black) and subregion
+ * (grey) are untouched, since they were never the near-invisible-on-light-basemap case. Read once
+ * here, synchronously, at compose time (`style.ts#composeStyle` already resolves `theme` before
+ * building any layer) -- never a live CSS read, and the parity-tested `ZONE_LINE_STYLE` table
+ * itself (`zoneLineStyle()`) never changes.
+ */
+export function zoneLineLayer(u: ZoneUnitSpec, theme: ResolvedTheme): LayerSpecification {
   const s = zoneLineStyle(u.unit);
+  const color = s.color === ZONE_LINE_WHITE ? ZONE_OUTLINE_STROKE_BY_THEME[theme] : s.color;
   const paint: Record<string, unknown> = {
-    "line-color": s.color,
+    "line-color": color,
     "line-width": s.width,
     "line-opacity": s.opacity,
   };

@@ -1,12 +1,18 @@
 // THE ONLY place the map module writes a colour literal.
 //
+import type { ResolvedTheme } from "../state/types";
+
 // These are DATA colours, and they are not a ramp: they are the `zone_style` table msens publishes
 // (`zone_line_args()` / `zone_label_args()`, zone_style.R:22-55), the selection highlight
 // (atlas-4 §6.6), the binary-mask overlay's RGBA (`cog_tile_url(color = "#222222")`,
-// viz.R:412-420), and the two `--surface-map` values a WebGL background layer needs but cannot read
-// from CSS. Every one of them is fixed by a parity reference or a design token, none of them
-// encodes a value, and none may move into `src/lib/brand/tokens.css` — that file's rule is that a
-// token is CHROME (spec.md §2: "brand colors are chrome; data colors are data").
+// viz.R:412-420), and the `--surface-map`/`--stroke-outline` values a WebGL background/line layer
+// needs but cannot read from CSS. Every one of them is fixed by a parity reference or a design
+// token, none of them encodes a value, and none may move into `src/lib/brand/tokens.css` — that
+// file's rule is that a token is CHROME (spec.md §2: "brand colors are chrome; data colors are
+// data"). `--stroke-outline` (R9, 2026-09-24) is the one deliberate exception alongside
+// `--surface-map`: msens's own `zone_line_args()` table picks white for the programarea/planarea/
+// default rows on the assumption of a dark basemap, which is a rendering/legibility choice, not a
+// value the line encodes -- exactly what makes it CHROME, not data, once a light theme exists.
 //
 // Two gates meet here. `scripts/check-hex-literals.mjs` does not scan this directory at all
 // (tokens are a brand rule). `tests/raster/ramps.wiring.test.ts` — "ramps.ts is the only ramp or
@@ -26,6 +32,21 @@ export const MAP_BACKGROUND_PAPER = "#eaeef3";
 export const ZONE_LINE_WHITE = "#ffffff";
 /** ecoregion outlines. */
 export const ZONE_LINE_BLACK = "#000000";
+
+/** R9 (owner, 2026-09-24): the RENDERED colour for a `ZONE_LINE_WHITE` stroke (programarea /
+ * planarea / the default row), by theme -- mirrors `src/lib/brand/tokens.css`'s `--stroke-outline`
+ * (a MapLibre style is not CSS and cannot read a custom property, so the value is duplicated by
+ * necessity, exactly the way `MAP_BACKGROUND_NAVY`/`MAP_BACKGROUND_PAPER` above already mirror
+ * `--surface-map`). `tests/map/zoneOutline.test.ts` pins them equal. Navy is unchanged from
+ * `ZONE_LINE_WHITE` itself (msens's own `zone_line_args()` value, still verbatim for parity); paper
+ * substitutes brand navy ink, since white is near-invisible on that theme's light basemap
+ * (`ZONE_LINE_BLACK`/`ZONE_LINE_GREY` — ecoregion/subregion — are untouched by this: they were
+ * never the near-white/near-basemap case). Applied in `layers/zones.ts#zoneLineLayer`, never in
+ * the parity-tested `ZONE_LINE_STYLE` table itself. */
+export const ZONE_OUTLINE_STROKE_BY_THEME: Record<ResolvedTheme, string> = {
+  navy: ZONE_LINE_WHITE,
+  paper: "#001a57",
+};
 /** subregion outlines (dashed). */
 export const ZONE_LINE_GREY = "#d9d9d9";
 
