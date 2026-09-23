@@ -88,3 +88,72 @@ test.describe("0.10.21 fix 1: a COLLAPSED desktop scores panel still paints the 
     await expect(legend).toBeVisible({ timeout: 10_000 });
   });
 });
+
+/** fires the real click event MapLibre's own `map.on("click", ...)` listener receives -- same
+ * technique as `e2e/scores.popup.spec.ts`'s own `fireMapClick` (not imported from there: that
+ * file's helper is local to it, matching this repo's existing convention of small, per-spec
+ * copies rather than a shared e2e util for a two-line function). */
+async function fireMapClick(page: Page, lngLat: { lng: number; lat: number }): Promise<void> {
+  await page.evaluate((ll) => {
+    (
+      window as unknown as {
+        __atlasMap: { handle: { map: { fire(type: string, props: object): void } } };
+      }
+    ).__atlasMap.handle.map.fire("click", { lngLat: ll, point: { x: 0, y: 0 } });
+  }, lngLat);
+}
+
+// review item M1: the click handler used to live INSIDE ScoresLens.svelte (the panel body), so a
+// collapsed panel or the Places tool open meant a click did nothing at all -- no `sel=cell:`, no
+// popup, no announcement. Fixed by moving click -> selection -> popup to a lens-level owner
+// (`state.svelte.ts#handleMapClick`) Shell.svelte calls directly, regardless of the panel/tool.
+test.describe("review M1: a scores click works with no panel mounted at all", () => {
+  test("panel collapsed at load: a click still writes sel=cell: and shows the popup", async ({
+    page,
+  }) => {
+    await seedCollapsedShellPanel(page);
+    await gotoScoresMap(page, "v7");
+    await expect(page.locator("#panel-region .panel-pill")).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("#panel-region .panel-surface")).toHaveCount(0);
+
+    await fireMapClick(page, { lng: OCEAN_PROBES[0][0], lat: OCEAN_PROBES[0][1] });
+
+    await expect.poll(() => new URL(page.url()).search).toContain("sel=cell:");
+    await expect(page.locator(".atlas-popup")).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("the Places tool open (not the scores panel): a click still writes sel=cell: and shows the popup", async ({
+    page,
+  }) => {
+    await gotoScoresMap(page, "v7");
+    // switch to Places -- ScoresLens.svelte (the scores panel body) never mounts while this tool
+    // is active, the SAME "no panel body" condition the collapsed case above reproduces a
+    // different way (M1's review text: "or the Places tool open").
+    await page.getByRole("button", { name: "Places" }).click();
+    await expect(page.locator("#panel-region")).toContainText(/Turn on pick mode|places/i, {
+      timeout: 10_000,
+    });
+
+    await fireMapClick(page, { lng: OCEAN_PROBES[0][0], lat: OCEAN_PROBES[0][1] });
+
+    await expect.poll(() => new URL(page.url()).search).toContain("sel=cell:");
+    await expect(page.locator(".atlas-popup")).toBeVisible({ timeout: 15_000 });
+  });
+});
+
+// usability M3: a rail click on a collapsed desktop panel used to leave it collapsed -- only the
+// clicked pill's own label text changed, so the tool the user just picked never actually rendered.
+test.describe("usability M3: a rail click un-collapses a collapsed desktop panel", () => {
+  test("panel collapsed at load, click a rail tool -> the panel body renders", async ({ page }) => {
+    await seedCollapsedShellPanel(page);
+    await gotoScoresMap(page, "v7");
+    await expect(page.locator("#panel-region .panel-pill")).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("#panel-region .panel-surface")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Table" }).click();
+
+    await expect(page.locator("#panel-region .panel-surface")).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("#panel-region .panel-pill")).toHaveCount(0);
+    await expect(page.locator(".panel-title")).toHaveText("Table");
+  });
+});
