@@ -39,6 +39,16 @@ CI, and no console-error allow-list was widened.
     longer inferred from `$DISPLAY`: `pages.yml` sets `FIREFOX_HEADED=1` on every browser step,
     and both `playwright.config.ts` and `scripts/check-webgl2.mjs` **throw** if it is set with no
     display — forgetting `xvfb-run` on a step is now a loud failure, not a silent WebGL2-less run.
+- **The cold first-paint timing gate has run on the CI runner for the first time, and its budget is
+  now per machine** (`e2e/species.timing.spec.ts`, `docs/performance.md`). `docs/performance.md`
+  had said in as many words that the ≤ 2.5 s gate "has never run on the CI runner … expect it to
+  run slower"; once `--no-deps` let it actually reach the assertion there, it did: measured medians
+  of **3281 / 2629 / 3261 ms** on `ubuntu-latest` (run 35824811030) against the laptop's 1579 ms,
+  i.e. F6's predicted ~2× for a 2-core shared VM with network-RTT-bound tile latency. The
+  **laptop budget is unchanged at 2500 ms**; CI gets its own calibrated 4000 ms, ~22% over the
+  worst median actually observed, which still goes red on a ~1 s cold-path regression. The spec now
+  prints its samples and median on a PASS too, so `docs/performance.md`'s table (updated with the
+  real numbers, per atlas-0 review F6's original ask) can be re-transcribed from a green run.
 - **`document.fonts.ready` as a wait is unbounded, and on WebKit/linux it did not settle**
   (`e2e/shell.cls.spec.ts`). All six WebKit geometry-equality cases died as
   `page.evaluate: Test ended.` on that one line. `document.fonts.ready` is a whole-document
