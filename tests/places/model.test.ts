@@ -4,12 +4,15 @@ import {
   addZonePlace,
   duplicatePlaceAt,
   fallbackZoneLabel,
+  featureCollectionOf,
   hashFromPlaces,
   isGeomOrUpload,
   MAX_PLACES,
   placesFromHash,
   removePlaceAt,
   renamePlaceAt,
+  selectedGeomPlaceGeometry,
+  selectedPlaceIndex,
   unitForZoneSet,
   zoneSetForUnit,
 } from "../../src/places/model";
@@ -165,5 +168,51 @@ describe("zoneSetForUnit / unitForZoneSet: the codec <-> boot.units mapping, inv
       expect(set).not.toBeNull();
       expect(unitForZoneSet(set!)).toBe(u);
     }
+  });
+});
+
+// 0.10.21 Places same-class fix (e2e/places.deeplink-outline.spec.ts): `selectedPlaceIndex`/
+// `selectedGeomPlaceGeometry` are what `placesMap.svelte.ts`'s baseline outline-restore effect
+// calls, so they must be right independent of any svelte reactivity -- see that file's header for
+// why this restore no longer lives ONLY inside `Places.svelte`.
+describe("selectedPlaceIndex", () => {
+  it("parses the one token shape a row selection ever writes", () => {
+    expect(selectedPlaceIndex("place:0")).toBe(0);
+    expect(selectedPlaceIndex("place:12")).toBe(12);
+  });
+
+  it("is null for undefined, a different token kind, or a malformed one", () => {
+    expect(selectedPlaceIndex(undefined)).toBeNull();
+    expect(selectedPlaceIndex("zone:programarea:GAA")).toBeNull();
+    expect(selectedPlaceIndex("place:")).toBeNull();
+    expect(selectedPlaceIndex("place:-1")).toBeNull();
+    expect(selectedPlaceIndex("place:1a")).toBeNull();
+  });
+});
+
+describe("featureCollectionOf", () => {
+  it("wraps a geometry as the one-feature FeatureCollection the selection layer expects", () => {
+    expect(featureCollectionOf(SQUARE.geometry)).toEqual({
+      type: "FeatureCollection",
+      features: [{ type: "Feature", geometry: SQUARE.geometry, properties: {} }],
+    });
+  });
+});
+
+describe("selectedGeomPlaceGeometry", () => {
+  const hash = hashFromPlaces([ZONE, SQUARE]);
+
+  it("resolves a selected geom place's own geometry", () => {
+    expect(selectedGeomPlaceGeometry(hash, "place:1")).toEqual(SQUARE.geometry);
+  });
+
+  it("is null for a selected ZONE place -- its highlight is drawn elsewhere", () => {
+    expect(selectedGeomPlaceGeometry(hash, "place:0")).toBeNull();
+  });
+
+  it("is null with nothing selected, an out-of-range index, or no places at all", () => {
+    expect(selectedGeomPlaceGeometry(hash, undefined)).toBeNull();
+    expect(selectedGeomPlaceGeometry(hash, "place:9")).toBeNull();
+    expect(selectedGeomPlaceGeometry(undefined, "place:0")).toBeNull();
   });
 });

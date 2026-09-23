@@ -12,6 +12,7 @@
 // against `boot.zones` by zoneStats.ts. So rename/duplicate, which need a place's OWN name field,
 // only apply to `geom`/`upload` kinds; a zone place offers zoom/reselect/delete only. That is a
 // property of the codec's own schema (atlas-2, not ours to change), not an oversight here.
+import type { FeatureCollection } from "geojson";
 import {
   clampName,
   decodePlaces,
@@ -22,6 +23,7 @@ import {
   type ZonePlace,
   type ZoneSet,
 } from "../lib/geo/placeCodec";
+import type { AreaGeometry } from "../lib/geo/types";
 
 /** Deliverable 1: "up to 20 places". */
 export const MAX_PLACES = 20;
@@ -45,6 +47,43 @@ export function placesFromHash(pl: string | undefined): Place[] {
 export function hashFromPlaces(places: readonly Place[]): string | undefined {
   const hash = encodePlaces([...places]);
   return hash.length > 0 ? hash : undefined;
+}
+
+/** `Sel.sel` -> the place index it names, or `null` when it does not name one (`place:<n>`, the
+ * ONE token shape a row selection ever writes -- `Places.svelte`'s own `selectedIndex` and, 0.10.21,
+ * `placesMap.svelte.ts`'s baseline outline restore both derive from this, so the token shape lives
+ * in exactly one place. */
+export function selectedPlaceIndex(sel: string | undefined): number | null {
+  return sel && /^place:\d+$/.test(sel) ? Number(sel.slice("place:".length)) : null;
+}
+
+/** a single-feature `FeatureCollection` wrapping `geometry` -- the shape both the selection layer
+ * (`map/style.ts`) and `cellsFeatureCollection()`'s own sibling helpers expect. Shared by
+ * `Places.svelte` (the interactive pick/draw-mode-aware outline) and `placesMap.svelte.ts` (the
+ * 0.10.21 baseline restore, below) so the two never drift on what "a place's outline" looks like. */
+export function featureCollectionOf(geometry: AreaGeometry): FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: [{ type: "Feature", geometry, properties: {} }],
+  };
+}
+
+/**
+ * 0.10.21 Places same-class fix (mirrors the scores lens' fix 1): the SELECTED place's geometry,
+ * resolved from `sel.pl`/`sel.sel` ALONE -- no `boot`, no pick/draw-mode context, nothing that
+ * requires `Places.svelte` to be mounted. `null` for anything but a `kind: "geom"` place (a zone
+ * place's highlight is drawn elsewhere; an upload place carries no geometry to draw at all, see
+ * `UploadPlace`'s own doc comment in placeCodec.ts) -- the SAME restriction `Places.svelte`'s own
+ * "the selected row's outline persists" `$effect` already applies.
+ */
+export function selectedGeomPlaceGeometry(
+  pl: string | undefined,
+  sel: string | undefined,
+): AreaGeometry | null {
+  const idx = selectedPlaceIndex(sel);
+  if (idx === null) return null;
+  const p = placesFromHash(pl)[idx];
+  return p && p.kind === "geom" ? p.geometry : null;
 }
 
 function ok(places: Place[]): MutationResult {

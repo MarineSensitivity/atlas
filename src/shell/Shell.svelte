@@ -268,7 +268,10 @@
   // same.
   let mapEl = $state<HTMLDivElement | undefined>(undefined);
   let mapHandle = $state<MapHandle | undefined>(undefined);
-  const placesMap = createPlacesMapStore();
+  // 0.10.21: `selStore` deps the store's own baseline outline-restore effect reads (see
+  // placesMap.svelte.ts's header) -- unconditional/eager, same as `createSpeciesLens` above, so a
+  // deep-linked selected place's outline restores regardless of which tool is active.
+  const placesMap = createPlacesMapStore({ selStore });
 
   // outline-only, on purpose: labels, choropleth fills and the score raster are the LENS's
   // composeStyle inputs (atlas-4/5), not the shell's. `src/lib/map/layers/zones.ts` already builds

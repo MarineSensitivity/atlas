@@ -28,12 +28,14 @@
     addZonePlace,
     duplicatePlaceAt,
     fallbackZoneLabel,
+    featureCollectionOf,
     hashFromPlaces,
     isGeomOrUpload,
     MAX_PLACES,
     placesFromHash,
     removePlaceAt,
     renamePlaceAt,
+    selectedPlaceIndex,
     unitForZoneSet,
     zoneSetForUnit,
   } from "./model";
@@ -88,9 +90,7 @@
   let { sel, selStore, boot, mapHandle, zoneUnits, mapStore, track = noopTrack }: Props = $props();
 
   const places = $derived(placesFromHash(sel.pl));
-  const selectedIndex = $derived(
-    sel.sel && /^place:\d+$/.test(sel.sel) ? Number(sel.sel.slice("place:".length)) : null,
-  );
+  const selectedIndex = $derived(selectedPlaceIndex(sel.sel));
 
   /**
    * The raw MapLibre `Map` (`docs/map.md`: "for `on`/`off` and `queryRenderedFeatures`; never for
@@ -204,13 +204,6 @@
   let drawModules: TerraDrawModules | undefined;
   let drawMode = $state<DrawShape | "select" | null>(null);
   let drawBusy = $state(false);
-
-  function featureCollectionOf(geometry: AreaGeometry) {
-    return {
-      type: "FeatureCollection" as const,
-      features: [{ type: "Feature" as const, geometry, properties: {} }],
-    };
-  }
 
   /** Deliverable 7's `place_draw` param -- counts a vertex, never carries a coordinate. */
   function vertexCountOf(geometry: AreaGeometry): number {
@@ -394,7 +387,14 @@
 
   // the selected row's outline persists on the map while nothing more specific (pick mode, an
   // active draw) already owns the highlight -- e.g. after a reload, re-picking `sel=place:n` off
-  // the URL alone still shows what that place actually covers.
+  // the URL alone still shows what that place actually covers. 0.10.21: this is no longer the ONLY
+  // place that restores it -- `placesMap.svelte.ts`'s own baseline `$effect` (over
+  // `model.ts#selectedGeomPlaceGeometry`) does the SAME `sel.pl`/`sel.sel`-only computation
+  // regardless of whether this component is mounted at all (the fix for
+  // e2e/places.deeplink-outline.spec.ts: a deep link selecting a drawn place with the Places tool
+  // never opened used to show no outline). This effect stays, unchanged, for the part the store
+  // cannot do without this component's own local state: honouring an in-progress pick/draw
+  // interaction rather than stomping it the instant `pickOn`/`drawMode` end.
   $effect(() => {
     if (pickOn || drawMode) return;
     const p = selectedIndex !== null ? places[selectedIndex] : null;
