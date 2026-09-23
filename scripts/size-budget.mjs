@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 // CLI wrapper around size-budget-core.mjs. Usage:
-//   node scripts/size-budget.mjs [--dist dist] [--entry index.html] [--budget-kb 450] [--worker-budget-kb 150]
+//   node scripts/size-budget.mjs [--dist dist] [--entry index.html] [--budget-kb 450]
+//     [--worker-budget-kb 150] [--allow-marker duckdb,docx]
+//
+// --allow-marker drops the named FORBIDDEN_LAZY_MARKERS entries for THIS invocation only (see
+// size-budget-core.mjs's findForbiddenMarkers doc comment) -- atlas-7's
+// `node scripts/size-budget.mjs --entry report.html --allow-marker duckdb` is why this exists:
+// report.html's provenance section narrates the DuckDB-WASM engine's VERSION as prose, which is not
+// the same fact as "the package is statically bundled" (that fact is asserted separately, by
+// tests/report-lazy-import-duckdb.wiring.test.ts). index.html's own invocation never passes this.
 //
 // Run against a real `vite build` output it should be green; run against either committed red fixture
 // it must be red:
@@ -15,6 +23,7 @@ import {
   evaluateBudget,
   CRITICAL_BUDGET_BYTES,
   RUNTIME_WORKER_BUDGET_BYTES,
+  FORBIDDEN_LAZY_MARKERS,
 } from "./size-budget-core.mjs";
 
 function parseArgs(argv) {
@@ -23,6 +32,7 @@ function parseArgs(argv) {
     entry: "index.html",
     budgetKb: CRITICAL_BUDGET_BYTES / 1024,
     workerBudgetKb: RUNTIME_WORKER_BUDGET_BYTES / 1024,
+    allowMarkers: [],
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -30,7 +40,12 @@ function parseArgs(argv) {
     else if (a === "--entry") args.entry = argv[++i];
     else if (a === "--budget-kb") args.budgetKb = Number(argv[++i]);
     else if (a === "--worker-budget-kb") args.workerBudgetKb = Number(argv[++i]);
-    else {
+    else if (a === "--allow-marker") {
+      args.allowMarkers = argv[++i]
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    } else {
       process.stderr.write(`unknown argument: ${a}\n`);
       process.exit(2);
     }
@@ -61,7 +76,7 @@ function listEmittedFiles(dir, base = dir) {
   return out;
 }
 
-const { dist, entry, budgetKb, workerBudgetKb } = parseArgs(process.argv.slice(2));
+const { dist, entry, budgetKb, workerBudgetKb, allowMarkers } = parseArgs(process.argv.slice(2));
 const manifest = loadManifest(dist);
 
 if (!manifest) {
@@ -71,11 +86,17 @@ if (!manifest) {
   process.exit(1);
 }
 
+if (allowMarkers.length) {
+  process.stdout.write(`size-budget: --allow-marker dropped: ${allowMarkers.join(", ")}\n`);
+}
+const forbiddenMarkers = FORBIDDEN_LAZY_MARKERS.filter((m) => !allowMarkers.includes(m));
+
 const result = evaluateBudget({
   manifest,
   entryKey: entry,
   readFile: (relPath) => readFileSync(join(dist, relPath)),
   budgetBytes: budgetKb * 1024,
+  forbiddenMarkers,
   workerBudgetBytes: workerBudgetKb * 1024,
   emittedFiles: listEmittedFiles(dist),
 });

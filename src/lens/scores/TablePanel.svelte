@@ -20,6 +20,9 @@
   import ZonesTable from "./ZonesTable.svelte";
   import GlossaryModal from "./GlossaryModal.svelte";
   import type { CompositionRow } from "./composition";
+  // atlas-7 step 4: "Report on selected" builds the SAME `z.<set>.<keys>` token the Places panel's
+  // own zone places use (places/model.ts) -- never a second zone-place encoding.
+  import { hashFromPlaces, zoneSetForUnit } from "../../places/model";
 
   // `Composition.svelte` is loaded via a DYNAMIC `import()`, never a static one, even though it
   // contains no forbidden-marker text itself: it is what dynamically imports `Treemap.svelte`, and
@@ -162,6 +165,20 @@
     selStore.set({ sel: formatZoneToken(zonesUnit, key) });
   }
 
+  // atlas-7 step 4: "Report on selected" -- one zone Place carrying every checked key (model.ts's
+  // own multi-key zone shape; `expandPlaces()` on the report side splits it back into one reported
+  // area per key, exactly as if each had been added from the Places panel separately).
+  // `window.open()` runs SYNCHRONOUSLY in this handler, same rule as Places.svelte's own "Report"
+  // (no `await` before it, or the popup blocker treats the tab as not user-initiated).
+  function onReportSelected(keys: string[]) {
+    if (!keys.length) return;
+    const set = zoneSetForUnit(zonesUnit);
+    if (!set) return; // an unrecognized unit type: nothing to encode, no broken link to open
+    const hash = hashFromPlaces([{ kind: "zone", set, keys }]);
+    const query = ver ? `?ver=${encodeURIComponent(ver)}` : "";
+    window.open(`./report.html${query}${hash ? `#pl=${hash}` : ""}`, "_blank", "noopener");
+  }
+
   const currentLayer = $derived(layerByKey(boot, lyr));
   const componentKeys = $derived(componentMetricKeys(boot));
   // the zones table always ranks the release's ONE drawable unit (D17) — independent of whether
@@ -221,6 +238,7 @@
       metricLabel={currentLayer?.label ?? lyr ?? "Score"}
       {componentKeys}
       {onSelectZone}
+      {onReportSelected}
     />
   {:else if CompositionComponent}
     {@const Comp = CompositionComponent}

@@ -524,6 +524,26 @@
     announce(`Downloaded ${places.length} place${places.length === 1 ? "" : "s"} as GeoJSON.`);
   }
 
+  // atlas-7 step 4: "Report" opens report.html for every place currently in the panel.
+  // `window.open()` MUST run SYNCHRONOUSLY inside the click handler -- no `await` before it -- or
+  // every browser's popup blocker treats the call as no longer user-initiated (the exact bug the
+  // legacy Shiny app's own placeholder-tab workaround, `apps/scores/app.R:1311-1326`, existed to
+  // route around; a static link needs no such workaround as long as this rule holds). `sel.pl` is
+  // already this panel's own encoding of `places` (`placesFromHash`/`hashFromPlaces`, model.ts) --
+  // reused verbatim, never re-derived, so the report's `#pl=` is byte-identical to what a Share
+  // link for the same view would carry. `ver` is the release THIS panel is actually viewing
+  // (`window.__early.version`, read above) -- included explicitly so the report reproduces this
+  // exact release even if `latest.txt` changes between the click and report.html's own load.
+  function onReport() {
+    if (!places.length) {
+      announce("No places to report on yet.");
+      return;
+    }
+    const hash = sel.pl ? `#pl=${sel.pl}` : "";
+    const query = ver ? `?ver=${encodeURIComponent(ver)}` : "";
+    window.open(`./report.html${query}${hash}`, "_blank", "noopener");
+  }
+
   // --- "Recent" accordion (Deliverable 1: last ten tokens, localStorage, never the only copy) -----
   let recentTokens = $state<string[]>(loadRecents(storage()));
 
@@ -691,6 +711,10 @@
     <button type="button" onclick={onDownload}>
       <Icon name="download" size={16} />
       Download places
+    </button>
+    <button type="button" onclick={onReport}>
+      <Icon name="report" size={16} />
+      Report
     </button>
   </footer>
 
