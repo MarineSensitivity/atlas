@@ -5,6 +5,7 @@
   // 3:1 stop-to-stop (spec.md §8), which is why it is labelled with tick VALUES rather than relying
   // on color alone.
   import { legendTicks, type LegendStop } from "../raster/ramps";
+  import { uid } from "./uid";
 
   interface Props {
     title: string;
@@ -39,10 +40,15 @@
     const hi = formatValue(stops[stops.length - 1].value);
     return `${title}, ${unit} ramp from ${lo} to ${hi} ${unit}`;
   });
+  // fix list #11 (SC 1.3.1 + 2.4.6): the shell mounts this as a bare `<div>` child of `<main>` --
+  // no landmark at all, so landmark navigation never offers it. `role="region"` + `aria-labelledby`
+  // pointing at its OWN `h2` (per-instance, not a shared literal -- HexButton/Modal/Popover's own
+  // identical fix) makes it reachable without inventing a second name for the same title.
+  const titleId = uid("legend-title");
 </script>
 
-<div class="legend">
-  <h2>{title}</h2>
+<div class="legend" role="region" aria-labelledby={titleId}>
+  <h2 id={titleId}>{title}</h2>
   <div class="ramp" role="img" aria-label={rampName} style="background: {gradient}"></div>
   <div class="ramp-ticks" aria-hidden="true">
     {#each tickStops as s, i (i)}

@@ -58,6 +58,50 @@ test.describe("report.html renders zone places from boot.json", () => {
     await expect(link).toHaveAttribute("href", /ver=v9/);
     await expect(link).toHaveAttribute("href", /pl=/);
   });
+
+  // fix list #13 (SC 4.1.2): the "Plot of Scores" tabs used to be HALF a tab widget -- named
+  // correctly, `aria-selected` right, but no `role="tabpanel"`, no `aria-controls`/
+  // `aria-labelledby` linking a tab to its figure, and no Arrow-key navigation (each tab was its
+  // own Tab stop; a screen reader announced "tab, 1 of 2" and Arrow Right did nothing). Fix:
+  // `role="tabpanel"` + `aria-labelledby` on each figure, `aria-controls` + `id` on each tab, and
+  // a roving tabindex driven by the SAME `nextRovingIndex` (roving.ts) the tool rail already
+  // uses. REVERTED (this fix alone) -> RED: `getByRole("tabpanel")` matches nothing, and
+  // ArrowRight leaves both `activeFlower` and focus unchanged.
+  test("the flower tabs are a real tab widget: linked panels and Arrow-key navigation", async ({
+    page,
+  }) => {
+    await gotoReport(page, { ver: "v9", preview: true });
+
+    const tablist = page.getByRole("tablist", { name: "Places" });
+    const tabs = tablist.getByRole("tab");
+    await expect(tabs).toHaveCount(2);
+    const firstTab = tabs.first();
+    const secondTab = tabs.nth(1);
+
+    // each tab really CONTROLS a linked, existing tabpanel (SC 4.1.2: no aria-controls target may
+    // be missing) -- not just named correctly on its own.
+    const firstPanelId = await firstTab.getAttribute("aria-controls");
+    expect(firstPanelId).toBeTruthy();
+    const firstPanel = page.locator(`#${firstPanelId}`);
+    await expect(firstPanel).toHaveCount(1);
+    await expect(firstPanel).toHaveAttribute("role", "tabpanel");
+    const firstPanelLabelledBy = await firstPanel.getAttribute("aria-labelledby");
+    expect(firstPanelLabelledBy).toBe(await firstTab.getAttribute("id"));
+
+    // roving tabindex: only the SELECTED tab is a Tab stop; the other is reachable by Arrow only.
+    expect(await firstTab.getAttribute("aria-selected")).toBe("true");
+    expect(await firstTab.getAttribute("tabindex")).toBe("0");
+    expect(await secondTab.getAttribute("tabindex")).toBe("-1");
+
+    await firstTab.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(secondTab).toBeFocused();
+    expect(await secondTab.getAttribute("aria-selected")).toBe("true");
+    expect(await firstTab.getAttribute("aria-selected")).toBe("false");
+    // wraps at the end, back to the first tab -- the SAME wrap-around rule the rail uses.
+    await page.keyboard.press("ArrowRight");
+    await expect(firstTab).toBeFocused();
+  });
 });
 
 test.describe("D6 access gate + the PREVIEW banner/watermark (plan D6, master plan D6/D9)", () => {

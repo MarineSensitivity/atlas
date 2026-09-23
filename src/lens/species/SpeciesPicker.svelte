@@ -17,6 +17,8 @@
   // layer/palette controls three tools away that Tab from the field could never reach anyway.
   import { onDestroy } from "svelte";
   import { computeVisibleWindow } from "../../lib/ui/dataTableCore";
+  import { announce } from "../../lib/ui/announcer";
+  import { uid } from "../../lib/ui/uid";
   import {
     createSearchLogger,
     groupByCat,
@@ -45,7 +47,34 @@
   let query = $state("");
   let open = $state(false);
   let scrollTop = $state(0);
-  const searchLogger = createSearchLogger({ onLog: (q) => onSearchLogged(q) });
+  let listEl = $state<HTMLDivElement | undefined>();
+
+  // fix list #8 (SC 4.1.2 + 1.3.1): the APG "combobox with listbox popup" pattern.
+  // `instanceId` (uid(), never a bare literal — HexButton/Modal/Popover's own identical rule)
+  // gives the listbox an id `aria-controls` can point at, and every option a stable id
+  // `aria-activedescendant` can address (row.key is already unique and stable, so the option ids
+  // survive re-filtering). `activeIndex` is an index into `rows` (below) and is ALWAYS a "row"
+  // (never a "header") entry when non-null. Options carry `tabindex="-1"` on purpose -- the
+  // preferred variant of this pattern keeps them OUT of the Tab sequence entirely; a screen-reader
+  // or keyboard user drives the list from the input with Arrow/Enter/Esc instead.
+  const instanceId = uid("picker");
+  const listId = `${instanceId}-list`;
+  function optionId(key: string): string {
+    return `${instanceId}-opt-${key}`;
+  }
+
+  let activeIndex = $state<number | null>(null);
+
+  const searchLogger = createSearchLogger({
+    onLog: (q) => {
+      onSearchLogged(q);
+      // reuses the SAME debounce as the analytics log (rather than a second, independent one):
+      // a query too short to log (< 3 folded chars) also skips this announcement, which is the
+      // right call -- announcing on every keystroke of "l", "le", "lea" would be noise, not help.
+      const n = resultCount;
+      announce(`${n} result${n === 1 ? "" : "s"} for "${q}".`);
+    },
+  });
   onDestroy(() => searchLogger.destroy());
 
   const ROW_HEIGHT = 28;
@@ -68,6 +97,13 @@
   }
 
   const rows = $derived(flatten());
+  const resultCount = $derived(rows.filter((r) => r.kind === "row").length);
+  // BOTH the dropdown's presence and everything that points at it (aria-controls,
+  // aria-activedescendant) key off this SAME flag -- an attribute referencing an id that does not
+  // exist yet (`open` true but `index` still loading, so the `{#if}` below has not rendered it)
+  // would be exactly the "aria-controls points at nothing" defect Popover.svelte's own header
+  // warns against.
+  const dropdownVisible = $derived(open && !!index);
   const windowState = $derived(
     computeVisibleWindow({
       scrollTop,
@@ -77,6 +113,19 @@
     }),
   );
   const visible = $derived(rows.slice(windowState.startIndex, windowState.endIndex));
+  const activeOptionId = $derived.by(() => {
+    if (activeIndex === null) return null;
+    const r = rows[activeIndex];
+    return r?.kind === "row" ? optionId(r.row.key) : null;
+  });
+
+  // re-anchors the activedescendant to the first real match whenever the filtered/grouped set
+  // changes (typing, "US only", or the index arriving for the first time) -- the APG pattern's
+  // "highlight the first match as you type".
+  $effect(() => {
+    const firstRow = rows.findIndex((r) => r.kind === "row");
+    activeIndex = firstRow === -1 ? null : firstRow;
+  });
 
   function onInput(value: string) {
     query = value;
@@ -103,13 +152,77 @@
     onSetUsOnly(next);
     if (kept && kept !== selected) onSelect(kept);
   }
+
+  /** every index into `rows` that is a "row" (never a "header"), in order -- what
+   * ArrowUp/ArrowDown step through. */
+  function optionIndices(): number[] {
+    const out: number[] = [];
+    rows.forEach((r, i) => {
+      if (r.kind === "row") out.push(i);
+    });
+    return out;
+  }
+
+  /** scrolls the virtualized list just enough that row `i` enters the rendered window --
+   * `computeVisibleWindow`'s own arithmetic (dataTableCore.ts), the SAME code the species/zone
+   * tables already use for it. Keyboard-only navigation must never depend on the target option
+   * already being in the DOM: only ~12 of ~22k rows are rendered at a time. */
+  function ensureRowVisible(i: number) {
+    const top = i * ROW_HEIGHT;
+    const bottom = top + ROW_HEIGHT;
+    let next = scrollTop;
+    if (top < next) next = top;
+    else if (bottom > next + VIEWPORT_HEIGHT) next = bottom - VIEWPORT_HEIGHT;
+    if (next === scrollTop) return;
+    scrollTop = next;
+    if (listEl) listEl.scrollTop = next;
+  }
+
+  function moveActive(delta: number) {
+    const indices = optionIndices();
+    if (indices.length === 0) return;
+    const at = activeIndex === null ? -1 : indices.indexOf(activeIndex);
+    const nextPos = Math.max(0, Math.min(indices.length - 1, at + delta));
+    activeIndex = indices[nextPos];
+    ensureRowVisible(activeIndex);
+  }
+
+  function onInputKeydown(event: KeyboardEvent) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      open = true;
+      moveActive(1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveActive(-1);
+    } else if (event.key === "Enter") {
+      if (activeIndex === null) return;
+      const r = rows[activeIndex];
+      if (r?.kind !== "row") return;
+      event.preventDefault();
+      pick(r.row);
+    } else if (event.key === "Escape") {
+      if (!open) return;
+      // the innermost open layer handles Esc first -- same convention as Modal/Popover/Panel's
+      // own fixes (fix list #1); belt-and-suspenders here (this field has no enclosing Panel to
+      // protect against today, but the field could move under one later).
+      event.preventDefault();
+      event.stopPropagation();
+      open = false;
+    }
+  }
 </script>
 
 <div class="species-picker">
   <input
     type="search"
     class="picker-input"
+    role="combobox"
     aria-label="Search species"
+    aria-expanded={dropdownVisible}
+    aria-controls={dropdownVisible ? listId : undefined}
+    aria-autocomplete="list"
+    aria-activedescendant={dropdownVisible && activeOptionId ? activeOptionId : undefined}
     placeholder="Search species"
     value={query}
     onfocus={() => {
@@ -117,9 +230,10 @@
       onFocusIndex();
     }}
     oninput={(e) => onInput((e.currentTarget as HTMLInputElement).value)}
+    onkeydown={onInputKeydown}
   />
 
-  {#if open && index}
+  {#if dropdownVisible}
     <div class="picker-dropdown">
       <label class="us-only">
         <input
@@ -131,9 +245,11 @@
       </label>
       <div
         class="picker-list"
+        id={listId}
         role="listbox"
         aria-label="Species results"
         style={`height:${VIEWPORT_HEIGHT}px`}
+        bind:this={listEl}
         onscroll={onScroll}
       >
         <div style={`height:${windowState.paddingTop}px`}></div>
@@ -143,10 +259,13 @@
           {:else}
             <button
               type="button"
+              id={optionId(r.row.key)}
               role="option"
+              tabindex="-1"
               aria-selected={r.row.key === selected}
               class="picker-option"
               class:selected={r.row.key === selected}
+              class:active={windowState.startIndex + i === activeIndex}
               onclick={() => pick(r.row)}
             >
               {r.row.label}
@@ -248,5 +367,14 @@
   .picker-option:hover,
   .picker-option.selected {
     background: var(--fill-control);
+  }
+
+  /* fix list #8: options carry `tabindex="-1"` (never individually Tab-focused), so this is NOT
+     a real focus indicator -- it is the aria-activedescendant equivalent of DataTable.svelte's
+     own `.cell--active` convention, a lighter, dashed marker distinct from the strong
+     `:focus-visible` ring so the two are never confused (SC 2.4.7 note, same reasoning). */
+  .picker-option.active {
+    outline: 1px dashed var(--border-control);
+    outline-offset: -2px;
   }
 </style>

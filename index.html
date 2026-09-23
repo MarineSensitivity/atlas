@@ -334,6 +334,41 @@
         };
       })();
     </script>
+
+    <!--
+      fix list #14 (atlas-3 handover item (b), still open until now): the only fallback for
+      "JavaScript is on and the bundle 404'd or failed to parse" used to be a <noscript> -- which
+      by definition never runs when script IS enabled and just broken. With every asset blocked,
+      the page sat there forever: a title, an h1, two dead skip links and ten aria-hidden skeleton
+      parts, announcing and showing nothing.
+
+      `src/main.ts` sets `data-hydrated` on <html> as the very last thing it does, right after
+      `mount(Shell, ...)` returns -- never inside a try/catch that could swallow a real crash and
+      still set it. If that attribute is still absent 8s after this script starts (main.ts 404'd,
+      or threw before reaching that line), this reveals a plain, VISIBLE message. `role="alert"`
+      (assertive), not `status` (polite) -- the shared Announcer region is for events a user's own
+      action caused; this fires with no action at all and needs to interrupt, the way an error
+      should.
+    -->
+    <script>
+      (function () {
+        window.setTimeout(function () {
+          if (document.documentElement.hasAttribute("data-hydrated")) return;
+          var el = document.createElement("p");
+          el.id = "bundle-load-failed";
+          el.setAttribute("role", "alert");
+          el.style.cssText =
+            "position:fixed;top:var(--space-4);left:var(--space-4);right:var(--space-4);" +
+            "z-index:999;margin:0;padding:var(--space-3) var(--space-4);" +
+            "border:1px solid var(--border-control);border-radius:var(--radius-card);" +
+            "background:var(--surface-raised);color:var(--text-primary);" +
+            "font:inherit;box-shadow:var(--elev-3);";
+          el.textContent =
+            "This page could not load its application code. Reload, or try again later.";
+          document.body.insertBefore(el, document.body.firstChild);
+        }, 8000);
+      })();
+    </script>
   </head>
   <body>
     <!-- atlas-8 fix: a single skip link to #panel-region jumped straight past the topbar AND the
@@ -427,13 +462,20 @@
           class="map"
           role="img"
           aria-label="Map of U.S. marine areas"
+          aria-describedby="map-table-equivalent"
           data-tour="map"
         ></div>
+        <!-- fix list #9: mirrors Shell.svelte's own hydrated markup, so the pointer to the zones
+             table exists even in the brief pre-hydration skeleton window. -->
+        <p id="map-table-equivalent" class="visually-hidden">
+          Every zone's score is also in the Zones table, under the Table tool.
+        </p>
 
         <nav
           class="rail-region"
           id="rail-region"
           aria-label="Tools"
+          tabindex="-1"
           data-tour="rail"
           data-control="rail"
         >
@@ -446,7 +488,13 @@
           </div>
         </nav>
 
-        <div class="panel-region" id="panel-region" data-tour="panel" data-control="panel">
+        <div
+          class="panel-region"
+          id="panel-region"
+          tabindex="-1"
+          data-tour="panel"
+          data-control="panel"
+        >
           <div class="sk-panel" aria-hidden="true">
             <div class="sk-panel-grab"></div>
             <div class="sk-panel-head">

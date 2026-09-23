@@ -142,6 +142,22 @@ test.describe("scores lens — click popup (fix round 3, real engine)", () => {
     expect(text).toContain("Overall score: 50");
   });
 
+  // fix list #12 (SC 4.1.3): the popup used to be a plain MapLibre div, never announced -- a
+  // screen-reader user who somehow triggered a map click got no result at all. Fix: `showPopup`
+  // (ScoresLens.svelte) also calls the shared `announce()`, with the SAME content as the popup's
+  // own text (unescaped -- `announce()` sets a live region's text content, never innerHTML).
+  // REVERTED (this fix alone) -> RED: the live region's text never changes on a map click.
+  test("the popup's text is also announced through the shared live region", async ({ page }) => {
+    await gotoScores(page);
+    const live = page.locator('[role="status"]').first();
+    await expect(live).toHaveText("");
+    await fireMapClick(page, { lng: CELL_1.lon, lat: CELL_1.lat });
+    await expect(page.locator(".atlas-popup")).toBeVisible({ timeout: 15_000 });
+    await expect(live).toContainText("Cell 1", { timeout: 15_000 });
+    await expect(live).toContainText(`lon ${CELL_1.lon.toFixed(3)}`);
+    await expect(live).toContainText("Overall score: 50");
+  });
+
   test("Esc closes the popup", async ({ page }) => {
     await gotoScores(page);
     await fireMapClick(page, { lng: CELL_1.lon, lat: CELL_1.lat });

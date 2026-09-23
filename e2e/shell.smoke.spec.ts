@@ -110,3 +110,47 @@ test.describe("release-access gate (plan D6)", () => {
     expect(urls).toContain(`${BUCKET}v7/manifest.json`);
   });
 });
+
+test.describe("a failed bundle load (atlas-3 handover item (b), fix list #14)", () => {
+  // the ONLY fallback used to be a <noscript>, which never runs when script IS enabled and just
+  // broken -- with every asset blocked, the page sat there forever: a title, an h1, two dead skip
+  // links and ten aria-hidden skeleton parts, announcing and showing nothing. Fix: `src/main.ts`
+  // sets `data-hydrated` on `<html>` right after `mount()` returns; index.html's own timed inline
+  // script reveals a plain, visible `role="alert"` message if that attribute is still absent 8s
+  // after the script starts. REVERTED (this fix alone) -> RED: no `#bundle-load-failed` element
+  // ever appears, however long the test waits.
+  test("index.html reveals a visible role=alert message when the bundle never runs", async ({
+    page,
+  }) => {
+    await routeBucket(page);
+    await routeSession(page, null);
+    await routeSealFixture(page);
+    await page.route("**/assets/*.js", (route) => route.abort());
+
+    await page.goto("/");
+
+    // the skeleton paints regardless -- it is plain static HTML/CSS, no JS required.
+    await expect(page.locator("#rail-region")).toBeVisible();
+
+    const message = page.locator("#bundle-load-failed");
+    await expect(message).toBeVisible({ timeout: 12_000 });
+    await expect(message).toHaveAttribute("role", "alert");
+    await expect(message).toContainText("could not load its application code");
+    // genuinely on screen, not clipped/zero-size the way the visually-hidden map equivalent is.
+    const box = await message.boundingBox();
+    expect(box?.width ?? 0).toBeGreaterThan(10);
+    expect(box?.height ?? 0).toBeGreaterThan(10);
+  });
+
+  test("a bundle that DOES run never shows the fallback message", async ({ page }) => {
+    await routeBucket(page);
+    await routeSession(page, null);
+    await routeSealFixture(page);
+
+    await page.goto("/");
+    await expect(page.locator("#rail-region .rail")).toBeAttached();
+    // well past the 8s timer, on a page that DID hydrate: the message must never fire.
+    await page.waitForTimeout(9000);
+    await expect(page.locator("#bundle-load-failed")).toHaveCount(0);
+  });
+});

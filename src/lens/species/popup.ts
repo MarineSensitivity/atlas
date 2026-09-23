@@ -188,3 +188,15 @@ export function popupHtml(content: PopupContent): string {
     `</div>`
   );
 }
+
+/**
+ * fix list #12 (SC 4.1.3): the `announce()` counterpart of {@link popupHtml} -- a plain sentence,
+ * not markup. `announce()` sets a live region's TEXT content (Svelte's `{message}` interpolation,
+ * never `innerHTML`), so nothing here needs `escapeHtml` at all.
+ */
+export function popupAnnounceText(content: PopupContent): string {
+  const cell = content.cellId === null ? "no cell" : `cell ${content.cellId}`;
+  const lon = content.lon.toFixed(3);
+  const lat = content.lat.toFixed(3);
+  return `${content.sci}: ${cell}, lon ${lon}, lat ${lat}, ${content.text}`;
+}

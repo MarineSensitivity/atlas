@@ -370,3 +370,94 @@ test.describe("atlas-4/5 defect fix: the topbar search field no longer overflows
     await expect(page.locator(".us-only input[type='checkbox']")).toBeFocused();
   });
 });
+
+test.describe("fix list #8 (SC 4.1.2 + 1.3.1): the species picker is a real combobox", () => {
+  // the field used to be a plain `<input type=\"search\">`: focusing it opened a `role=\"listbox\"`
+  // beneath it, but the input carried no `role=\"combobox\"`, no `aria-expanded`, no
+  // `aria-controls`/`aria-activedescendant` and no `aria-autocomplete` -- nothing announced that a
+  // list appeared, Arrow Down did not move through the options, and Esc did not close the list.
+  // REVERTED (this fix alone) -> RED: every assertion below fails (the attributes are simply
+  // absent, and Arrow/Enter/Esc do nothing).
+  test("role=combobox, aria-expanded/controls/activedescendant track the open list, and Enter selects the active option", async ({
+    page,
+  }) => {
+    await gotoSpecies(page, "/?ver=v9");
+    const input = page.locator(".picker-input");
+    await expect(input).toHaveAttribute("role", "combobox");
+    await expect(input).toHaveAttribute("aria-autocomplete", "list");
+    expect(await input.getAttribute("aria-expanded")).toBe("false");
+    expect(await input.getAttribute("aria-controls")).toBeNull();
+    expect(await input.getAttribute("aria-activedescendant")).toBeNull();
+
+    await input.focus();
+    await expect
+      .poll(() => page.locator(".picker-option").count(), { timeout: 10_000 })
+      .toBeGreaterThan(0);
+    expect(await input.getAttribute("aria-expanded")).toBe("true");
+
+    const listId = await input.getAttribute("aria-controls");
+    expect(listId).toBeTruthy();
+    await expect(page.locator(`#${listId}`)).toHaveCount(1);
+    await expect(page.locator(`#${listId}`)).toHaveAttribute("role", "listbox");
+
+    // the first real option is highlighted as soon as the list opens (the APG "first match"
+    // convention), and the id it points at actually exists and IS that option.
+    const firstOptionId = await input.getAttribute("aria-activedescendant");
+    expect(firstOptionId).toBeTruthy();
+    const firstOption = page.locator(`#${firstOptionId}`);
+    await expect(firstOption).toHaveCount(1);
+    await expect(firstOption).toHaveAttribute("role", "option");
+
+    // ArrowDown moves aria-activedescendant to the NEXT option -- not the same one, and options
+    // never receive individual keyboard focus (the preferred APG variant: they stay out of the
+    // Tab order, tabindex="-1", the input drives navigation).
+    await expect(firstOption).toHaveAttribute("tabindex", "-1");
+    await page.keyboard.press("ArrowDown");
+    const secondOptionId = await input.getAttribute("aria-activedescendant");
+    expect(secondOptionId).not.toBe(firstOptionId);
+    await expect(input).toBeFocused();
+
+    const secondOptionSci = await page.locator(`#${secondOptionId}`).textContent();
+    await page.keyboard.press("Enter");
+    // Enter picks the ACTIVE option (the second one, not the first) and closes the list.
+    await expect(input).toHaveAttribute("aria-expanded", "false");
+    // the picked species' label is "cat: Sci (Common)" -- its scientific name is a SUBSTRING of
+    // the option's own rendered text, so this holds no matter which real taxon ends up second.
+    await expect
+      .poll(() => page.getByTestId("species-title-sci").textContent(), { timeout: 10_000 })
+      .toBeTruthy();
+    const finalSci = await page.getByTestId("species-title-sci").textContent();
+    expect(secondOptionSci ?? "").toContain(finalSci ?? "");
+  });
+
+  test("Esc closes the list without moving focus off the field", async ({ page }) => {
+    await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
+    const input = page.locator(".picker-input");
+    await input.focus();
+    await expect
+      .poll(() => page.locator(".picker-option").count(), { timeout: 10_000 })
+      .toBeGreaterThan(0);
+    await expect(input).toHaveAttribute("aria-expanded", "true");
+
+    await page.keyboard.press("Escape");
+    await expect(input).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator(".picker-dropdown")).toHaveCount(0);
+    await expect(input).toBeFocused();
+  });
+
+  test("typing a query announces the result count through the shared live region", async ({
+    page,
+  }) => {
+    await gotoSpecies(page, "/?ver=v9");
+    const input = page.locator(".picker-input");
+    await input.focus();
+    await expect
+      .poll(() => page.locator(".picker-option").count(), { timeout: 10_000 })
+      .toBeGreaterThan(0);
+
+    const live = page.locator('[role="status"]').first();
+    await input.pressSequentially("walrus", { delay: 20 });
+    // createSearchLogger's own debounce is 900ms; give it real margin.
+    await expect(live).toContainText(/result.* for "walrus"/, { timeout: 3_000 });
+  });
+});

@@ -5,6 +5,7 @@
   // range — `Legend.svelte` itself only knows how to draw a continuous ramp, so the categorical case
   // gets its own small markup here rather than forcing a one-stop ramp through it.
   import Legend from "../../lib/ui/Legend.svelte";
+  import { uid } from "../../lib/ui/uid";
   import { formatSpeciesLegendValue, type SpeciesLegend } from "./mapInputs";
 
   interface Props {
@@ -12,6 +13,9 @@
   }
 
   let { legend }: Props = $props();
+  // fix list #11 (SC 1.3.1): the categorical branch below renders its OWN h2, never through the
+  // shared Legend.svelte -- same local region/aria-labelledby fix, per instance.
+  const catTitleId = uid("species-legend-cat-title");
 </script>
 
 {#if legend?.kind === "continuous"}
@@ -24,8 +28,13 @@
     />
   </div>
 {:else if legend?.kind === "categorical"}
-  <div class="species-legend species-legend--categorical" data-testid="species-legend">
-    <h2>{legend.title}</h2>
+  <div
+    class="species-legend species-legend--categorical"
+    role="region"
+    aria-labelledby={catTitleId}
+    data-testid="species-legend"
+  >
+    <h2 id={catTitleId}>{legend.title}</h2>
     <div class="row">
       <span class="swatch" style="background:{legend.color}"></span>
       <span>{legend.label}</span>

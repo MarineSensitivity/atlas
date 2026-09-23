@@ -45,10 +45,26 @@ export interface CellPopupInput {
  * inventing a THIRD rounding rule beside that one and the zone click's `round(value)` (0 dp).
  */
 export function cellPopupText(input: CellPopupInput): string {
+  return formatCellPopup(input, escapeHtml(input.layerLabel));
+}
+
+/** shared by {@link cellPopupText} (HTML, `label` pre-escaped by the caller) and
+ * {@link cellPopupAnnounceText} (plain text, `label` passed through verbatim). */
+function formatCellPopup(input: CellPopupInput, label: string): string {
   const lon = input.lon.toFixed(3);
   const lat = input.lat.toFixed(3);
   const value = input.value === null ? "no value" : String(roundHalfEven(input.value * 100) / 100);
-  return `Cell ${input.cellId} · lon ${lon}, lat ${lat} · ${escapeHtml(input.layerLabel)}: ${value}`;
+  return `Cell ${input.cellId} · lon ${lon}, lat ${lat} · ${label}: ${value}`;
+}
+
+/**
+ * fix list #12 (SC 4.1.3): the `announce()` counterpart of {@link cellPopupText} -- the SAME
+ * text, unescaped. `announce()` sets a live region's TEXT content (Svelte's `{message}`
+ * interpolation, never `innerHTML`), so feeding it the HTML-escaped string would read "&amp;"
+ * aloud as four literal characters instead of "&".
+ */
+export function cellPopupAnnounceText(input: CellPopupInput): string {
+  return formatCellPopup(input, input.layerLabel);
 }
 
 /**
@@ -63,4 +79,16 @@ export function zonePopupText(
 ): string {
   const value = lyr ? zoneValuesFor(zones, lyr).find((v) => v.key === zone.key) : undefined;
   return value ? escapeHtml(zoneTooltip(value)) : `${escapeHtml(zone.name)}: no value`;
+}
+
+/** fix list #12: the `announce()` counterpart of {@link zonePopupText} -- see
+ * {@link cellPopupAnnounceText}'s header for why this is a separate, unescaped function rather
+ * than reusing the HTML string. */
+export function zonePopupAnnounceText(
+  zones: readonly ZoneRow[],
+  lyr: string | null,
+  zone: { key: string; name: string },
+): string {
+  const value = lyr ? zoneValuesFor(zones, lyr).find((v) => v.key === zone.key) : undefined;
+  return value ? zoneTooltip(value) : `${zone.name}: no value`;
 }

@@ -113,14 +113,12 @@ interface FocusInfo {
  * engine's Tab path would stop the whole walk and every later step's coverage with it; with it, the
  * defect is still reported (by its own `test.fixme`), the walk keeps going, and when the fix lands
  * that test goes green and the entry here is deleted. Nothing is added here without a finding id.
+ *
+ * EMPTY as of the fix round (A11Y-7, the panel body's own name, is fixed -- Panel.svelte's
+ * `.panel-body` now carries `role="group" aria-label="{title} details"`): "what the re-audit must
+ * show" item 4 (docs/accessibility-fixes.md).
  */
-const KNOWN_UNNAMED_STOPS: ReadonlyArray<{ selector: string; finding: string }> = [
-  // A11Y-7: `<div class="panel-body" tabindex="0">` (Panel.svelte) -- the desktop panel's own
-  // scrollable body. Its phone twin (`Sheet.svelte`'s `.sheet-body`) carries
-  // `role="region" aria-label="{title} details"`; this one lost its label when atlas-3's
-  // nested-landmark fix removed the inner region and kept the `tabindex`.
-  { selector: ".panel-body", finding: "A11Y-7" },
-];
+const KNOWN_UNNAMED_STOPS: ReadonlyArray<{ selector: string; finding: string }> = [];
 
 /** the attribute `focusInfo()` stamps on the current `document.activeElement` so the name lookup
  * below can address it by a plain attribute selector. `page.locator(":focus")` looks like the
@@ -336,36 +334,40 @@ async function openTool(
 // =================================================================================================
 
 test.describe("step 0: every tab stop announces itself", () => {
-  // FINDING A11Y-7 (docs/accessibility-fixes.md): the desktop details panel's scrollable body is
+  // FIX LIST #A11Y-7, FIXED: the desktop details panel's scrollable body used to be
   // `<div class="panel-body" id="panel-body-shell" tabindex="0">` (Panel.svelte) with NO role and
-  // NO accessible name -- a tab stop a screen reader announces as nothing at all. Its phone twin,
-  // `Sheet.svelte`'s `.sheet-body`, carries `role="region" aria-label="{title} details"`; this one
-  // lost its label when atlas-3's handover item (a) removed the nested landmark and kept the
-  // `tabindex="0"` (which axe's own `scrollable-region-focusable` rule requires). SC 4.1.2 Name,
-  // Role, Value (A). Found by this walk on firefox, whose Tab order reaches it; it is on the
-  // KNOWN_UNNAMED_STOPS list above so the rest of the walk still runs. Not fixed here.
+  // NO accessible name -- a tab stop a screen reader announced as nothing at all. Its phone twin,
+  // `Sheet.svelte`'s `.sheet-body`, already carried `role="region" aria-label="{title} details"`;
+  // this one lost its label when atlas-3's handover item (a) removed the nested landmark and kept
+  // the `tabindex="0"` (which axe's own `scrollable-region-focusable` rule requires). SC 4.1.2
+  // Name, Role, Value (A). Now `role="group" aria-label="Layers details"` (a `group`, not a
+  // `region`, so the near-duplicate-landmark problem that atlas-3 fix addressed does not come
+  // back -- see Panel.svelte's own header comment). REVERTED (this fix alone) -> RED: this test
+  // fails with "no accessible name" the moment `role`/`aria-label` are removed from
+  // `.panel-body`.
   test("the panel body is a named region, like the sheet body is", async ({ page }) => {
-    test.fixme(true, "A11Y-7: .panel-body has tabindex=0 with no role and no accessible name");
     await gotoWalk(page);
     const body = page.locator("#panel-region .panel-body");
     await expect(body).toHaveAttribute("tabindex", "0");
+    await expect(body).toHaveAttribute("role", "group");
     expect(
       (await body.ariaSnapshot()).split("\n")[0],
       "a focusable scroll container must carry a role and a name",
     ).toMatch(/^-\s+\S+\s+"/);
+    expect(await body.getAttribute("aria-label")).toBe("Layers details");
   });
 });
 
 test.describe("step 0: the rail itself keeps the caret", () => {
-  // FINDING A11Y-6 (docs/accessibility-fixes.md), FIREFOX ONLY: "Skip to the tools" points at
-  // `#rail-region`, a plain `<nav>` with no `tabindex`, so activating it only moves the sequential-
-  // focus STARTING POINT -- and firefox places that point after the target's whole subtree, not
-  // before it. Measured: the first Tab after the skip link lands on the panel's "Collapse to a
-  // pill" on firefox (the rail skipped entirely) and on the rail's "Layers" on chromium and webkit.
-  // A skip link that skips the thing it names does not satisfy SC 2.4.1 Bypass Blocks (A) on that
-  // engine; the usual remedy is `tabindex="-1"` on the two skip targets. Not fixed here.
+  // FIX LIST #6, FIXED (was FIREFOX ONLY): "Skip to the tools" points at `#rail-region`, which
+  // used to be a plain `<nav>` with no `tabindex` -- activating the link only moved the
+  // sequential-focus STARTING POINT, and firefox placed that point AFTER the target's whole
+  // subtree (chromium/webkit happened to land correctly anyway). Measured before the fix: the
+  // first Tab after the skip link landed on the panel's "Collapse to a pill" on firefox (the rail
+  // skipped entirely). `tabindex="-1"` on `#rail-region` (Shell.svelte) is the standard remedy:
+  // the target itself now takes focus directly, so every engine agrees. REVERTED (this fix alone)
+  // -> RED on firefox: without `tabindex="-1"` the first Tab lands outside `#rail-region` again.
   test("'Skip to the tools' lands the caret on the tool rail", async ({ page, browserName }) => {
-    test.fixme(browserName === "firefox", "A11Y-6: firefox lands past the rail's subtree");
     await gotoWalk(page);
     await tabTo(page, browserName, "Skip to the tools", { step: "A11Y-6: the skip link" });
     await page.keyboard.press("Enter");
@@ -376,25 +378,77 @@ test.describe("step 0: the rail itself keeps the caret", () => {
     ).toBe(true);
   });
 
-  // FINDING A11Y-5 (docs/accessibility-fixes.md), WEBKIT ONLY: activating a rail tool that CHANGES
-  // the open tool drops `document.activeElement` to `<body>` roughly 100 ms after the keypress --
-  // i.e. once the newly-chosen tool's lazy panel chunk resolves and the panel body swaps. Measured
-  // (100 ms polls, webkit): activating the ALREADY-open tool keeps focus indefinitely, arrowing
-  // within the rail without activating keeps focus indefinitely, and activating a DIFFERENT tool
-  // loses it by the first poll. Chromium and Firefox keep focus in all three cases. On Safari a
-  // keyboard user therefore has to Tab in from the top of the document again after every tool
-  // switch. SC 2.4.3 Focus Order (A). Not fixed here (Sonnet's round owns it).
+  // FIX LIST #5, FIXED (was WEBKIT ONLY): activating a rail tool that CHANGES the open tool used
+  // to drop `document.activeElement` to `<body>` roughly 100 ms after the keypress -- i.e. once
+  // the newly-chosen tool's lazy panel chunk resolved and the panel body swapped. Measured before
+  // the fix (100 ms polls, webkit): activating the ALREADY-open tool kept focus indefinitely,
+  // arrowing within the rail without activating kept focus indefinitely, and activating a
+  // DIFFERENT tool lost it by the first poll -- chromium and firefox never did any of this.
+  // SC 2.4.3 Focus Order (A). Shell.svelte's `armRailFocusRestore` (a `MutationObserver` on
+  // `#panel-region`, since the exact swap is not timed to one known instant -- an async import
+  // resolves on its own schedule) restores focus to the activated rail button whenever the panel
+  // settles, but only while focus has actually been lost to `<body>` in the meantime. REVERTED
+  // (this fix alone) -> RED on webkit: without it, focus is lost to `<body>` and never restored.
   test("activating a rail tool leaves focus on that tool", async ({ page, browserName }) => {
-    test.fixme(browserName === "webkit", "A11Y-5: webkit drops focus to <body> on the tool swap");
     await gotoWalk(page);
     await enterRail(page, browserName, "step 0");
     await railArrowTo(page, "Places", "step 0");
     await page.keyboard.press("Enter");
     await expect(page.locator("#panel-region")).toContainText("Places");
-    // settle past the lazy panel chunk resolving, which is when webkit loses it.
+    // settle past the lazy panel chunk resolving, which is when webkit used to lose it.
     await page.waitForTimeout(500);
     const name = await assertFocusUsable(page, "step 0: after activating a rail tool");
     expect(name).toBe("Places");
+  });
+});
+
+test.describe("step 0: static ARIA fixes #9, #10, #11 (no test existed before this round)", () => {
+  // FIX LIST #9 (SC 1.1.1): the map announced itself as "Map of U.S. marine areas" and nothing
+  // more -- the project's declared text equivalent (the zones table, four keystrokes away behind
+  // the Table rail tool) was never pointed at from the map's own semantics. Fix: `aria-describedby`
+  // on `#map` pointing at a visually-hidden sentence naming it. REVERTED (this fix alone) -> RED:
+  // `aria-describedby` is absent, or points at an id nothing renders.
+  test("the map points at its own text equivalent", async ({ page }) => {
+    await gotoWalk(page);
+    const map = page.locator("#map");
+    const describedBy = await map.getAttribute("aria-describedby");
+    expect(describedBy, "#map must carry aria-describedby").toBeTruthy();
+    const equivalent = page.locator(`#${describedBy}`);
+    await expect(equivalent).toHaveCount(1);
+    await expect(equivalent).toContainText("Zones table");
+  });
+
+  // FIX LIST #10 (SC 1.3.1): `LayersPanel.svelte`'s own "Layers on the map" section used to be a
+  // SECOND `region` landmark (`<section aria-label="Layers on the map">`) nested directly inside
+  // Panel.svelte's own region (already named "Layers"), with an `h3` that just repeated the
+  // panel's `h2` title. Fix: a plain `div` (never a landmark) with the heading renamed to "Layers
+  // on the map" (no longer identical to the panel's own "Layers"). REVERTED (this fix alone) ->
+  // RED: a second "Layers on the map" region reappears nested inside the "Layers" panel region.
+  test("no second region landmark nested inside the Layers panel's own region", async ({
+    page,
+  }) => {
+    await gotoWalk(page);
+    const panelRegion = page.getByRole("region", { name: "Layers" });
+    await expect(panelRegion).toHaveCount(1);
+    // getByRole with an ancestor locator only matches WITHIN that ancestor's subtree.
+    await expect(panelRegion.getByRole("region")).toHaveCount(0);
+    await expect(panelRegion.locator(".layers-control h3")).toHaveText("Layers on the map");
+  });
+
+  // FIX LIST #11 (SC 1.3.1 + 2.4.6): the floating legend sat in NO landmark at all (a bare `<div>`
+  // under `<main>`), so landmark navigation never offered it. Fix: `role="region"` +
+  // `aria-labelledby` pointing at its own heading (`ScoresLegend.svelte`'s "not published yet"
+  // note, in this fixture's case -- no raster cog data is published, so the shared ramp
+  // `Legend.svelte` never renders here; the SAME fix was applied to that fallback markup, not
+  // just the ramp). REVERTED (this fix alone) -> RED: no region landmark exists for the legend.
+  test("the floating legend is reachable as a landmark", async ({ page }) => {
+    await gotoWalk(page);
+    const legend = page.locator('[data-testid="scores-legend"]');
+    await expect(legend).toBeVisible();
+    await expect(legend).toHaveAttribute("role", "region");
+    const labelledBy = await legend.getAttribute("aria-labelledby");
+    expect(labelledBy, "the legend must carry aria-labelledby").toBeTruthy();
+    await expect(page.locator(`#${labelledBy}`)).toHaveCount(1);
   });
 });
 
@@ -514,17 +568,19 @@ test.describe("step 2: create a place by coordinates", () => {
     await expect(page.locator("#panel-region .panel-pill")).toHaveCount(0);
   });
 
-  // FINDING A11Y-1 (docs/accessibility-fixes.md): pressing Esc to dismiss a modal that is rendered
-  // INSIDE the details panel also collapses the panel underneath it and parks focus on the panel's
-  // pill -- so a keyboard user who cancels a dialog loses the whole panel they were working in and
-  // has to re-expand it. Measured on chromium: `document.activeElement` after Esc is
+  // FIX LIST #1, FIXED: pressing Esc to dismiss a modal that is rendered INSIDE the details panel
+  // USED TO also collapse the panel underneath it and park focus on the panel's pill -- so a
+  // keyboard user who cancelled a dialog lost the whole panel they were working in and had to
+  // re-expand it. Measured on chromium before the fix: `document.activeElement` after Esc was
   // `<button class="pill panel-pill" aria-expanded="false">Places</button>`, never the opener.
   // Cause: Svelte 5 DELEGATES `keydown` to the app root, so `Modal.svelte`'s
-  // `event.stopPropagation()` runs only AFTER `Panel.svelte`'s natively-attached `rootEl` listener
-  // has already collapsed the panel -- Panel's own `!event.defaultPrevented` guard cannot see a
-  // preventDefault() that has not happened yet either. Not fixed here (Sonnet's round owns it, per
-  // this phase's split); the walk continues via the Close button above, which is unaffected.
-  test.fixme("A11Y-1: Esc in the coordinate dialog returns focus to the opener, not the panel pill", async ({
+  // `event.stopPropagation()` used to run only AFTER `Panel.svelte`'s natively-attached `rootEl`
+  // listener had already collapsed the panel. Fix: `Modal.svelte` now attaches its own Esc
+  // handler IMPERATIVELY on the dialog element in `onMount` -- exactly `Popover.svelte`'s own
+  // pattern -- so it runs during the REAL bubble phase, before the event ever reaches an
+  // ancestor Panel. REVERTED (this fix alone, `tests/faults/modal-esc-delegated.patch`) -> RED:
+  // this is the new seeded fault (scripts/test-faults.mjs), and this exact test is its gate.
+  test("A11Y-1: Esc in the coordinate dialog returns focus to the opener, not the panel pill", async ({
     page,
     browserName,
   }) => {
@@ -543,18 +599,19 @@ test.describe("step 2: create a place by coordinates", () => {
     expect(name).toBe("Enter coordinates");
   });
 
-  // FINDING A11Y-2 (docs/accessibility-fixes.md): `Modal.svelte`'s Tab trap counts DISABLED
-  // controls as focusable (`FOCUSABLE_SELECTOR` is a bare `button, [href], input, select,
-  // textarea, ...` with no `:not(:disabled)`), so when the dialog's LAST control is disabled --
-  // which is the coordinate dialog's own opening state, "Add place" being disabled until you type
-  // something -- `active === last` is never true, the trap never fires, and Tab off the textarea
-  // lands on `<body>` for one step. Measured on chromium, empty dialog:
+  // FIX LIST #2, FIXED: `Modal.svelte`'s Tab trap USED TO count DISABLED controls as focusable
+  // (`FOCUSABLE_SELECTOR` was a bare `button, [href], input, select, textarea, ...` with no
+  // `:not(:disabled)`), so when the dialog's LAST control is disabled -- which is the coordinate
+  // dialog's own opening state, "Add place" being disabled until you type something -- `active
+  // === last` was never true, the trap never fired, and Tab off the textarea landed on `<body>`
+  // for one step. Measured on chromium before the fix, empty dialog:
   //   Close -> textarea -> BODY -> Close -> ...
-  // and with text typed (Add place enabled) the cycle is correct:
+  // and with text typed (Add place enabled) the cycle was already correct:
   //   textarea -> Add place -> Close -> textarea.
-  // The component's own header comment describes exactly this fall-through as the thing the trap
-  // exists to prevent. Not fixed here (Sonnet's round owns it).
-  test.fixme("A11Y-2: Tab never leaves an open modal, even when its last control is disabled", async ({
+  // Fix: `FOCUSABLE_SELECTOR` now excludes `:disabled` on every selector that can carry it, and
+  // `isVisible()` additionally filters a hidden one. REVERTED (this fix alone) -> RED: Tab off
+  // the empty dialog's textarea lands on `<body>` again.
+  test("A11Y-2: Tab never leaves an open modal, even when its last control is disabled", async ({
     page,
     browserName,
   }) => {
@@ -709,13 +766,14 @@ test.describe("step 3: open the report and export it", () => {
     await expect(page.locator("h1")).toHaveText("BOEM Marine Sensitivity Report");
   });
 
-  // FINDING A11Y-4 (docs/accessibility-fixes.md): the report's progress/status line is
-  // `<p class="progress-line" role="status" aria-live="off">` (Report.svelte:332). An explicit
-  // `aria-live="off"` OVERRIDES the implicit `polite` that `role="status"` carries, so the one
+  // FIX LIST #4, FIXED: the report's progress/status line USED TO be
+  // `<p class="progress-line" role="status" aria-live="off">` (Report.svelte). An explicit
+  // `aria-live="off"` OVERRODE the implicit `polite` that `role="status"` carries, so the one
   // message telling a screen-reader user that a multi-second document build is running, and then
-  // that it finished, is announced to nobody -- the element is a status region in name only.
-  // SC 4.1.3 Status Messages (AA). Not fixed here (Sonnet's round owns it).
-  test.fixme("A11Y-4: the report's progress line is actually announced", async ({
+  // that it finished, was announced to nobody. Fix: `aria-live="off"` dropped (role="status"'s
+  // own implicit polite is exactly what this needs) plus `aria-atomic="true"`. SC 4.1.3 Status
+  // Messages (AA). REVERTED (this fix alone) -> RED: `aria-live` reads "off" again.
+  test("A11Y-4: the report's progress line is actually announced", async ({
     page,
     browserName,
   }) => {
@@ -736,13 +794,14 @@ test.describe("step 3: open the report and export it", () => {
 // SC 2.4.7 Focus Visible -- every stop the walk passes through must SHOW that it has focus
 // =================================================================================================
 
-// FINDING A11Y-3 (docs/accessibility-fixes.md): the upload control is an `opacity: 0`
-// `<input type="file">` stretched over a visible `<label class="dropzone">` (UploadPanel.svelte) --
-// a legitimate pattern, EXCEPT that `.dropzone` has no `:focus-within` rule, so tabbing onto it
-// paints nothing anywhere on screen. A keyboard user Tabbing through the Places panel simply loses
-// the caret for one stop. SC 2.4.7 Focus Visible (AA). Not fixed here (Sonnet's round owns it).
+// FIX LIST #3, FIXED: the upload control is an `opacity: 0` `<input type="file">` stretched over
+// a visible `<label class="dropzone">` (UploadPanel.svelte) -- a legitimate pattern, except that
+// `.dropzone` USED TO have no `:focus-within` rule, so tabbing onto it painted nothing anywhere on
+// screen. A keyboard user Tabbing through the Places panel simply lost the caret for one stop.
+// SC 2.4.7 Focus Visible (AA). Fix: a `.dropzone:focus-within` outline rule. REVERTED (this fix
+// alone) -> RED: the dropzone's computed style is identical focused and unfocused again.
 test.describe("focus visibility", () => {
-  test.fixme("A11Y-3: the file-upload control shows a visible focus indicator", async ({
+  test("A11Y-3: the file-upload control shows a visible focus indicator", async ({
     page,
     browserName,
   }) => {

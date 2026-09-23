@@ -104,6 +104,32 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4392" },
   },
+  // atlas-8 step 3's fix round, fix list #1 (docs/accessibility-fixes.md): Modal.svelte's Esc
+  // handler used to be attached via a template `onkeydown` -- Svelte 5 DELEGATES that to the app
+  // root, which only runs once the native keydown has already finished bubbling through every
+  // REAL (imperatively-attached) ancestor listener, including an enclosing Panel's own
+  // Esc-collapses-it handler. This patch reintroduces exactly that (moves the listener back onto
+  // the template's `onkeydown`, off the `onMount` `addEventListener` the fix uses instead) and
+  // must turn the keyboard walk's own A11Y-1 regression test red: Esc in the coordinate dialog
+  // collapses the enclosing Places panel instead of returning focus to the opener.
+  {
+    id: "modal-esc-delegated",
+    patch: "tests/faults/modal-esc-delegated.patch",
+    describe:
+      "Modal's Esc handler moved back to a delegated template onkeydown -- Esc in a panel-hosted " +
+      "dialog collapses the panel underneath it again (fix list #1)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/keyboard-walk.spec.ts",
+      "-g",
+      "A11Y-1: Esc in the coordinate dialog",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4394" },
+  },
   // the `verify` CI job's own fault (atlas-8 step 3, the A11Y-0 post-mortem). `scripts/verify.mjs`
   // imported `routeBasemapTiles` after the basemap round deleted that export; a missing NAMED
   // import from a `.ts` module resolved through this repo's bundler hook is `undefined`, not a
