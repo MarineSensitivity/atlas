@@ -313,12 +313,12 @@ jobs:
       # reintroduces exactly that import and must turn this command red.
       - run: node scripts/verify.mjs --engines=chromium
 
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: verify-test-results
-          path: test-results/
-          retention-days: 7
+      # No `upload-artifact` step here, unlike the `e2e` jobs: `verify.mjs` is not Playwright's
+      # runner and writes no `test-results/` or trace at all -- its diagnostic IS its stdout (one
+      # `✗ <state> @ <viewport> [<engine>]` line per failure with the specific problem underneath,
+      # plus the per-engine summary and the slowest-3 table), which the job log already keeps.
+      # An `if: failure()` upload of a directory that never exists would only add a second, more
+      # confusing red (`upload-artifact@v4` errors when nothing matches its path).
 
   e2e-engine:
     name: e2e (DuckDB-WASM engine, eh/mvp x chromium/firefox/webkit)
