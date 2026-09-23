@@ -3,8 +3,10 @@
 // `ComposeStyleInput`. Shell.svelte merges this with its own `theme`/`projection`/base `zones` and
 // calls `composeStyle()` + `applyStyle()` — this module never touches MapLibre or calls either.
 import { zoneUnitsFromBoot, zoneLabelsFromBoot } from "../../lib/map/layers/zones";
+import { rasterBoundsForGrid } from "../../lib/map/layers/raster";
 import type { RasterLayerSpec, SelectionSpec, ZoneUnitSpec } from "../../lib/map/types";
 import { SELECTION_COLOR } from "../../lib/map/colors";
+import { gridFromBoot } from "../../lib/grid/grid";
 import { layerByKey, zoneRows, type BootLayerRow } from "./boot";
 import {
   outsidePraOverlaySpec,
@@ -89,6 +91,17 @@ function cellRingSelection(
   };
 }
 
+/** attaches `bounds` to a raster/overlay spec, or passes `null`/`undefined` through untouched —
+ * a tiny helper so `scoresMapInputs` reads as one thought instead of two near-identical `? {...,
+ * bounds} : null` ternaries (one per spec). */
+function withBounds(
+  spec: RasterLayerSpec | null,
+  bounds: [number, number, number, number] | undefined,
+): RasterLayerSpec | null {
+  if (!spec || !bounds) return spec;
+  return { ...spec, bounds };
+}
+
 /**
  * Build this lens' `composeStyle` contribution. `zoneUnits` are always outline-only from
  * `zoneUnitsFromBoot` UNLESS `unit` (the current spatial-unit selection) matches, in which case the
@@ -129,8 +142,20 @@ export function scoresMapInputs(state: ScoresMapState): ScoresMapInputs {
     return out;
   });
 
-  const raster = isCellBranch ? scoreRasterSpec(layer, state.palette) : null;
-  const overlay = isCellBranch ? outsidePraOverlaySpec(state.overlays, state.showOutsidePra) : null;
+  // 0.10.21 fix 2: restrict tile REQUESTS to the release's own grid extent (`rasterBoundsForGrid`'s
+  // own header explains why `usa05`'s antimeridian-crossing span becomes the full [-180,180] box
+  // rather than a narrower, wraparound one MapLibre cannot express). `null` (no `boot.grid` yet,
+  // Tier 0 hasn't loaded) leaves the raster/overlay unbounded, same as before this fix.
+  let bounds: [number, number, number, number] | undefined;
+  try {
+    bounds = rasterBoundsForGrid(gridFromBoot(state.boot));
+  } catch {
+    bounds = undefined;
+  }
+  const raster = isCellBranch ? withBounds(scoreRasterSpec(layer, state.palette), bounds) : null;
+  const overlay = isCellBranch
+    ? withBounds(outsidePraOverlaySpec(state.overlays, state.showOutsidePra), bounds)
+    : null;
 
   const selection: SelectionSpec | null =
     state.selection?.kind === "cell" ? cellRingSelection(state.selection) : null;
