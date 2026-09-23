@@ -10,11 +10,17 @@
 // bundler-extension resolve hook scripts/parity/run.mjs uses for its own TS imports), so this
 // script never touches the live network.
 //
-// Usage: `node scripts/verify.mjs` (expects `vite preview` already serving `dist/`, e.g. via
-// `npm run build && npm run preview -- --port 4331 --strictPort`).
+// Usage: `node scripts/verify.mjs`. SELF-SUFFICIENT (atlas-8 fix round 1): if nothing answers
+// VERIFY_BASE_URL (default http://localhost:4331) yet, this script builds `dist/` and starts its
+// OWN `vite preview --port 4331 --strictPort`, waits for it to answer, runs the matrix, then
+// shuts down the server it started -- never a server it did not start (a `vite preview` already
+// serving that port, from a real Playwright run e.g., is left alone and just reused, matching
+// e2e/*.spec.ts's own `reuseExistingServer` convention).
 //   --engines=chromium,webkit,firefox   (default: all three)
 //   --limit=N                            (first N states only, per engine -- fast local iteration)
 //   --states=<substring>                 (only states whose name includes this substring)
+//   --no-server                          (never start one; fail fast if nothing is listening)
+import { spawn } from "node:child_process";
 import "./parity/ts-resolve.mjs"; // side effect: lets this script import e2e/*.ts extensionlessly
 import { chromium, firefox, webkit } from "@playwright/test";
 
@@ -377,13 +383,82 @@ export const STATE_MATRIX = [...SHELL_STATES, ...SCORES_STATES, ...SPECIES_STATE
 const ENGINES = { chromium, webkit, firefox };
 
 function parseArgs(argv) {
-  const out = { engines: Object.keys(ENGINES), limit: undefined, filter: undefined };
+  const out = {
+    engines: Object.keys(ENGINES),
+    limit: undefined,
+    filter: undefined,
+    noServer: false,
+  };
   for (const a of argv) {
     if (a.startsWith("--engines=")) out.engines = a.slice("--engines=".length).split(",");
     else if (a.startsWith("--limit=")) out.limit = Number(a.slice("--limit=".length));
     else if (a.startsWith("--states=")) out.filter = a.slice("--states=".length);
+    else if (a === "--no-server") out.noServer = true;
   }
   return out;
+}
+
+/** true if something already answers `baseURL` (any HTTP response counts -- this is a reachability
+ * probe, not a health check of what it's serving). */
+async function isServerUp(baseURL) {
+  try {
+    const res = await fetch(baseURL, { signal: AbortSignal.timeout(2_000) });
+    return res.status < 500;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForServer(baseURL, timeoutMs = 60_000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (await isServerUp(baseURL)) return;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error(`verify: no server answered ${baseURL} within ${timeoutMs}ms`);
+}
+
+/**
+ * Self-sufficiency (atlas-8 fix round 1): build `dist/` and start `vite preview` on `baseURL`'s
+ * own port if nothing is already listening there. Returns a `stop()` that tears down ONLY the
+ * server this function itself started -- a server this script finds already running (e.g. a real
+ * Playwright run's own `webServer`) is reused, exactly like every `e2e/*.spec.ts` file's own
+ * `reuseExistingServer` convention, and this script never kills a server it did not start.
+ */
+async function ensureServer(baseURL) {
+  if (await isServerUp(baseURL)) {
+    process.stdout.write(`verify: reusing the server already answering ${baseURL}\n`);
+    return async () => {};
+  }
+
+  const port = new URL(baseURL).port || "4331";
+  process.stdout.write(
+    `verify: no server at ${baseURL} -- building and starting one on :${port}\n`,
+  );
+
+  await new Promise((resolve, reject) => {
+    const build = spawn("npx", ["vite", "build"], { stdio: "inherit", shell: false });
+    build.on("exit", (code) =>
+      code === 0 ? resolve() : reject(new Error(`vite build exited ${code}`)),
+    );
+    build.on("error", reject);
+  });
+
+  const preview = spawn("npx", ["vite", "preview", "--port", port, "--strictPort"], {
+    stdio: "inherit",
+    shell: false,
+  });
+  const previewExited = new Promise((resolve) => preview.on("exit", resolve));
+
+  await waitForServer(baseURL).catch((err) => {
+    preview.kill();
+    throw err;
+  });
+
+  return async () => {
+    preview.kill();
+    await previewExited;
+  };
 }
 
 async function runState(page, baseURL, state, viewportName) {
@@ -409,7 +484,14 @@ async function runState(page, baseURL, state, viewportName) {
 
 async function main() {
   const baseURL = process.env.VERIFY_BASE_URL ?? "http://localhost:4331";
-  const { engines, limit, filter } = parseArgs(process.argv.slice(2));
+  const { engines, limit, filter, noServer } = parseArgs(process.argv.slice(2));
+
+  const stopServer = noServer
+    ? await (async () => {
+        await waitForServer(baseURL, 5_000); // fail fast with a clear message, per --no-server
+        return async () => {};
+      })()
+    : await ensureServer(baseURL);
 
   let states = STATE_MATRIX;
   if (filter) states = states.filter((s) => s.name.includes(filter));
@@ -425,46 +507,52 @@ async function main() {
   const summary = {}; // engine -> {pass, fail}
   const timings = []; // { label, ms } -- atlas-8 step 3's "profile the three slowest states"
 
-  for (const engineName of engines) {
-    const launcher = ENGINES[engineName];
-    if (!launcher) {
-      process.stderr.write(`verify: unknown engine "${engineName}"\n`);
-      failed = true;
-      continue;
-    }
-    summary[engineName] = { pass: 0, fail: 0 };
-    const browser = await launcher.launch();
-    try {
-      for (const viewportName of Object.keys(VIEWPORTS)) {
-        for (const state of states) {
-          const page = await browser.newPage({ viewport: VIEWPORTS[viewportName] });
-          const label = `${state.name} @ ${viewportName} [${engineName}]`;
-          const t0 = performance.now();
-          try {
-            const problems = await runState(page, baseURL, state, viewportName);
-            timings.push({ label, ms: performance.now() - t0 });
-            if (problems.length) {
+  try {
+    for (const engineName of engines) {
+      const launcher = ENGINES[engineName];
+      if (!launcher) {
+        process.stderr.write(`verify: unknown engine "${engineName}"\n`);
+        failed = true;
+        continue;
+      }
+      summary[engineName] = { pass: 0, fail: 0 };
+      const browser = await launcher.launch();
+      try {
+        for (const viewportName of Object.keys(VIEWPORTS)) {
+          for (const state of states) {
+            const page = await browser.newPage({ viewport: VIEWPORTS[viewportName] });
+            const label = `${state.name} @ ${viewportName} [${engineName}]`;
+            const t0 = performance.now();
+            try {
+              const problems = await runState(page, baseURL, state, viewportName);
+              timings.push({ label, ms: performance.now() - t0 });
+              if (problems.length) {
+                failed = true;
+                summary[engineName].fail++;
+                process.stderr.write(`✗ ${label}\n`);
+                for (const p of problems) process.stderr.write(`    ${p}\n`);
+              } else {
+                summary[engineName].pass++;
+                process.stdout.write(`✓ ${label}\n`);
+              }
+            } catch (err) {
+              timings.push({ label, ms: performance.now() - t0 });
               failed = true;
               summary[engineName].fail++;
-              process.stderr.write(`✗ ${label}\n`);
-              for (const p of problems) process.stderr.write(`    ${p}\n`);
-            } else {
-              summary[engineName].pass++;
-              process.stdout.write(`✓ ${label}\n`);
+              process.stderr.write(`✗ ${label} — threw: ${err?.message ?? err}\n`);
+            } finally {
+              await page.close();
             }
-          } catch (err) {
-            timings.push({ label, ms: performance.now() - t0 });
-            failed = true;
-            summary[engineName].fail++;
-            process.stderr.write(`✗ ${label} — threw: ${err?.message ?? err}\n`);
-          } finally {
-            await page.close();
           }
         }
+      } finally {
+        await browser.close();
       }
-    } finally {
-      await browser.close();
     }
+  } finally {
+    // never leave a server this script itself started running (CLAUDE.md: "never leave a server
+    // on 4331/4401") -- a server this script REUSED (ensureServer's early return) is left alone.
+    await stopServer();
   }
 
   process.stdout.write("\nverify: summary\n");

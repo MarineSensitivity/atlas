@@ -87,12 +87,24 @@ export function collectStaticGraph(manifest, entryKey) {
 const markerRe = (marker) =>
   new RegExp(`(?<![a-z0-9])${marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
 
-/** @param {Map<string, string>} fileContents relative path -> utf8 text */
-export function findForbiddenMarkers(fileContents) {
+/**
+ * @param {Map<string, string>} fileContents relative path -> utf8 text
+ * @param {Iterable<string>} [markers] defaults to {@link FORBIDDEN_LAZY_MARKERS}. atlas-7: report.html's
+ *   provenance section legitimately NAMES the (still dynamically-imported) `@duckdb/duckdb-wasm`
+ *   engine's version as PROSE ("DuckDB-WASM 1.32.0") and `buildReport()`'s own `duckdbWasm` field
+ *   (src/lib/report/{model,provenance}.ts, atlas-7 step 1) is a plain object property, not a bundled
+ *   package -- text this checker cannot tell apart from an actually-inlined dependency by a substring
+ *   scan alone. `size-budget.mjs`'s `--allow-marker` lets ONE entry's invocation drop specific
+ *   markers from this scan; the entry-specific wiring test
+ *   (`tests/report-lazy-import-duckdb.wiring.test.ts`) is what still proves the REAL package/chunk
+ *   never enters report.html's static graph, so dropping the marker here does not remove the
+ *   invariant, only the blunt heuristic for it.
+ */
+export function findForbiddenMarkers(fileContents, markers = FORBIDDEN_LAZY_MARKERS) {
   const hits = [];
   for (const [path, content] of fileContents) {
     const lower = content.toLowerCase();
-    for (const marker of FORBIDDEN_LAZY_MARKERS) {
+    for (const marker of markers) {
       if (markerRe(marker).test(lower)) hits.push({ path, marker });
     }
   }
@@ -223,6 +235,8 @@ export function findWorkerAssets(fileContents, readFile, emittedFiles = []) {
  *   basename-lookup fallback for a worker reference that doesn't resolve where its own text says it
  *   should); defaults to empty, in which case a reference that doesn't resolve directly is a FAIL, not
  *   a silent skip — see `findWorkerAssets`.
+ * @param {string[]} [opts.forbiddenMarkers] defaults to {@link FORBIDDEN_LAZY_MARKERS}; see
+ *   `findForbiddenMarkers`'s own doc comment (atlas-7's `--allow-marker`).
  */
 export function evaluateBudget({
   manifest,
@@ -231,6 +245,10 @@ export function evaluateBudget({
   budgetBytes = CRITICAL_BUDGET_BYTES,
   workerBudgetBytes = RUNTIME_WORKER_BUDGET_BYTES,
   emittedFiles = [],
+  // atlas-7: see findForbiddenMarkers's own doc comment. Defaults to every marker (index.html's
+  // invocation never passes this) -- an entry that legitimately narrates a lazy dependency's name
+  // (report.html's provenance text) passes the specific marker(s) it needs dropped.
+  forbiddenMarkers = FORBIDDEN_LAZY_MARKERS,
 }) {
   const emptyResult = (reason) => ({
     ok: false,
@@ -286,7 +304,7 @@ export function evaluateBudget({
   // N1: a worker reference that couldn't be resolved (or wasn't a literal at all) is a hard FAIL — it
   // is exactly the case where a real ~144 KB download could silently leave the budget unnoticed.
   const reasons = [...workerReasons];
-  for (const hit of findForbiddenMarkers(allContents)) {
+  for (const hit of findForbiddenMarkers(allContents, forbiddenMarkers)) {
     reasons.push(
       `forbidden lazy-chunk marker "${hit.marker}" found in a file reachable by STATIC import (or referenced ` +
         `from one as a runtime worker): "${hit.path}" — it must be dynamically imported instead`,

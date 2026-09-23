@@ -1,7 +1,7 @@
 {
   "name": "atlas",
   "private": true,
-  "version": "0.10.3",
+  "version": "0.10.9",
   "description": "MarineSensitivity Atlas: scores, species, places and reports for U.S. marine areas.",
   "license": "MIT",
   "type": "module",
@@ -47,9 +47,12 @@
     "@duckdb/duckdb-wasm": "1.32.0",
     "@tmcw/togeojson": "7.1.2",
     "d3-hierarchy": "3.1.2",
+    "docx": "^9.7.1",
+    "fflate": "^0.8.3",
     "flatgeobuf": "4.4.0",
     "maplibre-gl": "^6.10.0",
     "pmtiles": "^4.5.0",
+    "qrcode-generator": "^1.5.2",
     "shpjs": "6.2.0",
     "terra-draw": "1.35.0",
     "terra-draw-maplibre-gl-adapter": "1.4.1"
@@ -64,7 +67,10 @@
     "flatgeobuf": "EXACT 4.4.0 (S4), the version measured. Fastest parser here (2.3 ms for 40k vertices, 11.4 KB gzip) and it reports the source CRS in the header but does NOT reproject: atlas-6's normalizer must, and that division of labour is version-specific behaviour worth pinning.",
     "pmtiles": "^4.5.0 (atlas-map). The pmtiles:// protocol src/lib/map/map.ts registers with maplibre's addProtocol, and the version spike S2's harness measured alongside maplibre-gl 6.10 (spikes/2/package.json). Caret, not exact: it is not one of S2's verdict pins -- S2 pinned only maplibre-gl -- and its own failure mode (a range read that returns the wrong bytes) is caught loudly by e2e/map.spec.ts's rendered-vector-feature assertion against a real archive, not silently. It is part of the 288 KB maplibre+pmtiles critical-path measurement D13's 450 KB budget was set from, so a bump means re-reading `npm run size-budget`.",
     "terra-draw": "EXACT 1.35.0 (atlas-6 step 2). No dedicated spike (not one of S1/S2/S4, so tests/pins.test.ts's spike-verdict gate does not cover this pair) -- pinned anyway for the same reason every lazy dependency here is: a version bump changing mode behaviour must be a reviewed diff, not a silent `npm install`. Reached only through `src/places/draw.ts`'s dynamic `import()`; `tests/places/lazyImports.test.ts` is this pair's own version of `tests/geo/upload/lazyImports.test.ts`.",
-    "terra-draw-maplibre-gl-adapter": "EXACT 1.4.1, matching terra-draw's own pin above (peerDependencies: `terra-draw@^1.0.0`, `maplibre-gl@>=4` -- both satisfied by this repo's pins). Its own version numbering lags terra-draw's (1.x vs 1.35.x): they are published from separate packages, not a lockstep monorepo, so pin both explicitly rather than assume a caret keeps them compatible."
+    "terra-draw-maplibre-gl-adapter": "EXACT 1.4.1, matching terra-draw's own pin above (peerDependencies: `terra-draw@^1.0.0`, `maplibre-gl@>=4` -- both satisfied by this repo's pins). Its own version numbering lags terra-draw's (1.x vs 1.35.x): they are published from separate packages, not a lockstep monorepo, so pin both explicitly rather than assume a caret keeps them compatible.",
+    "qrcode-generator": "^1.5.2 (atlas-7 step 2/3). The report header's permalink QR -- reached ONLY through `src/report/qr.ts`'s dynamic `import()`, never a static import, so it never enters `report.html`'s own critical-path budget. No dedicated spike; caret is fine because the module's whole surface used here is `qrcode(typeNumber, errorCorrectionLevel)` + `.make()`/`.createSvgTag()`, a stable API this package has not broken across 1.x.",
+    "fflate": "^0.8.3 (atlas-7 step 3). The data-package ZIP exporter -- reached ONLY through `src/report/exportZip.ts`'s dynamic `import()`. Chosen over JSZip for size (this package's whole `zip`/`strToU8` surface is a few KB gzip); caret is fine, no format-sensitive behaviour pinned.",
+    "docx": "^9.7.1 (atlas-7 step 3, master plan D9: Word yes, no reference template so coded styles). The `.docx` exporter -- reached ONLY through `src/report/exportDocx.ts`'s dynamic `import()`. Caret: this repo only uses the documented `Document`/`Paragraph`/`Table`/`ImageRun` builder API, not template-fidelity behaviour a patch bump would change."
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
@@ -80,6 +86,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-svelte": "^3.23.0",
     "globals": "^17.12.0",
+    "pdf-parse": "^1.1.4",
     "prettier": "^3.9.8",
     "prettier-plugin-svelte": "^4.1.1",
     "svelte": "^5.57.0",

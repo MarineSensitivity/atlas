@@ -61,6 +61,9 @@ function runEarlyFetch(opts: {
   routes?: Routes;
   requested?: string[];
   fetchImpl?: (url: string) => Promise<unknown>;
+  /** which extracted script text to run -- defaults to index.html's. atlas-7 step 2 passes
+   * report.html's own copy through the SAME cases below. */
+  script?: string;
 }): Early {
   const sandbox: Record<string, unknown> = {
     location: { pathname: opts.pathname, search: opts.search },
@@ -70,12 +73,18 @@ function runEarlyFetch(opts: {
   };
   sandbox.window = sandbox;
   const ctx = createContext(sandbox);
-  runInContext(script, ctx);
+  runInContext(opts.script ?? script, ctx);
   return (sandbox.window as { __early: Early }).__early;
 }
 
 const html = readFileSync(resolve(ROOT, "index.html"), "utf8");
 const script = extractEarlyFetchScript(html);
+
+// atlas-7 step 2: report.html must refuse a restricted `ver` on the public host exactly as
+// index.html does -- it carries the SAME script (duplicated for the same reason index.html's is:
+// it must run before any bundle parses), never a shortened or re-derived copy.
+const reportHtml = readFileSync(resolve(ROOT, "report.html"), "utf8");
+const reportScript = extractEarlyFetchScript(reportHtml);
 
 /** a registry where everything is public, so version-resolution cases aren't gated by access. */
 function allPublic(...vers: string[]): VersionRow[] {
@@ -98,10 +107,27 @@ describe("index.html's inline literals", () => {
   });
 });
 
-describe("report.html has no early-fetch script to drift", () => {
-  it("does not define VERSION_RE (nothing to keep in sync)", () => {
-    const reportHtml = readFileSync(resolve(ROOT, "report.html"), "utf8");
-    expect(reportHtml).not.toContain("VERSION_RE");
+describe("report.html carries the IDENTICAL early-fetch script as index.html", () => {
+  it("is byte-for-byte the same script text (change one without the other and this goes red)", () => {
+    expect(reportScript).toBe(script);
+  });
+
+  it("VERSION_RE/DATA_BASE in report.html's copy equal the same source-of-truth values", () => {
+    expect(extractInlineVersionRe(reportScript).source).toBe(VERSION_RE.source);
+    expect(extractInlineDataBase(reportScript)).toBe(PUBLIC_DATA_BASE);
+  });
+
+  it("runs the shared access case table identically to index.html's copy", async () => {
+    for (const c of ACCESS_CASES) {
+      const early = runEarlyFetch({
+        pathname: c.pathname,
+        search: c.search,
+        routes: c.routes,
+        script: reportScript,
+      });
+      await expect(early.version).resolves.toBe(c.expect.ver);
+      await expect(early.denied).resolves.toEqual(c.expect.denied);
+    }
   });
 });
 

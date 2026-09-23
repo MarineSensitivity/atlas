@@ -48,6 +48,12 @@ test.describe("species lens, cold first-paint timing (own Playwright project, wo
   test("a deep link (?sp=) paints the first species pixel: median of 3 cold loads <= 2.5s, zero wasm/duckdb requests", async ({
     browser,
   }) => {
+    // atlas-8 fix round 1: 3 loop iterations, each with its own generous (up to 30s) poll
+    // ceilings below, can exceed Playwright's 30s default TEST timeout on its own -- independent
+    // of whether any individual poll actually needs that long. Widen the test's own budget so a
+    // slow-but-still-passing run is never truncated by the wrong timer (this does not touch
+    // BUDGET_MS, the actual gate, at all).
+    test.setTimeout(120_000);
     const samples: number[] = [];
 
     for (let run = 1; run <= RUNS; run++) {
@@ -75,6 +81,22 @@ test.describe("species lens, cold first-paint timing (own Playwright project, wo
 
       // the actual first species PIXEL, not just the DOM: the raster layer must exist and its
       // source must be loaded before a probe at the map's own center can mean anything.
+      //
+      // atlas-8 fix round 1: the species lens' own raster-applying effect can land while
+      // `map.isStyleLoaded()` is still false (the SAME `src/lib/map/styleQueue.ts` race
+      // e2e/map.spec.ts's and e2e/scores.firstpaint.spec.ts's own fix-round-1 comments describe
+      // in full) and get QUEUED, flushing only on the map's next `"idle"` or its 4000ms fallback.
+      // Separately, and specifically for the FIRST of this test's 3 loop iterations: instrumented
+      // directly (`browser.newContext()` in a loop, no Playwright test wrapper), the very FIRST
+      // page a freshly-LAUNCHED browser process ever navigates measured 20.9s here versus ~1.1s
+      // for the 2nd-5th (same browser, fresh contexts) -- a real, large, one-time browser-process
+      // warm-up cost this repo's own docs/performance.md separately documents for the FIRST state
+      // `scripts/verify.mjs` opens in a fresh browser (smaller-scale echo of the same thing). This
+      // test already takes the MEDIAN of 3 samples specifically so ONE slow outlier cannot fail
+      // the BUDGET assertion below -- but only if this poll's own ceiling does not throw first.
+      // 30s keeps this poll's safety net from being the artificial bottleneck for that one-time
+      // cost, per this file's own stated design intent; the actual gate (BUDGET_MS on the median)
+      // is unchanged and still the only pass/fail criterion that matters for the timing claim.
       await expect
         .poll(
           () =>
@@ -83,7 +105,7 @@ test.describe("species lens, cold first-paint timing (own Playwright project, wo
                 .handle.map;
               return !!map.getLayer("species-raster") && map.isSourceLoaded("species-raster");
             }),
-          { message: "the species raster layer/source never loaded", timeout: 10_000 },
+          { message: "the species raster layer/source never loaded", timeout: 30_000 },
         )
         .toBe(true);
       const pixel = await page.evaluate(() => {

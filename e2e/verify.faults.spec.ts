@@ -32,6 +32,7 @@ declare global {
           getCanvas(): HTMLCanvasElement;
           project(lngLat: [number, number]): { x: number; y: number };
           loaded(): boolean;
+          getLayer(id: string): unknown;
         };
         applyStyle(style: unknown): void;
       };

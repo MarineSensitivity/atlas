@@ -21,7 +21,6 @@ import {
 } from "./hermetic";
 import { blockWasm, routeGlyphs, routeZonesPmtiles } from "./map-hermetic";
 import {
-  type AtlasMapForSpecies,
   LEATHERBACK_SP,
   WALRUS_AM_MDL_KEY,
   WRYBILL_SP,
@@ -51,30 +50,35 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
     await expect
       .poll(() => page.getByTestId("species-title-sci").textContent(), { timeout: 10_000 })
       .toBe("Odobenus rosmarus");
-    await expect
-      .poll(
-        () =>
-          page.evaluate(() => {
-            const map = (window as unknown as { __atlasMap: AtlasMapForSpecies }).__atlasMap.handle
-              .map;
-            return !!map.getLayer("species-raster") && map.isSourceLoaded("species-raster");
-          }),
-        { timeout: 10_000 },
-      )
-      .toBe(true);
 
-    const sourceUrl = await page.evaluate(() => {
-      const style = (
-        window as unknown as {
-          __atlasMap: { handle: { map: { getStyle(): { sources: Record<string, unknown> } } } };
-        }
-      ).__atlasMap.handle.map.getStyle();
-      const source = style.sources["species-raster"] as { tiles?: string[] } | undefined;
-      return source?.tiles?.[0] ?? null;
-    });
+    const sourceUrl = () =>
+      page.evaluate(() => {
+        const style = (
+          window as unknown as {
+            __atlasMap: { handle: { map: { getStyle(): { sources: Record<string, unknown> } } } };
+          }
+        ).__atlasMap.handle.map.getStyle();
+        const source = style.sources["species-raster"] as { tiles?: string[] } | undefined;
+        return source?.tiles?.[0] ?? null;
+      });
+
+    // atlas-8 fix round 1 (root cause, instrumented -- repeated with --workers=1 --repeat-each=6,
+    // reproduced 5/6 on WebKit): `isSourceLoaded("species-raster")` above went TRUE the moment
+    // ANY style with that source id finished loading -- which can be leatherback's OWN (the
+    // FIRST, url-driven) style, not walrus's. Walrus's own `applyStyle` call is exactly the one
+    // `styleQueue.ts` describes queuing (`map.isStyleLoaded()` still false, this early): it only
+    // flushes on the map's next `"idle"` or its `DEFAULT_STYLE_FALLBACK_MS` (4000ms) fallback,
+    // WHICHEVER COMES FIRST. The old assertion checked "a species-raster source is loaded" once
+    // and then read the URL a single time with no further wait -- so on whichever engine's timing
+    // let leatherback's OWN load finish first, the check passed on THAT source, before the queue
+    // had flushed walrus's at all. The fix is not a longer wait before one read; it is polling the
+    // URL itself, so the assertion only succeeds once the QUEUE has actually flushed the write it
+    // is testing for -- covering the 4000ms fallback with margin.
+    await expect
+      .poll(sourceUrl, { message: "species-raster source URL", timeout: 10_000 })
+      .toContain("WORMS_137077");
     // walrus's merged COG (ms_merge_WORMS_137077.tif), never leatherback's stranded first request
-    expect(sourceUrl).toContain("WORMS_137077");
-    expect(sourceUrl).not.toContain("WORMS_137209");
+    expect(await sourceUrl()).not.toContain("WORMS_137209");
   });
 
   test("an AquaX 'Delivered' (native) tile URL carries rescale=0,1000 (the AquaX gate)", async ({
@@ -175,36 +179,47 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
     await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
     await page.waitForFunction(() => !!(window as unknown as { __atlasMap?: unknown }).__atlasMap);
 
-    await page.evaluate((url) => {
-      const api = (
-        window as unknown as {
-          __atlasMap: {
-            handle: { applyStyle(s: unknown): void };
-            composeStyle: (i: unknown) => unknown;
-            inputs: () => Record<string, unknown>;
-          };
-        }
-      ).__atlasMap;
-      api.handle.applyStyle(
-        api.composeStyle({
-          ...api.inputs(),
-          range: {
-            id: "species-range",
-            pmtiles: url,
-            sourceLayer: "programarea",
-            keyProperty: "programarea_key",
-            key: "GAA",
-            fillColor: "#3388ff",
-            opacity: 0.5,
-          },
-        }),
-      );
-    }, RANGE_URL);
+    // atlas-8 fix round 1 (same root cause as e2e/map.spec.ts's "paints a raster" test, see its
+    // own comment): this manually injects a "range" via a raw `handle.applyStyle` call, which
+    // races the species lens' OWN mount-driven effect (its card/mapInputs settling asynchronously
+    // and re-applying Shell's composed style without this test's injected range) -- reproduced
+    // under full-suite WebGL contention (multiple parallel specs' software-GL rendering), not
+    // deterministically per engine. Self-healing: re-inject on every poll iteration so whichever
+    // injection is temporally last (this test's) is the one that survives.
+    const injectRange = (url: string) =>
+      page.evaluate((rangeUrl) => {
+        const api = (
+          window as unknown as {
+            __atlasMap: {
+              handle: { applyStyle(s: unknown): void };
+              composeStyle: (i: unknown) => unknown;
+              inputs: () => Record<string, unknown>;
+            };
+          }
+        ).__atlasMap;
+        api.handle.applyStyle(
+          api.composeStyle({
+            ...api.inputs(),
+            range: {
+              id: "species-range",
+              pmtiles: rangeUrl,
+              sourceLayer: "programarea",
+              keyProperty: "programarea_key",
+              key: "GAA",
+              fillColor: "#3388ff",
+              opacity: 0.5,
+            },
+          }),
+        );
+      }, url);
+
+    await injectRange(RANGE_URL);
 
     await expect
       .poll(
-        () =>
-          page.evaluate(() => {
+        async () => {
+          await injectRange(RANGE_URL); // re-assert: cheap, idempotent once settled
+          return page.evaluate(() => {
             const map = (
               window as unknown as {
                 __atlasMap: {
@@ -219,7 +234,8 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
             ).__atlasMap.handle.map;
             if (!map.isSourceLoaded("species-range")) return -1;
             return map.queryRenderedFeatures({ layers: ["species-range"] }).length;
-          }),
+          });
+        },
         {
           message: 'source/layer "species-range" never rendered a vector feature',
           timeout: 10_000,

@@ -1,3 +1,196 @@
+# atlas 0.10.9
+
+`atlas-8` fix round 1 (of 2): merged with `main` (atlas-7's report, 0.10.5-0.10.8); the widened
+specs were RED on webkit/firefox as reported, root-caused and fixed for real (not loosened).
+
+- **Root cause, both originally-reported failures (and two more found the same way): a raster
+  applied by a lens' own reactive effect, or manually injected by a test, can land while
+  `map.isStyleLoaded()` is still false** and get QUEUED (`src/lib/map/styleQueue.ts`), flushing
+  only on the map's next `"idle"` or its 4000ms fallback — `map.loaded()` says nothing about
+  whether that queue has flushed. Chromium usually won the race by luck of timing; WebKit/Firefox
+  reproducibly lost it.
+  - `e2e/map.spec.ts` "paints a raster": `ScoresLens.svelte`'s own lazy-mount effect
+    (`mapExtra = scoresMapInputs(...)`) was clobbering the test's manually-injected raster.
+    Fixed self-healingly: the raster is re-injected on every poll iteration, so whichever
+    injection is temporally last always wins, regardless of which engine's module-loading timing
+    is slower.
+  - `e2e/species.smoke.spec.ts` "switching species twice": the OLD assertion checked
+    `isSourceLoaded` once, then read the source URL once with no further wait — so it could
+    read a STALE (first-selected) URL while the SECOND selection's style was still sitting in the
+    queue. Fixed by polling the URL itself until it matches, covering the 4000ms fallback.
+  - `e2e/species.smoke.spec.ts` "a range draws >= 1 rendered feature": same shape as the
+    `map.spec.ts` fix (manual injection vs. the species lens' own mount effect) — same
+    self-healing fix.
+  - `e2e/scores.firstpaint.spec.ts` "paints the score raster" (v7 AND v9, on any engine): same
+    queue-flush race, no manual injection this time (`ScoresLens`'s OWN effect can queue). Fixed
+    by waiting for the real layer (`r_lyr`) to exist before polling pixels; the previous narrow
+    `browserName==="firefox" && ver==="v9"` skip is removed — no longer needed.
+- **`e2e/species.timing.spec.ts`**: a real, one-time browser-process warm-up cost (measured: the
+  FIRST page a freshly-launched browser ever navigates took 20.9s here vs ~1.1s for the 2nd-5th,
+  same browser, fresh contexts) can exceed this test's per-run polling ceilings. Widened them
+  (10s→30s per poll, plus `test.setTimeout(120_000)`) so this one-time cost is not the artificial
+  bottleneck; the actual gate (`BUDGET_MS` on the median of 3) is unchanged.
+- **`scripts/verify.mjs` is now self-sufficient**: if nothing answers `VERIFY_BASE_URL` yet, it
+  builds `dist/` and starts its own `vite preview`, waits for it, runs the matrix, and shuts down
+  ONLY the server it started (a server it finds already running is reused, never killed).
+  `--no-server` fails fast instead, for a caller that wants to manage the server itself.
+- Gates: `tsc` 0 · `svelte-check` 0/0 · `vitest` 169 files / 2548 tests, 3 skipped · `eslint` 0 ·
+  `prettier` clean · `npx playwright test --project={chromium,webkit,firefox} --workers=1` (run
+  one engine at a time per the shared-machine load rule): 91/91, 81/81 (10 chromium-only skips),
+  82/82 (9 skips) — 0 failed, 0 did not run, on all three. `node scripts/verify.mjs` (chromium,
+  self-started server): 6/6 on a `--limit=2` smoke check.
+
+# atlas 0.10.8
+
+- `e2e/report.spec.ts`'s `page.pdf()` block is skipped on webkit and firefox (`page.pdf()` exists only
+  in headless Chromium); it had failed there, not skipped, on the first full three-engine run.
+
+# atlas 0.10.7
+
+`atlas-7` fix round 1 (Opus review): no second copy of the map; the checklist's real gates against
+real Parquet fixtures; five seeded faults as tests, not arguments.
+
+- **No second copy of the map.** `reportMap.ts` no longer restates the basemap tile URL or a
+  zone's `label_pt` lookup, and `mapWiring.ts` is deleted: `Report.svelte` now imports `createMap`
+  (`lib/map/map.ts`) and `composeStyle`/`basemapForTheme`/`zoneLabelsFromBoot` (`lib/map/style.ts`,
+  `layers/{basemap,zones}.ts`) directly, same as the app. Accepted the ~6 KB gzip this puts back on
+  `index.html` (see the size line below).
+  `tests/report/noSecondMapCopy.wiring.test.ts` (seeded fault: a restated basemap host, a
+  hand-built `new MapLibreMap(...)`, or a hardcoded glyphs URL under `src/report/` is caught) is
+  the mechanical guard against it recurring.
+- **Real Parquet fixtures, real gates.** `e2e/fixtures/report/*.parquet` (`generate.sql`, the
+  duckdb CLI, same "generate once, commit the binary" convention as `e2e/fixtures/places/`): a
+  synthetic 48x48 grid with FOUR `cell`/`cell_model` partition tiles, real `taxon`/`zone_taxon`
+  rows. `e2e/report.spec.ts` gained: (a) 20 zone places rendering complete in < 10 s; (b) a 4-tile
+  custom (drawn) place's scores AND species rendering complete, cold, in < 15 s, combining all
+  four `cell_model` batches; (c) `page.pdf()` + `pdf-parse`: place/table labels present, the
+  PREVIEW watermark present for v9/preview and absent for v7 (the rotated watermark text comes
+  back letter-per-line from pdfjs — matched whitespace-stripped); (d) the downloaded HTML opens
+  with every http(s) request routed to a hard abort and still shows map/flowers/tables; (e) the
+  permalink reproduces byte-identical `scores.csv`/`species.csv` (compared via `fflate#unzipSync`)
+  across a **fresh browser context**. Needed `npm run duckdb:fetch-ext` locally (CI already runs
+  this before `vite build`) — DuckDB-WASM's `read_parquet()` autoloads the `parquet` extension and
+  the self-hosted mirror under `public/duckdb-ext/` is gitignored, dev-only.
+- **Five seeded faults, as tests**: `tests/report/noHtmlDirective.wiring.test.ts` (`{@html name}`
+  in any `src/report/**/*.svelte`); `tests/report/windowOpenSync.wiring.test.ts` (an `await` before
+  `window.open()` in either entry point's handler); `tests/report/rampDomainFromPlaces.wiring.test.ts`
+  (a release-wide rescale reference feeding the map's color domain instead of `model.map.domain`);
+  `tests/report/printBreakInside.test.ts` (`break-inside: avoid` missing from `table tr` under
+  `@media print`); the watermark-absent-for-restricted and table-row-break faults are additionally
+  exercised live by `e2e/report.spec.ts`'s `page.pdf()` block above.
+- Gates: `tsc` 0 · `svelte-check` 0/0 · `vitest` 163 files / 2501 tests, all green · `eslint` 0 ·
+  `prettier` clean · `vite build` succeeds · `size-budget --entry index.html` 415.2 KB gzip static
+  - 140.5 KB worker = 555.7 KB combined (budget 600 KB; up from 0.10.6's 414.8 KB now that the map
+    wiring is shared code again, not a restatement) · `size-budget --entry report.html --allow-marker
+duckdb` 52.6 KB gzip static, 0 worker (unchanged) · `e2e/report.spec.ts` 15/15 green (chromium) ·
+    `e2e/shell.smoke.spec.ts` 4/4 still green.
+
+# atlas 0.10.6
+
+`atlas-7` step 4: the two entry points into the report.
+
+- **Places panel "Report"** (`src/places/Places.svelte`) — a footer button beside Share/Download
+  that opens `report.html?ver={ver}#pl={sel.pl}` for every place currently in the panel.
+  `window.open()` runs SYNCHRONOUSLY inside the click handler (no `await` before it) so no browser
+  treats the tab as unrequested — the exact popup-blocker workaround the legacy Shiny app's
+  placeholder-tab trick (`apps/scores/app.R:1311-1326`) no longer needs. `ver` is the release this
+  panel is actually viewing (`window.__early.version`, already read here); `pl` is reused verbatim
+  from `sel.pl`, never re-encoded.
+- **Zones table "Report on selected"** (`src/lens/scores/ZonesTable.svelte` + `TablePanel.svelte`)
+  — a checkbox column (only rendered when a caller passes `onReportSelected`) plus a toolbar button
+  that opens a report for one multi-key zone Place carrying every checked key, in the table's own
+  rank order. `TablePanel.svelte` builds the `z.<set>.<keys>` token with `places/model.ts`'s own
+  `zoneSetForUnit()`/`hashFromPlaces()` — the identical encoding a Places-panel zone place uses —
+  and opens it the same synchronous way.
+- Neither entry point imports anything from `src/lib/report/` or `src/report/`: both just build a
+  URL string and call `window.open()`, so index.html's own static graph is untouched by this step
+  (confirmed: `size-budget --entry index.html` is unchanged from 0.10.5's number).
+- Analytics: `report_open{n_places, kinds}` fires once, from inside `report.html` itself
+  (`Report.svelte`, after `expandPlaces()` resolves) rather than from either opener, so a single
+  click is a single event regardless of which entry point was used; `report_export{format}` fires
+  per export button. Both event names were already reserved in `lib/analytics/events.ts` (atlas-2);
+  `sanitize.ts` already strips `pl`/`t` from every event unconditionally, so neither a place name
+  nor a vertex nor the hash can reach either one.
+- Gates: `tsc` 0 * `svelte-check` 0/0 * `vitest` 158 files/2485 tests, all green * `eslint` 0
+  (added `svelte/reactivity`'s `SvelteSet` for the checkbox selection, per `svelte/prefer-svelte-
+reactivity`) * `prettier` clean * `size-budget --entry index.html` unchanged at 414.7 KB gzip
+  static / 555.3 KB combined * `e2e/shell.smoke.spec.ts` and `e2e/report.spec.ts` still green.
+
+# atlas 0.10.5
+
+`atlas-7` steps 2-3: the report document itself, its progressive rendering, the print stylesheet
+and the three client-side exporters. Landed together because the document and its export buttons
+are one file (`Report.svelte`); step 4 (entry points) follows in 0.10.6.
+
+- **`report.html` + `src/report/Report.svelte`** — the document, mounted by `src/report-main.ts`.
+  Header band (MST mark, the agency lockup behind `VITE_SEAL=1` via `lib/ui/sealVisibility.ts`,
+  release chip, generated stamp, the permalink and its QR — a PNG `<img>`, never `{@html}` — wave
+  footer); intro; Parameters (collapsed, a `hidden`-attribute disclosure so print CSS can force it
+  open); the map (places filled by mean score, `spectral_r`, opacity 0.6, point-on-surface labels
+  with a white halo, `Legend.svelte`, positron basemap + attribution); one flower per place (tabs
+  on screen, all panels always in the DOM so print shows them sequentially); the Table of Scores
+  with coverage footnotes; the Summary of Species per place (counts cross-tab, top 20 linking to
+  the Species lens, "Download full species list" as a client Blob, the empty-case string); Sources
+  and Method (citations via `lib/release/cite.ts`); Provenance (collapsed SQL, "Reproduce in R").
+  Progressive rendering: `placeInputs` starts every place's `scores`/`species` at `null` and
+  `buildReport()` (already-merged, untouched) re-runs after each place lands, with ONE visible
+  `.progress-line` plus `announce()` calls.
+- **`report.html`'s access gate** — the SAME inline early-fetch script as `index.html`,
+  byte-for-byte (this file's own header explains why it must be a second copy, not an import).
+  `tests/release/inline-early-fetch.test.ts` now asserts the two are identical and runs the shared
+  `ACCESS_CASES` table against report.html's own copy too.
+- **`src/report/data.ts`** — dispatches each place to the SAME engine paths the app already uses:
+  a zone place's scores come straight from `boot.zones` (`model.ts#zoneScoreInput`, no engine at
+  all) and its species from `speciesForZone()`; a custom place goes through
+  `places/{dataEngine,results}.ts`'s D7b-clipped blend — no second query path.
+- **`src/report/reportMap.ts` + `mapWiring.ts`** — a standalone MapLibre map for the print/export
+  figure, deliberately NOT importing `lib/map/{map,style,layers/*}.ts`: those are reachable
+  STATICALLY from `index.html` already, and report.html importing them too shared a Rollup chunk
+  with index.html's own entry, measured to grow its committed static budget by 6.3 KB gzip for
+  code only report.html needed. `mapWiring.ts` restates the small, load-bearing slice of
+  `map.ts#createMap` (named maplibre-gl imports, the `?worker&url` wiring, `preserveDrawingBuffer`)
+  and `reportMap.ts` restates `layers/{basemap,zones}.ts`'s two facts (the positron tile URL, a
+  zone's `label_pt`) instead. `captureMapPng()` waits for `idle`, forces a repaint, waits two
+  animation frames, then rejects an all-black/all-white capture.
+- **`src/report/{exportFiles,exportHtml,exportZip,exportDocx,flowerSvg,svgToPng,qr}.ts`** — Print
+  (`window.print()`); Download HTML (a detached DOM clone with the live map swapped for its
+  captured PNG, `collectPageCss()` inlining every stylesheet, self-contained because this document
+  loads no custom web font to begin with); the data-package ZIP (lazy `fflate` over
+  `buildDataPackageFiles()`'s pure file list — `scores_<place>.csv`, `species_<place>.csv` via the
+  app's own `lens/scores/species.ts#toCsv`, `places.geojson`, `query/*.sql`, `provenance.json`,
+  `CITATION.md`, `README.md`); Word (lazy `docx`, coded styles per D9 — no reference template
+  exists to match). `report.css` imports only `lib/brand/tokens.css`, never `fonts.css`, and sets
+  `data-theme="paper"` explicitly (tokens.css's un-themed default is `navy` — the very first e2e
+  run caught this as a real color-contrast failure). `@page { size: Letter; margin: .75in }`, a
+  `position: fixed` running footer/watermark (Chromium repeats fixed elements per page; CSS Paged
+  Media margin boxes are the spec-correct primary but unsupported there), `break-inside: avoid` on
+  figures/table rows/flowers, `table thead { display: table-header-group }` so a spanning table's
+  header repeats.
+- **`src/report/colors.ts`** — the report's own twin of `lib/map/colors.ts`: every color literal a
+  standalone SVG/canvas/MapLibre-style needs outside any stylesheet, in one file.
+  `tests/raster/ramps.wiring.test.ts` now exempts it the same way it exempts the map's.
+- **`scripts/size-budget.mjs` `--allow-marker`** — report.html's provenance section narrates
+  "DuckDB-WASM 1.32.0" as prose and its Word button used to say "Word (.docx)"; both are
+  `FORBIDDEN_LAZY_MARKERS` substrings that a build-output text scan cannot tell apart from an
+  actually-bundled dependency. `--allow-marker duckdb` drops that marker for report.html's own
+  invocation; `tests/report-lazy-import-duckdb.wiring.test.ts` (a source-level, entry-relative
+  scan, the same technique as `tests/treemap-lazy-import.wiring.test.ts`) is what still proves
+  `@duckdb/duckdb-wasm` and `docx` are never statically bundled by either entry.
+- **Gates measured on this branch**: `tsc` 0 errors; `svelte-check` 0/0; `vitest` 158 files / 2485
+  tests / 3 skipped, all green; `eslint` 0; `prettier --check` clean; `vite build` (both entries in
+  one graph) succeeds; `size-budget --entry index.html` 414.7 KB gzip static + 140.5 KB worker =
+  555.3 KB combined (budget 600 KB) — **up from the previously-committed 409.3 KB** because
+  `maplibre-gl` itself is now shared between the two entries (report.html genuinely needs it too,
+  and `tests/size-budget-gallery-isolation.test.ts` pins index.html and report.html to the SAME
+  Rollup config, unlike gallery.html) — the avoidable share (`lib/map/{style,layers/*}.ts`,
+  `camera.ts`) was eliminated via `mapWiring.ts`/`colors.ts` above, and 555.3 KB still clears the
+  600 KB combined budget comfortably; `size-budget --entry report.html --allow-marker duckdb`
+  52.6 KB gzip static, 0 worker (budget 450/150 KB); both committed red fixtures still fail;
+  `e2e/report.spec.ts` (chromium, hermetic, zone places only — see that file's own header for
+  scope) 9/9 green, and caught two real bugs before commit: the theme was never set (white text on
+  a light background) and a stray trailing CSS rule silently defeated the print watermark under
+  `@media print`.
+
 # atlas 0.10.3
 
 `atlas-8` step 3: budgets and the browser suites in CI; `docs/performance.md`.

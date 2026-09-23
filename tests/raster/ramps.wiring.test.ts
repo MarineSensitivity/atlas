@@ -26,6 +26,10 @@ const BRAND_PREFIX = join("src", "lib", "brand"); // governed separately by chec
 // (not by directory) — plus the ramp-shape assertion below, so the exception cannot become a place
 // to hide a second palette.
 const MAP_COLORS_FILE = join("src", "lib", "map", "colors.ts");
+// atlas-7 step 2: the report's own twin of the map's one exception, for the identical reason (see
+// src/report/colors.ts's own header) -- a standalone SVG/canvas/MapLibre-style color with no
+// stylesheet to read a custom property from.
+const REPORT_COLORS_FILE = join("src", "report", "colors.ts");
 /** an ARRAY of two or more hex stops is a ramp, whatever it is called — the shape the exempt file
  * may never contain. (A count ceiling would not do: the file legitimately holds ~8 unrelated
  * single-purpose colours, and a palette is exactly 11.) */
@@ -57,6 +61,7 @@ export function findRampLiteralsOutsideRamps(
     const rel = relative(rootDir, file);
     if (rel.startsWith(BRAND_PREFIX)) continue;
     if (rel === MAP_COLORS_FILE) continue;
+    if (rel === REPORT_COLORS_FILE) continue;
     if (!/\.(ts|svelte|js)$/.test(file)) continue;
     const content = readFileSync(file, "utf8");
     content.split("\n").forEach((text, i) => {
@@ -90,6 +95,11 @@ describe("raster/ramps.ts is the only ramp/palette definition under src/ (brand/
     expect(RAMP_ARRAY_RE.test('export const rogue = ["#9E0142", "#D53E4F", "#3288BD"];')).toBe(
       true,
     );
+  });
+
+  it("the exempt REPORT colour file defines nothing ramp-shaped either", () => {
+    const content = readFileSync(join(REPO_ROOT, REPORT_COLORS_FILE), "utf8");
+    expect(RAMP_ARRAY_RE.test(content)).toBe(false);
   });
 });
 

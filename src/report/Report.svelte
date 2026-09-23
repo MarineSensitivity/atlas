@@ -1,0 +1,728 @@
+<script lang="ts">
+  // atlas-7 step 2 — the report document itself: header band, intro, parameters, map, one flower
+  // per place, the table of scores, the species summary per place, sources/method, provenance.
+  // Progressive rendering (spec: "sections appear as their data lands, with ONE progress line"):
+  // `placeInputs` starts with every place's `scores`/`species` at `null`, `buildReport()` is
+  // re-run every time one more place's data lands (it is pure and cheap, per its own header), and
+  // every section below simply renders whatever the model currently holds.
+  //
+  // The access gate is index.html's inline early-fetch script, duplicated verbatim into
+  // report.html (see that file's header) — this component only ever reads the ALREADY-GATED
+  // `window.__early`, exactly like Shell.svelte does, so a restricted release is refused here in
+  // the same place it is refused there: before this component's own script ever runs.
+  import { onMount } from "svelte";
+  import Announcer from "../lib/ui/Announcer.svelte";
+  import { announce } from "../lib/ui/announcer";
+  import Legend from "../lib/ui/Legend.svelte";
+  import { agencyDisplayName, shouldShowSeal } from "../lib/ui/sealVisibility";
+  import { createAnalytics } from "../lib/analytics/analytics";
+  import { parseSel } from "../lib/state/codec";
+  import { decodePlaces, type Place } from "../lib/geo/placeCodec";
+  import {
+    buildReport,
+    expandPlaces,
+    DEFAULT_TITLE,
+    type ReportModel,
+    type ReportPlaceInput,
+  } from "../lib/report/model";
+  import { paletteStopsFromBoot } from "../lib/raster/ramps";
+  import {
+    formatCoveragePct,
+    formatCount,
+    formatErScore,
+    formatScore0,
+  } from "../lib/report/format";
+  import { bootEngine, loadPlaceData, sqlRunFor, tablesReadFor, DUCKDB_WASM_VERSION } from "./data";
+  import { permalinkQrDataUrl } from "./qr";
+  import { downloadStandaloneHtml } from "./exportHtml";
+  import { downloadDataPackage } from "./exportZip";
+  import { speciesCsv } from "./exportFiles";
+  import "./report.css";
+  import { REPORT_COLOR_UNRESOLVED } from "./colors";
+  import markUrl from "../lib/brand/vendor/mst-mark.svg?url";
+  import type { DataEngineContext } from "../places/dataEngine";
+  import type { PlaceStub } from "../lib/report/model";
+
+  // ---- window.__early (report.html's own copy of index.html's inline early-fetch script) -----
+  interface Early {
+    version: Promise<string | null>;
+    boot?: Promise<unknown>;
+    denied?: Promise<{ ver: string; reason: string } | null>;
+    session?: Promise<{ preview: boolean; raw: unknown }>;
+  }
+  let ver = $state<string | null>(null);
+  let boot = $state<unknown>(null);
+  let preview = $state(false);
+  let denied = $state<{ ver: string; reason: string } | null>(null);
+  let earlySettled = $state(false);
+
+  onMount(() => {
+    const early = (window as unknown as { __early?: Early }).__early;
+    if (!early) {
+      earlySettled = true;
+      return;
+    }
+    Promise.allSettled([
+      early.version.then((v) => (ver = v)),
+      early.boot?.then((b) => (boot = b)) ?? Promise.resolve(),
+      early.session?.then((s) => (preview = s.preview === true)) ?? Promise.resolve(),
+      early.denied?.then((d) => (denied = d)) ?? Promise.resolve(),
+    ]).then(() => (earlySettled = true));
+  });
+
+  // ---- the URL: places + title (D8/CLAUDE.md: never re-derived, only decoded) ------------------
+  const sel = parseSel(location);
+  const places: Place[] = decodePlaces(sel.pl ?? "");
+  const title = sel.t?.trim() || DEFAULT_TITLE;
+  const now = new Date(); // captured ONCE — a model that re-reads the clock on every progressive
+  // re-render would tick the "generated" stamp and the permalink while the page is still loading.
+  const appSha = __APP_VERSION__; // package version stands in for a git SHA until CI wires one in
+
+  // `preview: false` here matches Shell.svelte's own current stance ("a known gap, not this
+  // phase's job to close" -- the GA4 loader tag itself is not wired app-wide yet either): the
+  // component's OWN `preview` state (below) still drives the document's watermark/banner, which
+  // is the thing that actually matters for a restricted release.
+  const analytics = createAnalytics({ appVersion: __APP_VERSION__, preview: false });
+
+  // ---- progressive data load --------------------------------------------------------------
+  let placeInputs = $state<ReportPlaceInput[] | null>(null);
+  let stubs = $state<PlaceStub[]>([]);
+  let progressLabel = $state("Resolving the release…");
+  let progressDone = $state(0);
+  let engineCtx: DataEngineContext | null = null;
+  let engineBooted = $state(false);
+  let started = false;
+
+  $effect(() => {
+    if (started || !earlySettled || ver === null || boot === null) return;
+    started = true;
+    void run();
+  });
+
+  async function run() {
+    if (places.length === 0) {
+      progressLabel = "No places in this link.";
+      placeInputs = [];
+      return;
+    }
+    const expanded = expandPlaces(places, boot);
+    stubs = expanded;
+    let inputs: ReportPlaceInput[] = expanded.map((s) => ({
+      place: s.place,
+      zoneKey: s.zoneKey,
+      token: s.token,
+      name: s.name,
+      geometry: s.place.kind === "geom" ? s.place.geometry : undefined,
+      scores: null,
+      species: null,
+    }));
+    placeInputs = inputs;
+
+    if (expanded.length > 0) {
+      progressLabel = "Starting the data engine…";
+      engineCtx = await bootEngine(ver!, boot as Record<string, unknown>).catch(() => null);
+      engineBooted = engineCtx !== null;
+    }
+
+    for (let i = 0; i < expanded.length; i++) {
+      progressLabel = `Scoring ${inputs[i].name} (${i + 1} of ${expanded.length})…`;
+      const result = await loadPlaceData(
+        engineCtx,
+        boot,
+        expanded[i],
+        inputs[i].geometry,
+        (done, total) => {
+          progressLabel = `${inputs[i].name}: species tiles ${done}/${total}`;
+        },
+      );
+      inputs = inputs.map((p, j) =>
+        j === i ? { ...p, scores: result.scores, species: result.species ?? [] } : p,
+      );
+      placeInputs = inputs;
+      progressDone = i + 1;
+      announce(`${inputs[i].name} scored${result.error ? ` — ${result.error}` : ""}.`);
+    }
+    progressLabel = `Done — ${expanded.length} place${expanded.length === 1 ? "" : "s"}.`;
+    analytics.track("report_open", {
+      n_places: expanded.length,
+      kinds: [...new Set(expanded.map((s) => s.place.kind))].sort().join(","),
+    });
+  }
+
+  const model = $derived<ReportModel | null>(
+    placeInputs && ver
+      ? buildReport({
+          ver,
+          boot,
+          places: placeInputs,
+          tables: tablesReadFor(boot, stubs, engineBooted),
+          now,
+          appSha,
+          title,
+          preview,
+          permalink: { origin: location.origin, path: location.pathname },
+          duckdbWasm: engineBooted ? DUCKDB_WASM_VERSION : null,
+          sql: sqlRunFor(engineCtx, stubs),
+        })
+      : null,
+  );
+
+  // ---- header band: agency lockup, QR, preview banner -------------------------------------
+  const sealFlag = import.meta.env.VITE_SEAL;
+  const agency = import.meta.env.VITE_AGENCY;
+  const sealUrl =
+    import.meta.env.VITE_SEAL_URL || "https://marinesensitivity.org/branding/mma-seal.svg";
+  const showAgencyLockup = shouldShowSeal(sealFlag, agency);
+  const agencyName = agencyDisplayName(agency);
+
+  let qrDataUrl = $state<string | null>(null);
+  $effect(() => {
+    const href = model?.header.permalink.href;
+    if (!href) return;
+    void permalinkQrDataUrl(href).then((url) => (qrDataUrl = url));
+  });
+
+  // ---- the map (lazy maplibre, per this module's own budget note) --------------------------
+  let mapEl = $state<HTMLDivElement | undefined>(undefined);
+  let mapPngUrl = $state<string | null>(null);
+  let mapCaptureFailed = $state(false);
+  let mapStarted = false;
+
+  $effect(() => {
+    if (mapStarted || !mapEl || !model || model.map.places.length === 0) return;
+    mapStarted = true;
+    void mountMap();
+  });
+
+  async function mountMap() {
+    if (!mapEl || !model) return;
+    // fix round 1 (Opus review, item 1): `createMap()`/`flyToBounds()` are `lib/map/map.ts`'s own
+    // -- reused, not restated (see reportMap.ts's header) -- which is also what gives this map
+    // the app's real antimeridian-aware bounds fitting instead of MapLibre's own `fitBounds()`.
+    const [mapMod, { createMap }] = await Promise.all([
+      import("./reportMap"),
+      import("../lib/map/map"),
+    ]);
+    const paletteStops = paletteStopsFromBoot(boot as { palettes?: unknown }, "spectral_r");
+    const features = stubs.map((s, i) => ({
+      name: model!.map.places[i]?.name ?? s.name,
+      score: model!.map.places[i]?.score ?? null,
+      geometry: s.place.kind === "geom" ? s.place.geometry : undefined,
+      point:
+        s.place.kind === "zone"
+          ? (mapMod.zonePointFromBoot(boot, s.unit ?? s.place.set, s.zoneKey ?? "") ?? undefined)
+          : undefined,
+    }));
+    const { style } = mapMod.buildReportMapStyle({
+      places: features,
+      domain: model.map.domain,
+      paletteStops,
+    });
+    const handle = createMap(mapEl, { theme: "paper", projection: "mercator" });
+    handle.applyStyle(style);
+    const bounds = mapMod.combinedBbox(features);
+    if (bounds) handle.flyToBounds(bounds, { padding: 40 });
+    try {
+      const png = await mapMod.captureMapPng(handle.map as never);
+      mapPngUrl = png.dataUrl;
+    } catch {
+      mapCaptureFailed = true;
+    }
+  }
+
+  // ---- flowers: tabs on screen, sequential in print -----------------------------------------
+  let activeFlower = $state(0);
+
+  // ---- disclosures ---------------------------------------------------------------------------
+  let parametersOpen = $state(false);
+  let provenanceOpen = $state(false);
+
+  // ---- species CSV download (client-side Blob, §6c) -----------------------------------------
+  function downloadSpeciesCsvFor(i: number) {
+    if (!model) return;
+    const csv = speciesCsv(model, i);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = model.species[i].csvFilename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ---- exports --------------------------------------------------------------------------------
+  function resolveColorVar(name: string): string {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || REPORT_COLOR_UNRESOLVED;
+  }
+
+  function onPrint() {
+    window.print();
+  }
+
+  function onDownloadHtml() {
+    if (!model) return;
+    downloadStandaloneHtml(model.header.fileStem, model.header.title, {
+      transform: (clone) => {
+        clone
+          .querySelectorAll<HTMLElement>(".map-live")
+          .forEach((el) => (el.style.display = "none"));
+        clone
+          .querySelectorAll<HTMLElement>(".map-print")
+          .forEach((el) => (el.style.display = "block"));
+        clone.querySelectorAll<HTMLElement>(".export-bar").forEach((el) => el.remove());
+        clone
+          .querySelectorAll<HTMLElement>(".disclosure-body")
+          .forEach((el) => el.removeAttribute("hidden"));
+        clone
+          .querySelectorAll<HTMLElement>(".flower-panel")
+          .forEach((el) => el.removeAttribute("hidden"));
+      },
+    });
+    analytics.track("report_export", { format: "html" });
+  }
+
+  async function onDownloadZip() {
+    if (!model || !placeInputs) return;
+    await downloadDataPackage(model, placeInputs);
+    analytics.track("report_export", { format: "zip" });
+  }
+
+  async function onDownloadDocx() {
+    if (!model) return;
+    const { downloadDocx } = await import("./exportDocx");
+    let mapPng: { bytes: Uint8Array; width: number; height: number } | null = null;
+    if (mapPngUrl) {
+      const buf = await (await fetch(mapPngUrl)).arrayBuffer();
+      const img = new Image();
+      const dims = await new Promise<{ w: number; h: number }>((resolve) => {
+        img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+        img.src = mapPngUrl!;
+      });
+      mapPng = { bytes: new Uint8Array(buf), width: dims.w, height: dims.h };
+    }
+    await downloadDocx(model, { mapPng, resolveColor: resolveColorVar });
+    analytics.track("report_export", { format: "word" });
+  }
+</script>
+
+<Announcer />
+
+<div class="export-bar no-print">
+  <button type="button" onclick={onPrint}>Print</button>
+  <button type="button" onclick={onDownloadHtml} disabled={!model}>Download HTML</button>
+  <button type="button" onclick={onDownloadZip} disabled={!model}>Data package (ZIP)</button>
+  <button type="button" onclick={onDownloadDocx} disabled={!model}>Word document</button>
+</div>
+
+<p class="progress-line" role="status" aria-live="off">{progressLabel}</p>
+
+{#if model}
+  <header class="report-header">
+    <img class="mark" src={markUrl} alt="" />
+    {#if showAgencyLockup}
+      <div class="agency-lockup">
+        <img
+          src={sealUrl}
+          alt=""
+          onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
+        />
+        <span>{agencyName}</span>
+      </div>
+    {/if}
+    <div class="titles">
+      <h1>{model.header.title}</h1>
+      <span class="report-chip">{model.header.releaseChip}</span>
+      <div>Generated {model.header.generatedLabel}</div>
+      <div>
+        <a href={model.header.permalink.href}>{model.header.permalink.href}</a>
+      </div>
+    </div>
+    {#if qrDataUrl}
+      <img class="report-qr" src={qrDataUrl} alt="" aria-hidden="true" />
+    {/if}
+  </header>
+  <div class="wave-footer" aria-hidden="true"></div>
+
+  {#if model.header.previewBanner}
+    <p class="preview-banner">{model.header.previewBanner}</p>
+  {/if}
+  <p class="print-watermark" aria-hidden="true">{model.header.previewBanner ? "PREVIEW" : ""}</p>
+
+  {#if denied}
+    <p class="progress-line">
+      Note: {denied.ver} is not available on this host; showing {model.header.ver} instead.
+    </p>
+  {/if}
+
+  <section aria-labelledby="s-intro">
+    <h2 id="s-intro">Introduction</h2>
+    <p>{model.intro.text}</p>
+    <p>
+      <a href={model.intro.appHref}>Open this release in the Atlas</a> ·
+      <a href={model.intro.docsHref}>Documentation for {model.intro.ver}</a>
+    </p>
+  </section>
+
+  <section aria-labelledby="s-params" class="disclosure">
+    <h2 id="s-params">
+      <button
+        type="button"
+        aria-expanded={parametersOpen}
+        onclick={() => (parametersOpen = !parametersOpen)}
+      >
+        Parameters {parametersOpen ? "▾" : "▸"}
+      </button>
+    </h2>
+    <div class="disclosure-body" hidden={!parametersOpen}>
+      <table>
+        <caption>Report parameters, per place.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Place</th>
+            <th scope="col">Kind</th>
+            <th scope="col">Zone keys / vertices</th>
+            <th scope="col" class="num">Area (km²)</th>
+            <th scope="col" class="num">N cells</th>
+            <th scope="col" class="num">Study-area share</th>
+            <th scope="col">Token</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each model.parameters as p (p.token)}
+            <tr>
+              <td>{p.name}</td>
+              <td>{p.kind}</td>
+              <td>{p.zoneKeys ? p.zoneKeys.join(", ") : (p.vertexCount ?? "—")}</td>
+              <td class="num">{p.areaKm2 === null ? "—" : formatCount(p.areaKm2)}</td>
+              <td class="num">{formatCount(p.nCells)}</td>
+              <td class="num"
+                >{p.studyAreaPct === null ? "—" : formatCoveragePct(p.studyAreaPct / 100)}</td
+              >
+              <td><code>{p.token}</code></td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-map">
+    <h2 id="s-map">Map</h2>
+    <figure aria-describedby="map-summary">
+      <div bind:this={mapEl} class="map-live no-print" style="height: 360px;"></div>
+      <div class="map-print">
+        {#if mapPngUrl}
+          <img src={mapPngUrl} alt="" style="max-width: 100%;" />
+        {:else if mapCaptureFailed}
+          <p>Map unavailable for print/export.</p>
+        {:else}
+          <p>Map rendering…</p>
+        {/if}
+      </div>
+      {#if model.map.domain}
+        {@const stops = paletteStopsFromBoot(boot as { palettes?: unknown }, "spectral_r")}
+        {#if stops}
+          <Legend
+            title={model.map.legendTitle}
+            stops={stops.map((c, i) => ({
+              color: c,
+              value:
+                model!.map.domain![0] +
+                (i / (stops.length - 1)) * (model!.map.domain![1] - model!.map.domain![0]),
+            }))}
+            unit="score"
+            formatValue={(v) => formatScore0(v)}
+          />
+        {/if}
+      {/if}
+      <figcaption id="map-summary">{model.map.summary}</figcaption>
+    </figure>
+    <p class="attribution">© OpenStreetMap contributors © CARTO</p>
+  </section>
+
+  <section aria-labelledby="s-flowers">
+    <h2 id="s-flowers">Plot of Scores</h2>
+    <div class="flower-tabs no-print" role="tablist" aria-label="Places">
+      {#each model.flowers as f, i (f.name)}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeFlower === i}
+          onclick={() => (activeFlower = i)}
+        >
+          {f.name}
+        </button>
+      {/each}
+    </div>
+    <div class="flower-panels">
+      {#each model.flowers as f, i (f.name)}
+        <figure
+          class="flower-panel"
+          hidden={activeFlower !== i}
+          aria-describedby={`flower-summary-${i}`}
+        >
+          <figcaption>{f.name}</figcaption>
+          <svg
+            viewBox="0 0 200 200"
+            width="200"
+            height="200"
+            role="group"
+            aria-label={`Composite mean ${f.centre ?? "no data"}`}
+          >
+            {#each f.geometry.petals as p (p.key)}
+              <path
+                d={p.path}
+                style={`fill: var(${p.category.color})`}
+                opacity="0.92"
+                stroke="white"
+                stroke-width="1"
+              >
+                <title>{p.category.label}: {p.score}</title>
+              </path>
+            {/each}
+            <circle
+              cx="100"
+              cy="100"
+              r="24"
+              class="hub"
+              fill="var(--surface-raised)"
+              stroke="var(--border-control)"
+            />
+            <text x="100" y="100" text-anchor="middle" dy="0.35em" font-weight="700"
+              >{f.centre ?? "—"}</text
+            >
+          </svg>
+          <p id={`flower-summary-${i}`}>{f.summary}</p>
+        </figure>
+      {/each}
+    </div>
+  </section>
+
+  <section aria-labelledby="s-scores">
+    <h2 id="s-scores">Table of Scores</h2>
+    <table aria-describedby="scores-summary">
+      <caption>Mean component and overall scores per area.</caption>
+      <thead>
+        <tr>
+          <th scope="col">Area</th>
+          <th scope="col" class="num">N cells</th>
+          {#each model.scores.components as c (c)}
+            <th scope="col" class="num">{c}</th>
+          {/each}
+          <th scope="col" class="num">Overall</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each model.scores.rows as row (row.name)}
+          <tr>
+            <th scope="row">{row.name}</th>
+            <td class="num">{formatCount(row.nCells)}</td>
+            {#each row.cells as cell (cell.component)}
+              <td class="num">
+                {cell.score === null ? "—" : formatScore0(cell.score)}
+                {#each cell.footnotes as id (id)}<sup>{id}</sup>{/each}
+              </td>
+            {/each}
+            <td class="num"
+              ><strong>{row.overall === null ? "—" : formatScore0(row.overall)}</strong></td
+            >
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+    {#if model.scores.footnotes.length}
+      <ol class="footnotes">
+        {#each model.scores.footnotes as fn (fn.id)}
+          <li id={`footnote-${fn.id}`}>{fn.text}</li>
+        {/each}
+      </ol>
+    {/if}
+    <p id="scores-summary" class="sr-only-note">{model.scores.summary}</p>
+  </section>
+
+  <section aria-labelledby="s-species">
+    <h2 id="s-species">Summary of Species</h2>
+    {#each model.species as species, i (species.name)}
+      <div class="species-section">
+        <h3>{species.name}</h3>
+        {#if species.counts === null}
+          <p>{species.empty ?? "Loading species…"}</p>
+        {:else}
+          <table aria-describedby={`species-summary-${i}`}>
+            <caption>{species.caption}</caption>
+            <thead>
+              <tr>
+                <th scope="col">Category</th>
+                {#each species.counts.columns as col (col)}
+                  <th scope="col" class="num">{col}</th>
+                {/each}
+                <th scope="col" class="num">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each species.counts.rows as row (row.category)}
+                <tr>
+                  <th scope="row">{row.category}</th>
+                  {#each row.counts as c, j (j)}
+                    <td class="num">{formatCount(c)}</td>
+                  {/each}
+                  <td class="num">{formatCount(row.total)}</td>
+                </tr>
+              {/each}
+              <tr>
+                <th scope="row">Total</th>
+                {#each species.counts.totalRow.counts as c, j (j)}
+                  <td class="num">{formatCount(c)}</td>
+                {/each}
+                <td class="num">{formatCount(species.counts.totalRow.total)}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          {#if species.top}
+            <table>
+              <caption
+                >Top 20 highest-scoring species (by habitat-weighted extinction risk).</caption
+              >
+              <thead>
+                <tr>
+                  <th scope="col">Category</th>
+                  <th scope="col">Common</th>
+                  <th scope="col">Scientific</th>
+                  <th scope="col">ER code</th>
+                  <th scope="col" class="num">ER score</th>
+                  <th scope="col" class="num">Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each species.top.rows as row, j (row.mdl_key)}
+                  <tr>
+                    <td>{row.sp_cat}</td>
+                    <td>
+                      {#if row.sp_common}
+                        <a href={species.top.hrefs[j]}>{row.sp_common}</a>
+                      {:else}
+                        —
+                      {/if}
+                    </td>
+                    <td><em>{row.sp_scientific}</em></td>
+                    <td>{row.er_code ?? "—"}</td>
+                    <td class="num">{row.er_score === null ? "—" : formatErScore(row.er_score)}</td>
+                    <td class="num">{formatCount(row.suit_er_area)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+
+          <p>
+            <button type="button" class="no-print" onclick={() => downloadSpeciesCsvFor(i)}>
+              Download full species list (CSV — {formatCount(species.counts.nSpecies)} species)
+            </button>
+          </p>
+        {/if}
+        <p id={`species-summary-${i}`} class="sr-only-note">
+          {species.summary ?? ""}
+          {species.top?.summary ?? ""}
+        </p>
+      </div>
+    {/each}
+  </section>
+
+  <section aria-labelledby="s-sources">
+    <h2 id="s-sources">Sources and Method</h2>
+    {#each model.sources.text as p (p)}
+      <p>{p}</p>
+    {/each}
+    <p><a href={model.sources.docsHref}>Documentation for {model.header.ver}</a></p>
+    {#if model.sources.citations.length}
+      <ul>
+        {#each model.sources.citations as c (c.dsKey)}
+          <li>
+            {c.label}: {c.citation}
+            {#if c.href}<a href={c.href}>({c.href})</a>{/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
+
+  <section aria-labelledby="s-provenance" class="disclosure provenance">
+    <h2 id="s-provenance">
+      <button
+        type="button"
+        aria-expanded={provenanceOpen}
+        onclick={() => (provenanceOpen = !provenanceOpen)}
+      >
+        Provenance {provenanceOpen ? "▾" : "▸"}
+      </button>
+    </h2>
+    <div class="disclosure-body" hidden={!provenanceOpen}>
+      <p>
+        Release {model.provenance.ver} · {model.provenance.status ?? "—"} · {model.provenance
+          .access ?? "—"}. Generated {model.provenance.generatedAt}. App {model.provenance.appSha}.
+        DuckDB-WASM
+        {model.provenance.duckdbWasm ?? "—"}.
+      </p>
+      <table>
+        <caption>Tables read.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Table</th>
+            <th scope="col">Digest</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each model.provenance.tables as t (t.name)}
+            <tr>
+              <td>{t.name}</td>
+              <td><code>{t.digest ?? "—"}</code></td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+      {#each model.provenance.sql as run (run.name)}
+        <details>
+          <summary>{run.name}.sql</summary>
+          <pre>{run.sql}</pre>
+        </details>
+      {/each}
+      <h3>Reproduce in R</h3>
+      {#each model.provenance.reproduceInR as snippet, i (i)}
+        <pre>{snippet}</pre>
+      {/each}
+    </div>
+  </section>
+
+  <div class="print-footer" aria-hidden="true">
+    <span>{model.header.permalink.href}</span>
+    <span>{model.header.releaseChip}</span>
+  </div>
+{:else if progressDone === 0 && places.length === 0 && earlySettled}
+  <p>No places in this link — nothing to report on.</p>
+{/if}
+
+<style>
+  .sr-only-note {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+  .attribution {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+  .export-bar {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.75rem 0;
+    flex-wrap: wrap;
+  }
+  .export-bar button {
+    padding: 0.4rem 0.8rem;
+    border: 1px solid var(--border-control);
+    border-radius: 6px;
+    background: var(--fill-control);
+    cursor: pointer;
+  }
+</style>

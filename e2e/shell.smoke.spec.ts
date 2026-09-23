@@ -52,16 +52,10 @@ test.describe("shell smoke", () => {
     expect(errors).toEqual([]);
   });
 
-  test("report.html paints with zero console errors", async ({ page }) => {
-    const errors = collectConsoleErrors(page);
-
-    await page.goto("/report.html");
-
-    await expect(page.locator("#report-root")).toBeVisible();
-    await expect(page.locator("#report-root")).toHaveAttribute("data-hydrated", "true");
-
-    expect(errors).toEqual([]);
-  });
+  // report.html's own smoke coverage moved to e2e/report.spec.ts (atlas-7 steps 2-4): this file's
+  // one placeholder assertion (`#report-root[data-hydrated]`) described the atlas-7-step-1-era
+  // stub, which report-main.ts no longer sets -- the real document needs the hermetic bucket/
+  // session routing e2e/report.spec.ts already sets up, not a bare `page.goto`.
 });
 
 test.describe("release-access gate (plan D6)", () => {

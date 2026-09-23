@@ -59,6 +59,7 @@ declare global {
           getCanvas(): HTMLCanvasElement;
           project(lngLat: [number, number]): { x: number; y: number };
           loaded(): boolean;
+          getLayer(id: string): unknown;
         };
         applyStyle(style: unknown): void;
       };
@@ -142,39 +143,58 @@ test.describe("map module, first paint with **/*.wasm blocked", () => {
 
   test("paints a raster at two ocean probe points", async ({ page }) => {
     await gotoMap(page);
-    // deliberately NOT gated on the vector count: this test is about the raster path, and a
-    // precondition it does not need is a second way for it to go red.
     await page.waitForFunction(() => window.__atlasMap!.handle.map.loaded(), undefined, {
       timeout: 20_000,
     });
 
-    // the basemap raster is already painted; compose the score raster on top of it, exactly the
-    // way atlas-4's lens will (composeStyle inputs in, one setStyle(diff) out), and assert the
-    // probe reads the RASTER's colour rather than the basemap's.
-    await page.evaluate((cog) => {
-      const api = window.__atlasMap!;
-      api.handle.applyStyle(
-        api.composeStyle({
-          ...api.inputs(),
-          projection: "mercator", // a flat probe: globe warps where a fixed lon/lat lands
-          raster: {
-            id: "r_lyr",
-            tiles: [
-              "https://titiler-v8.marinesensitivity.org/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png" +
-                `?url=${encodeURIComponent(cog)}&colormap_name=spectral_r&rescale=0,90`,
-            ],
-            opacity: 1,
-          },
-        }),
-      );
-    }, SCORE_COG_URL);
+    // atlas-8 fix round 1 (root cause, instrumented with page.on("response")/a monkey-patched
+    // applyStyle, not guessed): Shell.svelte's own `$effect` re-applies ITS composed style
+    // (`raster: lensMapExtra.raster ?? null`) whenever `lensMapExtra` changes -- and
+    // ScoresLens.svelte, lazy-loaded (`import("../lens/scores/...")`) and mounted by DEFAULT
+    // (lens="scores", activeTool="layers" are both defaults), runs its OWN `$effect` exactly once
+    // on mount: `mapExtra = scoresMapInputs({...})`. That whole-object reassignment (via
+    // `bind:mapExtra`) is what re-triggers Shell's effect and wipes out ANY raster this test
+    // injects before that lazy chunk finishes fetching+parsing+mounting -- a race this repo's own
+    // module-loading timing usually won on Chromium and reproducibly lost on WebKit/Firefox
+    // (measured: "no tile manager with ID 'r_lyr'" once the layer was removed out from under an
+    // in-flight tile). `map.loaded()` and even "boot's zones arrived" say nothing about whether
+    // that lazy mount has ALSO finished, so the fix is not a longer wait for a single event but a
+    // self-healing one: (re-)inject the raster as part of EVERY poll iteration, not once before
+    // it, so the injection that survives is always the LAST one relative to the lens's mount,
+    // whichever engine's module-loading timing wins that race.
+    const injectRaster = (cog: string) =>
+      page.evaluate((cogUrl) => {
+        const api = window.__atlasMap!;
+        api.handle.applyStyle(
+          api.composeStyle({
+            ...api.inputs(),
+            projection: "mercator", // a flat probe: globe warps where a fixed lon/lat lands
+            raster: {
+              id: "r_lyr",
+              tiles: [
+                "https://titiler-v8.marinesensitivity.org/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png" +
+                  `?url=${encodeURIComponent(cogUrl)}&colormap_name=spectral_r&rescale=0,90`,
+              ],
+              opacity: 1,
+            },
+          }),
+        );
+      }, cog);
+
+    await injectRaster(SCORE_COG_URL);
 
     for (const [lon, lat] of OCEAN_PROBES) {
       await expect
-        .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
-          message: `no raster pixel painted at ${lon},${lat}`,
-          timeout: 20_000,
-        })
+        .poll(
+          async () => {
+            await injectRaster(SCORE_COG_URL); // re-assert: cheap, idempotent once settled
+            return (await readPixel(page, lon, lat))?.slice(0, 3).join(",");
+          },
+          {
+            message: `no raster pixel painted at ${lon},${lat}`,
+            timeout: 20_000,
+          },
+        )
         .toBe(RASTER_RGB.join(","));
     }
   });
