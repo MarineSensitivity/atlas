@@ -1,0 +1,12 @@
+diff --git a/src/lib/ui/HexButton.svelte b/src/lib/ui/HexButton.svelte
+index 024bfd1..4c9d72a 100644
+--- a/src/lib/ui/HexButton.svelte
++++ b/src/lib/ui/HexButton.svelte
+@@ -79,7 +79,6 @@
+   <button
+     type="button"
+     class="hexbtn"
+-    aria-label={label}
+     aria-pressed={pressed}
+     aria-disabled={inactive ? "true" : undefined}
+     aria-describedby={tooltipId}

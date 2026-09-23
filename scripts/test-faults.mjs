@@ -52,10 +52,59 @@ const FAULTS = [
       "planEviction() restored to the plan's literal 'tiles first' order (overruled by ruling 5)",
     gate: ["npx", "vitest", "run", "tests/engine/opfsPolicy.test.ts"],
   },
+  // --- atlas-8 step 3: the two accessibility faults the plan's pyramid row names ------------------
+  // These are the first PLAYWRIGHT gates in this manifest. They need a real browser against a real
+  // build of the PATCHED tree, so each runs on its own `PW_PORT` (playwright.config.ts honours it
+  // and, when it is set, never reuses a server it did not start -- otherwise a `vite preview`
+  // already answering 4331 from the UNPATCHED checkout would serve the wrong bytes and the fault
+  // would "pass"). One `npm run build` per fault, ~1 minute each.
+  {
+    id: "hexbutton-unnamed",
+    patch: "tests/faults/hexbutton-unnamed.patch",
+    describe:
+      "the tool rail's HexButton loses its aria-label -- an icon-only button with no accessible name",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/matrix.a11y.spec.ts",
+      "-g",
+      "shell \\(default\\) @ desktop",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4391" },
+  },
+  {
+    id: "modal-focus-restore",
+    patch: "tests/faults/modal-focus-restore.patch",
+    describe:
+      "a modal opened by setting the `open` attribute instead of showModal() -- closing it restores focus to nothing",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/keyboard-walk.spec.ts",
+      "-g",
+      "returns focus to the version chip",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4392" },
+  },
 ];
 
-function run(cmd, args, cwd) {
-  return spawnSync(cmd, args, { cwd, encoding: "utf8" });
+function run(cmd, args, cwd, env) {
+  return spawnSync(cmd, args, {
+    cwd,
+    encoding: "utf8",
+    env: env ? { ...process.env, ...env } : process.env,
+    // a Playwright gate's own `webServer` build+preview can take a minute; the default 1 MB stdout
+    // cap is also far too small for its output, and an exceeded cap kills the child (status null),
+    // which would read as "went red" for the wrong reason.
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: 10 * 60 * 1000,
+  });
 }
 
 function runOne(fault) {
@@ -90,7 +139,17 @@ function runOne(fault) {
       };
     }
 
-    const gate = run(fault.gate[0], fault.gate.slice(1), worktreeDir);
+    const gate = run(fault.gate[0], fault.gate.slice(1), worktreeDir, fault.env);
+    // status null = killed (timeout/signal), which is NOT the same thing as "the gate failed" --
+    // report it as a fault that could not be judged rather than silently counting it as red.
+    if (gate.status === null) {
+      return {
+        ok: false,
+        fault,
+        reason: `the gate was killed before it could report (${gate.error?.message ?? "signal"})`,
+        output: (gate.stdout ?? "") + (gate.stderr ?? ""),
+      };
+    }
     const wentRed = gate.status !== 0;
     return {
       ok: wentRed,

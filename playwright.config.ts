@@ -4,6 +4,16 @@ import { defineConfig, devices } from "@playwright/test";
 // engines. `webServer` builds then serves the real production bundle (`vite preview`), the same
 // thing size-budget.mjs and check-relative-assets.mjs run against — not the dev server, which
 // would exercise a different code path (unbundled, absolute /src/ URLs).
+
+// `PW_PORT` moves the whole harness (baseURL + webServer) to another port, and never reuses a
+// server it did not start. `npm run test:faults` (scripts/test-faults.mjs, atlas-8 step 3) needs
+// exactly that: it applies a seeded fault in a throwaway `git worktree` and must run the gate
+// against THAT tree's own build — reusing a `vite preview` already answering 4331 from the
+// unpatched checkout would serve the wrong bytes and quietly pass. Unset, everything behaves
+// exactly as before.
+const PORT = process.env.PW_PORT ?? "4331";
+const BASE_URL = `http://localhost:${PORT}/`;
+
 export default defineConfig({
   // scoped to this directory only — the S1-S4 spike harnesses each run their own Playwright
   // config out of spikes/<n>/ on their own ports (4311-4314); this one never crawls spikes/**.
@@ -26,14 +36,14 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
-    baseURL: "http://localhost:4331/",
+    baseURL: BASE_URL,
     trace: "on-first-retry",
   },
   webServer: {
-    command: "npm run build && npm run preview -- --port 4331 --strictPort",
-    url: "http://localhost:4331/",
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
+    command: `npm run build && npm run preview -- --port ${PORT} --strictPort`,
+    url: BASE_URL,
+    reuseExistingServer: !process.env.CI && !process.env.PW_PORT,
+    timeout: 120_000,
   },
   projects: [
     // species.timing.spec.ts is a COLD-load TIMING gate (atlas-8's rule: runs alone, gated on a
@@ -48,12 +58,25 @@ export default defineConfig({
     },
     {
       name: "webkit",
-      testIgnore: ["fixtures/**", "gallery.spec.ts", "species.timing.spec.ts"],
+      // matrix.a11y.spec.ts is CHROMIUM-ONLY (atlas-8 step 3, see that file's own header): axe-core
+      // reads the same computed accessibility tree in every engine, and ignoring the file here keeps
+      // a full run from reporting 358 skips instead of 179 audits.
+      testIgnore: [
+        "fixtures/**",
+        "gallery.spec.ts",
+        "species.timing.spec.ts",
+        "matrix.a11y.spec.ts",
+      ],
       use: { ...devices["Desktop Safari"] },
     },
     {
       name: "firefox",
-      testIgnore: ["fixtures/**", "gallery.spec.ts", "species.timing.spec.ts"],
+      testIgnore: [
+        "fixtures/**",
+        "gallery.spec.ts",
+        "species.timing.spec.ts",
+        "matrix.a11y.spec.ts",
+      ],
       use: { ...devices["Desktop Firefox"] },
     },
     // the timing gate's own project (atlas-8's rule, see species.timing.spec.ts's header for the

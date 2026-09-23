@@ -1,0 +1,13 @@
+diff --git a/src/lib/ui/Modal.svelte b/src/lib/ui/Modal.svelte
+index cccf664..da65b26 100644
+--- a/src/lib/ui/Modal.svelte
++++ b/src/lib/ui/Modal.svelte
+@@ -25,7 +25,7 @@
+ 
+   $effect(() => {
+     if (!dialogEl) return;
+-    if (open && !dialogEl.open) dialogEl.showModal();
++    if (open && !dialogEl.open) dialogEl.open = true;
+     if (!open && dialogEl.open) dialogEl.close();
+   });
+ 

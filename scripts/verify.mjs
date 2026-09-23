@@ -32,7 +32,7 @@ const {
   SCORE_COG_URL,
   ZONES_PMTILES_URL,
   blockWasm,
-  routeBasemapTiles,
+  routeBasemapStyle,
   routeGlyphs,
   routeTitilerTiles,
   routeZonesPmtiles,
@@ -137,7 +137,13 @@ async function gotoScores(page, path) {
   await routeSession(page, null);
   await routeSealFixture(page);
   await routeZonesPmtiles(page);
-  await routeBasemapTiles(page);
+  // atlas-8 step 3: `routeBasemapTiles` (the keyed RASTER basemap) was removed by the 2026-09-23
+  // basemap round, which replaced it with CARTO's vector style.json chain -- but this script kept
+  // importing it by name, so EVERY `node scripts/verify.mjs` scores state threw
+  // "routeBasemapTiles is not a function" before its first assertion. A named import of a missing
+  // export from a `.ts` module resolved through the bundler hook above is `undefined`, not a load
+  // error, so nothing said so until a state ran. Finding A11Y-0 in docs/accessibility-fixes.md.
+  await routeBasemapStyle(page);
   await routeTitilerTiles(page);
   await routeGlyphs(page);
   await page.goto(path);
@@ -461,13 +467,26 @@ async function ensureServer(baseURL) {
   };
 }
 
-async function runState(page, baseURL, state, viewportName) {
+/**
+ * Route this state's hermetic fixtures and navigate to it. Exported (atlas-8 step 3) so
+ * `e2e/matrix.a11y.spec.ts` can drive the SAME 174 states through axe without a second copy of the
+ * per-kind fixture wiring: the matrix and the way each of its states is reached are one definition,
+ * here, exactly as `assertLayout`/`VIEWPORTS` already are.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} baseURL
+ * @param {{ kind: string, path: string }} state
+ */
+export async function gotoState(page, baseURL, state) {
   const url = new URL(state.path, baseURL).toString();
   if (state.kind === "species") {
     await gotoSpecies(page, url, "v9");
   } else {
     await gotoScores(page, url);
   }
+}
+
+async function runState(page, baseURL, state, viewportName) {
+  await gotoState(page, baseURL, state);
   const problems = [...(await assertLayout(page))];
   // the pixel/vector probes are tuned against the DESKTOP camera (docs/map.md's default study-area
   // zoom is chosen for a 1280x800 aspect): at phone/phoneNarrow the same zoom+center shows a
