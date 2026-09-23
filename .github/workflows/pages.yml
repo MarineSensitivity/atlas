@@ -455,18 +455,13 @@ jobs:
 
   publish:
     name: publish dist/ to gh-pages
-    needs:
-      [
-        checks,
-        test-faults,
-        e2e,
-        e2e-gallery,
-        verify,
-        e2e-engine,
-        e2e-opfs,
-        parity,
-        analytics-privacy,
-      ]
+    # round 2 (2026-09-24, owner's call): Pages publishes as soon as the fast build-and-checks job is
+    # green. The browser, fault, verify, engine, OPFS, parity and analytics suites still run on every
+    # push and still turn the run red, but they no longer hold the site: the FULL gate script
+    # (vitest, check, tsc, lint, format, build, size, dist invariants, test:faults, verify, three-engine
+    # Playwright, timing, gallery) runs locally before every push to main, so CI is a second opinion in
+    # a known environment, not the gate. A red slow job is investigated, never waited for.
+    needs: [checks]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
