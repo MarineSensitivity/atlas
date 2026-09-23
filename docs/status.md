@@ -1,6 +1,6 @@
 # Atlas — round-2 status (updated by the orchestrator at every push)
 
-Last update: 2026-09-24 00:20 CEST (parity page re-shot against the live 0.10.27: 14/14 states) ·
+Last update: 2026-09-24 01:05 CEST (R1–R7 decided by Ben; 0.10.28 gated for push; U1/U4/U5/U6 building) ·
 dated log: `workflows/.claude/plans_todo/atlas-8 verification, accessibility, performance.md` (Progress log) ·
 user-facing changes per version: `CHANGELOG.md`.
 
@@ -13,17 +13,17 @@ user-facing changes per version: `CHANGELOG.md`.
 | **in flight (worktrees)**      | 0.10.28 F1a                   | scores click works with the panel collapsed or Places open; instant "Loading value…" popup; rail click reopens a collapsed panel; the scores lens' cell/species queries join the per-database queue; outline/cells state no longer panel-bound; lazy chunk failures announced                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | **in flight**                  | 0.10.29 U6 + U2a              | Report from the top bar (nothing selected → chooser; place/zone → report), "Take a tour" (driver.js, lazy), dark theme by default with a sun/moon toggle                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
-## What is waiting on Ben (decisions R1–R7, `docs/usability.md` §7, mockups `docs/design/mockups/r2/`)
+## Decisions R1–R7 — DECIDED by Ben (2026-09-24 00:55 CEST)
 
-| #   | decision                   | recommendation (Opus 5.5)                                                                              |
-| --- | -------------------------- | ------------------------------------------------------------------------------------------------------ |
-| R1  | panel model                | one dockable panel (left/right/bottom + maximize, drag-resize), not floating windows                   |
-| R2  | About / feedback placement | (i) About top-right popover; "Send feedback" in the top bar; both under ⋯ on the phone                 |
-| R3  | Layers split               | one Layers panel that IS the stack, the data row expanding into today's controls                       |
-| R4  | tool rail                  | vertical labelled stack; the hexagon moves to the logo + active marker                                 |
-| R5  | logo + light palette       | wave-in-hexagon mark; candidate y1 (brand gold on paper + navy ring), y3 `#876700` as drop-in fallback |
-| R6  | Send-feedback destinations | Sheet owner account, notification email, issue labels — Ben's to name                                  |
-| R7  | cutover date               | after the parity page signature                                                                        |
+| #   | decision                   | Ben's call                                                                                                                                                                                                                             |
+| --- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1  | panel model                | one dockable panel (left/right/bottom + maximize, drag-resize) → **U1, 0.10.30, building**                                                                                                                                             |
+| R2  | About / feedback placement | (i) About top-right popover; **"Feedback"** in the top bar; both under ⋯ on the phone → **U1**                                                                                                                                         |
+| R3  | Layers                     | one Layers panel that IS the stack, the data row expanding — **plus** re-stacking data layers relative to map layers (place names, bathymetry) → **U4, 0.10.31, building**                                                             |
+| R4  | tool rail                  | vertical labelled stack; hexagon → logo + active marker → **U5, 0.10.32, building**                                                                                                                                                    |
+| R5  | logo + light palette       | wave-in-hexagon mark; palette y1 (brand gold on paper + navy ring), y3 `#876700` fallback → **U5**                                                                                                                                     |
+| R6  | Feedback destinations      | Sheet owner ben@oceanmetrics.io; emails ben@oceanmetrics.io + timothy.white@boem.gov; labels bug / idea / question / data; **no public issue when `release.access === "restricted"`** (Sheet + email only) → **U3, 0.10.33, after U6** |
+| R7  | cutover                    | after the parity page signature                                                                                                                                                                                                        |
 
 ## Known gaps still open (ranked in `docs/usability.md` §4)
 
