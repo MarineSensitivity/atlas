@@ -38,3 +38,8 @@ coverage
 # Step 3b): symlinks into the atlas-contract dry-run bundles and ~/_big, plus one fetched
 # tables/model.parquet — rebuilt on demand, never committed
 /.parity-mirror/
+
+# quarto/editor render output of docs/*.md (never committed; the markdown is the source)
+docs/status.html
+docs/status_files/
+docs/*_files/
