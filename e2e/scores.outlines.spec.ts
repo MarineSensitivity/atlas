@@ -141,4 +141,35 @@ test.describe("scores lens — Sel.out reaches the map (G-25)", () => {
 
     expect(errors).toEqual([]);
   });
+
+  // scripts/verify.mjs's own "scores proj=X out=ecoregion area=Y" states surfaced this: NOT a bug
+  // in zoneUnitsWithOutline (it already handles "the release published no matching unit" --
+  // tests/map/zones.test.ts's own case), but worth pinning end-to-end too. Plan D17
+  // (src/lens/scores/boot.ts's header; docs/parity.html's intentional difference ID-03, "Only
+  // Program Areas are drawn as a choropleth"): `boot.units[]` carries exactly ONE unit per release
+  // (programarea here, matching every real v2-v9 bundle traced in tests/lens/scores/fixtures.ts)
+  // -- no release EVER publishes a second, ecoregion-outline unit, so there is no `ecoregion_ln`
+  // layer to render at all, on any release. `out=ecoregion` is therefore the SAME structural zero
+  // as `out=none`, not a missing feature.
+  test("out=ecoregion: no ecoregion unit is EVER published, so there is nothing to outline (plan D17 / ID-03)", async ({
+    page,
+  }) => {
+    const errors = collectConsoleErrors(page);
+    await gotoScoresZoneChoropleth(page, "&out=ecoregion");
+
+    await expect
+      .poll(() => layerFeatureCount(page, "programarea_fill"), { timeout: 20_000 })
+      .toBeGreaterThan(0);
+
+    await page.waitForFunction(() => !!window.__atlasMap!.handle.map.getLayer("programarea_ln"), {
+      timeout: 20_000,
+    });
+    expect(await layerFeatureCount(page, "programarea_ln")).toBe(0);
+    // no ecoregion unit was ever composed in the first place -- not merely hidden.
+    expect(await page.evaluate(() => !!window.__atlasMap!.handle.map.getLayer("ecoregion_ln"))).toBe(
+      false,
+    );
+
+    expect(errors).toEqual([]);
+  });
 });

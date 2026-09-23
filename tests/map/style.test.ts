@@ -421,6 +421,19 @@ describe("composeStyle + zoneUnitsWithOutline (G-25: Sel.out reaches the rendere
     expect(fill).toBeDefined();
     expect(line && "layout" in line ? line.layout : null).toEqual({ visibility: "none" });
   });
+
+  it('out="ecoregion" on a release that only publishes programarea: the SAME hidden-line result as "none" -- not a bug, plan D17 (no release ever publishes a second, ecoregion-outline unit)', () => {
+    const s = composeStyle({
+      theme: "navy",
+      basemap: null,
+      zones: zoneUnitsWithOutline([PRA], "ecoregion"),
+    });
+    const line = s.layers.find((l) => l.id === "programarea_ln");
+    expect(line).toBeDefined();
+    expect(line && "layout" in line ? line.layout : null).toEqual({ visibility: "none" });
+    // no ecoregion unit was ever IN `zones` to begin with -- nothing composed, not merely hidden.
+    expect(s.layers.some((l) => l.id === "ecoregion_ln")).toBe(false);
+  });
 });
 
 // atlas-4 fix round 2: the ported Shiny app's known bug (parity doc §6.4) hardcoded its layers

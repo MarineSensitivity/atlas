@@ -26,6 +26,13 @@ The three defects the parity screenshots exposed (`docs/parity.html` known gaps 
   unit's line layer to `visibility: "none"` (never removed, never a piecemeal
   `setLayoutProperty()`); the matching unit's own choropleth fill is unaffected. Seeded fault:
   `tests/faults/out-outline-ignored.patch`, wired into `npm run test:faults`.
+- **G-25 follow-up:** `scripts/verify.mjs`'s state matrix demanded a rendered zone LINE feature on
+  every `scores proj=X out=Y area=Z` state — an assertion that predated `out=` meaning anything,
+  and which the fix above correctly broke for `out=none`/`out=ecoregion`. The per-state check now
+  follows `out` (programarea: line renders; none/ecoregion: line hidden, raster still paints).
+  `out=ecoregion` renders no line on any release, not a bug: plan D17 / `docs/parity.html`'s
+  intentional difference ID-03 — `boot.units[]` carries exactly one unit per release, and no
+  release ever publishes a second, ecoregion-outline unit.
 
 # atlas 0.10.18
 
