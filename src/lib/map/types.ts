@@ -10,14 +10,13 @@ import type { MapView, Projection, ResolvedTheme } from "../state/types";
 export type { LayerSpecification, SourceSpecification, StyleSpecification };
 export type { MapView, Projection, ResolvedTheme };
 
-/** a raster basemap: the one source the theme picks (`layers/basemap.ts`). */
+/** the theme's CARTO vector basemap: a style.json URL `composeStyle()` fetches (via
+ * `layers/basemap.ts#loadBasemapStyle()`, cached per theme) and merges whole — never a raster tile
+ * template (CARTO's raster endpoint now requires a key; see `layers/basemap.ts`'s header). */
 export interface BasemapSpec {
-  /** style source id; also the layer id (`basemapLayer`). */
-  id: string;
-  /** tile URL templates, `{z}/{x}/{y}` — absolute, always (plan D2: never resolve against the mount point). */
-  tiles: string[];
-  tileSize: number;
-  maxzoom: number;
+  /** absolute https URL of CARTO's GL style.json — always absolute (plan D2: never resolve
+   * against the mount point). */
+  url: string;
   /** shown by the on-map About card (spec.md §9), never by MapLibre's own control. */
   attribution: string;
 }

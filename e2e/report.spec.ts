@@ -5,7 +5,7 @@ import AxeBuilder from "@axe-core/playwright";
 import pdfParse from "pdf-parse";
 import { unzipSync } from "fflate";
 import { BUCKET, collectRequests, routeBucket, routeSealFixture, routeSession } from "./hermetic";
-import { blockWasm, variedPng } from "./map-hermetic";
+import { blockWasm, routeVariedBasemapStyle } from "./map-hermetic";
 import { encodePlace, type Place } from "../src/lib/geo/placeCodec";
 
 // atlas-7 steps 2-4, fix round 1: report.html's own hermetic smoke suite. HERMETIC per this
@@ -86,13 +86,12 @@ async function gotoReport(page: Page, opts: { ver: "v9" | "v7"; preview?: boolea
   await routeSession(page, opts.preview ? { preview: true, ver: opts.ver } : null);
   await routeSealFixture(page);
   // fix round 2, item 6: `routeBucket()`'s own tile route (`routeMapTileOrigins()`, hermetic.ts) is
-  // a flat, near-1x1 transparent PNG -- fine for specs that never look at the captured map PNG, but
+  // a FLAT, single-colour basemap -- fine for specs that never look at the captured map PNG, but
   // exactly the shape of the reviewer's bug (a flat, single-colour capture that a luminance-only
-  // guard let through). Registered AFTER `routeBucket()`, so it wins (Playwright: reverse
-  // registration order) -- every report.html capture in this file is now of a REAL, varied tile.
-  await page.route("https://basemaps.cartocdn.com/**", (route) =>
-    route.fulfill({ status: 200, contentType: "image/png", body: variedPng() }),
-  );
+  // guard let through). `routeVariedBasemapStyle()` (map-hermetic.ts), registered AFTER
+  // `routeBucket()` so it wins (Playwright: reverse registration order), swaps in a checkerboard
+  // "water" fill -- every report.html capture in this file is now of a REAL, varied basemap.
+  await routeVariedBasemapStyle(page);
   const pl = opts.pl ?? PL;
   await page.goto(`/report.html?ver=${opts.ver}#pl=${pl}`);
 }

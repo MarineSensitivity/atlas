@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { BUCKET, routeBucket, routeSealFixture, routeSession, waitForHydration } from "./hermetic";
-import { blockWasm, routeBasemapTiles, routeGlyphs, routeTitilerTiles } from "./map-hermetic";
+import { blockWasm, routeBasemapStyle, routeGlyphs, routeTitilerTiles } from "./map-hermetic";
 
 // NOT a `declare global` augmentation of `Window.__atlasMap` — e2e/map.spec.ts already declares
 // one, and TypeScript requires every declaration of the SAME global interface member to have an
@@ -112,7 +112,7 @@ export async function gotoSpecies(page: Page, path: string, ver: "v9" | "v7" = "
   // same as a real reviewer would; v7 is already public, so this session is simply unneeded for it.
   await routeSession(page, { preview: true, ver });
   await routeSealFixture(page);
-  await routeBasemapTiles(page);
+  await routeBasemapStyle(page);
   await routeTitilerTiles(page);
   await routeGlyphs(page);
   await page.goto(path);

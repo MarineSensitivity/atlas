@@ -227,7 +227,7 @@
           ? (mapMod.zonePointFromBoot(boot, s.unit ?? s.place.set, s.zoneKey ?? "") ?? undefined)
           : undefined,
     }));
-    const { style } = mapMod.buildReportMapStyle({
+    const { style } = await mapMod.buildReportMapStyle({
       places: features,
       domain: model.map.domain,
       paletteStops,

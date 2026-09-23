@@ -116,39 +116,6 @@ export const BASEMAP_RGB: [number, number, number] = [0, 102, 153];
 /** the score raster's fixture colour — distinct from the basemap's, so a probe can tell them apart. */
 export const RASTER_RGB: [number, number, number] = [255, 127, 42];
 
-/** a tile with REAL pixel variance (a coarse checkerboard of two contrasting blues), unlike every
- * `solidPng()` fixture above -- fix round 2, item 6: a reviewer's captured report map PNG was
- * 896x360 of one flat colour (the hermetic basemap tile has none), which a luminance-only guard let
- * through. `report.spec.ts`'s own map-PNG-capture assertions route this in (Playwright matches
- * routes in reverse registration order, so registering it AFTER `routeBucket()`'s flat default
- * wins) so the capture under test is a real, non-degenerate one. */
-export function variedPng(size = 256): Buffer {
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(size, 0);
-  ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 2; // colour type: truecolour, no alpha
-  const rows: Buffer[] = [];
-  for (let y = 0; y < size; y++) {
-    const row = Buffer.alloc(1 + size * 3);
-    for (let x = 0; x < size; x++) {
-      const dark = (Math.floor(x / 32) + Math.floor(y / 32)) % 2 === 0;
-      const [r, g, b] = dark ? [8, 40, 84] : [176, 208, 232];
-      row[1 + x * 3] = r;
-      row[2 + x * 3] = g;
-      row[3 + x * 3] = b;
-    }
-    rows.push(row);
-  }
-  const idat = deflateSync(Buffer.concat(rows));
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", ihdr),
-    chunk("IDAT", idat),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
-}
-
 /**
  * Serve the PMTiles archive with real HTTP range support: the `pmtiles://` protocol reads the
  * header, then the directory, then each tile with a `Range` header, and a handler that ignored it
@@ -183,11 +150,154 @@ export async function routeZonesPmtiles(page: Page, url = ZONES_PMTILES_URL) {
   });
 }
 
-/** CARTO basemap tiles (both `dark_all` and `light_all`) → one solid PNG. */
-export async function routeBasemapTiles(page: Page) {
-  const png = solidPng(...BASEMAP_RGB);
-  await page.route("https://basemaps.cartocdn.com/**", (route) =>
-    route.fulfill({ status: 200, contentType: "image/png", body: png }),
+/** the fixture's own tiles.json + tile-template URLs — CARTO's real shape (verified live
+ * 2026-09-23: source id "carto", `tiles.basemaps.cartocdn.com/vector/carto.streets/v1/tiles.json`,
+ * four `tiles-{a,b,c,d}` XYZ subdomains for the `.mvt` tiles themselves), simplified to ONE
+ * subdomain since a fixture never needs real load-balancing. */
+const BASEMAP_TILES_JSON_URL =
+  "https://tiles.basemaps.cartocdn.com/vector/carto.streets/v1/tiles.json";
+const BASEMAP_TILE_URL_TEMPLATE =
+  "https://tiles.basemaps.cartocdn.com/vectortiles/carto.streets/v1/{z}/{x}/{y}.mvt";
+
+/** `#rrggbb` for `BASEMAP_RGB`, so the fixture's vector "water" fill paints the exact colour the
+ * blend-math assertions (`scores.firstpaint.spec.ts`, `species.timing.spec.ts`) already expect —
+ * unchanged by the raster-to-vector basemap swap. */
+function rgbHex([r, g, b]: readonly [number, number, number]): string {
+  return `#${[r, g, b].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** a MINIMAL CARTO-shaped style.json: one `background` layer + one `water` fill on the "carto"
+ * vector source — real CARTO ships 93 layers; this is enough to exercise `style.ts#composeStyle`'s
+ * real merge (sources/sprite/glyphs/layers, namespaced, "basemap" role FIRST) without shipping the
+ * whole style into a test fixture. Both themes' fixture uses the SAME fill colour (`BASEMAP_RGB`)
+ * on purpose — the theme-distinguishing field is `sprite` (CARTO's own, theme-named path), which
+ * `e2e/map.spec.ts`'s theme-switch test asserts on. */
+function basemapStyleFixture(theme: "navy" | "paper") {
+  return {
+    version: 8,
+    sources: { carto: { type: "vector", url: BASEMAP_TILES_JSON_URL } },
+    sprite: `https://tiles.basemaps.cartocdn.com/gl/${theme === "navy" ? "dark-matter" : "positron"}-gl-style/sprite`,
+    glyphs: "https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf",
+    layers: [
+      { id: "background", type: "background", paint: { "background-color": rgbHex(BASEMAP_RGB) } },
+      {
+        id: "water",
+        type: "fill",
+        source: "carto",
+        "source-layer": "water",
+        paint: { "fill-color": rgbHex(BASEMAP_RGB) },
+      },
+    ],
+  };
+}
+
+/** CARTO's own style.json URL per theme (`layers/basemap.ts#basemapForTheme`'s real shape). */
+const BASEMAP_STYLE_URL: Record<"navy" | "paper", string> = {
+  navy: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+  paper: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+};
+
+/** the committed archive: tippecanoe (`-l water -Z0 -z0 --no-tile-compression`), a single polygon
+ * spanning the whole world -> a tile whose "water" layer covers the WHOLE tile (buffered past
+ * 0-4096), so it paints solid regardless of which {z}/{x}/{y} a probe happens to land on — the
+ * same "one fixture answers every tile request" trick `solidPng()` uses for a raster tile. */
+const BASEMAP_TILE_PATH = fileURLToPath(
+  new URL("./fixtures/map/basemap-water.pbf", import.meta.url),
+);
+
+/**
+ * Routes the WHOLE CARTO vector-style chain a real basemap now needs, given the per-theme
+ * style.json body and the `.mvt` tile bytes every `{z}/{x}/{y}` request answers with: the
+ * `sources.carto` TileJSON (shared — the fixture's "water" `source-layer` name never changes),
+ * every tile request, and the sprite (`.json` + `.png`, `@2x` included). `routeGlyphs()` stays a
+ * separate call — every spec already calls it on its own — so this never duplicates that route.
+ */
+async function routeBasemapVectorChain(
+  page: Page,
+  styleFixture: (theme: "navy" | "paper") => unknown,
+  tile: Buffer,
+) {
+  for (const theme of ["navy", "paper"] as const) {
+    const body = JSON.stringify(styleFixture(theme));
+    await page.route(BASEMAP_STYLE_URL[theme], (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body }),
+    );
+  }
+  await page.route(BASEMAP_TILES_JSON_URL, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        tilejson: "2.2.0",
+        tiles: [BASEMAP_TILE_URL_TEMPLATE],
+        minzoom: 0,
+        maxzoom: 14,
+        vector_layers: [{ id: "water", minzoom: 0, maxzoom: 14, fields: {} }],
+      }),
+    }),
+  );
+  await page.route(
+    (url) => /\/vectortiles\/carto\.streets\/v1\/\d+\/\d+\/\d+\.mvt$/.test(url.pathname),
+    (route) => route.fulfill({ status: 200, contentType: "application/x-protobuf", body: tile }),
+  );
+  await page.route(
+    (url) => /\/gl\/(dark-matter|positron)-gl-style\/sprite(@2x)?\.json$/.test(url.pathname),
+    (route) => route.fulfill({ status: 200, contentType: "application/json", body: "{}" }),
+  );
+  await page.route(
+    (url) => /\/gl\/(dark-matter|positron)-gl-style\/sprite(@2x)?\.png$/.test(url.pathname),
+    (route) =>
+      route.fulfill({ status: 200, contentType: "image/png", body: solidPng(0, 0, 0, 1, 0) }),
+  );
+}
+
+/** the every-spec default: a flat, single-colour "water" fill (`BASEMAP_RGB`) — exact pixel math
+ * for the raster-over-basemap blend assertions (`scores.firstpaint.spec.ts`,
+ * `species.timing.spec.ts`), unchanged by the raster-to-vector basemap swap. */
+export async function routeBasemapStyle(page: Page) {
+  await routeBasemapVectorChain(page, basemapStyleFixture, readFileSync(BASEMAP_TILE_PATH));
+}
+
+/** the committed archive for `routeVariedBasemapStyle()`: 64 alternating tippecanoe-built squares
+ * (a `shade` 0/1 property) spanning the whole world -> an 8x8 checkerboard at tile-local scale —
+ * the vector analogue of the raster checkerboard fix round 2 item 6 introduced (a reviewer's
+ * captured report map PNG was one flat colour, which a luminance-only guard let through): a
+ * captured map PNG needs REAL pixel variance to tell a genuine render from a flat placeholder. */
+const BASEMAP_VARIED_TILE_PATH = fileURLToPath(
+  new URL("./fixtures/map/basemap-water-varied.pbf", import.meta.url),
+);
+const VARIED_DARK: [number, number, number] = [8, 40, 84];
+const VARIED_LIGHT: [number, number, number] = [176, 208, 232];
+
+function variedBasemapStyleFixture(theme: "navy" | "paper") {
+  return {
+    ...basemapStyleFixture(theme),
+    layers: [
+      { id: "background", type: "background", paint: { "background-color": rgbHex(VARIED_DARK) } },
+      {
+        id: "water",
+        type: "fill",
+        source: "carto",
+        "source-layer": "water",
+        paint: {
+          "fill-color": ["match", ["get", "shade"], 1, rgbHex(VARIED_LIGHT), rgbHex(VARIED_DARK)],
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * A basemap with REAL pixel variance — for a spec whose own assertion is about the CAPTURED map
+ * image, not an exact probed colour (`e2e/report.spec.ts`'s map-PNG-capture checks; see
+ * `reportMap.ts#captureRejectionReason`, fix round 2 item 6). Registered exactly like
+ * `routeBasemapStyle()`, just with the checkerboard tile/style above instead of the flat default.
+ */
+export async function routeVariedBasemapStyle(page: Page) {
+  await routeBasemapVectorChain(
+    page,
+    variedBasemapStyleFixture,
+    readFileSync(BASEMAP_VARIED_TILE_PATH),
   );
 }
 
@@ -201,13 +311,16 @@ export async function routeTitilerTiles(page: Page) {
 
 /** the glyph endpoint a label layer would fetch — routed so a symbol layer cannot reach the live
  * network either. A 200 with an EMPTY body, not a 404: the live CARTO endpoint answers 200 for
- * `layers/basemap.ts`'s `LABEL_FONT` (verified with `curl -sI` on the exact requested URL), and a
+ * `layers/basemap.ts`'s font stack (verified with `curl -sI` on the exact requested URL), and a
  * 404 in the fixture makes Chromium log a console "error" (its own resource-load reporting, not
  * MapLibre's) the moment any spec's boot fixture gives a zone `label_pt` — which every fixture
- * here now does (atlas-4's zones carry labels by default). A zero-byte body is still a VALID
- * (empty) glyph protobuf, so MapLibre reads it as "no glyphs in this range", never an error. */
+ * here now does (atlas-4's zones carry labels by default), OR the merged CARTO style's own place/
+ * road labels (which every basemap now carries). A zero-byte body is still a VALID (empty) glyph
+ * protobuf, so MapLibre reads it as "no glyphs in this range", never an error. Scoped to `/fonts/`
+ * specifically (not the whole `tiles.basemaps.cartocdn.com` host) so it never shadows this file's
+ * OWN tiles.json/`.mvt`/sprite routes on the same host. */
 export async function routeGlyphs(page: Page) {
-  await page.route("https://tiles.basemaps.cartocdn.com/**", (route) =>
+  await page.route("https://tiles.basemaps.cartocdn.com/fonts/**", (route) =>
     route.fulfill({ status: 200, contentType: "application/x-protobuf", body: "" }),
   );
 }

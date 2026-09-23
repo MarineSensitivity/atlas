@@ -1,35 +1,44 @@
-// One fixture per rule (CLAUDE.md "Testing pyramid"): the theme→basemap table, the tile template's
-// shape, and the drift guard tying the WebGL background to the CSS token the page paints behind it.
-import { describe, expect, it } from "vitest";
+// One fixture per rule (CLAUDE.md "Testing pyramid"): the theme -> CARTO style URL table,
+// `loadBasemapStyle()`'s cache/fallback behaviour, and the drift guard tying the WebGL background
+// to the CSS token the page paints behind it.
+//
+// CARTO's RASTER basemap (`dark_all`/`light_all`, `{z}/{x}/{y}.png`) now answers with an "API KEY
+// REQUIRED" watermark (owner report, 2026-09-23) -- this file's own history is the raster version
+// of these tests; `tests/map/no-raster-basemap.test.ts` is the permanent regression guard that
+// those literals never come back.
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import tokens from "../../src/lib/brand/tokens.json";
 import {
-  BASEMAP_BY_THEME,
+  CARTO_STYLE_BASE,
+  EMPTY_BASEMAP_STYLE,
   GLYPHS_URL,
   MAP_BACKGROUND_BY_THEME,
   basemapForTheme,
+  getCachedBasemapStyle,
+  loadBasemapStyle,
+  resetBasemapStyleCacheForTests,
+  type BasemapStyleResponseLike,
 } from "../../src/lib/map/layers/basemap";
 
+beforeEach(() => {
+  resetBasemapStyleCacheForTests();
+});
+
 describe("basemapForTheme (spec.md §3: navy → dark-matter, paper → positron)", () => {
-  it("navy is CARTO dark-matter (dark_all)", () => {
-    expect(BASEMAP_BY_THEME.navy).toBe("dark_all");
-    expect(basemapForTheme("navy").tiles).toEqual([
-      "https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-    ]);
+  it("navy is CARTO's dark-matter GL style", () => {
+    expect(basemapForTheme("navy").url).toBe(`${CARTO_STYLE_BASE}/dark-matter-gl-style/style.json`);
   });
 
-  it("paper is CARTO positron (light_all)", () => {
-    expect(BASEMAP_BY_THEME.paper).toBe("light_all");
-    expect(basemapForTheme("paper").tiles).toEqual([
-      "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-    ]);
+  it("paper is CARTO's positron GL style", () => {
+    expect(basemapForTheme("paper").url).toBe(`${CARTO_STYLE_BASE}/positron-gl-style/style.json`);
   });
 
-  it("is a 256 px raster source with an attribution string and one absolute URL", () => {
+  it("is an absolute https URL with an attribution string (no key, no raster endpoint)", () => {
     const b = basemapForTheme("navy");
-    expect(b.tileSize).toBe(256);
     expect(b.attribution).toContain("OpenStreetMap");
+    expect(b.attribution).toContain("CARTO");
     // plan D2 / CLAUDE.md "Relative base": a data or tile URL is never relative to the mount point.
-    expect(b.tiles.every((t) => t.startsWith("https://"))).toBe(true);
+    expect(b.url.startsWith("https://")).toBe(true);
   });
 
   it("the glyph endpoint is absolute and carries MapLibre's own placeholders", () => {
@@ -39,9 +48,115 @@ describe("basemapForTheme (spec.md §3: navy → dark-matter, paper → positron
   });
 });
 
+function fakeStyle(): unknown {
+  return {
+    sources: { carto: { type: "vector", url: "https://tiles.example/tiles.json" } },
+    sprite: "https://tiles.example/sprite",
+    glyphs: GLYPHS_URL,
+    layers: [{ id: "background", type: "background", paint: { "background-color": "#000" } }],
+  };
+}
+
+function okResponse(body: unknown): BasemapStyleResponseLike {
+  return { ok: true, json: () => Promise.resolve(body) } as BasemapStyleResponseLike;
+}
+
+describe("loadBasemapStyle", () => {
+  it("fetches basemapForTheme(theme)'s URL and returns the parsed style", async () => {
+    const fetchStyle = vi.fn().mockResolvedValue(okResponse(fakeStyle()));
+    const style = await loadBasemapStyle("navy", fetchStyle);
+    expect(fetchStyle).toHaveBeenCalledWith(basemapForTheme("navy").url);
+    expect(style).toEqual(fakeStyle());
+  });
+
+  it("caches per theme: a second call for the SAME theme never fetches again", async () => {
+    const fetchStyle = vi.fn().mockResolvedValue(okResponse(fakeStyle()));
+    await loadBasemapStyle("navy", fetchStyle);
+    await loadBasemapStyle("navy", fetchStyle);
+    expect(fetchStyle).toHaveBeenCalledTimes(1);
+  });
+
+  it("concurrent calls for the same theme share one in-flight fetch", async () => {
+    let resolveFetch: (v: BasemapStyleResponseLike) => void = () => {};
+    const fetchStyle = vi.fn(
+      () =>
+        new Promise<BasemapStyleResponseLike>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+    const p1 = loadBasemapStyle("paper", fetchStyle);
+    const p2 = loadBasemapStyle("paper", fetchStyle);
+    resolveFetch(okResponse(fakeStyle()));
+    await Promise.all([p1, p2]);
+    expect(fetchStyle).toHaveBeenCalledTimes(1);
+  });
+
+  it("a different theme is fetched separately (independent caches)", async () => {
+    const fetchStyle = vi.fn().mockResolvedValue(okResponse(fakeStyle()));
+    await loadBasemapStyle("navy", fetchStyle);
+    await loadBasemapStyle("paper", fetchStyle);
+    expect(fetchStyle).toHaveBeenCalledTimes(2);
+  });
+
+  it("a non-ok response resolves to EMPTY_BASEMAP_STYLE, never throws", async () => {
+    const fetchStyle = vi.fn().mockResolvedValue({ ok: false, json: () => Promise.resolve({}) });
+    const style = await loadBasemapStyle("navy", fetchStyle);
+    expect(style).toEqual(EMPTY_BASEMAP_STYLE);
+  });
+
+  it("a network error (rejected fetch) resolves to EMPTY_BASEMAP_STYLE, never throws", async () => {
+    const fetchStyle = vi.fn().mockRejectedValue(new Error("offline"));
+    const style = await loadBasemapStyle("navy", fetchStyle);
+    expect(style).toEqual(EMPTY_BASEMAP_STYLE);
+  });
+
+  it("unparsable JSON resolves to EMPTY_BASEMAP_STYLE, never throws", async () => {
+    const fetchStyle = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.reject(new SyntaxError("bad json")),
+    });
+    const style = await loadBasemapStyle("navy", fetchStyle);
+    expect(style).toEqual(EMPTY_BASEMAP_STYLE);
+  });
+
+  it("a failed fetch is NOT cached — a later call may retry and succeed", async () => {
+    const fetchStyle = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, json: () => Promise.resolve({}) })
+      .mockResolvedValueOnce(okResponse(fakeStyle()));
+    const first = await loadBasemapStyle("navy", fetchStyle);
+    expect(first).toEqual(EMPTY_BASEMAP_STYLE);
+    const second = await loadBasemapStyle("navy", fetchStyle);
+    expect(second).toEqual(fakeStyle());
+    expect(fetchStyle).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("getCachedBasemapStyle (the SYNCHRONOUS read composeStyle() uses)", () => {
+  it("EMPTY_BASEMAP_STYLE before loadBasemapStyle() ever resolves for a theme", () => {
+    expect(getCachedBasemapStyle("navy")).toEqual(EMPTY_BASEMAP_STYLE);
+  });
+
+  it("the real style once loadBasemapStyle() has resolved", async () => {
+    await loadBasemapStyle("navy", () => Promise.resolve(okResponse(fakeStyle())));
+    expect(getCachedBasemapStyle("navy")).toEqual(fakeStyle());
+  });
+
+  it("a different (still-cold) theme stays EMPTY_BASEMAP_STYLE", async () => {
+    await loadBasemapStyle("navy", () => Promise.resolve(okResponse(fakeStyle())));
+    expect(getCachedBasemapStyle("paper")).toEqual(EMPTY_BASEMAP_STYLE);
+  });
+
+  it("a failed fetch leaves the cache EMPTY_BASEMAP_STYLE (never a stale partial style)", async () => {
+    await loadBasemapStyle("navy", () => Promise.reject(new Error("offline")));
+    expect(getCachedBasemapStyle("navy")).toEqual(EMPTY_BASEMAP_STYLE);
+  });
+});
+
 describe("the map background equals the --surface-map token (drift guard)", () => {
   // a style is not CSS and cannot read a custom property, so the value is duplicated by necessity
-  // — this is the gate that keeps the duplicate honest, in both themes.
+  // — this is the gate that keeps the duplicate honest, in both themes, and is also the FALLBACK
+  // colour painted when loadBasemapStyle()'s fetch fails (EMPTY_BASEMAP_STYLE has no layers).
   it.each(["navy", "paper"] as const)("%s", (theme) => {
     expect(MAP_BACKGROUND_BY_THEME[theme]).toBe(tokens[theme]["--surface-map"].toLowerCase());
   });

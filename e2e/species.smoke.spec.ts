@@ -241,15 +241,27 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
     // LATER raster's hung one, so the DIRECT `apply()` path fired every time regardless of the
     // fix. Composed by hand, not via `gotoSpecies`, since that helper's own tile routes (real
     // PNGs) would win if registered after these.
+    //
+    // atlas-map basemap fix: the basemap's style.json/tiles.json/sprite are `composeStyle`'s OWN
+    // (synchronous) cache read, never awaited inline — hanging those would just leave the basemap
+    // un-warmed (harmless: composeStyle falls back to the plain background colour) and never
+    // reproduce the "still loading" condition this test wants. `routeBucket()` (below) resolves
+    // that chain normally via its own `routeMapTileOrigins()`; only the basemap's actual VECTOR
+    // TILE is hung here, the vector analogue of the old "hang the raster PNG" trick — MapLibre
+    // still requests it internally AFTER the style is applied, so `isStyleLoaded()` stays false
+    // exactly as before.
     await blockWasm(page);
     await routeBucket(page, "v9", bootFor("v9"));
     await routeSpeciesShards(page);
     await routeSession(page, { preview: true, ver: "v9" });
     await routeSealFixture(page);
     await routeGlyphs(page);
-    await page.route("https://basemaps.cartocdn.com/**", () => {
-      /* never resolves — simulates a hung tile request */
-    });
+    await page.route(
+      (url) => /\/vectortiles\/carto\.streets\/v1\//.test(url.pathname),
+      () => {
+        /* never resolves — simulates a hung tile request */
+      },
+    );
     await page.route("https://titiler-v8.marinesensitivity.org/**", () => {
       /* never resolves — simulates a hung tile request */
     });
