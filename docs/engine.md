@@ -143,6 +143,23 @@ bucket, not just same-origin test fixtures. (`Content-Length` is also a CORS-saf
 header by spec regardless, so this would likely work even without the explicit expose-headers line —
 S3 sends it anyway.)
 
+## One place analysis at a time per engine (usability B1, 0.10.25)
+
+`Engine`'s promise chain orders **statements**, not analyses. A place analysis is many statements
+that first build fixed-name objects (`cell`, `place_cell`, `place_cell_sa`, `cell_model`,
+`cell_model_key`, `species_agg`, `species_sel`) and then read them, with an `await` between each —
+so on 0.10.21 two analyses in flight on one engine interleaved: a doubled `place_cell` (the live
+"200.0 % … 1,344 of 672 cells"), an emptied one (0 %), or one place reading another's tiles.
+`src/lib/analysis/exclusive.ts` is the rule: any caller that builds those objects and reads them
+back runs its whole sequence inside `exclusive(ctx.sources.db, …)`, a FIFO queue per database.
+Never nest it (the inner call would wait for the outer). It is not per-call table names (the twins'
+names are the parity contract with `msens`) and not per-connection TEMP objects (one connection by
+design; the parity CLI runs each statement in its own process). It costs nothing: the worker runs
+one statement at a time regardless. `tests/analysis/concurrentPlaces.test.ts` proves it against a
+real catalog, using the pinned duckdb-wasm's in-process node build (`tests/analysis/nodeEngine.ts`,
+CSV tiles because `read_parquet` would autoload the extension); `e2e/places.concurrency.spec.ts`
+proves it in the three browsers.
+
 ## What this note does NOT claim
 
 - No real Safari, no real mobile browser — Playwright's WebKit build only (same caveat

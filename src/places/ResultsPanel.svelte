@@ -4,10 +4,12 @@
   // a Program Area's own page runs, over this place's cell set instead of a zone's. `Flower`/
   // `DataTable` are shared src/lib/ui/ components (not the scores lens's own), so this renders
   // fully within src/places/** without touching src/lens/scores/**.
+  import { untrack } from "svelte";
   import Flower from "../lib/ui/Flower.svelte";
   import DataTable from "../lib/ui/DataTable.svelte";
   import { announce } from "../lib/ui/announcer";
   import type { GeomPlace } from "../lib/geo/placeCodec";
+  import type { AreaGeometry } from "../lib/geo/types";
   import type { DataEngineContext } from "./dataEngine";
   import type { ComponentScore, SpeciesRow } from "../lib/analysis/queries";
   import {
@@ -41,7 +43,18 @@
 
   const speciesAvailable = $derived(cellModelEnabled(boot));
 
-  async function loadScores() {
+  // usability B1: these results belong to ONE place. On 0.10.21 the effect below read `place` only
+  // AFTER an `await`, so it never tracked it: selecting (or uploading) another place kept the
+  // previous place's composite under the new name. `placeKey` is the geometry itself -- `places` is
+  // re-derived from `#pl=` whenever `sel` changes (a pan writes `map=`), which hands this panel a NEW
+  // object for the SAME place that must not re-run anything, and a rename changes nothing a result
+  // depends on -- and `run` stamps every analysis, so a place
+  // switched or removed mid-analysis drops its late result instead of landing it on the row that
+  // replaced it.
+  const placeKey = $derived(JSON.stringify(place.geometry));
+  let run = 0;
+
+  async function loadScores(geometry: AreaGeometry, token: number) {
     if (!dataEngine) {
       scoreError = "No release is resolved yet.";
       return;
@@ -50,24 +63,31 @@
     scoreError = null;
     try {
       const ctx = await dataEngine();
-      scoreResults = await computeScoreResults(ctx, boot, place.geometry);
+      const result = await computeScoreResults(ctx, boot, geometry);
+      if (token === run) scoreResults = result;
     } catch (err) {
-      scoreError = err instanceof Error ? err.message : "Couldn't compute scores for this place.";
+      if (token === run)
+        scoreError = err instanceof Error ? err.message : "Couldn't compute scores for this place.";
     } finally {
-      loadingScores = false;
+      if (token === run) loadingScores = false;
     }
   }
 
   async function preparePlan() {
     if (!dataEngine || !ver) return;
+    const token = run;
+    const geometry = place.geometry;
     const ctx = await dataEngine();
-    const { urls } = speciesTilePlan(ctx, ver, place.geometry);
+    const { urls } = speciesTilePlan(ctx, ver, geometry);
+    if (token !== run) return;
     if (!urls.length) {
       speciesRows = [];
       return;
     }
-    fetchPlan = await estimateFetchPlan(urls);
-    if (needsConfirmation(fetchPlan)) {
+    const plan = await estimateFetchPlan(urls);
+    if (token !== run) return;
+    fetchPlan = plan;
+    if (needsConfirmation(plan)) {
       awaitingConfirm = true;
     } else {
       await runSpecies();
@@ -76,32 +96,41 @@
 
   async function runSpecies() {
     if (!dataEngine) return;
+    const token = run;
+    const geometry = place.geometry;
     awaitingConfirm = false;
     loadingSpecies = true;
     speciesError = null;
     try {
       const ctx = await dataEngine();
-      const result = await computeSpeciesResults(ctx, place.geometry, (done, total) => {
-        speciesProgress = { done, total };
+      const result = await computeSpeciesResults(ctx, geometry, (done, total) => {
+        if (token === run) speciesProgress = { done, total };
       });
+      if (token !== run) return;
       speciesRows = result.rows;
       announce(`Species table loaded, ${result.rows.length} rows.`);
     } catch (err) {
-      speciesError =
-        err instanceof Error ? err.message : "Couldn't compute species for this place.";
+      if (token === run)
+        speciesError =
+          err instanceof Error ? err.message : "Couldn't compute species for this place.";
     } finally {
-      loadingSpecies = false;
+      if (token === run) loadingSpecies = false;
     }
   }
 
   $effect(() => {
+    void placeKey; // a different geometry is the one thing (besides the release) that re-runs this
+    const geometry = untrack(() => place.geometry);
+    const token = ++run;
     scoreResults = null;
     scoreError = null;
     speciesRows = null;
     fetchPlan = null;
     awaitingConfirm = false;
     speciesProgress = null;
-    void loadScores();
+    loadingSpecies = false;
+    speciesError = null;
+    void loadScores(geometry, token);
   });
 
   const flowerComponents = $derived(

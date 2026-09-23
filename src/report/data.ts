@@ -15,6 +15,7 @@
 import { getDataEngine, type DataEngineContext } from "../places/dataEngine";
 import { computeScoreResults, computeSpeciesResults } from "../places/results";
 import { approxAreaKm2 } from "../places/area";
+import { exclusive } from "../lib/analysis/exclusive";
 import { speciesForZone, type SpeciesRow } from "../lib/analysis/queries";
 import { zoneScoreInput, type PlaceScoreInput, type PlaceStub } from "../lib/report/model";
 import type { SqlRun } from "../lib/report/provenance";
@@ -43,10 +44,14 @@ export async function zonePlaceSpecies(
   unit: string,
   key: string,
 ): Promise<SpeciesRow[]> {
-  return speciesForZone(ctx.sources.db, ctx.sources.templates, {
-    zoneFld: `${unit}_key`,
-    zoneValue: key,
-  });
+  // usability B1: `species_agg`/`species_sel` are the SAME objects a custom place's species walk
+  // replaces (places/results.ts) -- sequential in `Report.svelte` today, queued regardless
+  return exclusive(ctx.sources.db, () =>
+    speciesForZone(ctx.sources.db, ctx.sources.templates, {
+      zoneFld: `${unit}_key`,
+      zoneValue: key,
+    }),
+  );
 }
 
 /** a custom (drawn/decoded) place's scores -- the D7b-clipped blend (places/results.ts), the SAME
