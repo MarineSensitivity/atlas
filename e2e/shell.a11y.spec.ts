@@ -114,6 +114,41 @@ test.describe("layout: no horizontal overflow, every control on screen (verify.m
   }
 });
 
+// atlas-8 phase review M8 (SC 1.4.4 Resize Text): docs/accessibility.md cited the 1.4.12
+// text-spacing test as this criterion's evidence, which tests a DIFFERENT technique (CSS text
+// spacing, not zoom); nothing actually measured 200% text zoom. Same convention 1.4.10's row
+// already uses for 400% zoom (320 CSS px stands in for a 1280-wide design at 4x): 640 CSS px
+// stands in for the SAME design at 200% zoom -- half the desktop width, same assertLayout() rule
+// (no horizontal overflow, every [data-control] on screen).
+test.describe("SC 1.4.4: 200%-zoom-equivalent viewport (640 CSS px, half of the 1280 desktop design)", () => {
+  const ZOOM_200 = { width: 640, height: 800 };
+  for (const theme of THEMES) {
+    test(`${theme} @ ${ZOOM_200.width}x${ZOOM_200.height}`, async ({ page }) => {
+      await page.setViewportSize(ZOOM_200);
+      await gotoShell(page, theme);
+      const problems = await assertLayout(page);
+      expect(problems, problems.join("\n")).toEqual([]);
+    });
+  }
+});
+
+// atlas-8 phase review M8 (SC 2.4.2 Page Titled): docs/accessibility.md claimed this criterion
+// "Supports" on the strength of a source scan (tests/shell/documentTitle.test.ts, one WRITER) and
+// a unit test on the species-card title string -- neither asserts what `document.title` actually
+// READS in a real browser on the plain map entry point.
+test.describe("page title (SC 2.4.2)", () => {
+  test("index.html: the scores lens' default title", async ({ page }) => {
+    await gotoShell(page, "navy");
+    await expect(page).toHaveTitle("Scores · MarineSensitivity Atlas");
+  });
+
+  test("index.html: switching to the species lens changes the title", async ({ page }) => {
+    await gotoShell(page, "navy");
+    await page.locator(".topbar").getByRole("button", { name: "Species" }).click();
+    await expect(page).not.toHaveTitle("Scores · MarineSensitivity Atlas");
+  });
+});
+
 test.describe("aria semantics", () => {
   // atlas-3 closing review, item 3: the version chip advertised a popup dialog it did not open yet
   // -- a false affordance for assistive tech, removed until the picker existed. atlas-4 step 3
@@ -320,5 +355,37 @@ test.describe("keyboard", () => {
     await panel.locator("button.panel-pill").click();
 
     await expect(liveRegions()).toHaveCount(1);
+  });
+
+  // atlas-8 phase review M8 (SC 2.4.1 Bypass Blocks): keyboard-walk.spec.ts already proves the
+  // FIRST skip link ("Skip to the tools" -> #rail-region); this is the missing end-to-end proof
+  // for the SECOND ("Skip to the details panel" -> #panel-region, fix list #6). Before fix list
+  // #6, #panel-region had no `tabindex="-1"`, so activating this link moved the DOM focus target
+  // but the next Tab stop (not this link itself) received the visible caret -- the same class of
+  // bug #6 fixed for the rail link. `tests/shell/skipLinks.test.ts` only proves the two `<a href>`s
+  // exist in source order; it cannot observe where Enter actually lands the caret in a browser.
+  test("'Skip to the details panel' lands the caret on the panel region", async ({
+    page,
+    browserName,
+  }) => {
+    await gotoShell(page, "navy");
+    // start from the very top of the document, the way a keyboard user arriving at the page
+    // does -- same technique keyboard-walk.spec.ts's own gotoWalk() uses (its comment: "start
+    // from the very top of the document").
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur?.());
+    // WebKit (Safari's "Full Keyboard Access" default: off) does not move focus on a plain Tab
+    // at all -- it needs Option/Alt+Tab, exactly the same per-engine key
+    // keyboard-walk.spec.ts's own `tabKey()` uses throughout its walk.
+    const tabKey = browserName === "webkit" ? "Alt+Tab" : "Tab";
+    // two Tabs: the first stop is "Skip to the tools", the second is "Skip to the details panel"
+    // (tests/shell/skipLinks.test.ts pins this order in the skeleton).
+    await page.keyboard.press(tabKey);
+    await expect(page.getByRole("link", { name: "Skip to the tools" })).toBeFocused();
+    await page.keyboard.press(tabKey);
+    const skipToPanel = page.getByRole("link", { name: "Skip to the details panel" });
+    await expect(skipToPanel).toBeFocused();
+
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#panel-region")).toBeFocused();
   });
 });

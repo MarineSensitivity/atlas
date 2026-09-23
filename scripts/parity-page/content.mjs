@@ -206,10 +206,22 @@ export const INTENTIONAL = [
   {
     id: "ID-11",
     title:
-      "The species map draws Program-Area outlines; the Shiny app drew Ecoregions and let you choose",
-    what: "The Shiny species app defaulted its Outlines select to Ecoregions (black) and offered Program Areas / Ecoregions / None. The atlas draws the release's ONE unit — Program Areas, white — on BOTH lenses (visible in the species pairs below), and has no Outlines select (G-02). The `out=` URL value exists and round-trips, but nothing reads it yet, so it cannot change what is drawn (G-25).",
+      "The species map's default draws no outline; the Shiny app defaulted to Ecoregions and let you choose",
+    what: "The Shiny species app defaulted its Outlines select to Ecoregions (black) and offered Program Areas / Ecoregions / None. The atlas has no Outlines select (G-02, still open), but since 0.10.19 `Sel.out` DOES reach the rendered style on both lenses (G-25, fixed — `zoneUnitsWithOutline()`, `src/shell/Shell.svelte`'s `zonesForStyle`): a link carrying `out=programarea` now draws the release's one unit, white, on the species map too. What the Shiny app never had to choose, the species lens picks by DEFAULT rather than by control — `DEFAULT_OUT_BY_LENS.species` is `\"none\"` (`src/lib/state/types.ts:133-136`), so a plain species link draws no outline at all. The species screenshot pairs below were shot before this default existed (0.10.17, when the outline was drawn unconditionally); re-shot against 0.10.21 they will show NO outline on the atlas side unless the link explicitly carries `out=programarea`.",
     why: "The species-lens chrome was deferred (G-02) and D17 makes the release's one unit the only outline the app knows how to draw. `out`'s per-lens default (`none` for species, `programarea` for scores) was a documented interpretation taken in atlas-2 when no UI existed to confirm it against, pinned by a test so a later deliberate change shows as a diff rather than drift.",
-    where: [{ file: "tests/state/codec.test.ts", name: "defaultOut" }],
+    where: [
+      { file: "tests/state/codec.test.ts", name: "defaultOut" },
+      {
+        file: "tests/map/zones.test.ts",
+        // a substring that stops short of the title's own escaped apostrophe ("unit\'s") --
+        // verifyEvidence() matches the RAW source text between quotes, backslash included.
+        name: 'out="none" hides every unit',
+      },
+      {
+        file: "e2e/scores.outlines.spec.ts",
+        name: "out=none: the outline renders NOTHING, but the choropleth fill still does",
+      },
+    ],
     rows: ["P-07"],
   },
   {
@@ -301,9 +313,9 @@ export const INTENTIONAL = [
   },
   {
     id: "ID-17",
-    title: "The URL is the whole view, and a place never reaches a server",
-    what: "Every input — release, lens, layer, palette, unit, study area, camera, species, input, representation, US-only, outlines, selection, theme — round-trips through the query string, and places live in the `#hash` under a versioned binary codec. The Shiny apps kept only `?ver=` across a reload, and a drawn polygon was POSTed as WKT to the API. Ordinary interaction uses `replaceState`, so a shared link reproduces its exact view and the Back button is not filled with view states.",
-    why: "Master plan D8 and atlas-2's state rules; a fragment is never sent to a server or a referrer, which is why places live there.",
+    title: "The URL is (almost) the whole view, and a place never reaches a server",
+    what: 'Every input — release, lens, layer, palette, unit, study area, camera, species, input, representation, US-only, outlines, selection, theme — round-trips through the query string, and places live in the `#hash` under a versioned binary codec. The Shiny apps kept only `?ver=` across a reload, and a drawn polygon was POSTed as WKT to the API. Ordinary interaction uses `replaceState`, so a shared link reproduces its exact view and the Back button is not filled with view states. **One map-visible input is the documented exception**: the scores lens\' "cells outside Program Areas" toggle (`showOutsidePra`) is plain component `$state`, not part of `sel` (`src/lens/scores/state.svelte.ts:27-30`, `:75`) — turning it on changes what the raster shows, but a copied link does not reproduce that; a reload or a shared link always opens with it off.',
+    why: "Master plan D8 and atlas-2's state rules; a fragment is never sent to a server or a referrer, which is why places live there. `showOutsidePra` was a deliberate scope call (ephemeral chrome, same category as `Panel.svelte`'s collapsed/expanded geometry) rather than an oversight, but it is still a real gap against the URL-is-the-view rule this line otherwise claims without exception.",
     where: [
       {
         file: "e2e/shell.url-state.spec.ts",
@@ -316,6 +328,10 @@ export const INTENTIONAL = [
       {
         file: "e2e/places.spec.ts",
         name: "fresh-profile round trip: copying the link and opening it elsewhere recomputes the SAME cell count and composite",
+      },
+      {
+        file: "e2e/places.deeplink-outline.spec.ts",
+        name: "?sel=place:0#pl=... renders the selection outline with the Places tool never opened",
       },
     ],
     rows: [],
@@ -477,6 +493,7 @@ export const GAPS = [
     detail:
       "`Sel.out` is written (and defaulted per lens) but no map code consumes it: the shell always composes the release's one zone unit, so a link carrying `out=none` or `out=ecoregion` still shows Program-Area outlines. Either wire it to `composeStyle`'s `zones` input with the Outlines select (G-02), or stop writing a value the view does not honour — a URL key that does not reproduce its view is exactly what the URL-is-the-view rule exists to prevent.",
     owner: "atlas-8 (with G-02)",
+    fixedIn: "0.10.19",
     rows: ["P-07"],
   },
   {
@@ -484,16 +501,18 @@ export const GAPS = [
     title:
       "The zones table's score column is headed by the metric's FULL label, which breaks the header",
     detail:
-      'Visible in the "Scores · zones table" shot below: the current layer\'s column header is the whole published `label` ("Combined score of extinction risk per species category and primary productivity, equally weighted (and each previously rescaled [0,100] based on Ecoregional min/max values)"), which wraps to one word per line inside the panel and pushes every data row out of view. The table itself is correct (`zonesTableRows` equals `boot.zones` exactly) — it is the header that needs a short name, with the full label as a `title`/tooltip.',
+      'Visible in the "Scores · zones table" shot below: the current layer\'s column header is the whole published `label` ("Combined score of extinction risk per species category and primary productivity, equally weighted (and each previously rescaled [0,100] based on Ecoregional min/max values)"), which wraps to one word per line inside the panel and pushes every data row out of view. The table itself is correct (`zonesTableRows` equals `boot.zones` exactly) — it is the header that needs a short name, with the full label as a `title`/tooltip. Fixed: the header now reads "Score", with the full label as `title` and as the `aria-label` (so it stays the accessible name), `src/lens/scores/ZonesTable.svelte`; `e2e/scores.zonesTableHeader.spec.ts`.',
     owner: "atlas-8 (a short column label; the full text belongs in a tooltip)",
+    fixedIn: "0.10.24",
     rows: ["S-22"],
   },
   {
     id: "G-23",
     title: "Two copy defects on the composition treemap, both visible in the screenshot pair below",
     detail:
-      'Found by looking at the shots for this page, not by a test. (1) The summary line under the treemap reads "210,671,300.041 **species** across 7 categories" — that number is the summed `suit_er_area`, not a species count, and it is also the figure\'s accessible description (`Treemap.svelte#summaryText`). (2) The ported note "the \'bird\' component has yet to be added to this visualization" is printed above a treemap that DOES show a Bird box: the note belongs to the six-rank WoRMS version (G-06), while the shipped one-level treemap groups by `sp_cat` and therefore includes birds.',
+      'Found by looking at the shots for this page, not by a test. (1) The summary line under the treemap reads "210,671,300.041 **species** across 7 categories" — that number is the summed `suit_er_area`, not a species count, and it is also the figure\'s accessible description (`Treemap.svelte#summaryText`). (2) The ported note "the \'bird\' component has yet to be added to this visualization" is printed above a treemap that DOES show a Bird box: the note belongs to the six-rank WoRMS version (G-06), while the shipped one-level treemap groups by `sp_cat` and therefore includes birds. Fixed in `describeTreemapSummary` (unit-aware, rounded) and `Composition.svelte` (the stale note removed); the bird-note fix was mislabelled "G-24" at the time (CHANGELOG.md, tests/GATES.md, tests/lens/scores/composition-note.test.ts) — it is this entry\'s second defect, relabelled "G-23 (2)".',
     owner: "atlas-8 (a one-line copy fix each, plus the gallery treemap test)",
+    fixedIn: "0.10.19",
     rows: ["S-19"],
   },
   {
@@ -540,6 +559,63 @@ export const GAPS = [
     detail:
       "Scored with 52,674 cells but 0 taxa (v9 has 7,562). The bundle carries `n_taxa = 0` and the species table says so rather than showing an empty list. v8 is restricted and superseded by v9.",
     owner: "atlas-1 (rebuild or leave)",
+    rows: [],
+  },
+  {
+    id: "G-26",
+    title: "Zones have no hover — the atlas has no hover interaction at all",
+    detail:
+      'The Shiny app repaints the hovered zone purple and shows its popup on mouseover, with no click needed. The atlas draws the zone tooltip/highlight on CLICK instead (`src/lens/scores/ScoresLens.svelte`\'s own comment: "wired to a click here since this app has no hover"); a sighted mouse user gets no preview before committing to a selection. The zones TABLE (ID-13) is not affected — it is a keyboard/screen-reader equivalent of the choropleth, not of the hover repaint.',
+    owner: "atlas-8/9",
+    rows: ["S-07"],
+  },
+  {
+    id: "G-27",
+    title:
+      "A scores map click does nothing while the desktop panel is collapsed or the Places tool is open",
+    detail:
+      "The click handler, selection write, popup and Esc listener all live inside `ScoresLens.svelte:133-182`, mounted only inside the panel BODY (`Panel.svelte` renders nothing while `geometry.collapsed`, `Shell.svelte:805-811` swaps the panel body for the Places tool). With the panel collapsed, or with Places open, clicking an ocean cell writes no `sel=cell:`, shows no popup and announces nothing — the species lens does not have this bug (its click handler is owned at Shell level). Reported by the atlas-8 phase review (M1); the fix (moving the handler to a lens-level store, matching how species does it) is the F1 round's, not this round's.",
+    owner: "F1 round (atlas-8 phase review M1)",
+    rows: ["S-10", "S-12"],
+  },
+  {
+    id: "G-28",
+    title: 'The "Report" tool and the top-bar "Report" button are both a placeholder',
+    detail:
+      'Both open the SAME rail panel, whose body is the literal string `TOOL_BODY.report` ("The report builder arrives in a later phase.", `src/shell/tools.ts:44`); `Shell.svelte`\'s `onReport()` just sets `activeTool = "report"`. This is unrelated to `report.html` (ID-04/ID-13, which IS fully built) — there is simply no in-app report-builder panel behind the rail tool or the top-bar button.',
+    owner: "atlas-8/9",
+    rows: [],
+  },
+  {
+    id: "G-29",
+    title: "No legend on a phone viewport, either lens",
+    detail:
+      "Both `ScoresLegend.svelte` and `SpeciesLegend.svelte` set `display: none` under `max-width: 899px` — there is no room beside the bottom rail and bottom sheet at that breakpoint (the same trade-off the on-map About card already makes, `docs/design/spec.md` §14). A phone user has color on the map with no key to it.",
+    owner: "atlas-8/9",
+    rows: [],
+  },
+  {
+    id: "G-30",
+    title: "The theme default is `auto`; the Shiny apps always opened dark",
+    detail:
+      '`DEFAULT_SEL.theme` is `"auto"` (`src/lib/state/types.ts:175`), which follows the OS/browser `prefers-color-scheme` (resolving to navy when that signal is unavailable). A first-time visitor whose system is set to light therefore sees a paper map by default, where every Shiny app opened dark regardless of the OS setting.',
+    owner: "atlas-8/9",
+    rows: [],
+  },
+  {
+    id: "G-31",
+    title: "The scores-lens top-bar search input has no handler",
+    detail:
+      'On the scores lens, the top-bar search is a bare `<input type="search" aria-label="Search species and places">` with no `onInput`/`onChange`/`onSearchLogged` at all (`Shell.svelte:703-708`) — typing into it does nothing. The species lens gets a real, wired search (`SpeciesSearch`, P-02); the scores lens never had an equivalent feature to search FOR (no species/place index the scores map searches over), so the control is a leftover input rather than a built one.',
+    owner: "atlas-8/9",
+    rows: [],
+  },
+  {
+    id: "G-32",
+    title: "No Docs/Home navigation link, and no preview sign-out control",
+    detail:
+      "`Shell.svelte` has no link back to the docs site or the marketing home page, and no sign-out affordance for a signed-in preview reviewer (a preview session is left by leaving the tab/clearing Cloudflare Access, not by an in-app control). The Shiny apps carried both in their own chrome.",
+    owner: "atlas-8/9",
     rows: [],
   },
 ];

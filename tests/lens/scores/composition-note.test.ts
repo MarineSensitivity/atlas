@@ -1,9 +1,11 @@
-// G-24 fix (docs/parity.html): a ported note above the composition treemap used to read "the
-// 'bird' component has yet to be added to this visualization" -- true of the SHINY app's six-rank
-// WoRMS hierarchy treemap (its `inner_join` against `d_taxonomy` drops BOTW taxa, which carry no
-// WoRMS row -- G-06, not built here), but never true of the ONE-LEVEL treemap this repo ships
-// (`composition.ts#compositionTree` groups by `sp_cat` via a LEFT JOIN, `sql/composition.sql`, so
-// a bird row is never excluded by construction).
+// G-23 (2) fix (docs/parity.html) -- mislabelled "G-24" at the time (corrected atlas-8 phase
+// review M8, 0.10.24: this is G-23's SECOND defect, the stale bird note beside its summary-line
+// defect, not the unrelated G-24 zones-table-header issue). A ported note above the composition
+// treemap used to read "the 'bird' component has yet to be added to this visualization" -- true
+// of the SHINY app's six-rank WoRMS hierarchy treemap (its `inner_join` against `d_taxonomy`
+// drops BOTW taxa, which carry no WoRMS row -- G-06, not built here), but never true of the
+// ONE-LEVEL treemap this repo ships (`composition.ts#compositionTree` groups by `sp_cat` via a
+// LEFT JOIN, `sql/composition.sql`, so a bird row is never excluded by construction).
 //
 // Two things are asserted: (1) a plain source scan, the same technique
 // `tests/shell/documentTitle.test.ts` / `tests/treemap-lazy-import.wiring.test.ts` use for a
@@ -21,7 +23,7 @@ import { compositionTree, type CompositionRow } from "../../../src/lens/scores/c
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const COMPOSITION_SVELTE = join(ROOT, "src/lens/scores/Composition.svelte");
 
-describe("Composition.svelte no longer carries the stale 'bird' note (G-24)", () => {
+describe("Composition.svelte no longer carries the stale 'bird' note (G-23 (2))", () => {
   it("REGRESSION: the literal note text is absent from the source", () => {
     const src = readFileSync(COMPOSITION_SVELTE, "utf8");
     expect(src).not.toContain("yet to be added");

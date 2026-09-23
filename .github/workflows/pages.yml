@@ -39,7 +39,20 @@ jobs:
 
       - run: npx tsc --noEmit
 
+      # atlas-8 phase review M3: `npm run check` (svelte-check) sees inside a `.svelte` <script>
+      # block the way a plain `tsc --noEmit` above cannot -- GATES.md long claimed this ran in CI
+      # ("manual only; see step 3") when it never did. Separate step (not folded into the tsc line
+      # above) so a red svelte-check names itself in the job log rather than hiding behind "tsc".
+      - run: npm run check
+
       - run: npx vitest run
+
+      # atlas-8 phase review M3: same story as `check` above -- lint/format were documented as
+      # "added in step 3" in tests/GATES.md but pages.yml never ran them. `lint`/`format:check` are
+      # both read-only (no `--fix`/`--write`), so they are safe this early in the job.
+      - run: npm run lint
+
+      - run: npm run format:check
 
       # atlas-2 Step 3a fix round 1: mirrors DuckDB-WASM's parquet extension (both platforms) into
       # public/duckdb-ext/ BEFORE the build, so Vite's publicDir copies it into dist/ — without this
@@ -392,11 +405,68 @@ jobs:
       # https://.../marine-atlas/` run PASSED here (max|delta| < 1e-9 on every quantity,
       # 14,238-cell GAA composite included) before this job was written, so this is wired as a
       # real gate, not a hopeful one.
-      - run: node scripts/parity/run.mjs v9 --base https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/
+      #
+      # atlas-8 phase review M3: v7 alongside v9 -- `run.mjs`'s own default (`out.vers = ["v9",
+      # "v7"]` when none are named) already covers both, and `tests/fixtures/parity/v7/*.json` are
+      # committed (`scripts/parity/fixtures.R`'s output, not regenerated here), so nothing extra is
+      # needed to add it. Verified 2026-09-23 (laptop, real network, duckdb 1.5.5): `node
+      # scripts/parity/run.mjs v7 --base https://.../marine-atlas/` PASSED alone (max|delta| <
+      # 1e-9 on every quantity, including the tracing GAA/GEO checks v7-only) before this line was
+      # written.
+      - run: node scripts/parity/run.mjs v9 v7 --base https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/
+
+      # atlas-8 phase review M3: the seeded-fault proof that the two lines above are a real gate,
+      # not a hopeful one -- GATES.md listed this as a self-proving gate with "No" CI wiring
+      # ("needs DuckDB CLI + data"), both of which this job already has by this point. `faults.mjs`
+      # on its own only knew ensureMirror()'s LAPTOP-only local mirror (`.claude/worktrees/
+      # contract/...`, `~/_big/msens/derived`, neither of which exists on a runner) -- pointing it
+      # at `--base` (added for this job; forwarded to every run.mjs invocation) is what makes it
+      # runnable here at all. Verified 2026-09-23 (laptop, real network): all 5 named mutations
+      # (blend dropped, D7b clip removed, bare in_usa, mdl_id hardcoded on v7, an unquoted `lit()`
+      # parameter) turned run.mjs red for the SEEDED reason, not for a missing local path.
+      - run: node scripts/parity/faults.mjs --base https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/
+
+  analytics-privacy:
+    name: e2e (analytics privacy — GA4 Enhanced Measurement history-event leak)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # atlas-8 phase review M3: this spec's own webServer (e2e/fixtures/analytics-privacy/
+      # playwright.config.ts) already runs `build:fixture:analytics-privacy` before `vite preview`
+      # -- an explicit build step here is not load-bearing, but it matches every other fixture in
+      # this workflow (size-budget's two fixtures above) in building its own red/target artifact as
+      # a separately-logged step, so a build failure here is never mistaken for the e2e run itself
+      # going red.
+      - run: npm run build:fixture:analytics-privacy
+
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm run e2e:analytics-privacy
 
   publish:
     name: publish dist/ to gh-pages
-    needs: [checks, test-faults, e2e, e2e-gallery, verify, e2e-engine, e2e-opfs, parity]
+    needs:
+      [
+        checks,
+        test-faults,
+        e2e,
+        e2e-gallery,
+        verify,
+        e2e-engine,
+        e2e-opfs,
+        parity,
+        analytics-privacy,
+      ]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

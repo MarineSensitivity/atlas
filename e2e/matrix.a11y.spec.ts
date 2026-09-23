@@ -108,6 +108,65 @@ test.describe("axe: zero serious/critical on report.html", () => {
   }
 });
 
+// atlas-8 phase review M8 (§3.1: "the zones table -- the map's declared equivalent -- is never
+// axe-audited in the app"): `STATE_MATRIX` above is entirely URL-driven (`gotoState()` navigates
+// to a `path`), but which RAIL TOOL is open (`activeTool` in Shell.svelte) is NOT url state --
+// D8/plan's own scope decision, "ephemeral chrome" -- so no matrix state ever opens Table, Flower,
+// Places, Report or the version picker; the axe sweep never sees their panels, including the
+// zones table itself (Table -> Zones), the one thing this note calls the map's keyboard/
+// screen-reader equivalent. One base state ("shell (default)", already in STATE_MATRIX) + a click
+// per tool, so this reuses the SAME fixtures/hermetic wiring the matrix above does, not a copy.
+test.describe("axe: zero serious/critical with each rail tool open (and the zones table)", () => {
+  const BASE = STATE_MATRIX.find((s) => s.name === "shell (default)");
+
+  async function openRailTool(page: Page, baseURL: string, label: string) {
+    await page.setViewportSize(DESKTOP);
+    await gotoState(page, baseURL, BASE!);
+    await page
+      .locator("#rail-region [role='toolbar']")
+      .locator(`button[aria-label="${label}"]`)
+      .click();
+  }
+
+  for (const label of ["Layers", "Places", "Flower plot", "Table", "Report"]) {
+    test(`rail tool: ${label}`, async ({ page, baseURL }) => {
+      await openRailTool(page, baseURL!, label);
+      const bad = await seriousOrCritical(page);
+      expect(bad, summarize(bad)).toEqual([]);
+    });
+  }
+
+  test("rail tool: Table -> Zones (the zones table itself, the map's declared equivalent)", async ({
+    page,
+    baseURL,
+  }) => {
+    await openRailTool(page, baseURL!, "Table");
+    await page.getByRole("button", { name: "Zones", exact: true }).click();
+    const table = page.getByRole("table");
+    await expect(table).toBeVisible();
+    // atlas-8 phase review M8 (SC 1.3.1): docs/accessibility.md's `<th scope="col">` claim for
+    // this exact table was backed only by a manually-quoted accessibility-tree dump, never an
+    // automated check -- every header cell really does carry `scope`, and none is silently plain.
+    const headers = table.locator("thead th");
+    const count = await headers.count();
+    expect(count).toBeGreaterThan(0);
+    for (let i = 0; i < count; i++) {
+      await expect(headers.nth(i)).toHaveAttribute("scope", "col");
+    }
+    const bad = await seriousOrCritical(page);
+    expect(bad, summarize(bad)).toEqual([]);
+  });
+
+  test("the version picker dialog", async ({ page, baseURL }) => {
+    await page.setViewportSize(DESKTOP);
+    await gotoState(page, baseURL!, BASE!);
+    await page.locator('[data-control="version-chip"]').click();
+    await expect(page.getByRole("dialog", { name: "Data release" })).toBeVisible();
+    const bad = await seriousOrCritical(page);
+    expect(bad, summarize(bad)).toEqual([]);
+  });
+});
+
 // the one state the matrix structurally cannot reach: the D6 denial notice. `?ver=v9` on the public
 // host falls through to latest.txt and AUTO-OPENS the version picker dialog (Shell.svelte's
 // `early.denied` handler) -- a modal rendered without any user action, i.e. exactly the kind of

@@ -156,17 +156,25 @@ ${d.rows?.length ? `<p class="dim">checklist lines: ${d.rows.map((r) => `<a href
   ).join("\n");
 }
 
+// M7 (atlas-8 phase review): a gap that has since been fixed (e.g. G-23/G-25 in 0.10.19, G-24 in
+// 0.10.24) is NOT deleted from GAPS -- the citations (`rows`, evidence elsewhere) stay valid, and
+// deleting it would silently drop the record that it was ever wrong. It carries `fixedIn` instead,
+// and this table's status column is the "fixed in <version>" status the review asked for -- a gap
+// stays visible here, sorted with the still-open ones, but reads as resolved rather than pending.
 function gapsList() {
   return `<table class="rows gaps">
-<thead><tr><th scope="col">id</th><th scope="col">gap</th><th scope="col">owner</th><th scope="col">lines</th></tr></thead>
+<thead><tr><th scope="col">id</th><th scope="col">gap</th><th scope="col">owner</th><th scope="col">status</th><th scope="col">lines</th></tr></thead>
 <tbody>
 ${GAPS.slice()
   // by id, so a gap added later to the middle of the source list still reads G-01…G-nn here
   .sort((a, b) => a.id.localeCompare(b.id, "en", { numeric: true }))
   .map(
-    (g) => `<tr id="${esc(g.id)}"><td class="id"><a href="#${esc(g.id)}">${esc(g.id)}</a></td>
+    (
+      g,
+    ) => `<tr id="${esc(g.id)}" class="${g.fixedIn ? "fixed" : ""}"><td class="id"><a href="#${esc(g.id)}">${esc(g.id)}</a></td>
 <td class="text"><b>${inline(g.title)}</b><div class="note">${inline(g.detail)}</div></td>
 <td class="owner">${inline(g.owner)}</td>
+<td class="dim">${g.fixedIn ? `<span class="pill done">Fixed in ${esc(g.fixedIn)}</span>` : "open"}</td>
 <td class="dim">${(g.rows ?? []).map((r) => `<a href="#${esc(r)}">${esc(r)}</a>`).join(", ") || "—"}</td></tr>`,
   )
   .join("\n")}
@@ -215,6 +223,7 @@ thead th { background: var(--panel); font-weight: 600; }
 .pill.intentional-difference { color: var(--intent); }
 .diff { border-left: 3px solid var(--intent); padding-left: .9rem; margin: 1.25rem 0; }
 .gaps td.owner { width: 12rem; font-size: .82rem; color: var(--dim); }
+.gaps tr.fixed td.text b { color: var(--dim); }
 .pair { margin: 2rem 0; }
 .pair.failed { border-left: 3px solid var(--bad); padding-left: .9rem; }
 .shots { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
@@ -256,6 +265,8 @@ export function renderPage(data) {
   const pairs = shots?.states ?? [];
   const compared = pairs.filter((s) => !s.atlasOnly);
   const failedPairs = pairs.filter((s) => !s.ok);
+  const openGaps = GAPS.filter((g) => !g.fixedIn);
+  const fixedGaps = GAPS.filter((g) => g.fixedIn);
 
   return `<!doctype html>
 <html lang="en">
@@ -309,9 +320,12 @@ and where the Atlas behaviour is asserted.</p>
 ${intentionalList()}
 
 <h2 id="gaps">Known gaps</h2>
-<p>${GAPS.length} differences that were <em>not</em> chosen: things deferred, not yet gated, or blocked
-on data the releases do not publish. None of them is hidden below the line — they are listed here so
-the signature covers what is missing as well as what is done.</p>
+<p>${openGaps.length} open differences that were <em>not</em> chosen: things deferred, not yet gated, or
+blocked on data the releases do not publish. None of them is hidden below the line — they are listed
+here so the signature covers what is missing as well as what is done. ${fixedGaps.length} more
+(${fixedGaps.map((g) => esc(g.id)).join(", ")}) were found here and have SINCE been fixed — kept in the
+table below, marked "Fixed in &lt;version&gt;", rather than deleted, so the record of what was wrong
+does not disappear with the fix.</p>
 ${gapsList()}
 
 <h2 id="shots">Screenshot pairs</h2>

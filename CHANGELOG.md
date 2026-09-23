@@ -32,6 +32,76 @@ id below.
   (`--size-rail-row`, `src/shell/shell.css`), and the sheet's "Full height" detent shrinks to fit
   above it (`src/lib/ui/Sheet.svelte`) instead of growing back down over it.
 
+# atlas 0.10.24
+
+atlas-8 phase review (Opus 5.5) fix round: M3 (CI wiring), M7 (parity page content), M8 (the 508
+note) and m12 (an ID-17 wording gap). No app behavior changes except the G-24 zones-table header
+fix and the ArrowDown combobox fix this round found had no test.
+
+- **M3: CI now runs what `tests/GATES.md` says it runs.** `pages.yml`'s `checks` job gained
+  `npm run check` (svelte-check), `npm run lint` and `npm run format:check` as their own steps — the
+  file long claimed "step 3" added these, and it never had. A new `analytics-privacy` job runs
+  `npm run e2e:analytics-privacy` (the GA4 Enhanced Measurement history-event-leak gate). The
+  `parity` job now runs v7 alongside v9 (`run.mjs` already defaulted to both; `tests/fixtures/
+parity/v7/*.json` were already committed) and `node scripts/parity/faults.mjs`, the seeded-fault
+  proof for the SQL-twins parity gate — `faults.mjs` gained a `--base <url>` flag (forwarded to
+  every `run.mjs` invocation) so it can target the real bucket in CI instead of its previous
+  laptop-only local mirror (`ensureMirror()`'s `.claude/worktrees/contract/...` /
+  `~/_big/msens/derived` paths, which do not exist on a runner). `tests/GATES.md`'s CI column is
+  corrected throughout: several rows wrongly said "e2e not yet in CI" for specs the `e2e` job
+  already runs on all three engines (`Sel.out`/G-25, the basemap-late-style fault, the collapsed-
+  panel fault, `map.spec.ts`'s vector-rendering gate, OPFS/engine e2e, the places fresh-profile
+  round trip), and the "Not yet wired into CI" section — which had drifted stale even before this
+  round — is rewritten to state what is actually wired now.
+- **M7: the parity page (`docs/parity.html`) content is corrected and completed.** G-23 (two
+  treemap copy defects) and G-25 (`Sel.out` wiring) were fixed in 0.10.19 but still listed as open
+  gaps; both now carry `fixedIn: "0.10.19"` and render in a "Fixed in ..." status rather than
+  vanishing from the record. The 0.10.19 bird-note fix was mislabelled "G-24" (it is G-23's second
+  defect) — relabelled "G-23 (2)" in this CHANGELOG, `tests/GATES.md` and
+  `composition-note.test.ts`. The REAL G-24 — the zones table's score column headed by the whole
+  published metric label, wrapping the header and pushing rows out of view
+  (`ZonesTable.svelte:68`) — is fixed: a short "Score" header, the full label as `title` and as
+  `aria-label` (`e2e/scores.zonesTableHeader.spec.ts`), and now carries `fixedIn: "0.10.24"`. ID-11
+  and the P-07 note are rewritten: since 0.10.19 `Sel.out` reaches the species lens too, but the
+  species lens DEFAULTS to `out=none`, so a plain species link draws no outline where the old page
+  claimed one was always drawn. The S-07 note now says plainly that the atlas has no HOVER
+  interaction at all (zones repaint/tooltip on click, not hover) — a new known gap, G-26. Eight
+  lines were missing from the intentional-difference/known-gap lists and are added: the scores
+  click/popup dead while the panel is collapsed or Places is open (G-27, owner: the F1 round, per
+  M1); no zone hover (G-26); the Report tool and top-bar Report button are both a placeholder
+  (G-28); no legend on a phone (G-29); the theme default is `auto`, not Shiny's always-dark (G-30);
+  the scores-lens top-bar search input has no handler (G-31); no Docs/Home nav and no preview
+  sign-out (G-32); ID-17 now names `showOutsidePra` as the one map-visible input that is NOT URL
+  state, citing the 0.10.21 Places deep-link outline restore as evidence for the rest of the URL-is-
+  the-view claim.
+- **M8: the 508 note (`docs/accessibility.md`) no longer claims a three-engine matrix it does not
+  run, and every claim it does make names a test.** Reworded the "three engines" claims (§1's
+  evidence table gains an Engines column; §3.4 is rewritten to say plainly which gates are chromium-
+  only in CI — `matrix.a11y.spec.ts`, `gallery.spec.ts`, the two popup specs, `verify.mjs` — versus
+  which run all three). Added cheap tests that were missing: `toHaveTitle()` on all three entry
+  points (`index.html`, `report.html`, `gallery.html`); a real end-to-end proof for the SECOND skip
+  link ("Skip to the details panel" actually lands the caret on `#panel-region`, not just a source-
+  order check); a `role="alert"` refusal test in `e2e/places.spec.ts` for the coordinate dialog;
+  ArrowDown moving `aria-activedescendant` to the next option in the species combobox (the existing
+  test only moved it by typing a filter). Added `matrix.a11y.spec.ts` cases opening every rail tool
+  (Layers, Places, Flower, Table, Report) and the version-picker dialog, plus a Table → Zones case
+  that axe-audits the zones table itself — the map's declared keyboard/screen-reader equivalent,
+  never once audited before this round — and asserts every header cell carries `scope="col"`
+  (previously backed only by a manually-quoted tree dump). Added a 640×800 (200%-zoom-equivalent)
+  `assertLayout()` case for SC 1.4.4, which previously cited the unrelated 1.4.12 text-spacing test.
+  2.1.2's cite is corrected to the real no-trap evidence (`shell.a11y.spec.ts`'s whole-page Tab walk,
+  `keyboard-walk.spec.ts`'s A11Y-1) instead of the modal focus-TRAP tests, which are 2.4.3's concern.
+  §3.1 no longer claims the map is flatly "not keyboard-operable": MapLibre's own canvas keeps
+  `tabindex="0"` and its default arrow-key pan/zoom handler (measured live), so it IS a real Tab
+  stop with real keyboard operability — what is genuinely absent is any CONTENT-specific keyboard
+  path (selecting a zone, reading a value), which is what the zones table equivalent is for. Two
+  rows downgraded honestly rather than fixed: 1.4.5 Images of Text (an untested design intent) to
+  "Not yet verified", 2.4.7 Focus Visible (only spot-checked, never walked end-to-end) to "Partially
+  Supports". Non-VPAT status values fixed ("Supports (by removal)", "Supports (exceeds AA 2.1)" →
+  `Supports` with the qualifier moved into the prose; `N/A` → `Not Applicable`). Version line bumped
+  to 0.10.24; the mangled "Real Safari\n\n- VoiceOver..." paragraph (a stray line break read as a
+  bullet) is rewritten as prose.
+
 # atlas 0.10.23
 
 atlas-8 review round 2 (Opus 5.5 review of 0.10.21): six items — three MAJOR ("element exists"
@@ -201,12 +271,13 @@ The three defects the parity screenshots exposed (`docs/parity.html` known gaps 
   summary/table are built by a new pure `describeTreemapSummary()`
   (`src/lib/ui/treemapLayout.ts`), rounded 0 dp like every other consumer of this number
   (`report/format.ts`'s `formatScore0`).
-- **G-24: a ported "the 'bird' component has yet to be added" note stayed above a treemap that DOES
-  draw a Bird box.** That note describes the Shiny app's six-rank WoRMS hierarchy treemap (G-06,
-  never built here); the shipped one-level treemap groups by `sp_cat` via a LEFT JOIN
-  (`sql/composition.sql`), so a bird row is never excluded by construction (confirmed against the
-  real v7 and v9 parity fixtures, both of which carry `sp_cat: "bird"` rows that survive into a
-  box). Removed from `Composition.svelte`.
+- **G-23 (2) [mislabelled "G-24" at the time — corrected atlas-8 phase review M8, 0.10.24; the real
+  G-24, unrelated, is the zones table's header]: a ported "the 'bird' component has yet to be
+  added" note stayed above a treemap that DOES draw a Bird box.** That note describes the Shiny
+  app's six-rank WoRMS hierarchy treemap (G-06, never built here); the shipped one-level treemap
+  groups by `sp_cat` via a LEFT JOIN (`sql/composition.sql`), so a bird row is never excluded by
+  construction (confirmed against the real v7 and v9 parity fixtures, both of which carry
+  `sp_cat: "bird"` rows that survive into a box). Removed from `Composition.svelte`.
 - **G-25: `out=` was parsed and round-tripped but nothing read it** — a link carrying `out=none`
   (the species lens' own default) still drew the Program-Area outline on every map. A new
   `zoneUnitsWithOutline()` (`src/lib/map/layers/zones.ts`) is the ONE place `Sel.out` now reaches

@@ -470,6 +470,37 @@ test.describe("fix list #8 (SC 4.1.2 + 1.3.1): the species picker is a real comb
     await expect(input).toBeFocused();
   });
 
+  // atlas-8 phase review M8 (SC 2.1.1 Keyboard): the test above proves aria-activedescendant is
+  // set when the list opens and re-anchored by TYPING a filter -- neither exercises ArrowDown
+  // itself. `SpeciesPicker.svelte`'s own ArrowDown handler (`activeIndex` stepping) had no test at
+  // all before this one.
+  test("ArrowDown moves aria-activedescendant to the NEXT option, without typing", async ({
+    page,
+  }) => {
+    await gotoSpecies(page, "/?lens=species&ver=v9");
+    const input = page.locator(".picker-input");
+    await input.focus();
+    await expect
+      .poll(() => page.locator(".picker-option").count(), { timeout: 10_000 })
+      .toBeGreaterThan(1); // at least two options to move between
+
+    const firstId = await input.getAttribute("aria-activedescendant");
+    expect(firstId).toBeTruthy();
+
+    await page.keyboard.press("ArrowDown");
+    const secondId = await input.getAttribute("aria-activedescendant");
+    expect(secondId).toBeTruthy();
+    expect(secondId).not.toBe(firstId);
+    // still the field that has focus -- the APG pattern this component follows (fix list #8):
+    // options never receive individual keyboard focus.
+    await expect(input).toBeFocused();
+
+    // the newly active option is really the SECOND row in the list, not an arbitrary id change.
+    const options = page.locator(".picker-option");
+    const secondOptionId = await options.nth(1).getAttribute("id");
+    expect(secondId).toBe(secondOptionId);
+  });
+
   test("typing a query announces the result count through the shared live region", async ({
     page,
   }) => {
