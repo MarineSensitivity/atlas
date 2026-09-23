@@ -29,7 +29,7 @@ import {
   RASTER_RGB,
   SCORE_COG_URL,
   blockWasm,
-  routeBasemapTiles,
+  routeBasemapStyle,
   routeGlyphs,
   routeTitilerTiles,
 } from "./map-hermetic";
@@ -265,7 +265,7 @@ async function gotoScoresMap(page: Page, ver: Ver) {
   await routeSession(page, { preview: true, ver });
   await routeSealFixture(page);
   await routeZones20(page);
-  await routeBasemapTiles(page);
+  await routeBasemapStyle(page);
   await routeTitilerTiles(page);
   await routeGlyphs(page);
   // mercator, not the shipped globe default: a flat probe (e2e/map.spec.ts's own reason) — globe

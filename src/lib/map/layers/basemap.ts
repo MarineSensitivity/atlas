@@ -1,58 +1,146 @@
 // The basemap, picked by theme — spec.md §3: `navy` → dark-matter, `paper` → positron.
 //
-// WHY RASTER, not the CARTO vector style (`.../gl/dark-matter-gl-style/style.json`, which the Shiny
-// app's `carto_style("dark-matter")` uses): the vector style is a 70 KB style.json whose own
-// `sources.carto` then pulls a TileJSON, vector tiles, a sprite sheet AND a glyph range before a
-// single basemap pixel appears — four extra round trips on the first-paint path, and a second style
-// object that would have to be merged into ours (CLAUDE.md: there is exactly ONE composed style).
-// The raster endpoints below are the same two CARTO basemaps rendered server-side: one source, one
-// layer, no sprite, no TileJSON, no key, and zero added JS. That makes them the smallest option that
-// works, and the only one a hermetic `page.route` can serve offline with a single PNG fixture.
-//
-// Glyphs are still needed for the zone LABEL layers (layers/zones.ts) — that one URL is CARTO's own
-// font endpoint, read from the same style.json (verified 2026-09-22), and is only fetched when a
-// symbol layer actually exists.
+// CARTO's RASTER basemaps (the two theme-named XYZ tile endpoints this file used to point at)
+// started answering with an "API KEY REQUIRED" watermark tile (owner report, 2026-09-23) — CARTO
+// now gates the raster endpoint behind a key. Its VECTOR GL styles do not: `.../gl/dark-matter-gl-style/
+// style.json` and `.../gl/positron-gl-style/style.json` are still keyless (verified live the same
+// day: 200, ~70 KB, `sources.carto` a `carto.streets` vector TileJSON, plus a sprite and a glyph
+// range). That costs the extra round trips the OLD comment here warned about (style.json -> its own
+// TileJSON -> vector tiles -> sprite -> glyphs) — accepted, since the raster endpoint no longer
+// works at any price. `loadBasemapStyle()` fetches+caches that style.json ONCE per theme;
+// `style.ts#composeStyle()` merges its `sources`/`sprite`/`glyphs`/`layers` into the ONE composed
+// style (CLAUDE.md: "one MapLibre style, one setStyle(diff:true)") — never a second style object.
 import { MAP_BACKGROUND_NAVY, MAP_BACKGROUND_PAPER } from "../colors";
-import type { BasemapSpec, ResolvedTheme } from "../types";
+import type { ResolvedTheme } from "../types";
 
-/** CARTO's keyless raster basemap host (`dark_all` = dark-matter, `light_all` = positron). */
-export const CARTO_RASTER_BASE = "https://basemaps.cartocdn.com";
+/** CARTO's own vector GL style per theme (`dark-matter` = navy, `positron` = paper) — the ONE place
+ * this mapping lives. No key, no raster fallback: `tests/map/no-raster-basemap.test.ts` is the
+ * source-scan gate that this file (and everything else under `src/lib/map`) never reintroduces the
+ * old raster tile names (see the removed `BASEMAP_BY_THEME` table, atlas-map git history). */
+export const CARTO_STYLE_PATH: Record<ResolvedTheme, string> = {
+  navy: "dark-matter-gl-style",
+  paper: "positron-gl-style",
+};
 
-/** CARTO's glyph endpoint, verbatim from `dark-matter-gl-style/style.json`'s `glyphs` key. Only a
- * symbol layer fetches it; a style with no labels never touches it. */
-export const GLYPHS_URL = "https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf";
-
-/** the font stack every label layer names — one stack, so one glyph range is fetched, not four. */
-export const LABEL_FONT: readonly string[] = ["Open Sans Regular"];
+/** CARTO's style-JSON host (verified live 2026-09-23: 200, ~70 KB, keyless). */
+export const CARTO_STYLE_BASE = "https://basemaps.cartocdn.com/gl";
 
 export const BASEMAP_ATTRIBUTION = "© OpenStreetMap contributors © CARTO";
 
-/** theme → CARTO basemap name. `navy` is dark-matter and `paper` is positron (spec.md §3); this is
- * the ONE table that mapping lives in. */
-export const BASEMAP_BY_THEME: Record<ResolvedTheme, string> = {
-  navy: "dark_all",
-  paper: "light_all",
-};
+/** the basemap spec for a theme: just the style URL + attribution — `loadBasemapStyle()` does the
+ * fetching, `composeStyle()` does the merging. Kept as its own function (rather than inlining the
+ * URL template) so a theme's basemap is still ONE table, matching `layers/basemap.ts`'s original
+ * contract. */
+export function basemapForTheme(theme: ResolvedTheme): { url: string; attribution: string } {
+  return {
+    url: `${CARTO_STYLE_BASE}/${CARTO_STYLE_PATH[theme]}/style.json`,
+    attribution: BASEMAP_ATTRIBUTION,
+  };
+}
+
+/** the slice of a fetched CARTO GL style `composeStyle()` actually merges — plain data, so a test
+ * can build one by hand instead of fetching the real 93-layer style.json. */
+export interface CartoStyleLike {
+  sources?: Record<string, unknown>;
+  sprite?: string;
+  glyphs?: string;
+  layers?: Array<Record<string, unknown> & { id: string; type: string; source?: string }>;
+}
+
+/** the in-memory fallback when a fetch fails (offline, CORS, a future CARTO outage): NO sources or
+ * layers, so `composeStyle()`'s own synthetic `background` layer (the theme's plain
+ * `--surface-map` colour, `MAP_BACKGROUND_BY_THEME`) is all that paints — the app never blanks. */
+export const EMPTY_BASEMAP_STYLE: CartoStyleLike = { sources: {}, layers: [] };
+
+/** the slice of `Response` this needs, so tests (and this module) don't have to construct a real
+ * one — the same seam `release/session.ts#resolveSession()` already uses for its own fetch. */
+export type BasemapStyleResponseLike = Pick<Response, "ok" | "json">;
+
+const cache = new Map<ResolvedTheme, CartoStyleLike>();
+const pending = new Map<ResolvedTheme, Promise<CartoStyleLike>>();
+
+/**
+ * Fetch (once) and cache CARTO's GL style.json for a theme. Concurrent callers for the SAME theme
+ * share one in-flight request; a resolved theme is never re-fetched. Any failure — network error,
+ * a non-2xx response, unparsable JSON — resolves to {@link EMPTY_BASEMAP_STYLE} rather than
+ * throwing (never fail the map open, CLAUDE.md's "never fail open" is about preview access, but the
+ * same never-blank spirit applies here) and is NOT cached, so a later call may retry once the
+ * network recovers.
+ */
+export async function loadBasemapStyle(
+  theme: ResolvedTheme,
+  fetchStyle: (url: string) => Promise<BasemapStyleResponseLike> = (url) => fetch(url),
+): Promise<CartoStyleLike> {
+  const hit = cache.get(theme);
+  if (hit) return hit;
+  const inflight = pending.get(theme);
+  if (inflight) return inflight;
+
+  const promise = (async (): Promise<CartoStyleLike> => {
+    try {
+      const res = await fetchStyle(basemapForTheme(theme).url);
+      if (!res.ok) return EMPTY_BASEMAP_STYLE;
+      const json = (await res.json()) as CartoStyleLike;
+      cache.set(theme, json);
+      return json;
+    } catch {
+      return EMPTY_BASEMAP_STYLE;
+    } finally {
+      pending.delete(theme);
+    }
+  })();
+  pending.set(theme, promise);
+  return promise;
+}
+
+/**
+ * The SYNCHRONOUS read `composeStyle()` uses: whatever is cached for `theme` right now, or
+ * {@link EMPTY_BASEMAP_STYLE} if `loadBasemapStyle()` has not resolved (or was never called) yet.
+ *
+ * `composeStyle()` deliberately never awaits the fetch itself, and nothing here forces an EXTRA
+ * recompose once the fetch resolves either (measured, atlas-map fix rounds 1-2): an early version
+ * made `composeStyle` itself `async` and awaited `loadBasemapStyle()` inline; a second version
+ * kept `composeStyle` synchronous but bumped a `$state` counter from the fetch's own `.then()` to
+ * force an immediate recompose. BOTH shapes hand MapLibre an EXTRA `setStyle(diff:true)` call
+ * whose timing is driven by a promise resolving via the real network/route stack rather than the
+ * caller's own reactive-effect timing — landing that extra call at an unpredictable moment inside
+ * a rapid burst of OTHER style changes reliably exposed a real MapLibre-level mis-ordering, not a
+ * bug in the caller (`e2e/species.smoke.spec.ts`'s "switching species twice before the map's first
+ * idle" regression test went red 40-100% of the time depending on which shape). `map/styleQueue.ts`
+ * cannot help here either: it only queues while `!map.isStyleLoaded()`, and the map's first,
+ * source-less `blankStyle()` is trivially "loaded". The caller (`Shell.svelte`, `Report.svelte`)
+ * instead calls `loadBasemapStyle(theme)` fire-and-forget, once, as early as possible, and relies
+ * on the NEXT ordinary reactive recompose (triggered by zones/raster/selection settling, which
+ * happens within the first second of any real load) to pick up the by-then-warm cache — no
+ * separately triggered recompose, so the call PATTERN never changes shape from before this fix.
+ */
+export function getCachedBasemapStyle(theme: ResolvedTheme): CartoStyleLike {
+  return cache.get(theme) ?? EMPTY_BASEMAP_STYLE;
+}
+
+/** test-only: clears the module cache so each test starts cold. Never called from app code. */
+export function resetBasemapStyleCacheForTests(): void {
+  cache.clear();
+  pending.clear();
+}
+
+/** CARTO's glyph endpoint — verbatim from the real style.json (verified 2026-09-23), and the static
+ * fallback `composeStyle()` uses when a fetch failed but a symbol layer still needs one (a zone
+ * label, e.g.) — see `EMPTY_BASEMAP_STYLE`'s own header. */
+export const GLYPHS_URL = "https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf";
+
+/** the font stack every ZONE label layer names (`layers/zones.ts`) — CARTO's own layers carry their
+ * own `text-font` verbatim from the fetched style and never read this. */
+export const LABEL_FONT: readonly string[] = ["Open Sans Regular"];
 
 /**
  * The `--surface-map` token of each theme, as a plain hex the WebGL background layer can take (a
  * style is not CSS and cannot read a custom property). `tests/map/basemap.test.ts` asserts these
  * equal `src/lib/brand/tokens.json`'s `--surface-map` in both themes, so the map's background can
- * never drift from the page background the shell paints behind it.
+ * never drift from the page background the shell paints behind it — and it is the colour that
+ * shows when the CARTO fetch fails and {@link EMPTY_BASEMAP_STYLE} is all `composeStyle()` has.
  */
 export const MAP_BACKGROUND_BY_THEME: Record<ResolvedTheme, string> = {
   navy: MAP_BACKGROUND_NAVY,
   paper: MAP_BACKGROUND_PAPER,
 };
-
-/** the basemap source+layer spec for a theme. */
-export function basemapForTheme(theme: ResolvedTheme): BasemapSpec {
-  const name = BASEMAP_BY_THEME[theme];
-  return {
-    id: "basemap",
-    tiles: [`${CARTO_RASTER_BASE}/${name}/{z}/{x}/{y}.png`],
-    tileSize: 256,
-    maxzoom: 20,
-    attribution: BASEMAP_ATTRIBUTION,
-  };
-}

@@ -9,7 +9,7 @@ import {
   RASTER_RGB,
   SCORE_COG_URL,
   blockWasm,
-  routeBasemapTiles,
+  routeBasemapStyle,
   routeGlyphs,
   routeZonesPmtiles,
 } from "./map-hermetic";
@@ -48,7 +48,7 @@ async function gotoMap(page: Page) {
   await routeSession(page, null);
   await routeSealFixture(page);
   await routeZonesPmtiles(page);
-  await routeBasemapTiles(page);
+  await routeBasemapStyle(page);
   await routeGlyphs(page);
   await page.goto("/");
   await waitForHydration(page);

@@ -11,7 +11,7 @@
 // drives the exact production code path without needing pixel-accurate screen coordinates.
 import { expect, test, type Page } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession, waitForHydration } from "./hermetic";
-import { blockWasm, routeBasemapTiles, routeGlyphs, routeTitilerTiles } from "./map-hermetic";
+import { blockWasm, routeBasemapStyle, routeGlyphs, routeTitilerTiles } from "./map-hermetic";
 import { LEATHERBACK_SP, bootFor, routeSpeciesShards } from "./species-hermetic";
 
 test.skip(({ browserName }) => browserName !== "chromium", "WebGL gate: chromium only (S2)");
@@ -36,7 +36,7 @@ async function gotoSpeciesTheme(page: Page, theme: "dark" | "light") {
   await routeSpeciesShards(page);
   await routeSession(page, { preview: true, ver: "v9" });
   await routeSealFixture(page);
-  await routeBasemapTiles(page);
+  await routeBasemapStyle(page);
   await routeTitilerTiles(page);
   await routeGlyphs(page);
   await routeSpeciesPointValue(page, 50);

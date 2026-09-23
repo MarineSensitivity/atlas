@@ -10,7 +10,13 @@
 // layer therefore removes exactly itself — there is no `before` id left to dangle, so nothing can
 // cascade. `orderLayers()` throws on a role outside the table, so a new layer kind cannot be added
 // without deciding where it sits (tests/map/style.test.ts seeds exactly that fault).
-import { basemapForTheme, GLYPHS_URL, MAP_BACKGROUND_BY_THEME } from "./layers/basemap";
+import {
+  basemapForTheme,
+  getCachedBasemapStyle,
+  GLYPHS_URL,
+  MAP_BACKGROUND_BY_THEME,
+  type CartoStyleLike,
+} from "./layers/basemap";
 import { SELECTION_COLOR } from "./colors";
 import { rasterLayer, rasterSource } from "./layers/raster";
 import { rangeLayer, rangeSource } from "./layers/ranges";
@@ -34,6 +40,49 @@ import type {
   StyleSpecification,
   ZoneUnitSpec,
 } from "./types";
+
+/** every merged CARTO source/layer id gets this prefix — CARTO's own style.json literally has a
+ * layer id `"background"` (a `type: "background"` layer painting land colour), which collides with
+ * this module's OWN synthetic `background` role/id (the theme's flat fallback colour, used when the
+ * CARTO fetch fails). Prefixing avoids that collision unconditionally, and doubles as the "is this
+ * a basemap-origin layer" test `layersControlItems()` needs (chrome, never user-toggleable). */
+export const BASEMAP_LAYER_PREFIX = "basemap-";
+
+/**
+ * Merges a fetched (or injected-for-a-test) CARTO GL style into the `sources` map `composeStyle()`
+ * is building — namespacing every source id with {@link BASEMAP_LAYER_PREFIX} (looping on a
+ * collision, however unlikely) and rewriting each returned layer's `id`/`source` to match, so this
+ * can never collide with an app id or with another already-merged basemap layer. Pure and exported
+ * so `tests/map/style.test.ts` can assert the rename directly, without a network fetch.
+ */
+export function mergeCartoStyle(
+  carto: CartoStyleLike,
+  sources: Record<string, SourceSpecification>,
+): { layers: LayerSpecification[]; sprite?: string; glyphs?: string } {
+  const rename = new Map<string, string>();
+  for (const [srcId, srcSpec] of Object.entries(carto.sources ?? {})) {
+    let finalId = `${BASEMAP_LAYER_PREFIX}${srcId}`;
+    while (finalId in sources) finalId = `${finalId}-x`;
+    rename.set(srcId, finalId);
+    sources[finalId] = srcSpec as SourceSpecification;
+  }
+  const layers = (carto.layers ?? []).map((raw) => {
+    const layer = { ...raw } as Record<string, unknown> & { id: string; source?: string };
+    layer.id = `${BASEMAP_LAYER_PREFIX}${layer.id}`;
+    if (typeof layer.source === "string" && rename.has(layer.source)) {
+      layer.source = rename.get(layer.source);
+    }
+    return layer as unknown as LayerSpecification;
+  });
+  return { layers, sprite: carto.sprite, glyphs: carto.glyphs };
+}
+
+/** does the fetched CARTO style itself carry a symbol layer (its own place/road labels)? Distinct
+ * from `zonesNeedGlyphs()`, which is about a ZONE label — `composeStyle()` fetches glyphs when
+ * either is true, since CARTO's own style needs its own font range the moment it draws at all. */
+export function cartoStyleHasSymbolLayer(carto: CartoStyleLike): boolean {
+  return (carto.layers ?? []).some((l) => l.type === "symbol");
+}
 
 /**
  * The declared paint order, bottom to top. Read it as the answer to "what is on top of what":
@@ -83,6 +132,9 @@ export interface ComposeStyleInput {
   selection?: SelectionSpec | null;
   /** override only in a test: the glyph endpoint used when a label layer exists. */
   glyphs?: string;
+  /** override only in a test: skips `loadBasemapStyle()`'s network fetch entirely and merges this
+   * pre-built CARTO style instead — `basemapForTheme(theme)`'s URL is never touched. */
+  basemapStyle?: CartoStyleLike;
 }
 
 /**
@@ -146,6 +198,19 @@ function selectionLayers(sel: SelectionSpec): RoledLayer[] {
  *
  * This is the ONE entry point a lens uses to change what the map shows. A lens never touches
  * MapLibre: it recomputes its inputs, calls this, and hands the result to {@link applyStyle}.
+ *
+ * DELIBERATELY SYNCHRONOUS (fix for the CARTO raster basemap's "API KEY REQUIRED" watermark,
+ * 2026-09-23): the real basemap is now CARTO's vector GL style.json, a network fetch — but
+ * `composeStyle()` never awaits it inline. It reads whatever `layers/basemap.ts#loadBasemapStyle()`
+ * has ALREADY cached for the theme (`getCachedBasemapStyle()`, synchronous), falling back to
+ * {@link EMPTY_BASEMAP_STYLE} (just the plain background colour) until that resolves. An earlier
+ * version made this function `async` and awaited the fetch here; measured regression: on a slow
+ * load it pushed a REACTIVE recompose past the map's first `"idle"`, handing MapLibre two
+ * back-to-back `setStyle(diff:true)` calls with no queue between them (`styleQueue.ts` only queues
+ * while `!map.isStyleLoaded()`) — a real MapLibre-level race, not a bug in the caller
+ * (`e2e/species.smoke.spec.ts`'s "switching species twice before the map's first idle" regression
+ * test went red ~40% of the time). The caller warms the cache once, ahead of time, and recomposes
+ * when it resolves (`Shell.svelte`, `Report.svelte`) — see `getCachedBasemapStyle()`'s own header.
  */
 export function composeStyle(input: ComposeStyleInput): StyleSpecification {
   const basemap = input.basemap === undefined ? basemapForTheme(input.theme) : input.basemap;
@@ -164,18 +229,21 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
     },
   ];
 
+  // merged in whole (sources/sprite/glyphs/layers), FIRST in the "basemap" role slot — never a
+  // single raster source/layer any more (CARTO's raster endpoint now requires a key; see
+  // layers/basemap.ts's header). `EMPTY_BASEMAP_STYLE` (no sources, no layers) is what an unwarmed
+  // or failed fetch resolves to, so the block below is simply a no-op and the synthetic
+  // `background` layer above is all that paints — the app never blanks.
+  let cartoSprite: string | undefined;
+  let cartoGlyphs: string | undefined;
+  let cartoHasSymbolLayer = false;
   if (basemap) {
-    sources[basemap.id] = {
-      type: "raster",
-      tiles: [...basemap.tiles],
-      tileSize: basemap.tileSize,
-      maxzoom: basemap.maxzoom,
-      attribution: basemap.attribution,
-    };
-    roled.push({
-      role: "basemap",
-      layer: { id: basemap.id, type: "raster", source: basemap.id, paint: { "raster-opacity": 1 } },
-    });
+    const carto = input.basemapStyle ?? getCachedBasemapStyle(input.theme);
+    const merged = mergeCartoStyle(carto, sources);
+    for (const layer of merged.layers) roled.push({ role: "basemap", layer });
+    cartoSprite = merged.sprite;
+    cartoGlyphs = merged.glyphs;
+    cartoHasSymbolLayer = cartoStyleHasSymbolLayer(carto);
   }
 
   if (input.raster) {
@@ -217,21 +285,29 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
     sources,
     layers: orderLayers(roled),
   };
-  // only when a symbol layer really exists: an unused `glyphs` key costs nothing, but keeping it
-  // conditional makes "a style with no labels fetches no font range" an assertable property.
-  if (zonesNeedGlyphs(zones)) style.glyphs = input.glyphs ?? GLYPHS_URL;
+  // CARTO's own icon layers (POI markers, etc.) read this — carried over verbatim from the fetched
+  // style; absent when the fetch failed (EMPTY_BASEMAP_STYLE has no sprite).
+  if (cartoSprite) style.sprite = cartoSprite;
+  // a symbol layer exists whenever CARTO's OWN style contributed one (its place/road labels — true
+  // any time the fetch succeeded) OR a zone label does; an unused `glyphs` key costs nothing, but
+  // keeping it conditional makes "a style with no labels at all fetches no font range" (e.g. a
+  // failed fetch + no zone labels) an assertable property.
+  if (cartoHasSymbolLayer || zonesNeedGlyphs(zones)) {
+    style.glyphs = input.glyphs ?? cartoGlyphs ?? GLYPHS_URL;
+  }
   return style;
 }
 
 /** page chrome (background/basemap) and the click-driven selection ring — never something a real
  * "layers control" toggles on/off. Every OTHER id in a composed style is a real, toggleable data
- * layer and is listed by {@link layersControlItems}. */
-const LAYERS_CONTROL_EXCLUDED_IDS = new Set([
-  "background",
-  "basemap",
-  "selection-fill",
-  "selection-line",
-]);
+ * layer and is listed by {@link layersControlItems}. Every merged CARTO layer carries the
+ * {@link BASEMAP_LAYER_PREFIX} prefix, so a prefix check catches all of them regardless of how
+ * many CARTO contributes (93, today) — never a hand-maintained list of CARTO's own layer ids. */
+const LAYERS_CONTROL_EXCLUDED_IDS = new Set(["background", "selection-fill", "selection-line"]);
+
+function isChromeLayerId(id: string): boolean {
+  return LAYERS_CONTROL_EXCLUDED_IDS.has(id) || id.startsWith(BASEMAP_LAYER_PREFIX);
+}
 
 export interface LayersControlItem {
   id: string;
@@ -285,7 +361,7 @@ function layersControlLabel(id: string): string {
  */
 export function layersControlItems(style: StyleSpecification): LayersControlItem[] {
   return style.layers
-    .filter((l) => !LAYERS_CONTROL_EXCLUDED_IDS.has(l.id))
+    .filter((l) => !isChromeLayerId(l.id))
     .map((l) => ({ id: l.id, label: layersControlLabel(l.id) }));
 }
 

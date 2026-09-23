@@ -45,14 +45,14 @@ describe("composeStyle({range})", () => {
   it("adds exactly one source + layer, positioned between raster and overlay", () => {
     expect(LAYER_ORDER.indexOf("raster")).toBeLessThan(LAYER_ORDER.indexOf("range"));
     expect(LAYER_ORDER.indexOf("range")).toBeLessThan(LAYER_ORDER.indexOf("overlay"));
-    const s = composeStyle({ theme: "navy", range: RANGE });
-    expect(s.layers.map((l) => l.id)).toEqual(["background", "basemap", "species-range"]);
+    const s = composeStyle({ theme: "navy", basemap: null, range: RANGE });
+    expect(s.layers.map((l) => l.id)).toEqual(["background", "species-range"]);
     expect(s.sources["species-range"]).toBeDefined();
   });
 
   it("removing the range removes exactly that layer — nothing cascades", () => {
-    const withRange = composeStyle({ theme: "navy", range: RANGE });
-    const without = composeStyle({ theme: "navy", range: null });
+    const withRange = composeStyle({ theme: "navy", basemap: null, range: RANGE });
+    const without = composeStyle({ theme: "navy", basemap: null, range: null });
     expect(withRange.layers.map((l) => l.id)).toContain("species-range");
     expect(without.layers.map((l) => l.id)).not.toContain("species-range");
   });
@@ -60,14 +60,10 @@ describe("composeStyle({range})", () => {
   it("a raster and a range can coexist (switching representation never leaves a stale layer)", () => {
     const s = composeStyle({
       theme: "navy",
+      basemap: null,
       raster: { id: "species-raster", tiles: ["https://example/{z}/{x}/{y}.png"], opacity: 0.8 },
       range: RANGE,
     });
-    expect(s.layers.map((l) => l.id)).toEqual([
-      "background",
-      "basemap",
-      "species-raster",
-      "species-range",
-    ]);
+    expect(s.layers.map((l) => l.id)).toEqual(["background", "species-raster", "species-range"]);
   });
 });

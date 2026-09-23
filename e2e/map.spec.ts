@@ -26,7 +26,7 @@ import {
   RASTER_RGB,
   SCORE_COG_URL,
   blockWasm,
-  routeBasemapTiles,
+  routeBasemapStyle,
   routeGlyphs,
   routeTitilerTiles,
   routeZonesPmtiles,
@@ -75,7 +75,7 @@ async function gotoMap(page: Page) {
   await routeSession(page, null);
   await routeSealFixture(page);
   await routeZonesPmtiles(page);
-  await routeBasemapTiles(page);
+  await routeBasemapStyle(page);
   await routeTitilerTiles(page);
   await routeGlyphs(page);
   await page.goto("/");
@@ -204,10 +204,12 @@ test.describe("map module, first paint with **/*.wasm blocked", () => {
     await expect.poll(() => zoneFeatureCount(page), { timeout: 20_000 }).toBeGreaterThan(0);
 
     const before = await page.evaluate(() => document.documentElement.dataset.theme);
+    // the theme-distinguishing field of a composed style is CARTO's own `sprite` URL (its two GL
+    // styles' merged layers/sources are otherwise identical in this fixture).
     const basemapBefore = await page.evaluate(() =>
       JSON.stringify(window.__atlasMap!.composeStyle(window.__atlasMap!.inputs())),
     );
-    expect(basemapBefore).toContain(before === "navy" ? "dark_all" : "light_all");
+    expect(basemapBefore).toContain(before === "navy" ? "dark-matter" : "positron");
 
     await page.locator('[data-control="theme"]').click();
     await expect
@@ -219,7 +221,7 @@ test.describe("map module, first paint with **/*.wasm blocked", () => {
     const basemapAfter = await page.evaluate(() =>
       JSON.stringify(window.__atlasMap!.composeStyle(window.__atlasMap!.inputs())),
     );
-    expect(basemapAfter).toContain(before === "navy" ? "light_all" : "dark_all");
+    expect(basemapAfter).toContain(before === "navy" ? "positron" : "dark-matter");
     // the basemap really is painted, not just declared
     const px = await readPixel(page, 0, 0);
     expect(px).not.toBeNull();

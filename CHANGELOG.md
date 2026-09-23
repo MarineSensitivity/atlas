@@ -57,6 +57,32 @@ legend, and an overcrowded species search field.
     included) without "Full Keyboard Access" on, the same platform default
     `e2e/shell.a11y.spec.ts:189` already documents for buttons — not a bug in this checkbox.
 
+# atlas 0.10.11
+
+The basemap fix: CARTO's raster basemap tiles (`dark_all`/`light_all`) started answering with an
+"API KEY REQUIRED" watermark (owner report, 2026-09-23) -- CARTO now gates the raster endpoint
+behind a key. The basemap is CARTO's keyless VECTOR GL style instead
+(`dark-matter-gl-style`/`positron-gl-style`), fetched once per theme and merged into the app's ONE
+composed style (CLAUDE.md: "one MapLibre style, one `setStyle(diff:true)`").
+
+- **No more watermark.** `src/lib/map/layers/basemap.ts#basemapForTheme()` now returns CARTO's
+  vector style.json URL; `loadBasemapStyle()` fetches+caches it per theme (never awaited inline by
+  `composeStyle()`, which stays synchronous -- see its own header for the measured regression that
+  made this the rule). `style.ts#mergeCartoStyle()` namespaces every fetched source/layer with a
+  `basemap-` prefix (CARTO's own style.json has a layer literally named `"background"`, which
+  would otherwise collide with this app's synthetic one) and merges them FIRST into `LAYER_ORDER`'s
+  "basemap" slot; `layersControlItems()` excludes all of them from the toggleable layers list by
+  that same prefix. `report/reportMap.ts`'s report map follows the same builder automatically.
+- **Never blanks.** A failed or not-yet-warm fetch falls back to `EMPTY_BASEMAP_STYLE` (no CARTO
+  layers), leaving just the theme's plain `--surface-map` background colour -- never a blank map.
+- **Hermetic e2e fixtures updated**: `e2e/map-hermetic.ts#routeBasemapStyle()` (and
+  `routeVariedBasemapStyle()`, for `report.spec.ts`'s captured-image checks) route the whole CARTO
+  vector chain -- style.json, its TileJSON, every `.mvt` tile, the sprite.
+- **Two new seeded-fault gates**: `tests/map/no-raster-basemap.test.ts` (a source scan: the old
+  `dark_all`/`light_all` raster literals never return to `src/lib/map`) and a layer-order fixture
+  proving a CARTO layer mistagged with the wrong role would sort after the zone data instead of
+  under it.
+
 # atlas 0.10.10
 
 `atlas-8` fix round 2 (of 2): merged with `main` (atlas-7 fix round 2, 0.10.9); the coordinator's

@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession, waitForHydration, BUCKET } from "./hermetic";
-import { routeBasemapTiles, routeGlyphs } from "./map-hermetic";
+import { routeBasemapStyle, routeGlyphs } from "./map-hermetic";
 import { cellLonLat, type GridSpec } from "../src/lib/grid/grid";
 
 test.skip(({ browserName }) => browserName !== "chromium", "WebGL gate: chromium only (S2)");
@@ -84,7 +84,7 @@ async function gotoScores(page: Page) {
   await routeCellTile(page);
   await routeSession(page, null);
   await routeSealFixture(page);
-  await routeBasemapTiles(page);
+  await routeBasemapStyle(page);
   await routeGlyphs(page);
   await page.goto("/?proj=mercator"); // mercator, not the globe default (flat probe, no engine tie)
   await waitForHydration(page);

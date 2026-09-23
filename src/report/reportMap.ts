@@ -25,7 +25,7 @@ import { pointOnSurface } from "./pointOnSurface";
 import type { LegendStop, PaletteStops } from "../lib/raster/ramps";
 import { legendStops } from "../lib/raster/ramps";
 import { composeStyle } from "../lib/map/style";
-import { GLYPHS_URL } from "../lib/map/layers/basemap";
+import { GLYPHS_URL, loadBasemapStyle } from "../lib/map/layers/basemap";
 import { zoneLabelsFromBoot } from "../lib/map/layers/zones";
 import type { StyleSpecification } from "../lib/map/types";
 import {
@@ -147,11 +147,21 @@ export interface BuildReportMapStyleOptions {
  * it) with three report-specific layers appended on top (places fill/circle by score, and their
  * label layer) -- `composeStyle()` has no notion of "an arbitrary GeoJSON polygon colored by its
  * own data value", so that part is genuinely new, not a restatement of anything existing.
+ *
+ * ASYNC: `composeStyle()` itself is synchronous (`lib/map/style.ts`'s own header explains why --
+ * it never awaits the basemap fetch inline), but the report's map is a ONE-SHOT sequential flow
+ * (never a reactive re-compose racing a second one, unlike the shell), so warming the basemap
+ * style cache here -- ONCE, before the only `composeStyle()` call this module ever makes -- is
+ * both safe and correct: without it, the report's captured map would carry no CARTO layers at
+ * all (just the plain background colour) the first time a given theme is used this session.
+ * `Report.svelte#mountMap()` already awaits everything else on this path.
  */
-export function buildReportMapStyle(opts: BuildReportMapStyleOptions): {
+export async function buildReportMapStyle(opts: BuildReportMapStyleOptions): Promise<{
   style: StyleSpecification;
-} {
-  const base = composeStyle({ theme: opts.theme ?? "paper", projection: "mercator", zones: [] });
+}> {
+  const theme = opts.theme ?? "paper";
+  await loadBasemapStyle(theme);
+  const base = composeStyle({ theme, projection: "mercator", zones: [] });
   const color =
     opts.domain && opts.paletteStops
       ? scoreColorExpression(opts.paletteStops, opts.domain)

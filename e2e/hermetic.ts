@@ -4,7 +4,7 @@
 // never tries to run it as a test on its own.
 import type { Page } from "@playwright/test";
 import type { IncompleteResult } from "axe-core";
-import { solidPng } from "./map-hermetic";
+import { routeBasemapStyle, routeGlyphs, solidPng } from "./map-hermetic";
 import { isTeardownRaceError, safeRoute } from "./routeSafety";
 
 export { isTeardownRaceError, safeRoute };
@@ -27,38 +27,26 @@ export const VERSIONS_FIXTURE = [
 export const EXPECTED_MISSING_FILES = new Set(["session.json", "boot.json"]);
 
 /**
- * The map's cross-origin tile/glyph origins → an empty 204, so no spec ever reaches the live
- * network for them. A spec that needs a PAINTED tile (e2e/map.spec.ts) registers its own,
- * later-winning route with a real PNG — Playwright matches handlers in reverse registration order.
+ * The map's cross-origin tile/style/glyph origins → fixtures, so no spec ever reaches the live
+ * network for them. The basemap is CARTO's vector GL style now (atlas-map basemap fix, 2026-09-23:
+ * the raster endpoint started requiring a key) — `routeBasemapStyle()` (map-hermetic.ts) routes its
+ * WHOLE chain (style.json, its TileJSON, every `.mvt` tile, the sprite, wrapped with `safeRoute()`
+ * throughout — see routeSafety.ts's own header for the teardown-race it guards); `routeGlyphs()`
+ * covers the font range every basemap now needs for CARTO's own place/road labels, not just a zone
+ * label. A spec that needs a distinguishable PAINTED score-raster pixel (e2e/map.spec.ts) still
+ * registers its OWN, later-winning titiler route — Playwright matches handlers in reverse
+ * registration order.
  */
 export async function routeMapTileOrigins(page: Page) {
+  await routeBasemapStyle(page);
+  await routeGlyphs(page);
   // a real (transparent) PNG, not a 204 and not a hand-typed base64 blob: MapLibre reports a tile
   // it cannot DECODE through `map.on("error")`, which logs to the console — and "zero console
   // errors" is the smoke spec's whole assertion (an invalid literal produced 35 of them).
-  const png = solidPng(0, 0, 0, 1, 0);
-  for (const glob of [
-    "https://basemaps.cartocdn.com/**",
-    "https://titiler-v8.marinesensitivity.org/**",
-  ]) {
-    await page.route(
-      glob,
-      safeRoute((route) => route.fulfill({ status: 200, contentType: "image/png", body: png })),
-    );
-  }
-  // glyphs: atlas-4 mounts the scores lens by default, and its zones carry `label_pt` in every
-  // boot fixture here, so `zonesNeedGlyphs()` is now true and this endpoint IS reached on an
-  // ordinary shell load (verified live: `curl -sI` on the exact requested URL,
-  // https://tiles.basemaps.cartocdn.com/fonts/Open%20Sans%20Regular/0-255.pbf, returns 200 — the
-  // font NAME in layers/basemap.ts's LABEL_FONT is correct). A 404 here used to be harmless only
-  // because nothing exercised it; Chromium logs ANY failed resource load as a console "error"
-  // regardless of how gracefully MapLibre itself recovers, so a deliberate 404 now fails the
-  // "zero console errors" gate. Fixed with a 200 + an EMPTY body: a zero-byte protobuf is a valid
-  // (if data-free) serialization of the glyph PBF schema — every field in it is optional/repeated
-  // — so MapLibre parses it as "no glyphs in this range" rather than erroring.
   await page.route(
-    "https://tiles.basemaps.cartocdn.com/**",
+    "https://titiler-v8.marinesensitivity.org/**",
     safeRoute((route) =>
-      route.fulfill({ status: 200, contentType: "application/x-protobuf", body: "" }),
+      route.fulfill({ status: 200, contentType: "image/png", body: solidPng(0, 0, 0, 1, 0) }),
     ),
   );
 }

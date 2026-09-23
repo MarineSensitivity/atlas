@@ -40,3 +40,29 @@ export const LEAKY_TILE_URL =
 export const LEAKY_TILE_URL_BY_VALUE =
   "https://titiler-v8.marinesensitivity.org/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png" +
   "?url=https%3A%2F%2Fexample%2Ecom%2Fa.tif&subregion_key=GA&colormap_name=spectral_r";
+
+/**
+ * FAULT 3 — a merged basemap layer tagged with the WRONG role (as if `composeStyle()`'s CARTO
+ * merge loop pushed a layer with `role: "zone-line"` instead of `"basemap"`). `orderLayers()`
+ * sorts purely by role, so this sorts the layer AFTER a real zone fill/line instead of keeping it
+ * with the rest of the basemap block underneath everything — exactly the "CARTO layers placed
+ * after the zone layers" regression `tests/map/style.test.ts` proves is catchable.
+ */
+export const MISTAGGED_BASEMAP_LAYER = {
+  role: "zone-line" as never, // should have been "basemap"
+  layer: {
+    id: "basemap-water",
+    type: "fill",
+    source: "basemap-carto",
+    "source-layer": "water",
+    paint: { "fill-color": "#224466" },
+  } as LayerSpecification,
+};
+
+/**
+ * FAULT 4 — CARTO's raster basemap literals reinstated in `src/lib/map` (the exact regression that
+ * shipped the "API KEY REQUIRED" watermark, 2026-09-23: CARTO's raster endpoint now requires a
+ * key). `tests/map/no-raster-basemap.test.ts` scans `src/lib/map` for these; this fixture is under
+ * `tests/fixtures/map/raster-basemap-fault/` so the SAME scan run against it is proved to fail.
+ */
+export const RASTER_BASEMAP_FAULT_DIR = "tests/fixtures/map/raster-basemap-fault";
