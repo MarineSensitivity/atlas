@@ -20,16 +20,22 @@ describe("parseSel accepts navy/paper as aliases of dark/light", () => {
   });
 
   it("does not alias an unrelated value (garbage still falls back to the default)", () => {
-    expect(parseSel({ search: "?theme=navyish", hash: "" }).theme).toBe("auto");
+    // U2a (round 2): the default is "dark", not "auto" -- see tests/state/codec.test.ts's own
+    // theme block.
+    expect(parseSel({ search: "?theme=navyish", hash: "" }).theme).toBe("dark");
   });
 });
 
 describe("the gate can fail (seeded fault)", () => {
-  it("without the alias, ?theme=navy would fall through to the default", () => {
+  // U2a (round 2): the default became "dark", the SAME value "navy" aliases to -- so a "?theme=navy"
+  // probe can no longer distinguish "the alias table ran" from "aliasing broke and it fell through
+  // to the default" (both now land on "dark"). "paper" (-> "light") still can: the default is
+  // "dark", so only a working alias produces "light" here.
+  it("without the alias, ?theme=paper would fall through to the default ('dark', not 'light')", () => {
     // the pre-fix behaviour, stated as an assertion so the regression cannot silently return:
-    // parseEnum alone (no aliasing) treats "navy" as not in THEMES and clamps to "auto".
-    const noAlias = (v: string) => (["light", "dark", "auto"].includes(v) ? v : "auto");
-    expect(noAlias("navy")).toBe("auto");
-    expect(parseSel({ search: "?theme=navy", hash: "" }).theme).not.toBe("auto");
+    // parseEnum alone (no aliasing) treats "paper" as not in THEMES and clamps to the default.
+    const noAlias = (v: string) => (["light", "dark", "auto"].includes(v) ? v : "dark");
+    expect(noAlias("paper")).toBe("dark");
+    expect(parseSel({ search: "?theme=paper", hash: "" }).theme).toBe("light");
   });
 });

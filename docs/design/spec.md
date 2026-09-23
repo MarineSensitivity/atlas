@@ -211,7 +211,8 @@ generator must follow:
 | `help`         | `mdiHelpCircleOutline`   | top bar Help / tour / About                    |
 | `search`       | `mdiMagnify`             | top bar search                                 |
 | `share`        | `mdiShareVariant`        | top bar Share                                  |
-| `theme`        | `mdiThemeLightDark`      | top bar theme toggle                           |
+| `themeSun`     | `mdiBrightness7`         | theme toggle, shown while dark (switches to light) — U2a, round 2; replaces `theme`/`mdiThemeLightDark` |
+| `themeMoon`    | `mdiBrightness4`         | theme toggle, shown while light (switches to dark) — U2a, round 2 |
 | `version`      | `mdiChevronDown`         | the `v7 ▾` chip, every `<select>`-like control |
 | `chevronDown`  | `mdiChevronDown`         | accordion closed                               |
 | `chevronUp`    | `mdiChevronUp`           | accordion open                                 |
