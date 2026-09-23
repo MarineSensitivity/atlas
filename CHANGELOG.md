@@ -7,25 +7,33 @@ stayed at 0.10.9. Everything here is a linux-runner red — a slower, GPU-less m
 different fonts and platform-suffixed snapshots. No assertion was weakened, nothing is skipped on
 CI, and no console-error allow-list was widened.
 
-- **Firefox on the runner had no WebGL2 at all, which was 5 of the 9 reds**
-  (`playwright.config.ts`). A GPU-less runner makes Firefox fall back to its software (llvmpipe)
-  GL driver, which Firefox's own blocklist then disables — so `canvas.getContext("webgl2")`
-  returned `null` and maplibre-gl threw `GPUInitializationError: WebGL2 is required to display
-this map` before the map object ever existed. Every firefox spec that waits on
-  `window.__atlasMap`, `window.__atlasSpecies` or a rendered `.map-print img` timed out, and both
-  shell-smoke "zero console errors" gates saw the throw. The firefox project now launches with
-  `webgl.force-enabled` + `gfx.webrender.software` (and friends), giving it the same
-  software-rasterized WebGL2 that chromium already has there through headless SwiftShader. If a
-  context still cannot be created, the identical error comes straight back — this makes the
-  browser capable, it does not make the test lenient.
+- **Firefox on the runner had no WebGL2 at all, which was 5 of the 9 reds** (new
+  `scripts/firefox-webgl-prefs.json`, new `scripts/check-webgl2.mjs`, `playwright.config.ts`,
+  `pages.yml`). `canvas.getContext("webgl2")` returned `null` and maplibre-gl threw
+  `GPUInitializationError: WebGL2 is required to display this map` before the map object ever
+  existed — so every firefox spec waiting on `window.__atlasMap`, `window.__atlasSpecies` or a
+  rendered `.map-print img` timed out, both shell-smoke "zero console errors" gates saw the
+  throw, and the serial `describe`s skipped everything behind them. Two causes, both fixed:
+  Firefox's blocklist disables its software (llvmpipe) GL path unless `webgl.force-enabled` is
+  set, AND — unlike chromium, which ships its own SwiftShader — Firefox uses the SYSTEM GL stack,
+  which `playwright install --with-deps` populates with libGL but not Mesa's actual DRI drivers.
+  `pages.yml` now installs `libgl1-mesa-dri` (+ `libglx-mesa0`, `libegl-mesa0`) and runs the suite
+  with `LIBGL_ALWAYS_SOFTWARE=1`. **`scripts/check-webgl2.mjs` is the new gate that makes this
+  diagnosable**: it launches each engine with the same prefs file the Playwright config reads,
+  creates a real WebGL2 context, prints the renderer, and runs BEFORE the suite — one explicit red
+  saying "firefox: no WebGL2" instead of six specs failing for a reason none of them is about.
+  Nothing here relaxes an assertion.
 - **`document.fonts.ready` as a wait is unbounded, and on WebKit/linux it did not settle**
   (`e2e/shell.cls.spec.ts`). All six WebKit geometry-equality cases died as
   `page.evaluate: Test ended.` on that one line. `document.fonts.ready` is a whole-document
   promise — only as prompt as the slowest face in the set, and re-armed by every new font request
   — so when it does not settle there is nothing to report but a timeout. The spec now awaits the
-  four SELF-HOSTED brand faces it actually measures (`400/700 "Jost"`, `400/700 "Carlito"`) with
-  `document.fonts.load()` against a bounded timer, and asserts `document.fonts.check()` afterwards:
-  a face that never loads is now a red that NAMES the face, not a silent 30 s test timeout.
+  SELF-HOSTED brand faces it actually measures (the Jost/Carlito `FontFace` objects) with
+  `FontFace.load()` against a bounded timer, then asserts each one's own `status === "loaded"`:
+  a face that never loads is a red that NAMES the face, weight and status, not a silent 30 s test
+  timeout. Deliberately NOT `document.fonts.check()` — measured on WebKit, that answers `true`
+  even for a family whose `@font-face` request never responds (with `font-display: swap` the
+  fallback is "available"), so it is a check that cannot fail.
 - **A map test manufactured the console error it then failed on** (`e2e/map.spec.ts`,
   `e2e/scores.firstpaint.spec.ts`, `e2e/species.smoke.spec.ts`). `Map.isSourceLoaded(id)` FIRES a
   MapLibre `ErrorEvent` (`There is no tile manager with ID '<id>'`) when the style does not

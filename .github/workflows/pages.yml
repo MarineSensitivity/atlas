@@ -143,6 +143,21 @@ jobs:
 
       - run: npx playwright install --with-deps chromium firefox webkit
 
+      # 0.10.14: chromium ships its own software rasterizer (SwiftShader) and works anywhere;
+      # FIREFOX uses the system GL stack, and `playwright install --with-deps` brings libGL but not
+      # Mesa's actual DRI drivers -- so on a GPU-less runner Firefox had no WebGL2 at all and
+      # maplibre-gl threw `GPUInitializationError` before the map existed (run 35819393922: 5 of
+      # 9 reds, plus everything the serial describes then skipped behind them).
+      - name: mesa software GL drivers (firefox needs the system stack)
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dri libglx-mesa0 libegl-mesa0
+
+      # the gate for the step above, and for scripts/firefox-webgl-prefs.json: one explicit red
+      # saying "firefox: no WebGL2" instead of six specs failing for a reason none of them is
+      # about. Runs BEFORE the suite, so a broken GL stack is never mistaken for a broken app.
+      - run: node scripts/check-webgl2.mjs chromium firefox webkit
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+
       # atlas-8 step 3: the root suite (e2e/**, minus the fixtures/gallery/timing carve-outs
       # playwright.config.ts's own testIgnore already documents) on all three engines in ONE
       # invocation -- chromium under headless SwiftShader is enough for the gl.readPixels probes
@@ -150,6 +165,8 @@ jobs:
       # below, alone, per the pyramid's rule that a cold-load timing gate must never share the
       # runner with anything else touching titiler.
       - run: npx playwright test --project=chromium --project=webkit --project=firefox
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1" # firefox: use Mesa's software path, never probe for a GPU
 
       # its OWN step, after the three engines above finish (playwright.config.ts's `dependencies:`
       # on the "timing" project already enforces this ordering even within one `npx playwright

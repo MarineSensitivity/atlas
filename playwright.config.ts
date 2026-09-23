@@ -1,4 +1,21 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
+
+// 0.10.14: the firefox software-WebGL2 prefs, read from the one file `scripts/check-webgl2.mjs`
+// also reads (that script is the CI gate proving they worked). Its `_why` key is the explanation;
+// every other key is a real Firefox pref. Keeping them in JSON rather than inline here is what
+// makes the gate and the browser provably identical.
+const FIREFOX_WEBGL_PREFS: Record<string, string | number | boolean> = Object.fromEntries(
+  Object.entries(
+    JSON.parse(
+      readFileSync(
+        fileURLToPath(new URL("./scripts/firefox-webgl-prefs.json", import.meta.url)),
+        "utf8",
+      ),
+    ) as Record<string, string | number | boolean>,
+  ).filter(([k]) => !k.startsWith("_")),
+);
 
 // atlas-0 Deliverable 5: one smoke spec (shell paints, zero console errors) across the three
 // engines. `webServer` builds then serves the real production bundle (`vite preview`), the same
@@ -64,20 +81,13 @@ export default defineConfig({
         // plus the two shell-smoke "zero console errors" gates. It is invisible on macOS, where
         // Firefox gets a real accelerated context.
         //
-        // These prefs give the runner's Firefox the SAME thing chromium already has there
-        // (headless SwiftShader, see this file's atlas-8 note): a real, software-rasterized
-        // WebGL2 context. They do not relax any assertion -- if WebGL2 still cannot be created,
-        // the identical GPUInitializationError comes straight back and the specs stay red.
-        launchOptions: {
-          firefoxUserPrefs: {
-            "webgl.force-enabled": true, // bypass the "software renderer" blocklist entry
-            "webgl.disabled": false,
-            "webgl.disable-fail-if-major-performance-caveat": true, // accept a slow context
-            "webgl.out-of-process": false, // headless linux has no GPU process to delegate to
-            "gfx.webrender.all": true,
-            "gfx.webrender.software": true, // SWGL compositor, no accelerated driver required
-          },
-        },
+        // `scripts/firefox-webgl-prefs.json` gives the runner's Firefox the SAME thing chromium
+        // already has there (headless SwiftShader, see this file's atlas-8 note): a real,
+        // software-rasterized WebGL2 context. Prefs alone are NOT enough -- unlike chromium,
+        // Firefox uses the SYSTEM GL stack, so the runner also needs Mesa's DRI drivers
+        // (`pages.yml` installs them and `scripts/check-webgl2.mjs` gates the result). None of
+        // this relaxes an assertion: if WebGL2 still cannot be created, that gate goes red first.
+        launchOptions: { firefoxUserPrefs: FIREFOX_WEBGL_PREFS },
       },
     },
     // the timing gate's own project (atlas-8's rule, see species.timing.spec.ts's header for the
