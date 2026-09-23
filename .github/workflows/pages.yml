@@ -166,6 +166,17 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
+      # 0.10.14: the report alone is not enough to debug a linux-only red from a mac laptop --
+      # test-results/ carries the traces, the error-context dumps AND any screenshot Playwright
+      # WROTE as an "actual" (a missing platform baseline). Without it there is no way to get a
+      # linux rendering off the runner short of installing Docker.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-test-results
+          path: test-results/
+          retention-days: 7
+
   e2e-gallery:
     name: e2e (gallery)
     runs-on: ubuntu-latest
@@ -184,6 +195,17 @@ jobs:
       - run: npx playwright install --with-deps chromium
 
       - run: npm run e2e:gallery
+
+      # 0.10.14: same reason as the engine job above -- a gallery snapshot has a PLATFORM suffix
+      # (`-chromium-linux.png`), so the linux baselines can only be produced by a linux run. This
+      # is how they get off the runner: on a red gallery job, test-results/ holds the `-actual.png`
+      # Playwright just wrote, which is downloaded, eyeballed and committed as the baseline.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: gallery-test-results
+          path: test-results/
+          retention-days: 7
 
   e2e-engine:
     name: e2e (DuckDB-WASM engine, eh/mvp x chromium/firefox/webkit)
