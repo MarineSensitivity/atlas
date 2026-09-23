@@ -1,8 +1,8 @@
 diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
-index 6bc1086..a27e55f 100644
+index 849db0e..4d4c11f 100644
 --- a/src/shell/Shell.svelte
 +++ b/src/shell/Shell.svelte
-@@ -459,9 +459,11 @@
+@@ -469,9 +469,11 @@
      mapHandle?.applyStyle(
        composeStyle({
          theme: resolvedTheme,
@@ -16,4 +16,4 @@ index 6bc1086..a27e55f 100644
 +        // never paints at all, for the life of the page.
          projection: sel.proj,
          zones: zonesForStyle,
-         raster: sel.lens === "scores" ? (lensMapExtra.raster ?? null) : raster,
+         raster: sel.lens === "scores" ? (scoresLens?.mapExtra.raster ?? null) : raster,

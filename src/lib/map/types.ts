@@ -74,6 +74,13 @@ export interface RasterLayerSpec {
   tileSize?: number;
   /** `false` → `visibility: "none"`; the overlay ships off by default (atlas-4 §6.2 step 5). */
   visible?: boolean;
+  /** `[west, south, east, north]` — restricts which tiles MapLibre ever REQUESTS to the COG's own
+   * footprint (0.10.21 fix 2: titiler 404s a WebMercatorQuad tile outside the COG's extent, and
+   * MapLibre otherwise asks for every tile covering the current viewport regardless). Build it
+   * with `layers/raster.ts`'s `rasterBoundsForGrid()`, never a literal — see that function's own
+   * header for why a grid whose longitude wraps the antimeridian (`usa05`) gets the full
+   * [-180,180] range here instead of a narrower but WRONG one. */
+  bounds?: [number, number, number, number];
 }
 
 /** the selection highlight (atlas-4 §6.6 / §7: a cell ring or a zone outline, in

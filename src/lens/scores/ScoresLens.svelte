@@ -1,22 +1,23 @@
 <script lang="ts">
   // atlas-4 — the Scores lens' orchestrator. Mounted by Shell.svelte only when `sel.lens ===
-  // "scores"`; owns nothing about MapLibre itself (it computes composeStyle inputs and hands them
-  // back to the shell via `bind:mapExtra`, per docs/map.md) and renders whichever panel body the
-  // shell's active rail tool calls for. Step 1 landed layers/legend/controls; step 2 adds the map
-  // click -> selection wiring, the clicked cell's engine-backed flower, and the species/zones/
-  // composition table. "places" and "report" still fall back to the shell's own placeholder text
-  // — those tools belong to other phases.
+  // "scores"`; owns nothing about MapLibre itself. 0.10.21 fix 1: it no longer COMPUTES the
+  // composeStyle inputs itself (that used to live in an `$effect` here, writing a `bind:mapExtra`
+  // prop the panel body only ever ran while mounted — the exact bug this fix closes, see
+  // `../scores/state.svelte.ts`'s own header) -- it reads them off the `lens` prop
+  // (`createScoresLens()`, instantiated by Shell.svelte independent of this component ever
+  // mounting) and renders whichever panel body the shell's active rail tool calls for. Step 1
+  // landed layers/legend/controls; step 2 adds the map click -> selection wiring, the clicked
+  // cell's engine-backed flower, and the species/zones/composition table. "places" and "report"
+  // still fall back to the shell's own placeholder text — those tools belong to other phases.
   import type { Popup } from "maplibre-gl";
   import type { MapHandle } from "../../lib/map/map";
   import { mapClick, type QueryableMap } from "../../lib/map/interaction";
   import { createPopup } from "../../lib/map/popup";
   import type { Sel } from "../../lib/state/types";
   import type { SelStore } from "../../lib/state/sel.svelte";
-  import type { ScoresMapInputs } from "./mapInputs";
-  import { scoresMapInputs } from "./mapInputs";
-  import { effectiveLyr, effectiveUnit } from "./fallback";
+  import type { ScoresLens } from "./state.svelte";
   import { layerByKey, zoneRows } from "./boot";
-  import { cellRing, formatCellToken, formatZoneToken, parseScoresSelection } from "./selection";
+  import { formatCellToken, formatZoneToken } from "./selection";
   import { gridFromBoot, tileOf } from "../../lib/grid/grid";
   import { cellValue, componentMetricKeys } from "../../lib/analysis/queries";
   import { cellFlowerComponents, type CellComponentRow, type DedupResult } from "./flower";
@@ -31,7 +32,6 @@
   import LayersPanel from "./LayersPanel.svelte";
   import FlowerPanel from "./FlowerPanel.svelte";
   import TablePanel from "./TablePanel.svelte";
-  import type { ManifestOverlayRow } from "./raster";
 
   interface Props {
     sel: Sel;
@@ -44,61 +44,28 @@
     /** the shell's own placeholder text for `activeTool`, rendered for a tool this lens does not
      * (yet, or ever) own — "places" and "report" belong to other phases. */
     fallbackBody: string;
-    /** the shell's shared "active lens' map contribution" bucket (Shell.svelte) — every field
-     * optional, so a lens that has not populated it yet (or the OTHER lens, when this one is
-     * inactive) never overrides the shell's own base view with an empty one. */
-    mapExtra: Partial<ScoresMapInputs>;
+    /** 0.10.21 fix 1 -- the lens-level map-input store Shell.svelte instantiates whenever
+     * `sel.lens === "scores"` (`state.svelte.ts#createScoresLens`), independent of this component.
+     * `unit`/`lyr`/`manifestOverlays`/`selection`/`mapSelection`/`showOutsidePra`/`mapExtra` all
+     * come from here now, not recomputed a second time. */
+    lens: ScoresLens;
   }
 
-  let {
-    sel,
-    selStore,
-    boot,
-    manifest,
-    ver,
-    mapHandle,
-    activeTool,
-    fallbackBody,
-    mapExtra = $bindable({}),
-  }: Props = $props();
+  let { sel, selStore, boot, manifest, ver, mapHandle, activeTool, fallbackBody, lens }: Props =
+    $props();
 
-  const manifestOverlays = $derived(
-    (manifest as { overlays?: ManifestOverlayRow[] } | null)?.overlays ?? null,
-  );
-
-  const unit = $derived(effectiveUnit(sel.unit, boot));
-  const lyr = $derived(effectiveLyr(sel.lyr, boot));
-
-  let showOutsidePra = $state(false);
+  const unit = $derived(lens.unit);
+  const lyr = $derived(lens.lyr);
+  const manifestOverlays = $derived(lens.manifestOverlays);
 
   // the selection AS THE FLOWER/SPECIES/TABLE PANELS SEE IT (`cell:<id>` keeps the raw cell id —
   // `flower.ts`/`species.ts` need it verbatim for titles and headers).
-  const selection = $derived(parseScoresSelection(sel.sel));
+  const selection = $derived(lens.selection);
 
   // the SAME selection, reshaped into what `scoresMapInputs` needs for the map ring (a cell's
   // centre + half-extents rather than its bare id — pure arithmetic on the release's own grid, so
   // no engine call is needed just to draw the ring).
-  const mapSelection = $derived.by(() => {
-    if (!selection) return null;
-    if (selection.kind === "zone") return selection;
-    try {
-      return { kind: "cell" as const, ...cellRing(selection.cellId, gridFromBoot(boot)) };
-    } catch {
-      return null; // no boot.grid yet (Tier 0 hasn't loaded) — draw no ring rather than throw
-    }
-  });
-
-  $effect(() => {
-    mapExtra = scoresMapInputs({
-      boot,
-      overlays: manifestOverlays,
-      unit,
-      lyr,
-      palette: sel.pal,
-      showOutsidePra,
-      selection: mapSelection,
-    });
-  });
+  const mapSelection = $derived(lens.mapSelection);
 
   // --- click -> selection (atlas-4 §6.6): a cell id is arithmetic on the release's grid via
   // `mapClick` (never `/cog/point`, never `cellid.tif`); which half of the result matters depends
@@ -181,7 +148,10 @@
       // runtime (this IS how `queryRenderedFeatures` is documented to be called), so this is a type
       // -shape cast, not a behaviour change.
       const queryable = handle.map as unknown as QueryableMap;
-      const result = mapClick(queryable, e.lngLat, e.point, { grid, units: mapExtra.zones ?? [] });
+      const result = mapClick(queryable, e.lngLat, e.point, {
+        grid,
+        units: lens.mapExtra.zones ?? [],
+      });
       const token = ++popupToken;
       clearPopup(); // closes on the next click, whatever it resolves to
       if (unit === "cell") {
@@ -273,8 +243,8 @@
     {manifestOverlays}
     {ver}
     {mapHandle}
-    {showOutsidePra}
-    onShowOutsidePraChange={(v) => (showOutsidePra = v)}
+    showOutsidePra={lens.showOutsidePra}
+    onShowOutsidePraChange={(v) => lens.setShowOutsidePra(v)}
     {unit}
     {lyr}
   />

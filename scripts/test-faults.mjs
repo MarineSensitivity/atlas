@@ -188,6 +188,32 @@ const FAULTS = [
       "longer hides the zone outline), replayed against the real function",
     gate: ["npx", "vitest", "run", "tests/map/style.test.ts", "-t", "G-25"],
   },
+  // 0.10.21 fix 1's own defect, replayed: the scores lens' composeStyle contribution
+  // (mapExtra: raster/zones/overlays/selection/legend) used to be computed ONLY inside
+  // ScoresLens.svelte's own `$effect`, written back to Shell.svelte through a `bind:mapExtra`
+  // prop -- so it existed only while that PANEL body was actually mounted. `Panel.svelte` renders
+  // its children only while `!geometry.collapsed` (desktop, remembered per viewport in
+  // localStorage), so a collapsed desktop panel meant the score raster and its floating legend
+  // never painted at all, even with the map fully visible (the owner's live 0.10.17 report). This
+  // patch reintroduces exactly that shape -- Shell.svelte reads a `scoresPanelMapExtra` bucket
+  // only `ScoresLens.svelte` ever writes, instead of `scoresLens.mapExtra` (the lens-level store)
+  // directly -- and must turn e2e/scores.collapsed-panel.spec.ts red.
+  {
+    id: "scores-state-panel-bound",
+    patch: "tests/faults/scores-state-panel-bound.patch",
+    describe:
+      "the scores lens' map inputs move back onto a bucket only the PANEL body writes -- a " +
+      "collapsed desktop panel never paints the raster/legend again (0.10.17's real defect, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.collapsed-panel.spec.ts",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4396" },
+  },
 ];
 
 function run(cmd, args, cwd, env) {

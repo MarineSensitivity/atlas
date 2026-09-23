@@ -12,6 +12,20 @@ constructs a `Map`; and it never calls `fitBounds`. If a lens needs something on
 `composeStyle` cannot express, the fix is a new input here (with its builder and its unit test), not
 a second code path in the lens.
 
+**Where those inputs live: a lens-level store, never panel-only UI (0.10.21).** `Panel.svelte`
+renders its children only while `!geometry.collapsed` (desktop; the geometry is remembered per
+viewport in `localStorage`, `src/lib/ui/panelGeometry.ts`) — `Sheet.svelte`'s phone body always
+renders. Before 0.10.21 the scores lens computed its `composeStyle` contribution (`mapExtra`) inside
+an `$effect` in `ScoresLens.svelte`, the panel body itself, written back to Shell.svelte through a
+`bind:mapExtra` prop. Collapse the desktop panel on load (a real, reported case) and that component
+never mounts at all, so `mapExtra` stays empty forever: the score raster and its floating legend
+never paint, even though the map is fully visible. The fix, and the rule for every lens after it:
+map inputs are a plain store (`createScoresLens()` in `src/lens/scores/state.svelte.ts`, mirroring
+`src/lens/species/state.svelte.ts`) that the shell instantiates whenever the lens is selected
+(`sel.lens === "scores"`), independent of which tool/panel is open or collapsed; the panel component
+only reads it (a `lens` prop, not a bindable one) and renders UI. `e2e/scores.collapsed-panel.spec.ts`
+is the regression gate — a desktop panel collapsed at load still paints the raster and the legend.
+
 ## What a lens may call
 
 | call                                             | from                    | what it does                                                    |

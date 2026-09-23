@@ -1,3 +1,62 @@
+# atlas 0.10.21
+
+The owner's live report on 0.10.17: no score raster on desktop, raster fine on the phone. Two
+independent map bugs, both in the scores lens' raster source, plus one same-class fix in Places.
+
+- **Fix 1 (root cause): the scores lens' `composeStyle` contribution was computed only inside the
+  panel BODY component, which a collapsed desktop panel never mounts.** `Panel.svelte` renders its
+  children only while `!geometry.collapsed` (remembered PER VIEWPORT in localStorage,
+  `atlas.panel.shell.desktop`) — `Sheet.svelte`'s phone body always renders (CSS-hidden at "peek"
+  only), which is why phones were unaffected. `Shell.svelte` mounted `<ScoresLens.svelte
+bind:mapExtra>` INSIDE the panel body, and that component's own `$effect` was the ONLY place
+  `mapExtra` (raster/zones/overlays/selection/legend) was ever computed. Collapse the panel on
+  load and `mapExtra` stayed `{}` forever: `composeStyle()` got `raster: null`, so no score raster
+  and no floating legend, even though the map itself was fully visible. Species has no equivalent
+  bug because its map inputs already lived in a module-level store (`src/lens/species/state.svelte.ts`)
+  the shell instantiates whenever the lens is selected, independent of any panel.
+  - Fixed by giving the scores lens the same shape: `src/lens/scores/state.svelte.ts#createScoresLens()`
+    is now instantiated by `Shell.svelte` whenever `sel.lens === "scores"` (the same dynamic-`import()`
+    trigger as `ScoresLens.svelte`/`ScoresLegend.svelte`, never the panel/tool), and `ScoresLens.svelte`
+    reads it through a `lens` prop instead of writing a `bind:mapExtra` one. Both `composeStyle()`
+    call sites now read `scoresLens.mapExtra` and gate the scores-only zones/overlays/selection
+    EXPLICITLY on `sel.lens === "scores"` (previously incidental on the panel component not being
+    mounted — species could in principle have inherited a stale scores selection).
+  - Rule recorded in `docs/map.md`: map inputs belong to a lens-level store the shell instantiates
+    whenever the lens is selected; the panel renders UI only, never the source of truth.
+  - New gate `e2e/scores.collapsed-panel.spec.ts`: seeds the collapsed-panel localStorage key
+    before the app's own script runs, asserts the panel really is collapsed AND the raster paints
+    at both ocean probes AND the floating legend is visible. Proven RED first (`git stash` of
+    `Shell.svelte`/`ScoresLens.svelte` alone): `TimeoutError` waiting 20 s for `map.getLayer("r_lyr")`
+    to exist — the raster layer is never added when the panel body never mounts. Seeded fault
+    `tests/faults/scores-state-panel-bound.patch` (wired into `npm run test:faults`) reinstates
+    exactly the 0.10.17 shape — a bucket only the panel body writes — and turns the new gate red.
+  - `e2e/scores-hermetic.ts` splits `gotoScoresMap`/`readPixel`/`OCEAN_PROBES`/`BLENDED_RASTER_RGB`
+    out of `e2e/scores.firstpaint.spec.ts` so the new spec reuses the real v7/v9 boot-fixture
+    apparatus instead of copy-pasting it.
+- **Fix 2: a raster source with no `bounds` requests every world tile at a low zoom, and titiler
+  404s the ones south of the COG's real extent.** `RasterLayerSpec.bounds` is now computed per
+  release GRID (`src/lib/map/layers/raster.ts#rasterBoundsForGrid`, unit-tested in
+  `tests/map/raster.test.ts`): `usa05` (v1-v7) stores longitude 0-360 and its real span runs
+  141.10°E eastward THROUGH the antimeridian to -63.75°E — a box that WRAPS, and MapLibre's own
+  `TileBounds.contains()` has no wraparound handling, so a naive wrapped box (`west` numerically
+  greater than `east`) would make EVERY tile fail `hasTile()` and the raster would never paint at
+  all (worse than the 404 this fix silences). A grid whose span crosses the antimeridian gets the
+  full `[-180, 180]` longitude range instead — the widest box that is still correct — with only the
+  latitude bound tightened to the grid's own extent. `global05` (v8+) already spans the whole globe
+  and gets the same shape for the same reason.
+- **Places: the same-class bug, found while auditing for it and fixed as one attempt.**
+  `Places.svelte`'s own "the selected row's outline persists" `$effect` (restoring a selected
+  drawn place's outline, e.g. after a reload) only exists while `Places.svelte` itself is mounted,
+  which `Shell.svelte` does only for `activeTool === "places"` — never the default tool. A deep
+  link selecting a drawn place (`?sel=place:0#pl=...`) with the Places tool never opened showed no
+  outline at all. Fixed the same way as fix 1: `placesMap.svelte.ts` (already instantiated
+  unconditionally by `Shell.svelte`, like `createSpeciesLens`) gains its own baseline `$effect`
+  restoring the selected geom place's outline from `sel.pl`/`sel.sel` alone
+  (`src/places/model.ts#selectedGeomPlaceGeometry`, new + unit-tested); `Places.svelte`'s own
+  effect is unchanged, since it alone knows about an in-progress pick/draw interaction the baseline
+  must stay quiet through. New gate `e2e/places.deeplink-outline.spec.ts`, proven RED then GREEN
+  on all three engines with zero regressions to `e2e/places.spec.ts`'s existing interactive flows.
+
 # atlas 0.10.20
 
 The recurring, load-sensitive Firefox red in `e2e/scores.firstpaint.spec.ts` ("paints the score
