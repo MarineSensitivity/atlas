@@ -154,6 +154,70 @@ describe("createStyleApplier", () => {
     expect(applied).toEqual([STYLE_B]);
   });
 
+  // 0.10.20 (the basemap-never-paints round): the direct branch above used to be taken by EVERY
+  // call that arrived while `isStyleLoaded()` happened to be true -- including one arriving in the
+  // same tick as a `setStyle` that had only just been issued. Two back-to-back
+  // `setStyle(diff:true)` calls with nothing between them is the MapLibre-level mis-ordering
+  // `layers/basemap.ts`'s header describes as measured, and the reason the basemap fix refused to
+  // recompose when its fetch resolved -- which is what made the basemap silently never paint.
+  // The invariant is now "at most one `setStyle` in flight": a second call lands on the queue and
+  // is issued when the first settles, never beside it.
+  it("REGRESSION: a second apply while the first is still settling is coalesced, not issued beside it", () => {
+    const map = new MutableFakeMap();
+    map.loaded = true; // the map's blank first style is trivially "loaded"
+    const applied: StyleSpecification[] = [];
+    const applyQueued = createStyleApplier(map, (s) => applied.push(s));
+
+    applyQueued(STYLE_A);
+    expect(applied).toEqual([STYLE_A]); // nothing in flight yet -> issued straight away
+
+    // a SECOND call in the same tick, with `isStyleLoaded()` still reporting true (MapLibre does
+    // not flip it synchronously). Before the fix this issued a second `setStyle` immediately.
+    applyQueued(STYLE_B);
+    expect(applied).toEqual([STYLE_A]); // parked, because STYLE_A has not settled
+
+    map.emit("idle"); // STYLE_A settles -> the parked style is issued, exactly once
+    expect(applied).toEqual([STYLE_A, STYLE_B]);
+
+    map.emit("idle"); // ...and nothing is left to re-apply
+    expect(applied).toEqual([STYLE_A, STYLE_B]);
+  });
+
+  it("REGRESSION: a burst of applies during one settle cycle costs ONE extra setStyle, with the LATEST style", () => {
+    const map = new MutableFakeMap();
+    map.loaded = true;
+    const applied: StyleSpecification[] = [];
+    const applyQueued = createStyleApplier(map, (s) => applied.push(s));
+
+    applyQueued(STYLE_A);
+    // e.g. the lens' raster effect, then the late-arriving basemap style, then a selection change
+    applyQueued(STYLE_B);
+    applyQueued(STYLE_A);
+    applyQueued(STYLE_B);
+    expect(applied).toEqual([STYLE_A]);
+
+    map.emit("idle");
+    expect(applied).toEqual([STYLE_A, STYLE_B]); // one extra call, carrying the last style asked for
+  });
+
+  it("a stale idle listener from a superseded cycle cannot cut the current cycle short", () => {
+    // `once("idle", ...)` cannot be unregistered through this narrow interface, so a listener armed
+    // for an earlier cycle DOES still fire. It must no-op rather than settle the current one early
+    // (which would release a parked style beside an in-flight `setStyle` -- the very thing above).
+    const map = new MutableFakeMap();
+    const applied: StyleSpecification[] = [];
+    const applyQueued = createStyleApplier(map, (s) => applied.push(s));
+
+    applyQueued(STYLE_A); // not loaded -> parked, cycle 0 armed
+    map.loaded = true;
+    applyQueued(STYLE_B); // issued now; cycle 0's listener is stale, cycle 1 is armed
+    expect(applied).toEqual([STYLE_B]);
+
+    applyQueued(STYLE_A); // parked behind the in-flight STYLE_B
+    map.emit("idle"); // fires BOTH the stale cycle-0 listener and the live cycle-1 one
+    expect(applied).toEqual([STYLE_B, STYLE_A]); // exactly one flush, not two
+  });
+
   it("REGRESSION: a direct apply once loaded also cancels the earlier call's fallback timer", () => {
     vi.useFakeTimers();
     const map = new MutableFakeMap();

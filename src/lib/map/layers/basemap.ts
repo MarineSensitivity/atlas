@@ -97,25 +97,50 @@ export async function loadBasemapStyle(
  * The SYNCHRONOUS read `composeStyle()` uses: whatever is cached for `theme` right now, or
  * {@link EMPTY_BASEMAP_STYLE} if `loadBasemapStyle()` has not resolved (or was never called) yet.
  *
- * `composeStyle()` deliberately never awaits the fetch itself, and nothing here forces an EXTRA
- * recompose once the fetch resolves either (measured, atlas-map fix rounds 1-2): an early version
- * made `composeStyle` itself `async` and awaited `loadBasemapStyle()` inline; a second version
- * kept `composeStyle` synchronous but bumped a `$state` counter from the fetch's own `.then()` to
- * force an immediate recompose. BOTH shapes hand MapLibre an EXTRA `setStyle(diff:true)` call
- * whose timing is driven by a promise resolving via the real network/route stack rather than the
- * caller's own reactive-effect timing — landing that extra call at an unpredictable moment inside
- * a rapid burst of OTHER style changes reliably exposed a real MapLibre-level mis-ordering, not a
- * bug in the caller (`e2e/species.smoke.spec.ts`'s "switching species twice before the map's first
- * idle" regression test went red 40-100% of the time depending on which shape). `map/styleQueue.ts`
- * cannot help here either: it only queues while `!map.isStyleLoaded()`, and the map's first,
- * source-less `blankStyle()` is trivially "loaded". The caller (`Shell.svelte`, `Report.svelte`)
- * instead calls `loadBasemapStyle(theme)` fire-and-forget, once, as early as possible, and relies
- * on the NEXT ordinary reactive recompose (triggered by zones/raster/selection settling, which
- * happens within the first second of any real load) to pick up the by-then-warm cache — no
- * separately triggered recompose, so the call PATTERN never changes shape from before this fix.
+ * `composeStyle()` deliberately never awaits the fetch itself (see its own header). Between
+ * 0.10.11 and 0.10.19 nothing forced a recompose once the fetch resolved either, and the caller
+ * relied on "the NEXT ordinary reactive recompose (zones/raster/selection settle within the first
+ * second of any real load) picks up the by-then-warm cache". That assumption is FALSE under load,
+ * and {@link warmBasemapStyles} is the fix — see its header for the measurement.
  */
 export function getCachedBasemapStyle(theme: ResolvedTheme): CartoStyleLike {
   return cache.get(theme) ?? EMPTY_BASEMAP_STYLE;
+}
+
+/**
+ * Warm every theme's CARTO style AND tell the caller when each one lands, so the caller can put it
+ * in reactive state and recompose — the 0.10.20 fix for a basemap that silently never paints.
+ *
+ * MEASURED (Firefox, `e2e/scores.firstpaint.spec.ts`'s raster probe, 1 of 40 repeats at load ~11,
+ * and deterministically with the CARTO style.json answered 3 s late): the composed style's ocean
+ * pixel read `247,171,122` instead of `153,117,86` — the score raster at 0.6 opacity over the
+ * theme's flat `--surface-map` colour rather than over the basemap. Ten seconds after the
+ * style.json had arrived, `getStyle().layers` still held ZERO `basemap-` layers. The old policy
+ * had no invalidation at all: when the fetch resolves after the last reactive change (which is
+ * exactly what contention causes), the cache is warm and nothing ever reads it again, so the
+ * basemap never appears — for the whole life of the page, not just late.
+ *
+ * The reason that invalidation was left out was real too: an extra `setStyle(diff:true)` landing
+ * at a network-timed moment inside a burst of other style changes exposed a MapLibre-level
+ * mis-ordering. That is now fixed where it belongs, in `map/styleQueue.ts`: at most one `setStyle`
+ * is in flight at a time, so an extra recompose costs one more settle cycle and can no longer
+ * produce a mis-ordered pair of diffs. Hence this helper, rather than another workaround.
+ *
+ * `onResolved` is called exactly once per theme, ALWAYS — `loadBasemapStyle()` resolves to
+ * {@link EMPTY_BASEMAP_STYLE} rather than rejecting, and the rejection path is covered anyway, so a
+ * caller can key its reactive state on "has this theme reported in" without ever hanging.
+ */
+export function warmBasemapStyles(
+  themes: readonly ResolvedTheme[],
+  onResolved: (theme: ResolvedTheme, style: CartoStyleLike) => void,
+  load: (theme: ResolvedTheme) => Promise<CartoStyleLike> = (theme) => loadBasemapStyle(theme),
+): void {
+  for (const theme of themes) {
+    void load(theme).then(
+      (style) => onResolved(theme, style),
+      () => onResolved(theme, EMPTY_BASEMAP_STYLE),
+    );
+  }
 }
 
 /** test-only: clears the module cache so each test starts cold. Never called from app code. */

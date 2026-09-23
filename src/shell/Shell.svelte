@@ -37,7 +37,7 @@
   import { defaultOut, resolveTheme } from "../lib/state/types";
   import { createMap, type MapHandle } from "../lib/map/map";
   import { composeStyle } from "../lib/map/style";
-  import { loadBasemapStyle } from "../lib/map/layers/basemap";
+  import { warmBasemapStyles, type CartoStyleLike } from "../lib/map/layers/basemap";
   import { zoneUnitsFromBoot, zoneUnitsWithOutline } from "../lib/map/layers/zones";
   import { studyAreaFromBoot } from "../lib/map/interaction";
   import { createAnalytics } from "../lib/analytics/analytics";
@@ -64,7 +64,12 @@
   // same reason `state.svelte.ts` does above: `placesSelection` (below) reads it unconditionally,
   // even when the Places PANEL itself (`../places/Places.svelte`, lazy) has never been opened.
   import { createPlacesMapStore } from "../places/placesMap.svelte";
-  import type { RasterLayerSpec, SelectionSpec, ZoneUnitSpec } from "../lib/map/types";
+  import type {
+    RasterLayerSpec,
+    ResolvedTheme,
+    SelectionSpec,
+    ZoneUnitSpec,
+  } from "../lib/map/types";
   // type-only: erased at build time (never pulls the scores lens' runtime module into the static
   // bundle -- the SAME reason RasterLayerSpec/SelectionSpec/ZoneUnitSpec above are type-only).
   import type { ScoresLegend as ScoresLegendType } from "../lens/scores/mapInputs";
@@ -356,6 +361,9 @@
       composeStyle,
       inputs: () => ({
         theme: resolvedTheme,
+        // same field the reactive effect below passes, so `composeStyle(inputs())` reproduces
+        // exactly what is on screen -- including whether the basemap has resolved yet (0.10.20).
+        basemapStyle: basemapStyles[resolvedTheme],
         projection: sel.proj,
         zones: zonesForStyle,
         raster:
@@ -402,35 +410,40 @@
         : null,
   );
   // atlas-map basemap fix: the basemap is CARTO's vector style.json now, fetched once per theme
-  // and cached (layers/basemap.ts#loadBasemapStyle). composeStyle() itself stays SYNCHRONOUS (it
-  // reads whatever is already cached, falling back to the plain background colour) and nothing
-  // here forces an extra recompose once a fetch resolves: the effect below already re-runs on the
-  // very next unrelated reactive change (zones/raster/selection all change within the first second
-  // of any real load), which is exactly when it picks up the now-warm cache. Two earlier versions
-  // of this fix (composeStyle awaiting the fetch inline; a `$state` counter bumped in the fetch's
-  // own `.then()` to force an immediate recompose) BOTH measurably broke the species-switch race
-  // below (e2e/species.smoke.spec.ts's "switching species twice before the map's first idle" test,
-  // red 40-100% of runs): either shape hands MapLibre an EXTRA `setStyle(diff:true)` call whose
-  // timing is driven by a promise resolving via the browser's real network/route stack instead of
-  // Svelte's own effect-flush timing, and an extra call landing at an unpredictable moment in that
-  // critical window is what exposes a real MapLibre-level mis-ordering (not a bug in this file, and
-  // not one map/styleQueue.ts's "queue while `!isStyleLoaded()`" guards against, since the map's
-  // first, source-less `blankStyle()` is trivially "loaded").
+  // and cached (layers/basemap.ts#loadBasemapStyle). composeStyle() itself stays SYNCHRONOUS -- it
+  // takes the already-resolved style as a plain input.
   //
-  // BOTH themes are warmed here, unconditionally, on mount -- not reactively per `resolvedTheme`
-  // change. A theme TOGGLE later therefore never itself kicks off a new fetch: it just reads an
-  // already-warm cache synchronously, same as any other composeStyle input. Warming only the
-  // active theme (and fetching the other one reactively AT the moment of the toggle instead)
-  // measurably broke `e2e/map.spec.ts`'s theme-switch test the same way the species-switch race
-  // above was broken: an extra network-driven callback landing at an unpredictable moment inside
-  // another critical window occasionally left the canvas's WebGL context unrenderable under heavy
-  // parallel load (`getContext()` returning null). A person's own click is never that fast, so
-  // this never matters for a real visit -- only for a same-second e2e probe.
+  // 0.10.20: that input is now REACTIVE STATE, and the fetch's own `.then()` writes it. Between
+  // 0.10.11 and 0.10.19 nothing here forced a recompose when a fetch resolved; the comment that
+  // stood in this spot argued "the effect below already re-runs on the very next unrelated
+  // reactive change (zones/raster/selection all change within the first second of any real load)".
+  // That is an assumption about a RACE, and under load it loses: when the style.json lands after
+  // the last of those changes, the cache is warm and nothing ever reads it again -- the basemap
+  // never paints, for the life of the page. Measured on Firefox (1 of 40 repeats of
+  // `e2e/scores.firstpaint.spec.ts`'s raster probe at load ~11; deterministic with the style.json
+  // answered 3 s late): ocean pixel `247,171,122` -- the score raster over the flat `--surface-map`
+  // colour -- with ZERO `basemap-` layers in `getStyle()` ten seconds after the response arrived.
+  // See `layers/basemap.ts#warmBasemapStyles`.
+  //
+  // The reason it was left out is real and is fixed at its own root: an extra `setStyle(diff:true)`
+  // landing at a network-timed moment used to expose a MapLibre-level mis-ordering, because
+  // `map/styleQueue.ts` only queued while `!map.isStyleLoaded()` and the map's first, source-less
+  // `blankStyle()` is trivially "loaded". That queue now holds "at most one `setStyle` in flight"
+  // unconditionally, so this extra recompose costs one settle cycle and nothing else.
+  //
+  // BOTH themes are warmed unconditionally, on mount -- not reactively per `resolvedTheme` change.
+  // A theme TOGGLE therefore never itself kicks off a fetch: it reads state that is already there.
+  // Warming only the active theme (and fetching the other one AT the moment of the toggle instead)
+  // measurably broke `e2e/map.spec.ts`'s theme-switch test: a network-driven callback landing
+  // inside that critical window occasionally left the canvas's WebGL context unrenderable under
+  // heavy parallel load (`getContext()` returning null).
+  let basemapStyles = $state<Partial<Record<ResolvedTheme, CartoStyleLike>>>({});
   onMount(() => {
-    // never rejects (loadBasemapStyle's own contract: a failed fetch resolves to
-    // EMPTY_BASEMAP_STYLE) -- fire-and-forget is safe.
-    void loadBasemapStyle("navy");
-    void loadBasemapStyle("paper");
+    // `warmBasemapStyles` never rejects and always reports every theme exactly once, so this
+    // fire-and-forget call cannot leave `basemapStyles` half-written.
+    warmBasemapStyles(["navy", "paper"], (theme, style) => {
+      basemapStyles = { ...basemapStyles, [theme]: style };
+    });
   });
 
   $effect(() => {
@@ -446,6 +459,9 @@
     mapHandle?.applyStyle(
       composeStyle({
         theme: resolvedTheme,
+        // the reactive half of the 0.10.20 basemap fix: reading this is what makes the effect
+        // re-run (and the basemap actually appear) when the CARTO fetch resolves late.
+        basemapStyle: basemapStyles[resolvedTheme],
         projection: sel.proj,
         zones: zonesForStyle,
         raster: sel.lens === "scores" ? (lensMapExtra.raster ?? null) : raster,

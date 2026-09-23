@@ -255,7 +255,7 @@ declare global {
   }
 }
 
-async function gotoScoresMap(page: Page, ver: Ver) {
+async function gotoScoresMap(page: Page, ver: Ver, opts: { basemapDelayMs?: number } = {}) {
   await blockWasm(page);
   await routeBucket(page, ver, bootFor(ver));
   // v9 is `restricted` in VERSIONS_FIXTURE (matching the live registry) -- a public, no-session
@@ -265,7 +265,7 @@ async function gotoScoresMap(page: Page, ver: Ver) {
   await routeSession(page, { preview: true, ver });
   await routeSealFixture(page);
   await routeZones20(page);
-  await routeBasemapStyle(page);
+  await routeBasemapStyle(page, { styleJsonDelayMs: opts.basemapDelayMs });
   await routeTitilerTiles(page);
   await routeGlyphs(page);
   // mercator, not the shipped globe default: a flat probe (e2e/map.spec.ts's own reason) — globe
@@ -429,5 +429,44 @@ test.describe("atlas-4 defect fix: the scores/species floating legend is ONE slo
 
     await page.locator(".topbar").getByRole("button", { name: "Species" }).click();
     await expect(scoresLegend).toHaveCount(0);
+  });
+});
+
+// 0.10.20 — the basemap-never-paints gate. `composeStyle()` is synchronous and reads the already
+// resolved CARTO style; until 0.10.19 NOTHING told the app when that style had landed, so a
+// style.json arriving after the last reactive recompose was never read again and the basemap never
+// appeared AT ALL — not late, never, for the life of the page. That is the app-level cause of this
+// file's own intermittent Firefox red (1 of 40 repeats of the raster probe above, at load ~11): the
+// probe read `247,171,122` — the score raster at 0.6 over the theme's flat `--surface-map` colour —
+// instead of `153,117,86`, the same raster over the basemap. Contention broke nothing; it only made
+// the CARTO fetch lose a race it was never guaranteed to win.
+//
+// Delaying the style.json makes that deterministic, and it is a real user's slow connection rather
+// than a synthetic hook: the assertion is the SAME pixel the gate above asserts, at the SAME
+// tolerance. Fix: `layers/basemap.ts#warmBasemapStyles` (the invalidation that was missing) plus
+// `map/styleQueue.ts`'s settle cycle (which is what makes the extra recompose safe to issue).
+// Seeded fault: `tests/faults/basemap-not-reactive.patch`.
+const SLOW_BASEMAP_MS = 3_000;
+
+test.describe("0.10.20: a SLOW CARTO style.json still ends up painting the basemap", () => {
+  test("the score raster paints OVER the basemap even when style.json answers late", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await gotoScoresMap(page, "v7", { basemapDelayMs: SLOW_BASEMAP_MS });
+    await page.waitForFunction(() => !!window.__atlasMap!.handle.map.getLayer("r_lyr"), undefined, {
+      timeout: 25_000,
+    });
+    // generous, and never the thing that fails: the style.json is held for SLOW_BASEMAP_MS and the
+    // recompose it then triggers costs at most one more settle cycle (styleQueue's 4 s bound).
+    await expect
+      .poll(async () => (await readPixel(page, ...OCEAN_PROBES[0]))?.slice(0, 3).join(","), {
+        message:
+          `the basemap never entered the composed style: the probe still reads the score raster ` +
+          `over the flat --surface-map colour. CARTO's style.json resolved ${SLOW_BASEMAP_MS}ms ` +
+          `after load and nothing recomposed — see layers/basemap.ts#warmBasemapStyles.`,
+        timeout: 40_000,
+      })
+      .toBe(BLENDED_RASTER_RGB.join(","));
   });
 });

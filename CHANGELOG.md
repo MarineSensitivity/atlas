@@ -1,3 +1,45 @@
+# atlas 0.10.20
+
+The recurring, load-sensitive Firefox red in `e2e/scores.firstpaint.spec.ts` ("paints the score
+raster at two ocean probe points") was a REAL app bug, and not the one the symptom suggested: the
+raster was fine — **the basemap could silently never paint at all**.
+
+- **Root cause: the composed style had no way to learn that CARTO's style.json had arrived.**
+  Since 0.10.11 the basemap has been CARTO's vector GL style, fetched once per theme and read
+  SYNCHRONOUSLY by `composeStyle()` out of a module cache. Nothing invalidated that read: the
+  policy was "the next ordinary reactive recompose (zones/raster/selection all settle within the
+  first second of any real load) will pick up the by-then-warm cache". That is an assumption about
+  a race, and under load it loses — when the fetch resolves after the last reactive change, the
+  cache is warm and nothing ever reads it again, so the map shows the data over the theme's flat
+  `--surface-map` colour with **zero** basemap layers, for the life of the page. Exactly what a
+  person on a slow connection sees.
+  - Measured: the failing probe read `247,171,122` (the score raster at 0.6 opacity over `#eaeef3`)
+    rather than `153,117,86` (the same raster over the basemap) — 1 of 40 Firefox repeats at load
+    ~11, 2 of 40 at load ~83, and **deterministically** with CARTO's style.json answered 3 s late,
+    where `getStyle()` still held 0 `basemap-` layers 10 s after the response had landed.
+  - Fixed by `layers/basemap.ts#warmBasemapStyles()`: it warms every theme and REPORTS each one
+    (always, exactly once, including on a rejected load) so `Shell.svelte` can hold the resolved
+    styles in `$state` and pass them to `composeStyle()` as an ordinary reactive input. Unit tests
+    in `tests/map/basemap.test.ts`.
+- **`map/styleQueue.ts` now holds "at most one `setStyle` in flight".** This is what makes the fix
+  above safe to make, and is the second half of the same bug: the invalidation was deliberately
+  left out in 0.10.11 because an extra `setStyle(diff:true)` landing at a network-timed moment
+  exposed a MapLibre-level mis-ordering. The queue only ever engaged while `!map.isStyleLoaded()`,
+  and the map's blank first style is trivially "loaded", so two applies arriving close together
+  could both be issued directly, back to back, with nothing between them. Now an apply is issued
+  only when nothing is settling; otherwise the LATEST style is parked and issued when the in-flight
+  one settles (`"idle"`, or the existing bounded 4 s fallback). Callers may recompose as often as
+  they like — an extra recompose costs one more settle cycle, never a mis-ordered pair of diffs.
+  Listeners carry the cycle they were armed for, so a stale `once("idle")` (which this interface
+  cannot unregister) no-ops instead of cutting the current cycle short. Three new regressions in
+  `tests/map/styleQueue.test.ts`, all red without the change.
+- **New gate, `e2e/scores.firstpaint.spec.ts`: "a SLOW CARTO style.json still ends up painting the
+  basemap"** — the intermittent failure made deterministic by holding the style.json for 3 s
+  (`routeBasemapStyle(page, { styleJsonDelayMs })`), asserting the same pixel at the same
+  tolerance, with a message that names the cause rather than "pixel mismatch". Seeded fault
+  `tests/faults/basemap-not-reactive.patch` (wired into `npm run test:faults`) reinstates exactly
+  the 0.10.19 behaviour — `composeStyle()` back on the non-reactive cache read — and turns it red.
+
 # atlas 0.10.19
 
 The three defects the parity screenshots exposed (`docs/parity.html` known gaps G-23/G-24/G-25).
