@@ -127,8 +127,12 @@ export function combinedBbox(
 
 /** `places-circle`'s own `circle-opacity` (a zone place -- no polygon boundary is fetched for the
  * report map, see `ReportMapFeatureInput.point`'s own doc -- draws as a circle, never a fill).
- * Named (not an inline `0.85`) so M4's e2e pixel-proof (`e2e/report-hermetic.ts`) can compute the
- * SAME alpha-blend a real capture paints, instead of a second, driftable copy of this literal. */
+ * Named (not an inline `0.85`) for readability here -- NOT imported by M4's e2e pixel-proof
+ * (`e2e/report-hermetic.ts#EXPECTED_PLACE_CIRCLE_OPACITY`), which fix round 2 made a deliberately
+ * SEPARATE literal on purpose: a gate whose expectation is derived from the value under test
+ * cannot fail for that value (measured -- opacity 0 here used to pass the gate trivially, since
+ * the "expected" blend collapsed onto the background too). Changing this constant is a real
+ * product decision that must ALSO deliberately update that one. */
 export const PLACE_CIRCLE_OPACITY = 0.85;
 
 /** the maplibre `fill-color`/`circle-color` data expression: the 0-1e stop ramp over `domain`,

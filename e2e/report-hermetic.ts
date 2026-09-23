@@ -6,7 +6,6 @@
 import type { Page } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession } from "./hermetic";
 import { blockWasm, routeVariedBasemapStyle, VARIED_DARK, VARIED_LIGHT } from "./map-hermetic";
-import { PLACE_CIRCLE_OPACITY } from "../src/report/reportMap";
 
 /** the restricted (preview-only) release fixture: two Program Areas with real published metrics, so
  * the Table of Scores carries real numbers (model.ts's own "Overall = mean of the components
@@ -117,6 +116,45 @@ function blendOver(
 }
 
 /**
+ * Fix round 2 (orchestrator's own seeded fault, `tests/faults/report-map-circle-invisible.patch`,
+ * `PLACE_CIRCLE_OPACITY = 0`): this MUST be a fixed literal, never imported from
+ * `reportMap.ts#PLACE_CIRCLE_OPACITY` -- a gate whose EXPECTED value is derived from the value
+ * under test cannot fail for that value. With opacity 0 imported here, the "expected" blend
+ * collapses onto the pure background colour too (the circle is invisible either way), and the
+ * pixel count passed trivially -- proven: `PW_PORT=4365 ... -g "map image not blank"` stayed
+ * green against that exact patch. `0.85` is `reportMap.ts`'s real, intentional circle opacity; a
+ * deliberate change there (a product decision, not a regression) must ALSO deliberately update
+ * this constant -- never the reverse, and never re-import the source constant here.
+ */
+const EXPECTED_PLACE_CIRCLE_OPACITY = 0.85;
+
+/** the minimum per-channel gap a target must keep from the background it is blended over, so this
+ * gate cannot be silently defanged by nudging {@link EXPECTED_PLACE_CIRCLE_OPACITY} toward 0 --
+ * an opacity-0 render collapses every target onto its own background (gap 0); this throws loudly
+ * instead of quietly losing the ability to tell a painted circle from an invisible one. */
+const MIN_TARGET_BACKGROUND_GAP = 30;
+
+function assertTargetsAreFarFromTheirBackgrounds(
+  colors: readonly [number, number, number][],
+  backgrounds: readonly [number, number, number][],
+): void {
+  for (const c of colors) {
+    for (const bg of backgrounds) {
+      const blended = blendOver(c, EXPECTED_PLACE_CIRCLE_OPACITY, bg);
+      const gap = Math.max(...[0, 1, 2].map((i) => Math.abs(blended[i] - bg[i])));
+      if (gap < MIN_TARGET_BACKGROUND_GAP) {
+        throw new Error(
+          `mapPrintRampPixelCount: EXPECTED_PLACE_CIRCLE_OPACITY (${EXPECTED_PLACE_CIRCLE_OPACITY}) ` +
+            `leaves only a ${gap}-value gap between a target and its background (floor ` +
+            `${MIN_TARGET_BACKGROUND_GAP}) -- this gate would no longer reliably tell a painted ` +
+            `circle apart from an invisible one; fix the opacity constant, not this check`,
+        );
+      }
+    }
+  }
+}
+
+/**
  * M4 (atlas-8 review round 2): `.map-print img` used to be proven only by "is an `<img>` visible"
  * (`report.spec.ts`), which passes on the basemap alone -- `reportMap.ts#captureRejectionReason`
  * rejects a BLANK or FLAT capture, never one whose score-coloured places layer simply never
@@ -130,20 +168,22 @@ function blendOver(
  * exactly `BOOT_V9`'s `rampDomain` MAX and MIN (`src/lib/report/ramp.ts`) -- so each interpolates
  * to EXACTLY one `spectral_r` ramp ENDPOINT, never an intermediate blend a maplibre `interpolate`
  * expression would otherwise have to be replicated to predict. Each place draws as a CIRCLE
- * (`places-circle`, `PLACE_CIRCLE_OPACITY`), alpha-blended over whichever of
- * `routeVariedBasemapStyle`'s two checkerboard colours happens to be underneath -- both are
- * candidate backgrounds, since which one a given circle lands on is a map-projection detail this
- * helper does not need to reproduce (verified empirically: exact, tolerance-0 matches for 3 of the
- * 4 candidates against a real capture; the 4th is simply the colour combination neither place's
- * circle happened to land on in that camera position).
+ * (`places-circle`, blended at {@link EXPECTED_PLACE_CIRCLE_OPACITY} -- a fixed literal, see that
+ * constant's own header for why it is never imported from `reportMap.ts`), alpha-blended over
+ * whichever of `routeVariedBasemapStyle`'s two checkerboard colours happens to be underneath --
+ * both are candidate backgrounds, since which one a given circle lands on is a map-projection
+ * detail this helper does not need to reproduce (verified empirically: exact, tolerance-0 matches
+ * for 3 of the 4 candidates against a real capture; the 4th is simply the colour combination
+ * neither place's circle happened to land on in that camera position).
  */
 export async function mapPrintRampPixelCount(page: Page, tolerance = 4): Promise<number> {
   const stops = BOOT_V9.palettes.spectral_r;
   const endpointColors = [hexToRgb(stops[0]), hexToRgb(stops[stops.length - 1])];
   const backgrounds: Array<[number, number, number]> = [VARIED_DARK, VARIED_LIGHT];
+  assertTargetsAreFarFromTheirBackgrounds(endpointColors, backgrounds);
   const targets: Array<[number, number, number]> = [];
   for (const c of endpointColors) {
-    for (const bg of backgrounds) targets.push(blendOver(c, PLACE_CIRCLE_OPACITY, bg));
+    for (const bg of backgrounds) targets.push(blendOver(c, EXPECTED_PLACE_CIRCLE_OPACITY, bg));
   }
   return page.evaluate(
     ({ selector, targets, tolerance }) => {
