@@ -23,6 +23,7 @@ import {
   type RoledLayer,
 } from "../../src/lib/map/style";
 import type { CartoStyleLike } from "../../src/lib/map/layers/basemap";
+import { zoneUnitsWithOutline } from "../../src/lib/map/layers/zones";
 import {
   OUTSIDE_PRA_COLORMAP,
   titilerMaskTileTemplate,
@@ -363,6 +364,62 @@ describe("composeStyle", () => {
       "raster-opacity": SCORE_RASTER_OPACITY,
       "raster-resampling": "nearest",
     });
+  });
+});
+
+// G-25 fix (docs/parity.html): `Sel.out` used to round-trip in the URL with nothing reading it --
+// `out=none` still drew the Program-Area outline. `Shell.svelte` now runs every `zones` array
+// through `zoneUnitsWithOutline()` before it reaches `composeStyle()` (rule-level cases live in
+// tests/map/zones.test.ts); this is the integration proof, on the REAL composed style, of the
+// task's own acceptance rule: "out=none -> no zone line layer (or visibility: none), the default
+// -> present".
+describe("composeStyle + zoneUnitsWithOutline (G-25: Sel.out reaches the rendered style)", () => {
+  it('out="none": the zone-line layer is present in the style but visibility: "none" (never removed -- CLAUDE.md: no addLayer/setLayoutProperty after the fact)', () => {
+    const s = composeStyle({
+      theme: "navy",
+      basemap: null,
+      zones: zoneUnitsWithOutline([PRA], "none"),
+    });
+    const line = s.layers.find((l) => l.id === "programarea_ln");
+    expect(line).toBeDefined();
+    expect(line && "layout" in line ? line.layout : null).toEqual({ visibility: "none" });
+  });
+
+  it('the default outline ("programarea" for the scores lens) renders the line, visible', () => {
+    const s = composeStyle({
+      theme: "navy",
+      basemap: null,
+      zones: zoneUnitsWithOutline([PRA], "programarea"),
+    });
+    const line = s.layers.find((l) => l.id === "programarea_ln");
+    expect(line).toBeDefined();
+    expect(line && "layout" in line ? line.layout : null).toEqual({ visibility: "visible" });
+  });
+
+  it("a hidden outline never hides the SAME unit's choropleth fill (a separate layer/paint property)", () => {
+    const s = composeStyle({
+      theme: "navy",
+      basemap: null,
+      zones: zoneUnitsWithOutline(
+        [
+          {
+            ...PRA,
+            fill: {
+              keyProperty: "programarea_key",
+              stops: [{ key: "GAA", color: "#111111" }],
+              defaultColor: "lightgrey",
+              opacity: 0.7,
+              outlineColor: "white",
+            },
+          },
+        ],
+        "none",
+      ),
+    });
+    const fill = s.layers.find((l) => l.id === "programarea_fill");
+    const line = s.layers.find((l) => l.id === "programarea_ln");
+    expect(fill).toBeDefined();
+    expect(line && "layout" in line ? line.layout : null).toEqual({ visibility: "none" });
   });
 });
 

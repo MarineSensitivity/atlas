@@ -3,7 +3,13 @@
 // with hand-derived fixtures: every rect's area sums to width*height, and every rect nests inside
 // the container.
 import { describe, expect, it } from "vitest";
-import { squarify, type TreemapLeafInput } from "../../src/lib/ui/treemapLayout";
+import {
+  describeTreemapSummary,
+  formatTreemapValue,
+  squarify,
+  treemapPercent,
+  type TreemapLeafInput,
+} from "../../src/lib/ui/treemapLayout";
 
 function totalArea(rects: { width: number; height: number }[]): number {
   return rects.reduce((s, r) => s + r.width * r.height, 0);
@@ -154,5 +160,86 @@ describe("squarify: order independence (the function sorts internally)", () => {
     const b = squarify(shuffled, 0, 0, 100, 60);
     const byId = (rects: typeof a) => [...rects].sort((x, y) => x.id.localeCompare(y.id));
     expect(byId(a)).toEqual(byId(b));
+  });
+});
+
+describe("formatTreemapValue", () => {
+  it("rounds to 0 dp, comma-grouped — REGRESSION for G-23 (docs/parity.html)", () => {
+    // the exact reported defect: a raw suit_er_area sum printed via toLocaleString()'s default
+    // (up to 3 fraction digits) as "210,671,300.041". formatTreemapValue must round it away.
+    expect(formatTreemapValue(210671300.041)).toBe("210,671,300");
+  });
+
+  it("an already-integer value (a literal species count) is unaffected", () => {
+    expect(formatTreemapValue(9424)).toBe("9,424");
+  });
+});
+
+describe("treemapPercent", () => {
+  it("rounds a share to the nearest whole percent", () => {
+    expect(treemapPercent(1, 3)).toBe(33);
+  });
+
+  it("a non-positive total never divides by zero — 0, not NaN/Infinity", () => {
+    expect(treemapPercent(5, 0)).toBe(0);
+    expect(treemapPercent(0, 0)).toBe(0);
+  });
+});
+
+describe("describeTreemapSummary", () => {
+  it("no leaves: a plain, unit-agnostic 'no data' sentence", () => {
+    expect(describeTreemapSummary("Composition", [], "species")).toBe("Composition. No data.");
+  });
+
+  it("uses the caller's valueLabel and rounds the total — REGRESSION for G-23", () => {
+    // the reported bug, reproduced: a suit_er_area sum with a fractional remainder, summed
+    // across 7 categories, previously rendered "210,671,300.041 species across 7 categories".
+    const leaves = [
+      { label: "Fish", value: 90161001.02 },
+      { label: "Invertebrate", value: 60161000.001 },
+      { label: "Mammal", value: 30161000.01 },
+      { label: "Coral", value: 15161000.005 },
+      { label: "Bird", value: 10161000.002 },
+      { label: "Turtle", value: 3161000.003 },
+      { label: "Primary producer", value: 1665299.0 },
+    ];
+    const text = describeTreemapSummary(
+      "Composition",
+      leaves,
+      "combined suitability x extinction-risk x area",
+    );
+    expect(text).not.toContain("species");
+    expect(text).not.toContain(".041");
+    expect(text).toContain(
+      "210,631,300 combined suitability x extinction-risk x area across 7 categories",
+    );
+    expect(text).toContain("Fish 90,161,001 (43%)");
+  });
+
+  it("a literal species count caller (the gallery fixture) still reads naturally", () => {
+    const text = describeTreemapSummary(
+      "Species composition — full study area",
+      [
+        { label: "Invertebrate", value: 9424 },
+        { label: "Fish", value: 6290 },
+      ],
+      "species",
+    );
+    expect(text).toBe(
+      "Species composition — full study area. 15,714 species across 2 categories: " +
+        "Invertebrate 9,424 (60%), Fish 6,290 (40%).",
+    );
+  });
+
+  it("sorts leaves by descending value, independent of input order", () => {
+    const text = describeTreemapSummary(
+      "T",
+      [
+        { label: "Small", value: 1 },
+        { label: "Big", value: 9 },
+      ],
+      "species",
+    );
+    expect(text).toBe("T. 10 species across 2 categories: Big 9 (90%), Small 1 (10%).");
   });
 });

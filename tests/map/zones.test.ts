@@ -13,6 +13,7 @@ import {
   zoneQueryLayerIds,
   zoneSources,
   zoneUnitsFromBoot,
+  zoneUnitsWithOutline,
   zonesNeedGlyphs,
 } from "../../src/lib/map/layers/zones";
 import type { ZoneUnitSpec } from "../../src/lib/map/types";
@@ -21,6 +22,12 @@ const PRA: ZoneUnitSpec = {
   unit: "programarea",
   pmtiles: "https://s3.example/marine-atlas/zones/programarea_2026-01/zones.pmtiles",
   sourceLayer: "programarea",
+};
+
+const ECO: ZoneUnitSpec = {
+  unit: "ecoregion",
+  pmtiles: "https://s3.example/marine-atlas/zones/ecoregion_2026-01/zones.pmtiles",
+  sourceLayer: "ecoregion",
 };
 
 describe("zoneLineStyle — one case per row of the table", () => {
@@ -245,5 +252,50 @@ describe("boot.json readers", () => {
       zoneLabelsFromBoot({ zones: { programarea: [{ key: "GAA" }] } }, "programarea"),
     ).toBeNull();
     expect(zoneLabelsFromBoot(null, "programarea")).toBeNull();
+  });
+});
+
+// G-25 fix (docs/parity.html): `Sel.out` was parsed and round-tripped in the URL but nothing read
+// it -- the species map always drew the Program-Area outline regardless of `out=none`/`out=
+// ecoregion`. `zoneUnitsWithOutline` is the ONE function `Shell.svelte` calls on whichever
+// `zones` array reaches `composeStyle()`; these are its own rule-level cases.
+describe("zoneUnitsWithOutline (G-25: Sel.out's map-side effect)", () => {
+  it('out="none" hides every unit\'s outline, regardless of type', () => {
+    const out = zoneUnitsWithOutline([PRA, ECO], "none");
+    expect(out.map((u) => u.lineVisible)).toEqual([false, false]);
+  });
+
+  it('out="programarea" keeps only the matching unit visible', () => {
+    const out = zoneUnitsWithOutline([PRA, ECO], "programarea");
+    expect(out.find((u) => u.unit === "programarea")?.lineVisible).toBe(true);
+    expect(out.find((u) => u.unit === "ecoregion")?.lineVisible).toBe(false);
+  });
+
+  it('out="ecoregion" keeps only the matching unit visible, even if the release has not published it', () => {
+    // PRA only -- no ecoregion unit in this release yet. Never throws; simply nothing to show.
+    const out = zoneUnitsWithOutline([PRA], "ecoregion");
+    expect(out).toEqual([{ ...PRA, lineVisible: false }]);
+  });
+
+  it("never touches any other field on the unit (fill, labels, highlightKey survive untouched)", () => {
+    const withFill: ZoneUnitSpec = {
+      ...PRA,
+      fill: {
+        keyProperty: "programarea_key",
+        stops: [],
+        defaultColor: "lightgrey",
+        opacity: 0.7,
+        outlineColor: "white",
+      },
+      highlightKey: "GAA",
+    };
+    const [out] = zoneUnitsWithOutline([withFill], "none");
+    expect(out.fill).toEqual(withFill.fill);
+    expect(out.highlightKey).toBe("GAA");
+    expect(out.lineVisible).toBe(false);
+  });
+
+  it("an empty units list stays empty", () => {
+    expect(zoneUnitsWithOutline([], "programarea")).toEqual([]);
   });
 });

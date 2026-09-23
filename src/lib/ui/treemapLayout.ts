@@ -145,3 +145,60 @@ export function squarify(
 
   return recurse(sorted, x, y, width, height);
 }
+
+// --- Treemap.svelte's text summary (G-23 fix) ---------------------------------------------------
+//
+// PURE, no d3 dependency here either -- same reasoning as squarify() above.
+
+const GROUPED = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+/**
+ * 0 dp, comma-grouped -- matches `report/format.ts`'s OWN `comma(round(suit_er_area, 0))`
+ * convention for this exact quantity. The bug this replaces (G-23, `docs/parity.html`):
+ * `Number.prototype.toLocaleString()`'s default keeps up to 3 fraction digits, so a raw
+ * `suit_er_area` sum printed as "210,671,300.041" -- neither a species count nor rounded the way
+ * every other consumer of this number already is.
+ */
+export function formatTreemapValue(v: number): string {
+  return GROUPED.format(Math.round(v));
+}
+
+/** a leaf's share of `total`, 0 dp -- `0` when `total` is not positive (an empty/all-zero tree),
+ * never `NaN` or `Infinity`. */
+export function treemapPercent(value: number, total: number): number {
+  return total > 0 ? Math.round((value / total) * 100) : 0;
+}
+
+export interface TreemapSummaryLeaf {
+  label: string;
+  value: number;
+}
+
+/**
+ * PURE: Treemap.svelte's text summary (spec.md §11, SC 1.1.1 -- "every chart has a table
+ * equivalent AND a text summary"), also used verbatim as the figure's `aria-describedby`
+ * paragraph.
+ *
+ * `valueLabel` names what a positive `value` REPRESENTS -- there is no safe default, because
+ * Treemap.svelte is a generic component two real callers size differently: the gallery fixture's
+ * boxes are a literal per-category species COUNT, while `src/lens/scores/composition.ts` sizes
+ * them by the SUMMED `suit_er_area` ("combined suitability x extinction-risk x area" --
+ * `glossary.ts`'s own phrase for that column, matched here on purpose so the two can never drift
+ * apart). G-23's root cause was this component silently ASSUMING "species" for every caller.
+ */
+export function describeTreemapSummary(
+  title: string,
+  leaves: readonly TreemapSummaryLeaf[],
+  valueLabel: string,
+): string {
+  if (leaves.length === 0) return `${title}. No data.`;
+  const total = leaves.reduce((s, l) => s + l.value, 0);
+  const parts = leaves
+    .slice()
+    .sort((a, b) => b.value - a.value)
+    .map((l) => `${l.label} ${formatTreemapValue(l.value)} (${treemapPercent(l.value, total)}%)`);
+  return (
+    `${title}. ${formatTreemapValue(total)} ${valueLabel} across ${leaves.length} categories: ` +
+    `${parts.join(", ")}.`
+  );
+}

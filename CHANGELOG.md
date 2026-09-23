@@ -1,3 +1,32 @@
+# atlas 0.10.19
+
+The three defects the parity screenshots exposed (`docs/parity.html` known gaps G-23/G-24/G-25).
+
+- **G-23: the composition treemap's summary line miscounted its own number.** `Treemap.svelte`'s
+  accessible summary (and its `aria-describedby` paragraph) hardcoded "species" and printed a raw
+  sum via `Number.toLocaleString()`'s default (up to 3 fraction digits) — e.g.
+  "210,671,300.041 species across 7 categories" for a quantity that is the summed `suit_er_area`
+  ("suitability x extinction-risk x area", `sql/composition.sql`/`glossary.ts`'s own phrase), never
+  a species count. `Treemap.svelte` now takes a required `valueLabel` prop naming what a positive
+  `value` represents (the gallery demo passes `"species"`, a literal count; the real
+  `Composition.svelte` caller passes `"combined suitability x extinction-risk x area"`), and the
+  summary/table are built by a new pure `describeTreemapSummary()`
+  (`src/lib/ui/treemapLayout.ts`), rounded 0 dp like every other consumer of this number
+  (`report/format.ts`'s `formatScore0`).
+- **G-24: a ported "the 'bird' component has yet to be added" note stayed above a treemap that DOES
+  draw a Bird box.** That note describes the Shiny app's six-rank WoRMS hierarchy treemap (G-06,
+  never built here); the shipped one-level treemap groups by `sp_cat` via a LEFT JOIN
+  (`sql/composition.sql`), so a bird row is never excluded by construction (confirmed against the
+  real v7 and v9 parity fixtures, both of which carry `sp_cat: "bird"` rows that survive into a
+  box). Removed from `Composition.svelte`.
+- **G-25: `out=` was parsed and round-tripped but nothing read it** — a link carrying `out=none`
+  (the species lens' own default) still drew the Program-Area outline on every map. A new
+  `zoneUnitsWithOutline()` (`src/lib/map/layers/zones.ts`) is the ONE place `Sel.out` now reaches
+  `composeStyle()`'s `zones` input (`Shell.svelte`, both call sites): `out="none"` sets every
+  unit's line layer to `visibility: "none"` (never removed, never a piecemeal
+  `setLayoutProperty()`); the matching unit's own choropleth fill is unaffected. Seeded fault:
+  `tests/faults/out-outline-ignored.patch`, wired into `npm run test:faults`.
+
 # atlas 0.10.18
 
 atlas-8 step 3's fix round: all 14 items in `docs/accessibility-fixes.md` (the previous version's
