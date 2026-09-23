@@ -11,6 +11,7 @@
 // They are DATA colours (the zone_style table msens publishes), not brand chrome, so they must
 // never move into `src/lib/brand/tokens.css` either (spec.md §2).
 import type { Feature, FeatureCollection, Point } from "geojson";
+import type { Outline } from "../../state/types";
 import { GLYPHS_URL, LABEL_FONT } from "./basemap";
 import {
   SELECTION_COLOR,
@@ -270,6 +271,30 @@ export function zoneUnitsFromBoot(boot: unknown): ZoneUnitSpec[] {
     });
   }
   return out;
+}
+
+/**
+ * `Sel.out`'s ONE map-side effect (G-25 fix, `docs/parity.html`): sets every unit's `lineVisible`
+ * from the URL's outline choice. `Shell.svelte` calls this ONCE on whichever `zones` array is
+ * about to reach `composeStyle()` — never a second, piecemeal `setLayoutProperty()` call after
+ * the fact (CLAUDE.md: "one composed style, applied with one `setStyle(diff:true)`"); the line
+ * layer's visibility is an INPUT to the style, exactly like every other zone paint property.
+ *
+ * `out === "none"` hides every unit's standalone outline line; otherwise only the unit whose TYPE
+ * equals `out` keeps its line visible (a release that has not published that unit type at all —
+ * e.g. `out=ecoregion` before an ecoregion PMTiles archive exists — simply has nothing to show,
+ * never a thrown error). A unit's own choropleth FILL (`zoneFillLayer`'s `fill-outline-color`, a
+ * separate paint property on a separate layer) is never touched here: the scores lens' selected-
+ * unit choropleth keeps its own edge even when `out` hides the plain outline drawn beside it.
+ *
+ * Before this fix, nothing read `Sel.out` at all: `out=none` (the species lens' own DEFAULT, per
+ * `defaultOut()`) still drew the Program-Area outline on every map, because `Shell.svelte` handed
+ * every `boot.units[]` row straight to `composeStyle()` with no outline filtering whatsoever — a
+ * URL key that round-tripped but never changed what rendered, exactly what plan D8's "URL is the
+ * view" rule exists to prevent.
+ */
+export function zoneUnitsWithOutline(units: readonly ZoneUnitSpec[], out: Outline): ZoneUnitSpec[] {
+  return units.map((u) => ({ ...u, lineVisible: out !== "none" && u.unit === out }));
 }
 
 interface BootZoneRow {

@@ -21,10 +21,14 @@
 
 <div class="row">
   <div id="treemap-populated">
-    <Treemap title="Species composition — full study area" data={composition} />
+    <Treemap
+      title="Species composition — full study area"
+      data={composition}
+      valueLabel="species"
+    />
   </div>
   <div id="treemap-empty">
-    <Treemap title="Species composition — no data" data={empty} />
+    <Treemap title="Species composition — no data" data={empty} valueLabel="species" />
   </div>
 </div>
 

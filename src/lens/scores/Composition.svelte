@@ -1,8 +1,21 @@
 <script lang="ts">
   // atlas-4 step 2 — the composition treemap, over the CURRENT species selection (parity doc §7.6).
-  // "The 'bird' component has yet to be added to this visualization" stays a literal note (BOTW
-  // taxa are not in the WoRMS hierarchy `composition.sql` joins against) until that changes —
-  // an enhancement, not a parity gap this phase can close.
+  //
+  // G-24 fix (docs/parity.html): this used to carry a ported note (quoted in the fix's own commit
+  // message and test, not repeated verbatim here on purpose -- see
+  // tests/lens/scores/composition-note.test.ts's regression case) claiming the bird component was
+  // still missing, above a treemap that DOES show a Bird box. That note describes the SHINY app's
+  // six-rank WoRMS hierarchy treemap (G-06, not built here), whose `inner_join`
+  // against `d_taxonomy` drops BOTW taxa because they carry no WoRMS row. This component's
+  // treemap is the ONE-LEVEL version instead (`composition.ts#compositionTree`), grouped by
+  // `sp_cat` straight off `species_sel` via a LEFT JOIN (`sql/composition.sql`) — birds are never
+  // excluded by construction here, so the note is never true of what this component draws (both
+  // `tests/fixtures/parity/{v7,v9}/composition.json` carry `sp_cat: "bird"` rows, and
+  // `compositionTree()` includes any category with a positive sum, bird included). Removed
+  // outright rather than made conditional: there is no live code path in this repo where the
+  // shipped treemap structurally lacks a category that has data, so a per-selection absence (no
+  // bird MODELS in this particular selection) is not the same claim the old note made — it is the
+  // same "no box for an empty category" behaviour every other category already has.
   //
   // `Treemap.svelte` is loaded via a DYNAMIC `import()`, never a static one: this component (via
   // `TablePanel.svelte`) is reachable from `Shell.svelte`'s static graph the moment the scores
@@ -39,17 +52,13 @@
 </script>
 
 <div class="composition">
-  <p class="note">
-    Note: the "bird" component has yet to be added to this visualization (BOTW taxa are not in the
-    WoRMS hierarchy this treemap is built from).
-  </p>
   {#if rows === undefined}
     <p class="note">Loading species composition…</p>
   {:else if !tree}
     <p class="note">No composition data for this selection.</p>
   {:else if TreemapComponent}
     {@const Comp = TreemapComponent}
-    <Comp {title} data={tree} />
+    <Comp {title} data={tree} valueLabel="combined suitability x extinction-risk x area" />
   {:else}
     <p class="note">Loading the treemap…</p>
   {/if}

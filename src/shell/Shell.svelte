@@ -38,7 +38,7 @@
   import { createMap, type MapHandle } from "../lib/map/map";
   import { composeStyle } from "../lib/map/style";
   import { loadBasemapStyle } from "../lib/map/layers/basemap";
-  import { zoneUnitsFromBoot } from "../lib/map/layers/zones";
+  import { zoneUnitsFromBoot, zoneUnitsWithOutline } from "../lib/map/layers/zones";
   import { studyAreaFromBoot } from "../lib/map/interaction";
   import { createAnalytics } from "../lib/analytics/analytics";
   // atlas-8 Deliverable 4 (beta feedback, zero backend -- CLAUDE.md/GATES.md's "the CalCOFI
@@ -263,6 +263,16 @@
     legend?: ScoresLegendType;
   }>({});
 
+  // G-25 fix: `Sel.out`'s ONE effect on the map, applied to whichever `zones` array (the shell's
+  // own outline-only `zoneUnits`, or a lens' richer `lensMapExtra.zones`) is about to reach
+  // `composeStyle()` below -- see `zoneUnitsWithOutline`'s own header. This is the ONLY place
+  // `sel.out` touches the map; BOTH `composeStyle()` call sites (the automation seam and the
+  // reactive effect, below) read THIS, never `zoneUnits`/`lensMapExtra.zones` directly, so the
+  // outline choice can never drift between the two.
+  const zonesForStyle = $derived<ZoneUnitSpec[]>(
+    zoneUnitsWithOutline(lensMapExtra.zones ?? zoneUnits, sel.out),
+  );
+
   onMount(() => {
     if (!mapEl) return;
     const handle = createMap(mapEl, {
@@ -295,7 +305,7 @@
       inputs: () => ({
         theme: resolvedTheme,
         projection: sel.proj,
-        zones: lensMapExtra.zones ?? zoneUnits,
+        zones: zonesForStyle,
         raster:
           sel.lens === "scores" ? (lensMapExtra.raster ?? null) : speciesLens.mapInputs.raster,
         range: sel.lens === "species" ? speciesLens.mapInputs.range : null,
@@ -385,7 +395,7 @@
       composeStyle({
         theme: resolvedTheme,
         projection: sel.proj,
-        zones: lensMapExtra.zones ?? zoneUnits,
+        zones: zonesForStyle,
         raster: sel.lens === "scores" ? (lensMapExtra.raster ?? null) : raster,
         range,
         overlays: lensMapExtra.overlays ?? [],

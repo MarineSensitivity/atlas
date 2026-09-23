@@ -30,17 +30,27 @@
   // this repo's own pure function, src/lib/ui/treemapLayout.ts, unit-tested independently of d3.
   // Category colors come from categories.ts; no literal color anywhere in this component.
   import { categoryFor, type Category } from "./categories";
-  import { squarify, type TreemapRect } from "./treemapLayout";
+  import {
+    describeTreemapSummary,
+    formatTreemapValue,
+    squarify,
+    treemapPercent,
+    type TreemapRect,
+  } from "./treemapLayout";
 
   interface Props {
     title: string;
     data: TreemapInputNode;
+    /** what a positive `value` represents (e.g. "species" for a literal count, or a longer
+     * phrase for a weighted sum) -- REQUIRED, no default: see `describeTreemapSummary`'s own
+     * header (G-23) for why this component must never guess. */
+    valueLabel: string;
     /** SVG px */
     width?: number;
     height?: number;
   }
 
-  let { title, data, width = 480, height = 280 }: Props = $props();
+  let { title, data, valueLabel, width = 480, height = 280 }: Props = $props();
 
   const summaryId = nextUid();
 
@@ -94,22 +104,27 @@
     layout(node, w, h);
   });
 
+  // both wrappers exist only so the template below reads `formatValue`/`pctOf` (its own local,
+  // short names) rather than the imported ones directly -- `pctOf` also closes over `total` so
+  // call sites don't have to repeat it.
   function formatValue(v: number): string {
-    return v.toLocaleString("en-US");
+    return formatTreemapValue(v);
   }
 
   function pctOf(value: number): number {
-    return total > 0 ? Math.round((value / total) * 100) : 0;
+    return treemapPercent(value, total);
   }
 
-  const summaryText = $derived.by(() => {
-    if (leaves.length === 0) return `${title}. No species data.`;
-    const parts = leaves
-      .slice()
-      .sort((a, b) => b.value - a.value)
-      .map((l) => `${l.category.label} ${formatValue(l.value)} (${pctOf(l.value)}%)`);
-    return `${title}. ${formatValue(total)} species across ${leaves.length} categories: ${parts.join(", ")}.`;
-  });
+  // SAME leaves the SVG/table draw, so the summary can never disagree with what is on screen
+  // (Flower.svelte's `describeFlowerSummary` follows the identical rule). `valueLabel` is the
+  // caller's, never guessed here -- see the component header and `describeTreemapSummary`'s own.
+  const summaryText = $derived(
+    describeTreemapSummary(
+      title,
+      leaves.map((l) => ({ label: l.category.label, value: l.value })),
+      valueLabel,
+    ),
+  );
 </script>
 
 <figure class="treemap" aria-describedby={summaryId}>
@@ -168,11 +183,11 @@
       </svg>
 
       <table class="treemap-table" class:sr-only={!showTable}>
-        <caption>Species composition for {title}</caption>
+        <caption>{title}, by category</caption>
         <thead>
           <tr>
             <th scope="col">Category</th>
-            <th scope="col">Species</th>
+            <th scope="col" title={`Total ${valueLabel} for this category`}>Value</th>
             <th scope="col">Share</th>
           </tr>
         </thead>

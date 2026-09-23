@@ -125,6 +125,17 @@ const FAULTS = [
     gate: ["node", "scripts/verify.mjs", "--engines=chromium", "--limit=2"],
     env: { VERIFY_BASE_URL: "http://localhost:4393" },
   },
+  // G-25 (docs/parity.html, atlas-8): `Sel.out` used to round-trip in the URL with nothing
+  // reading it. This patch reintroduces exactly that -- `zoneUnitsWithOutline()` accepts `out`
+  // but no longer consults it -- and must turn tests/map/style.test.ts's own G-25 cases red.
+  {
+    id: "out-outline-ignored",
+    patch: "tests/faults/out-outline-ignored.patch",
+    describe:
+      "zoneUnitsWithOutline() stops reading `out` -- G-25's exact regression (out=none no " +
+      "longer hides the zone outline), replayed against the real function",
+    gate: ["npx", "vitest", "run", "tests/map/style.test.ts", "-t", "G-25"],
+  },
 ];
 
 function run(cmd, args, cwd, env) {
