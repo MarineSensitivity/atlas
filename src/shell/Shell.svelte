@@ -889,7 +889,12 @@
   <!-- U6 (round 2): the (?) Help menu -- tour, keyboard shortcuts, a docs link. Always rendered
        (never {#if helpOpen}), toggled with `hidden`, so `aria-controls` on the trigger names an
        element that actually EXISTS in the DOM (SC 4.1.2) -- Popover.svelte's identical fix. -->
-  <span class="help-wrap">
+  <!-- "topbar-desktop-only" on the WRAPPER too, not just the button inside it -- the skeleton
+       (index.html) has no wrapping element around the help tool at all, so at phone width it
+       contributes NOTHING to the topbar's flex layout. Without this class here, the wrapper stayed
+       `display:inline-flex` (its child hidden, but the span itself still a flex ITEM), adding one
+       extra gap the skeleton never has -- the CLS geometry-equality gate's phone-only mismatch. -->
+  <span class="help-wrap topbar-desktop-only">
     <button
       type="button"
       class="tool topbar-desktop-only"
