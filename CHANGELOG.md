@@ -1,3 +1,42 @@
+# atlas 0.10.0
+
+`atlas-7` step 1: the report data model — one pure function from `(release, places)` to a plain
+object whose every number equals what R produces for the same places.
+
+- **`buildReport()` (`src/lib/report/model.ts`)** — header (title, `ver · status · access`,
+  generated stamp, permalink parts, the PREVIEW banner and `PREVIEW_` file prefix on a restricted
+  release), intro, per-place parameters (kind, zone keys or vertex count / bbox / area / N cells /
+  the D7b share inside the study area / the place token), the map's ramp domain, one flower per
+  place, the Table of Scores with a coverage footnote for every component below 100 %, the species
+  cross-tab + top 20 + full list, dataset citations, and a provenance block that replaces
+  `devtools::session_info()` (every table read with its digest, app SHA, DuckDB-WASM version,
+  timestamp, the SQL that ran, and a runnable "Reproduce in R" snippet carrying the real place
+  token). It **fetches nothing**: the caller supplies the already-run queries, and every one of them
+  may be `null` so the document can render progressively. Every figure also carries a text summary
+  (`model.summaries`), the accessibility gate's input.
+- **The numbers gate.** `tests/fixtures/report/{v7,v9}/report_{gaa,gulf_rectangle,aleutian_dateline}.json`
+  — six committed R references generated read-only by `scripts/parity/report_fixtures.R`
+  (`npm run report:fixtures`; see `tests/fixtures/report/README.md` for the exact commands).
+  `tests/lib/report/numbers.test.ts` asserts every score within `1e-9` and the counts, the top-20
+  order and the full-list order **exactly**, per place per version, with the input rows shuffled
+  first so the model's own sorts are what is measured. R and TypeScript agree on all six.
+- **Six seeded faults** (`tests/lib/report/faults.ts` + `faults.test.ts`), each proven red against
+  the same fixtures: a mis-mapped `er_consolidate` arm, the ramp not widened when every place
+  agrees, `Overall` as a weighted mean, the top 20 sorted by the wrong column, a suppressed coverage
+  footnote, and the D7b clip bypassed for a custom place.
+- **`src/lib/release/cite.ts`** — new, and the app's ONE dataset-citation path. It reads
+  `boot.datasets`' `citation`/`link_info`, which nothing did before (the species lens's
+  `datasetIndex()` keeps only the display fields). It lives under `release/`, not under `report/`,
+  so a lens can use it without dragging the report into `index.html`'s static graph.
+- **`tests/report-lazy-import.wiring.test.ts`** — `src/lib/report/` must stay unreachable from
+  `src/main.ts`'s static import graph. `scripts/size-budget.mjs` only ever walks `index.html`, so it
+  could not have caught a leak until it grew past the budget; this scan states the invariant
+  directly. `index.html`'s static critical path is unchanged at 409.3 KB gzip.
+- **`docs/report-model.md`** — the model's shape and what steps 2–3 render from it, including the
+  two places where two numbers legitimately differ: a zone place's published `zone_metric` vs the
+  same area traced as a custom place (v9 GAA 40.4484 vs 40.4982), and the flower's drawn-petal mean
+  vs the table's `Overall` on releases that publish both `primary producer` and `primprod`.
+
 # atlas 0.9.15
 
 - The species first-paint timing gate's Playwright project now `depends` on the three engine

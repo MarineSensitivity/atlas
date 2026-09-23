@@ -1,7 +1,7 @@
 {
   "name": "atlas",
   "private": true,
-  "version": "0.9.15",
+  "version": "0.10.0",
   "description": "MarineSensitivity Atlas: scores, species, places and reports for U.S. marine areas.",
   "license": "MIT",
   "type": "module",
@@ -37,6 +37,7 @@
     "e2e:opfs": "playwright test --config=tests/fixtures/opfs-e2e/playwright.config.ts",
     "parity": "node scripts/parity/run.mjs",
     "parity:fixtures": "Rscript scripts/parity/fixtures.R",
+    "report:fixtures": "Rscript scripts/parity/report_fixtures.R",
     "parity:serve": "node scripts/parity/serve.mjs"
   },
   "dependencies": {
