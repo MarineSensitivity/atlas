@@ -2,22 +2,29 @@
 
 atlas-8 step 3. Every number below is real, from a real command run in this dispatch (2026-09-23,
 macOS, this worktree, laptop) unless marked otherwise. Nothing here is invented or interpolated.
+The size-budget, `verify.mjs`-matrix and CI numbers were re-measured in a later pass the same day
+(worktree `r2-perf`, `origin/main` at `9c614db`, 0.10.20) to bring them current against the build
+that actually shipped; the timing-gate laptop numbers below predate that pass and were not re-run.
 
 ## Size budgets (`scripts/size-budget.mjs`, `pages.yml`'s `checks` job)
 
-Measured with `npm run build && node scripts/size-budget.mjs` (2026-09-23):
+Measured with `npm run build && node scripts/size-budget.mjs` (2026-09-23, re-measured pass,
+`TMPDIR` exported to a worktree-local dir — the sandboxed default `$TMPDIR` denies `vite`/Playwright
+`mkdtemp` calls here):
 
 | what                                                | measured          | budget   |
 | --------------------------------------------------- | ----------------- | -------- |
-| static critical path (index.html's own `<script>`s) | **409.4 KB gzip** | ≤ 450 KB |
+| static critical path (index.html's own `<script>`s) | **417.4 KB gzip** | ≤ 450 KB |
 | runtime worker (maplibre-gl's)                      | **140.5 KB gzip** | ≤ 150 KB |
-| combined, "before first interaction"                | **549.9 KB gzip** | ≤ 600 KB |
+| combined, "before first interaction"                | **557.9 KB gzip** | ≤ 600 KB |
 
-Both individual budgets and the combined one pass with headroom (40.6 KB / 9.5 KB / 50.1 KB
+Both individual budgets and the combined one pass with headroom (32.6 KB / 9.5 KB / 42.1 KB
 respectively). The two red-fixture controls
 (`npm run build:fixture:size-budget[-worker]` + the inverted checker call) still fail as designed —
-re-verified in this dispatch's own `npx tsc`/`vitest`/`eslint`/`prettier` pass, unchanged from
-atlas-0's own wiring.
+confirmed both in this dispatch's own `npx tsc`/`vitest`/`eslint`/`prettier` pass and in CI run
+`35867233243` (job "build & checks"): the static-duckdb fixture fails on the forbidden `duckdb`
+lazy-chunk marker, and the worker fixture fails on exceeding the 153,600 B runtime-worker budget
+(170,821 B measured) — unchanged from atlas-0's own wiring.
 
 ## The timing gate (`e2e/species.timing.spec.ts`, its own "timing" Playwright project)
 
@@ -47,6 +54,16 @@ projects finished in the step before) — twice, with instructive disagreement:
 | `ubuntu-latest`, run 35824811030 | **3281 / 2629 / 3261 ms** (its three retry attempts) | ≤ **4000 ms** |
 | `ubuntu-latest`, run 35825712215 | **1906 ms** (2173/1897/1906)                         | ≤ **4000 ms** |
 | `ubuntu-latest`, run 35826436609 | **3445 ms** (3584/3432/3445)                         | ≤ **4000 ms** |
+| `ubuntu-latest`, run 35867233243 | **1646 ms** (1757/1646/1632)                         | ≤ **4000 ms** |
+
+**2026-09-23, a fourth CI observation (run `35867233243`, job "e2e (chromium, webkit, firefox)",
+step "timing gate (species.timing.spec.ts, alone)" — the latest GREEN run on `main` as of this
+pass, head sha `9c614db`, same commit this worktree is based on).** Median **1646 ms**, the lowest
+of the four CI medians recorded here — well under even the 1906 ms that had been the previous
+floor. The four medians now span 1646–3445 ms (still a >2× range), which reinforces rather than
+revises the point below: the cap is calibrated against the worst case observed, and one new fast
+run doesn't retire a worst case — only a new, worse one would move the cap. `CI_BUDGET_MS` stays
+4000 ms.
 
 **The headline here is the SPREAD, not any single number.** Three runs of identical code on the
 same nominal hardware, minutes apart, produced medians of 3281, 1906 and 3445 ms — a 1.8× swing,
@@ -75,9 +92,16 @@ double-run of the engine matrix.
 
 ## `scripts/verify.mjs`'s state matrix — laptop, chromium (full run)
 
-`node scripts/verify.mjs --engines=chromium`: **174/174 pass** (58 named states × 3 viewports).
-Total wall time ~35–40 s for the full sweep (not itself budgeted — `assertLayout` + the per-state
-probes are correctness gates, not a timing gate).
+`VERIFY_BASE_URL=http://localhost:4352 node scripts/verify.mjs --engines=chromium`: **174/174
+pass** (58 named states × 3 viewports), confirmed on two independent clean, quiet-machine runs this
+pass (2026-09-23; 1-min load 2.16→4.23 and 4.19→5.02, both well under the ~25 threshold this task
+sets — see uptime readings below). Total wall time **~112–114 s per run**, measured end to end from
+this dispatch's own `uptime` timestamps bracketing each run (17:27:54→17:29:46 and
+17:33:32→17:35:26). This _corrects_ the ~35–40 s figure previously recorded here: that number
+undercounted the script's own self-managed lifecycle (atlas-8 fix round 1) — building `dist/`,
+starting its own `vite preview`, running all 174 states, then shutting the server back down — none
+of which is itself budgeted (`assertLayout` + the per-state probes are correctness gates, not a
+timing gate).
 
 **Cross-engine (webkit, firefox): substantially confirmed, not exhaustively swept.** Every
 individual `e2e/*.spec.ts` file this phase widened (`map.spec.ts`, `scores.firstpaint.spec.ts`,
@@ -97,35 +121,67 @@ is `pages.yml`'s `e2e` job's job now, on hardware that does not have this proble
 
 ## The three slowest matrix states, and their cause
 
-From a clean (no other load) `node scripts/verify.mjs --engines=chromium` run's own per-state
-timings (added this step — see `scripts/verify.mjs`'s `timings` array):
+Re-measured this pass, 2026-09-23: two back-to-back, clean (no other process running — the four
+non-build gates had already finished, confirmed via `ps`) runs of
+`VERIFY_BASE_URL=http://localhost:4352 node scripts/verify.mjs --engines=chromium`, each on a
+machine at or under the ~25 1-min-load threshold this task sets, per-state timings taken from the
+script's own `timings` array (its "verify: slowest 3 states" printout):
 
-| rank | state                                                            | ms   |
-| ---- | ---------------------------------------------------------------- | ---- |
-| 1    | `shell (default) @ desktop [chromium]`                           | 1139 |
-| 2    | `shell (theme=light) @ desktop [chromium]`                       | 990  |
-| 3    | `scores proj=globe out=ecoregion area=FULL @ desktop [chromium]` | 959  |
+**Run 1** (1-min load 2.16 before → 4.23 after):
 
-**Cause: none of these is slow because of what it renders.** Every other state in the 174-run
-matrix lands in the same 500–950 ms band regardless of how much data it composes (a 4-zone
-choropleth, a raster + legend, a species deep link) — the cost here is dominated by Chromium's own
-per-page fixed overhead (a fresh `browser.newPage()`, Vite's already-built bundle parse, Svelte
-hydration, MapLibre's WebGL context + initial style compile), not by this app's logic. The TOP
-state specifically is the FIRST page `verify.mjs` opens in a freshly-launched browser instance:
-V8's JIT has compiled nothing yet and the OS has not yet paged in the browser's own code — every
-subsequent state on the same browser instance benefits from that warm-up, which is exactly why
-`shell (default)`, running first, is slowest, and why the next two are still "early in the run"
-states rather than ones with unusually heavy composeStyle inputs. This is consistent with (and a
-smaller-scale echo of) S2's own finding that map first-paint is dominated by fixed per-load costs,
-not per-feature ones. No fix is indicated: the matrix is a correctness gate, and 1.1 s for a cold
-Chromium launch plus a full hydration is not a regression to chase.
+| rank | state                                                                    | ms   |
+| ---- | ------------------------------------------------------------------------ | ---- |
+| 1    | `scores sel=zone:MDA proj=globe @ phoneNarrow [chromium]`                | 1278 |
+| 2    | `shell (default) @ desktop [chromium]`                                   | 1199 |
+| 3    | `scores lyr=extrisk_bird_ecoregion_r area=FULL @ phoneNarrow [chromium]` | 1089 |
+
+**Run 2, warm-cache** (1-min load 4.19 before → 5.02 after) — **this is the run the table below is
+drawn from**, per this task's own instruction to take the second run:
+
+| rank | state                                              | ms   |
+| ---- | -------------------------------------------------- | ---- |
+| 1    | `scores lyr=primprod area=GA @ desktop [chromium]` | 1300 |
+| 2    | `scores sel=cell:1500000 @ phoneNarrow [chromium]` | 1206 |
+| 3    | `shell (default) @ desktop [chromium]`             | 1191 |
+
+**Cause: the top state is no longer `shell (default)`, and the top-3 identities no longer repeat
+between runs — this is tail noise near a fairly flat distribution, not one dominant, reproducible
+bottleneck.** `shell (default)` — the FIRST page `verify.mjs` opens in a freshly-launched browser
+instance, where V8's JIT has compiled nothing yet and the OS has not yet paged in the browser's own
+code — is still in the top 3 of _both_ runs (#2 at 1199 ms, #3 at 1191 ms; a previous pass recorded
+it at #1, 1139 ms), so the fresh-browser warm-up cost this doc has attributed to it before is real
+and reproducible in magnitude. But it is no longer distinguishably the largest cost in the matrix:
+each run's actual #1 is a _different_ state (`scores sel=zone:MDA proj=globe @ phoneNarrow` in run
+1, `scores lyr=primprod area=GA @ desktop` in run 2), and neither is unusually early in the run
+order or unusually heavy to compose — `lyr=primprod area=GA` is the second of 58 named states to
+carry a raster-probe assertion (`scoresRasterProbe()`, which polls in up to 40×500 ms steps if the
+first read doesn't match, so a slow WebGL tile decode on any given run can add real wall time to
+just that state), while `sel=cell:1500000` and `sel=zone:MDA` carry no probe at all (`assert` only
+runs at the `desktop` viewport per `runState()`, and `sel=zone:MDA`'s slow run was at
+`phoneNarrow`) — so their variance comes from ordinary per-page overhead (hydration, hermetic route
+setup, GC pauses), not a probe retry loop. All six top-3 entries across both runs sit in a narrow
+1089–1300 ms band, roughly 2× this run's rough per-state average (~114 s / 174 ≈ 655 ms including
+the script's own build+server lifecycle) — consistent with ordinary run-to-run scheduling/GC jitter
+riding on top of a real but modest fixed per-page cost, not a single mechanism worth chasing. No fix
+is indicated: the matrix is a correctness gate, and ~1.2–1.3 s for a state that includes a fresh
+page load, hydration, and (for some) a polled raster probe is not a regression.
 
 ## What CI vs laptop actually differ on (summary)
 
-| gate                                | laptop (this dispatch)                                                                          | CI runner                                                                                                        |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| size-budget                         | 409.4 / 140.5 / 549.9 KB gzip                                                                   | not yet observed (job wired this step; deterministic build output, expected identical modulo Vite version drift) |
-| timing gate (species first pixel)   | median 1579 ms / 2.5 s budget                                                                   | not yet observed (job wired this step; expect slower — shared 2-core runner + network-bound titiler RTT)         |
-| `verify.mjs` matrix, chromium       | 174/174, ~35–40 s                                                                               | not yet observed                                                                                                 |
-| `verify.mjs` matrix, webkit/firefox | spot-checked green per-file; full sweep blocked by this shared laptop's own OOM, not by the app | not yet observed                                                                                                 |
-| `npm run parity` (v9)               | **PASS**, max\|Δ\| < 1e-9 on every quantity (real bucket, real network)                         | wired this step (own job); same command, expected identical since it reads the same published bucket             |
+Every CI number below is from run **`35867233243`** — the latest GREEN run on `main` as of this
+pass (`gh run list --branch main --limit 5`; head sha `9c614db`, the same commit this worktree is
+based on), cited per row with its job name:
+
+| gate                                | laptop (this dispatch)                                                                          | CI runner (`35867233243`)                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| size-budget                         | 417.4 / 140.5 / 557.9 KB gzip                                                                   | **418.9 / 141.3 / 560.2 KB gzip**, PASS (job "build & checks", step "Run node scripts/size-budget.mjs") — within ~1.5 KB of the laptop number, as predicted                                                                                                                                                                                            |
+| timing gate (species first pixel)   | median 1579 ms / 2.5 s budget (prior pass, not re-run this round)                               | **median 1646 ms** (samples 1757/1646/1632) / 4000 ms budget (job "e2e (chromium, webkit, firefox)", step "timing gate (species.timing.spec.ts, alone)") — 4th observed CI median, see "The timing gate" table above for the full 1646–3445 ms spread across 4 runs                                                                                    |
+| `verify.mjs` matrix, chromium       | 174/174 pass, ~112–114 s per run (two runs this pass)                                           | **174/174 pass, ~182.6 s** (job "verify (state matrix, 58 states x 3 viewports)", step "Run node scripts/verify.mjs --engines=chromium", 13:28:30.23Z→13:31:32.83Z) — slower than the laptop, consistent with a shared 2-core runner                                                                                                                   |
+| `verify.mjs` matrix, webkit/firefox | spot-checked green per-file; full sweep blocked by this shared laptop's own OOM, not by the app | **not run by CI** — the "verify (state matrix...)" job invokes `scripts/verify.mjs` with `--engines=chromium` only; cross-engine coverage instead comes from the separate "e2e (chromium, webkit, firefox)" job (549 passed, 35 skipped, 0 failed, 9.8 m), which runs the individual `e2e/*.spec.ts` files per engine, not the 174-state matrix itself |
+| `npm run parity` (v9)               | **PASS**, max\|Δ\| < 1e-9 on every quantity (real bucket, real network)                         | **PASS**, max\|Δ\| < 1e-9 on every quantity (job "parity (v9 vs msens, max\|Δ\| < 1e-9)"; sample deltas shown range 0 to 8.882e-13) — identical verdict, as predicted                                                                                                                                                                                  |
+
+Two more CI-only signals this pass pulled, with no laptop-side row in this doc's own gate set to
+compare against: **`test:faults`** (job "test:faults (seeded-fault suite)"): **10/10 faults turned
+their gate red**, step duration ~13 m 17 s (13:28:24Z→13:41:41Z). **The three-engine e2e matrix**
+(job "e2e (chromium, webkit, firefox)", step "Run npx playwright test --project=chromium
+--project=webkit --project=firefox"): **549 passed, 35 skipped, 0 failed** in 9.8 m.
