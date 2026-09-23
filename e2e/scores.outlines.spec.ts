@@ -166,9 +166,9 @@ test.describe("scores lens — Sel.out reaches the map (G-25)", () => {
     });
     expect(await layerFeatureCount(page, "programarea_ln")).toBe(0);
     // no ecoregion unit was ever composed in the first place -- not merely hidden.
-    expect(await page.evaluate(() => !!window.__atlasMap!.handle.map.getLayer("ecoregion_ln"))).toBe(
-      false,
-    );
+    expect(
+      await page.evaluate(() => !!window.__atlasMap!.handle.map.getLayer("ecoregion_ln")),
+    ).toBe(false);
 
     expect(errors).toEqual([]);
   });
