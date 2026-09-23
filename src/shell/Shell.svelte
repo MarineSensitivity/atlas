@@ -479,9 +479,7 @@
     projection: sel.proj,
     zones: zonesForStyle,
     raster:
-      sel.lens === "scores"
-        ? (scoresLens?.mapExtra.raster ?? null)
-        : speciesLens.mapInputs.raster,
+      sel.lens === "scores" ? (scoresLens?.mapExtra.raster ?? null) : speciesLens.mapInputs.raster,
     range: sel.lens === "species" ? speciesLens.mapInputs.range : null,
     overlays: sel.lens === "scores" ? (scoresLens?.mapExtra.overlays ?? []) : [],
     selection:
@@ -587,15 +585,33 @@
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let WelcomeModalComp = $state<Component<any> | null>(null);
 
+  // item m5 (atlas-8 review round 2): none of the dynamic imports below had a `.catch` -- a chunk
+  // -load failure (a flaky network, an ad blocker, a stale service worker) left the promise
+  // REJECTED with nothing handling it (an unhandled-rejection console error) and the target
+  // `Comp` `$state` null FOREVER, with no word to the user why the lens/tool never rendered (the
+  // 0.10.17 symptom, one layer up: back then it was `scoresLens` null from a different cause).
+  // `announceChunkFailure()` tells the user; the guard needs no explicit "reset" beyond that --
+  // `.then()` never runs on a rejection, so the `Comp`/`scoresLens` state stays null exactly as it
+  // started, and the SAME `if (!Comp)` check already retries the next time this effect re-runs
+  // (a lens/tool switch away and back, which re-reads `sel.lens`/`activeTool` -- both already this
+  // effect's own trigger).
+  function announceChunkFailure(what: string): void {
+    announce(`Couldn't load ${what}. Try switching tools again.`);
+  }
+
   $effect(() => {
     if (sel.lens !== "scores") return;
     if (!ScoresLensComp) {
-      import("../lens/scores/ScoresLens.svelte").then((mod) => (ScoresLensComp = mod.default));
+      import("../lens/scores/ScoresLens.svelte")
+        .then((mod) => (ScoresLensComp = mod.default))
+        .catch(() => announceChunkFailure("the scores panel"));
     }
     // the floating legend (atlas-4 defect fix) -- its own chunk, same trigger as the panel's, so
     // a scores deep link downloads both together rather than waiting on the panel to mount first.
     if (!ScoresLegendComp) {
-      import("../lens/scores/ScoresLegend.svelte").then((mod) => (ScoresLegendComp = mod.default));
+      import("../lens/scores/ScoresLegend.svelte")
+        .then((mod) => (ScoresLegendComp = mod.default))
+        .catch(() => announceChunkFailure("the scores legend"));
     }
     // 0.10.21 fix 1 -- the scores lens' MAP-INPUT store, loaded (and instantiated) the SAME way as
     // the two chunks above, so it exists whenever `sel.lens === "scores"` regardless of whether
@@ -603,18 +619,20 @@
     // above only owns UI). `boot`/`manifest` are read through getters so the lens always sees the
     // CURRENT value, the same reason `createSpeciesLens`'s own deps are getters (above).
     if (!scoresLens) {
-      import("../lens/scores/state.svelte").then((mod) => {
-        scoresLens = mod.createScoresLens({
-          selStore,
-          boot: () => boot,
-          manifest: () => manifest,
-          // item M1's `handleMapClick` needs both, the same getters `createSpeciesLens` above
-          // already reads for the identical reason: `ver`/`mapHandle` settle asynchronously,
-          // after this call site runs.
-          ver: () => earlyVersion,
-          mapHandle: () => mapHandle,
-        });
-      });
+      import("../lens/scores/state.svelte")
+        .then((mod) => {
+          scoresLens = mod.createScoresLens({
+            selStore,
+            boot: () => boot,
+            manifest: () => manifest,
+            // item M1's `handleMapClick` needs both, the same getters `createSpeciesLens` above
+            // already reads for the identical reason: `ver`/`mapHandle` settle asynchronously,
+            // after this call site runs.
+            ver: () => earlyVersion,
+            mapHandle: () => mapHandle,
+          });
+        })
+        .catch(() => announceChunkFailure("the scores map layer"));
     }
   });
 
@@ -626,44 +644,48 @@
   $effect(() => {
     if (sel.lens !== "species") return;
     if (!SpeciesLensPanelComp) {
-      import("../lens/species/SpeciesLens.svelte").then(
-        (mod) => (SpeciesLensPanelComp = mod.default),
-      );
+      import("../lens/species/SpeciesLens.svelte")
+        .then((mod) => (SpeciesLensPanelComp = mod.default))
+        .catch(() => announceChunkFailure("the species panel"));
     }
     if (!SpeciesPickerComp) {
-      import("../lens/species/SpeciesPicker.svelte").then(
-        (mod) => (SpeciesPickerComp = mod.default),
-      );
+      import("../lens/species/SpeciesPicker.svelte")
+        .then((mod) => (SpeciesPickerComp = mod.default))
+        .catch(() => announceChunkFailure("species search"));
     }
     if (!SpeciesLegendComp) {
-      import("../lens/species/SpeciesLegend.svelte").then(
-        (mod) => (SpeciesLegendComp = mod.default),
-      );
+      import("../lens/species/SpeciesLegend.svelte")
+        .then((mod) => (SpeciesLegendComp = mod.default))
+        .catch(() => announceChunkFailure("the species legend"));
     }
     if (!NotFoundModalComp) {
-      import("../lens/species/NotFoundModal.svelte").then(
-        (mod) => (NotFoundModalComp = mod.default),
-      );
+      import("../lens/species/NotFoundModal.svelte")
+        .then((mod) => (NotFoundModalComp = mod.default))
+        .catch(() => announceChunkFailure("the species lens"));
     }
   });
 
   $effect(() => {
     if (activeTool === "places" && !PlacesComp) {
-      import("../places/Places.svelte").then((mod) => (PlacesComp = mod.default));
+      import("../places/Places.svelte")
+        .then((mod) => (PlacesComp = mod.default))
+        .catch(() => announceChunkFailure("the Places panel"));
     }
   });
 
   $effect(() => {
     if (!VersionPickerModalComp) {
-      import("../lens/scores/VersionPickerModal.svelte").then(
-        (mod) => (VersionPickerModalComp = mod.default),
-      );
+      import("../lens/scores/VersionPickerModal.svelte")
+        .then((mod) => (VersionPickerModalComp = mod.default))
+        .catch(() => announceChunkFailure("the release picker"));
     }
   });
 
   $effect(() => {
     if (!WelcomeModalComp) {
-      import("../lens/scores/WelcomeModal.svelte").then((mod) => (WelcomeModalComp = mod.default));
+      import("../lens/scores/WelcomeModal.svelte")
+        .then((mod) => (WelcomeModalComp = mod.default))
+        .catch(() => announceChunkFailure("the welcome dialog"));
     }
   });
 </script>
