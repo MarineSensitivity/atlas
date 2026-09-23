@@ -52,6 +52,10 @@ legend, and an overcrowded species search field.
   from the field. Also fixed `.picker-input`'s own `height: 44px` override, which alone already
   overflowed the 32 px pill. `e2e/species.smoke.spec.ts` (closed-state height/no-overflow, and
   keyboard reachability from the field).
+  - The keyboard-reachability test presses `Alt+Tab` (Playwright's name for Option+Tab) on WebKit,
+    plain `Tab` elsewhere: WebKit's default Tab sequence skips non-text form controls (checkboxes
+    included) without "Full Keyboard Access" on, the same platform default
+    `e2e/shell.a11y.spec.ts:189` already documents for buttons — not a bug in this checkbox.
 
 # atlas 0.10.10
 

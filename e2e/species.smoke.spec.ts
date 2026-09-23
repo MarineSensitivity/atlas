@@ -336,6 +336,7 @@ test.describe("atlas-4/5 defect fix: the topbar search field no longer overflows
 
   test("the 'US only' switch is reachable by keyboard from the field, inside the opened dropdown", async ({
     page,
+    browserName,
   }) => {
     await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
     const input = page.locator(".picker-input");
@@ -346,7 +347,10 @@ test.describe("atlas-4/5 defect fix: the topbar search field no longer overflows
       .poll(() => page.locator(".picker-option").count(), { timeout: 10_000 })
       .toBeGreaterThan(0);
     await expect(page.locator(".us-only input[type='checkbox']")).toBeVisible();
-    await page.keyboard.press("Tab");
+    // WebKit's default Tab sequence skips non-text form controls (checkboxes included) unless
+    // "Full Keyboard Access" is on -- the same platform default e2e/shell.a11y.spec.ts:189
+    // documents for buttons; its equivalent key is Option+Tab, Playwright's "Alt+Tab" here.
+    await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
     await expect(page.locator(".us-only input[type='checkbox']")).toBeFocused();
   });
 });
