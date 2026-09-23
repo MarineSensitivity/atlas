@@ -480,12 +480,15 @@ test.describe("fix list #8 (SC 4.1.2 + 1.3.1): the species picker is a real comb
 // behind it — for the whole species camera flight and every loading tile (+528..+1,899 ms after the
 // shard, instrumented), the ~1 s bimodal regression in `e2e/species.timing.spec.ts`. Here the
 // basemap's vector tiles never answer, so the map can NEVER go idle once the basemap is in the
-// style, and the shard is released only after it is: a queue that waits for idle parks the raster
-// until its 4 s fallback; one that settles on the in-flight style's own `"style.load"` issues it at
-// once. Both ends are timed IN THE PAGE (the shard's resource-timing `responseEnd`, and the
-// `"style.load"` whose style first holds the raster layer), so neither the harness's own polling
-// nor the route hand-off is part of the number. Seeded fault: `tests/faults/style-settle-on-idle.patch`.
-const RASTER_AFTER_SHARD_BUDGET_MS = 1_500;
+// style, and the taxon shard is released only after it is. A queue that waits for idle can then
+// release the raster only through its 4 s fallback, armed when the basemap's style was issued —
+// which is necessarily AFTER CARTO's style.json arrived. So the discriminator is exact, not a
+// tuned budget: the raster's style must reach the map less than 4 s after that style.json's
+// `responseEnd`; a queue that settles on the in-flight style's own `"style.load"` issues it as soon
+// as the shard lands. Both ends are timed IN THE PAGE (resource timing, and the `"style.load"` whose
+// style first holds the raster layer), so harness polling is never part of the number; the
+// shard-relative figure is logged beside it. Seeded fault: `tests/faults/style-settle-on-idle.patch`.
+const STYLE_FALLBACK_MS = 4_000; // src/lib/map/styleQueue.ts's DEFAULT_STYLE_FALLBACK_MS
 type GateWindow = {
   __atlasMap?: {
     handle: {
@@ -499,7 +502,7 @@ type GateWindow = {
   __gate?: { released?: number; raster?: number };
 };
 test.describe("0.10.22: the species raster's style is issued when its shard lands, not when the map next goes idle", () => {
-  test("with the map unable to go idle (basemap tiles hung), the raster layer is in the style within 1.5 s of the shard", async ({
+  test("with the map unable to go idle (basemap tiles hung), the raster reaches the style before the basemap's 4 s fallback could release it", async ({
     page,
   }) => {
     test.setTimeout(60_000);
@@ -530,7 +533,7 @@ test.describe("0.10.22: the species raster's style is issued when its shard land
               .getStyle()
               ?.layers.some((l) => l.id.startsWith("basemap-")),
           undefined,
-          { timeout: 30_000 },
+          { polling: "raf", timeout: 30_000 },
         );
         await page.evaluate(() => {
           const w = window as unknown as GateWindow;
@@ -554,24 +557,37 @@ test.describe("0.10.22: the species raster's style is issued when its shard land
       { timeout: 30_000 },
     );
     expect(released, "the taxon shard was never requested").toBe(true);
-    const { shardAt, rasterAt } = await page.evaluate(() => {
+    const t = await page.evaluate(() => {
       const w = window as unknown as GateWindow;
-      const entry = performance
-        .getEntriesByType("resource")
-        .find((e) => e.name.includes("/app/taxon/")) as PerformanceResourceTiming | undefined;
-      // `responseEnd` excludes the route hand-off; an engine that records no entry for a routed
-      // request falls back to the (earlier, so stricter) moment the route released it.
-      return { shardAt: entry?.responseEnd || w.__gate!.released!, rasterAt: w.__gate!.raster! };
+      const ends = (re: RegExp) =>
+        performance
+          .getEntriesByType("resource")
+          .filter((e) => re.test(e.name))
+          .map((e) => (e as PerformanceResourceTiming).responseEnd)
+          .filter((x) => x > 0);
+      const styleJson = ends(/cartocdn\.com\/gl\/.*style\.json/);
+      const shard = ends(/\/app\/taxon\//);
+      return {
+        // the EARLIER theme's style.json: the basemap's style was issued no earlier than this
+        basemapAt: styleJson.length ? Math.min(...styleJson) : null,
+        // no entry for a routed request -> the (earlier, so stricter) moment it was released
+        shardAt: shard.length ? Math.min(...shard) : w.__gate!.released!,
+        rasterAt: w.__gate!.raster!,
+      };
     });
-    const afterShardMs = Math.round(rasterAt - shardAt);
+    expect(t.basemapAt, "no resource-timing entry for CARTO's style.json").not.toBeNull();
+    const afterBasemapMs = Math.round(t.rasterAt - t.basemapAt!);
+    const afterShardMs = Math.round(t.rasterAt - t.shardAt);
     console.log(
-      `species raster in the style ${afterShardMs} ms after its shard (budget ${RASTER_AFTER_SHARD_BUDGET_MS})`,
+      `species raster in the style ${afterShardMs} ms after its shard, ${afterBasemapMs} ms after ` +
+        `CARTO's style.json (a fallback release is >= ${STYLE_FALLBACK_MS} ms)`,
     );
     expect(
-      afterShardMs,
-      `the species raster reached the style ${afterShardMs} ms after its shard: it was parked ` +
-        `behind the basemap's setStyle until the map went idle (or the 4 s fallback). An issued ` +
-        `style must settle on its own "style.load" -- see src/lib/map/styleQueue.ts (0.10.22).`,
-    ).toBeLessThan(RASTER_AFTER_SHARD_BUDGET_MS);
+      afterBasemapMs,
+      `the species raster reached the style ${afterBasemapMs} ms after the basemap's style.json ` +
+        `(${afterShardMs} ms after its own shard): it was parked behind the basemap's setStyle ` +
+        `until the 4 s fallback, because that style could never go idle. An issued style must ` +
+        `settle on its own "style.load" -- see src/lib/map/styleQueue.ts (0.10.22).`,
+    ).toBeLessThan(STYLE_FALLBACK_MS);
   });
 });

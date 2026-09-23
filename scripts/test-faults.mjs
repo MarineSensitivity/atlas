@@ -220,7 +220,7 @@ const FAULTS = [
   // behind it for the whole species camera flight (the bimodal ~1 s first-paint regression in
   // e2e/species.timing.spec.ts). This patch drops the in-flight style's own `"style.load"` settle
   // and must turn the deterministic gate in e2e/species.smoke.spec.ts red (basemap tiles hung, so
-  // the map never goes idle: the raster waits for the fallback instead of the shard).
+  // the map never goes idle: the raster can only be released by the 4 s fallback).
   {
     id: "style-settle-on-idle",
     patch: "tests/faults/style-settle-on-idle.patch",
@@ -234,7 +234,7 @@ const FAULTS = [
       "--project=chromium",
       "e2e/species.smoke.spec.ts",
       "-g",
-      "within 1.5 s of the shard",
+      "before the basemap's 4 s fallback could release it",
       "--workers=1",
     ],
     env: { PW_PORT: "4397" },
