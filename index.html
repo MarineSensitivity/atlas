@@ -461,11 +461,15 @@
               <!-- kept for tests/shell/tools.test.ts (index.html must still contain
                    TOOL_BODY.layers verbatim) -- no longer what the hydrated shell shows by
                    default (atlas-4's Layers panel), so it carries no layout weight of its own;
-                   the sk-field/sk-switch-row/sk-layers-control/sk-legend-note placeholders below
-                   are what e2e/shell.cls.spec.ts's geometry-equality gate actually matches
-                   against the real LayersPanel (measured at 1280px with no boot.json: 4 fields
-                   66px, one switch row 24px, the layers-control section 43px, the
-                   legend-unavailable note 36px, 12px gaps -- src/lens/scores/LayersPanel.svelte). -->
+                   the sk-field/sk-switch-row/sk-layers-control placeholders below are what
+                   e2e/shell.cls.spec.ts's geometry-equality gate actually matches against the real
+                   LayersPanel (measured at 1280px with no boot.json: 4 fields 66px, one switch row
+                   24px, the layers-control section 43px, 12px gaps --
+                   src/lens/scores/LayersPanel.svelte). The legend (once a `sk-legend-note`
+                   placeholder here, for the "not published yet" note) moved OUT of this panel
+                   entirely in the atlas-4/5 defect fix -- it is the shell's own floating region
+                   over the map now (ScoresLegend.svelte), which the skeleton does not model at all
+                   (same as the species lens' pre-existing floating legend never has been). -->
               <span hidden>Layers, palette and outline options arrive in a later phase.</span>
               <div class="sk-field"></div>
               <div class="sk-field"></div>
@@ -473,7 +477,6 @@
               <div class="sk-field"></div>
               <div class="sk-switch-row"></div>
               <div class="sk-layers-control"></div>
-              <div class="sk-legend-note"></div>
             </div>
           </div>
         </div>

@@ -57,6 +57,16 @@ export type SpeciesLegend =
   | { kind: "categorical"; title: string; label: string; color: string }
   | null;
 
+/** the species legend's `formatValue` (`SpeciesLegend.svelte`) — species surfaces are always
+ * integers (1..100, or AquaX "Delivered"'s 0..1000, §6.2 step 3), never `signif`/`round(_,1)`
+ * like the scores lens — `Legend.svelte`'s own default (`toFixed(2)`) prints e.g. "1.00" for this
+ * ramp's endpoints, which is the defect this function exists to fix (spec.md: species labels read
+ * "1" and "100"). A plain rounding stringify, kept here (not inline in the component) so it is
+ * unit-testable without a DOM, per CLAUDE.md. */
+export function formatSpeciesLegendValue(value: number): string {
+  return String(Math.round(value));
+}
+
 export interface SpeciesMapInputsOptions {
   rep: Representation;
   /** `boot.palettes` — `null`/absent legend gracefully (the raster still draws; titiler colors it

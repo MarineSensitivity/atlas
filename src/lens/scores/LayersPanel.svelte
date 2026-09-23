@@ -1,18 +1,20 @@
 <script lang="ts">
   // atlas-4 step 1 — the Layers panel: study area, spatial unit, layer (grouped), palette,
-  // globe/mercator, the "cells outside Program Areas" overlay switch, and the legend. Every
-  // control writes through `selStore.set()` (URL-is-the-view) except the overlay switch, which is
-  // ephemeral chrome (never a shared-link concern — parity doc §6.2 leaves it unchecked by
-  // default on every load, so there is nothing for a link to reproduce).
+  // globe/mercator, and the "cells outside Program Areas" overlay switch. Every control writes
+  // through `selStore.set()` (URL-is-the-view) except the overlay switch, which is ephemeral
+  // chrome (never a shared-link concern — parity doc §6.2 leaves it unchecked by default on every
+  // load, so there is nothing for a link to reproduce). The legend used to render IN this panel
+  // (only visible while the Layers tool was open, and never for the zone-choropleth branch) --
+  // atlas-4 defect fix moved it to the shell's floating "lens legend" region (ScoresLegend.svelte),
+  // the same slot the species lens' legend already used, per spec.md's "one legend on screen at a
+  // time".
   import Select from "../../lib/ui/Select.svelte";
   import Switch from "../../lib/ui/Switch.svelte";
-  import Legend from "../../lib/ui/Legend.svelte";
   import { studyAreasFromBoot, type StudyArea } from "../../lib/map/interaction";
   import type { MapHandle } from "../../lib/map/map";
   import type { Sel } from "../../lib/state/types";
   import type { SelStore } from "../../lib/state/sel.svelte";
-  import { layerByKey, layerGroups, primaryUnitNote, unitOptions } from "./boot";
-  import { rasterLegend } from "./raster";
+  import { layerGroups, primaryUnitNote, unitOptions } from "./boot";
   import type { ManifestOverlayRow } from "./raster";
 
   interface Props {
@@ -50,10 +52,6 @@
   const unitChoices = $derived(unitOptions(boot));
   const note = $derived(primaryUnitNote(boot, ver));
   const groups = $derived(layerGroups(boot));
-  const layer = $derived(layerByKey(boot, lyr));
-  const legend = $derived(
-    unit === "cell" ? rasterLegend(boot as { palettes?: unknown }, layer, sel.pal) : null,
-  );
 
   const PALETTE_OPTIONS = [
     { value: "spectral_r", label: "Spectral" },
@@ -176,22 +174,6 @@
       {/if}
     </ul>
   </section>
-
-  {#if legend}
-    {#if legend.unavailable}
-      <p class="note">
-        This release has not published a {PALETTE_OPTIONS.find((p) => p.value === sel.pal)?.label}
-        legend ramp yet — the map still renders with that palette, but the legend cannot be shown.
-      </p>
-    {:else}
-      <Legend
-        title={layer?.label ?? sel.lyr ?? "Score"}
-        stops={legend.stops}
-        unit="score"
-        formatValue={(v) => v.toLocaleString("en-US")}
-      />
-    {/if}
-  {/if}
 </div>
 
 <style>

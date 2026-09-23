@@ -194,6 +194,13 @@ const EXPECTED_DEFAULT_HUB: Record<Ver, string> = {
   v9: "22", // 7 kept of 8 (bare "primprod" dropped): mean ~= 21.705 -> 22
 };
 
+/** the default (composite) layer's own `label` in each version's `bootFor()` fixture above --
+ * the floating legend's title (`ScoresLegend.svelte`/`mapInputs.ts`'s `scoresMapInputs().legend`). */
+const EXPECTED_LEGEND_TITLE: Record<Ver, string> = {
+  v7: "Overall score",
+  v9: "Equal-weight composite",
+};
+
 /** the 20-feature scores fixture, with real HTTP range support (the `pmtiles://` protocol reads
  * the header, then the directory, then each tile with a `Range` header). */
 async function routeZones20(page: Page) {
@@ -378,13 +385,19 @@ for (const ver of ["v7", "v9"] as const) {
         .toBeGreaterThanOrEqual(20);
     });
 
-    test("shows the legend with the raster's rescale endpoints", async ({ page }) => {
+    test("shows the FLOATING legend, with the layer title and exactly two rescale endpoints", async ({
+      page,
+    }) => {
+      // atlas-4 defect fix: the scores lens used to have NO floating legend at all (only an
+      // in-panel copy, visible only while the Layers tool happened to be open) -- clicking a
+      // DIFFERENT tool first proves this no longer matters.
       await gotoScoresMap(page, ver);
-      // "Layers" is already the shell's default rail tool, so no click is needed, but click it
-      // anyway so this spec does not depend on that default staying true.
-      await page.getByRole("button", { name: "Layers" }).click();
-      const legend = page.locator(".legend");
+      await page.getByRole("button", { name: "Flower plot" }).click();
+      const legend = page.locator('[data-testid="scores-legend"]');
       await expect(legend).toBeVisible({ timeout: 10_000 });
+      await expect(legend.locator("h2")).toHaveText(EXPECTED_LEGEND_TITLE[ver]);
+      // the OTHER defect fix, pinned end-to-end here too: two endpoint labels, never one per stop.
+      await expect(legend.locator(".ramp-ticks span")).toHaveCount(2);
       await expect(legend.locator(".ramp-ticks")).toContainText("0");
       await expect(legend.locator(".ramp-ticks")).toContainText("90");
     });
@@ -401,3 +414,16 @@ for (const ver of ["v7", "v9"] as const) {
     });
   });
 }
+
+test.describe("atlas-4 defect fix: the scores/species floating legend is ONE slot, keyed on sel.lens", () => {
+  test("switching from Scores to Species swaps the floating legend (spec.md: one legend on screen at a time)", async ({
+    page,
+  }) => {
+    await gotoScoresMap(page, "v7");
+    const scoresLegend = page.locator('[data-testid="scores-legend"]');
+    await expect(scoresLegend).toBeVisible({ timeout: 10_000 });
+
+    await page.locator(".topbar").getByRole("button", { name: "Species" }).click();
+    await expect(scoresLegend).toHaveCount(0);
+  });
+});

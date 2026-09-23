@@ -61,6 +61,27 @@ export function legendStops(stops: PaletteStops, min: number, max: number): Lege
   }));
 }
 
+/**
+ * The stops `Legend.svelte` actually LABELS, out of the full gradient's `stops` — spec.md's
+ * continuous-ramp rule: show the two ENDPOINTS (and optionally a midpoint), never one label per
+ * palette stop (atlas-4/5 fix: a species legend used to print all 11, e.g. "1.00 10.90 20.80 ...
+ * 100.00"). `ticks` defaults to 2 (both endpoints); 3 adds the exact midpoint; `ticks >=
+ * stops.length` returns every stop unchanged (never MORE than what was handed in). The gradient
+ * itself is unaffected — it always paints every color in `stops`, via `Legend.svelte`'s own
+ * `linear-gradient` over the full array, never this reduced one.
+ */
+export function legendTicks<T>(stops: readonly T[], ticks = 2): T[] {
+  if (stops.length === 0) return [];
+  if (ticks <= 1 || stops.length === 1) return [stops[0]];
+  if (ticks >= stops.length) return [...stops];
+  const out: T[] = [];
+  for (let i = 0; i < ticks; i++) {
+    const idx = Math.round((i / (ticks - 1)) * (stops.length - 1));
+    out.push(stops[idx]);
+  }
+  return out;
+}
+
 // half-even (banker's) rounding to the nearest integer — R's `round()` default, and the exact
 // behavior the choropleth bin formula requires (a drawn rectangle produces exact `.5` fractions, and
 // `Math.round` always rounds `.5` UP, silently shifting every exact-half cell into the next bin — the

@@ -54,6 +54,9 @@
   // even when the Places PANEL itself (`../places/Places.svelte`, lazy) has never been opened.
   import { createPlacesMapStore } from "../places/placesMap.svelte";
   import type { RasterLayerSpec, SelectionSpec, ZoneUnitSpec } from "../lib/map/types";
+  // type-only: erased at build time (never pulls the scores lens' runtime module into the static
+  // bundle -- the SAME reason RasterLayerSpec/SelectionSpec/ZoneUnitSpec above are type-only).
+  import type { ScoresLegend as ScoresLegendType } from "../lens/scores/mapInputs";
 
   const selStore = createSelStore(location);
   const sel = selStore.sel;
@@ -243,6 +246,10 @@
     raster?: RasterLayerSpec | null;
     overlays?: RasterLayerSpec[];
     selection?: SelectionSpec | null;
+    // atlas-4 defect fix: the scores lens' floating-legend contribution -- rendered through the
+    // SAME "lens legend" region species' `speciesLens.mapInputs.legend` already uses below (one
+    // slot, keyed on `sel.lens`), never inside LayersPanel.svelte any more.
+    legend?: ScoresLegendType;
   }>({});
 
   onMount(() => {
@@ -369,6 +376,8 @@
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let ScoresLensComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let ScoresLegendComp = $state<Component<any> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let SpeciesLensPanelComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let SpeciesPickerComp = $state<Component<any> | null>(null);
@@ -384,8 +393,14 @@
   let WelcomeModalComp = $state<Component<any> | null>(null);
 
   $effect(() => {
-    if (sel.lens === "scores" && !ScoresLensComp) {
+    if (sel.lens !== "scores") return;
+    if (!ScoresLensComp) {
       import("../lens/scores/ScoresLens.svelte").then((mod) => (ScoresLensComp = mod.default));
+    }
+    // the floating legend (atlas-4 defect fix) -- its own chunk, same trigger as the panel's, so
+    // a scores deep link downloads both together rather than waiting on the panel to mount first.
+    if (!ScoresLegendComp) {
+      import("../lens/scores/ScoresLegend.svelte").then((mod) => (ScoresLegendComp = mod.default));
     }
   });
 
@@ -606,9 +621,17 @@
     {/if}
   </div>
 
+  <!-- atlas-4 defect fix: ONE floating "lens legend" region, keyed on `sel.lens` -- spec.md's "one
+       legend on screen at a time". Species used to be the only lens with a floating legend at
+       all; the scores lens' copy used to live INSIDE LayersPanel.svelte (only visible with that
+       tool open, and never for the zone-choropleth branch) -- both branches now render here,
+       lazy, the same way every other lens component in this file is. -->
   {#if sel.lens === "species" && SpeciesLegendComp}
     {@const Comp = SpeciesLegendComp}
     <Comp legend={speciesLens.mapInputs.legend} />
+  {:else if sel.lens === "scores" && ScoresLegendComp}
+    {@const Comp = ScoresLegendComp}
+    <Comp legend={lensMapExtra.legend ?? null} />
   {/if}
 
   <div class="about-region" id="about-region" data-tour="about" data-control="about">
