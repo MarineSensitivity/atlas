@@ -14,9 +14,7 @@ import { hashFromPlaces, reportHash, zoneSetForUnit } from "../places/model";
 import { parseScoresSelection } from "../lens/scores/selection";
 import type { Sel } from "../lib/state/types";
 
-export type ReportAction =
-  | { kind: "open"; href: string; label: string }
-  | { kind: "chooser" };
+export type ReportAction = { kind: "open"; href: string; label: string } | { kind: "chooser" };
 
 /** `./report.html?ver=…#pl=…` (or no `?ver=` when `ver` is unknown) -- the SAME shape
  * `Places.svelte#onReport`/`TablePanel.svelte#onReportSelected` already build, so a link built

@@ -44,9 +44,7 @@ describe("reportAction: a place list wins over a zone selection", () => {
   });
 
   it("a place NAME with a space builds through reportHash(), not a second hand-rolled encoder", () => {
-    const pl = hashFromPlaces([
-      { kind: "geom", name: "Drawn place 1", geometry: SQUARE_GEOMETRY },
-    ]);
+    const pl = hashFromPlaces([{ kind: "geom", name: "Drawn place 1", geometry: SQUARE_GEOMETRY }]);
     const action = reportAction({ ...DEFAULT_SEL, pl }, null);
     if (action.kind !== "open") throw new Error("unreachable");
     // exactly reportHash(pl, undefined) -- see tests/places/model.test.ts's own B2 round-trip
@@ -58,10 +56,15 @@ describe("reportAction: a place list wins over a zone selection", () => {
 
 describe("reportAction: a single zone selection, no place list", () => {
   it("sel=zone:<unit>:<key> -> a one-place zone report, no ?ver= when ver is null", () => {
-    const action = reportAction({ ...DEFAULT_SEL, pl: undefined, sel: "zone:programarea:GAA" }, null);
+    const action = reportAction(
+      { ...DEFAULT_SEL, pl: undefined, sel: "zone:programarea:GAA" },
+      null,
+    );
     expect(action.kind).toBe("open");
     if (action.kind !== "open") throw new Error("unreachable");
-    expect(action.href).toBe(`./report.html#pl=${hashFromPlaces([{ kind: "zone", set: "pa", keys: ["GAA"] }])}`);
+    expect(action.href).toBe(
+      `./report.html#pl=${hashFromPlaces([{ kind: "zone", set: "pa", keys: ["GAA"] }])}`,
+    );
     expect(action.label).toContain("GAA");
   });
 

@@ -60,7 +60,7 @@
     try {
       explicitTourOn = new URLSearchParams(location.search).get("tour") === "on";
     } catch {
-      explicitTourOn = false;
+      /* location.search unavailable -- treat as absent, never as an error */
     }
     open = !suppressed && tour !== "off" && !deepLink && !explicitTourOn;
   });

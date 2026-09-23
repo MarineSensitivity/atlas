@@ -340,7 +340,7 @@
     try {
       explicitTourOn = new URLSearchParams(location.search).get("tour") === "on";
     } catch {
-      explicitTourOn = false;
+      /* location.search unavailable -- treat as absent, never as an error */
     }
     if (!explicitTourOn) return;
     // a beat for the shell's own first paint to settle before the tour overlay appears -- the
@@ -907,7 +907,13 @@
          NOT role="menu" -- a real ARIA menu widget promises arrow-key/Home/End roving focus this
          does not implement, which would be a WORSE a11y contract than none at all. Tab/Shift+Tab
          reaches "Take a tour" then "Docs" in document order, same as any other disclosure. -->
-    <div class="help-menu" id="help-menu" aria-label="Help" hidden={!helpOpen} bind:this={helpMenuEl}>
+    <div
+      class="help-menu"
+      id="help-menu"
+      aria-label="Help"
+      hidden={!helpOpen}
+      bind:this={helpMenuEl}
+    >
       <button type="button" class="help-menu-item" onclick={onHelpTakeTour}>Take a tour</button>
       <div class="help-shortcuts">
         <h3>Keyboard shortcuts</h3>
@@ -918,7 +924,13 @@
           <li>= — zoom the map in</li>
         </ul>
       </div>
-      <a class="help-menu-item" href={docsHref} target="_blank" rel="noopener" onclick={() => closeHelp(false)}>
+      <a
+        class="help-menu-item"
+        href={docsHref}
+        target="_blank"
+        rel="noopener"
+        onclick={() => closeHelp(false)}
+      >
         Docs
       </a>
     </div>

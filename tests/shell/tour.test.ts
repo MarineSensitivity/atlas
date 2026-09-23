@@ -79,7 +79,13 @@ describe("SCORES_TOUR_STEPS: 8 steps, docs/usability.md §5", () => {
 describe("SPECIES_TOUR_STEPS: 5 steps, docs/usability.md §5", () => {
   it("has exactly 5 steps, unique ids, in the documented order", () => {
     expect(SPECIES_TOUR_STEPS).toHaveLength(5);
-    expect(SPECIES_TOUR_STEPS.map((s) => s.id)).toEqual(["search", "card", "map", "legend", "back"]);
+    expect(SPECIES_TOUR_STEPS.map((s) => s.id)).toEqual([
+      "search",
+      "card",
+      "map",
+      "legend",
+      "back",
+    ]);
     expect(new Set(SPECIES_TOUR_STEPS.map((s) => s.id)).size).toBe(5);
   });
 
