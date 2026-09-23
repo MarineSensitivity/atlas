@@ -6,9 +6,8 @@
 // HERMETIC, same convention as e2e/shell.*.spec.ts: every bucket/tile origin is routed to a
 // fixture, so no spec here ever reaches the live network.
 //
-// Chromium-only, serial (the map specs' own convention, atlas-6's subplan): a real MapLibre
-// instance is expensive to boot repeatedly and this file's assertions do not depend on browser
-// engine differences.
+// atlas-8 step 2: widened to all three engines (measured green on chromium/webkit/firefox);
+// kept serial (a real MapLibre instance is expensive to boot repeatedly).
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
@@ -24,7 +23,6 @@ import {
 } from "./hermetic";
 
 test.describe.configure({ mode: "serial" });
-test.use({ browserName: "chromium" });
 
 async function openPlaces(page: Page) {
   await gotoPublicShell(page);
@@ -70,8 +68,13 @@ test("keyboard-only: Enter coordinates creates a place, rename, then remove -- d
   // --- rename, keyboard only ----------------------------------------------------------------------
   const renameInput = page.getByLabel("Rename place").first();
   await renameInput.focus();
-  await page.keyboard.press("Home");
-  await page.keyboard.press("Shift+End"); // select the existing text, keyboard-only
+  // atlas-8 step 2 finding: `Home` then `Shift+End` (the original sequence) reliably selects the
+  // existing text on Chromium/Firefox, but WebKit's synthetic-keyboard-event handling for this
+  // input did not update the DOM selection the same way -- the later `type()` call then INSERTED
+  // rather than REPLACED, landing on a mixed "bounding boxMy Renamed Place" value (measured).
+  // `ControlOrMeta+A` (select-all) is both simpler and the one keyboard shortcut every engine here
+  // agrees on for this input's whole content, and it is still keyboard-only.
+  await page.keyboard.press("ControlOrMeta+a");
   await page.keyboard.type("My Renamed Place");
   await page.keyboard.press("Tab"); // blur -> onchange fires
   await expect(renameInput).toHaveValue("My Renamed Place");

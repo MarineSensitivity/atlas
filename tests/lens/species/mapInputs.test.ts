@@ -10,6 +10,7 @@ import {
   SPECIES_RASTER_ID,
   SPECIES_RASTER_OPACITY,
   activePill,
+  formatSpeciesLegendValue,
   noNativeSurfaceNotice,
   pickAsset,
   speciesMapInputs,
@@ -164,6 +165,18 @@ describe("speciesMapInputs — PMTiles ranges branch", () => {
       label: "range (presence)",
       color: RANGE_FILL_COLOR,
     });
+  });
+});
+
+describe("formatSpeciesLegendValue — the species legend's own formatValue (defect fix)", () => {
+  it("prints integers, never Legend.svelte's default 2 dp (the fault: '1.00'/'100.00')", () => {
+    expect(formatSpeciesLegendValue(1)).toBe("1");
+    expect(formatSpeciesLegendValue(100)).toBe("100");
+  });
+
+  it("rounds a fractional value (never truncates)", () => {
+    expect(formatSpeciesLegendValue(53.6)).toBe("54");
+    expect(formatSpeciesLegendValue(0)).toBe("0");
   });
 });
 

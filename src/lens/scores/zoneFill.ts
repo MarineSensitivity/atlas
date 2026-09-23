@@ -8,6 +8,7 @@ import {
   binColor,
   legendStops,
   paletteStopsFromBoot,
+  type LegendStop,
   type PaletteName,
 } from "../../lib/raster/ramps";
 import type { ZoneFillSpec } from "../../lib/map/types";
@@ -109,4 +110,16 @@ export function zoneChoropleth(
 /** the hover/click tooltip text, verbatim (parity doc §6.4: `"{name}: {round(value)}"`). */
 export function zoneTooltip(v: ZoneValue): string {
   return `${v.name}: ${roundHalfEven(v.value)}`;
+}
+
+/**
+ * `ZoneChoropleth.legend` reshaped into `LegendStop[]` for the shared `Legend.svelte` (atlas-4
+ * defect fix: the floating scores legend, `ScoresLegend.svelte`). The two ENDPOINT values are
+ * exactly `legend.min`/`legend.max` (already `round(range, 1)`, parity doc §6.4) — `legendStops`
+ * interpolates between them, so its first/last entries equal them verbatim; the interior stops
+ * only feed the gradient's colors, never a rendered label (`Legend.svelte`'s own `ticks` default
+ * is 2 -- see ui/Legend.svelte).
+ */
+export function zoneLegendStops(legend: NonNullable<ZoneChoropleth["legend"]>): LegendStop[] {
+  return legendStops(legend.stops, legend.min, legend.max);
 }

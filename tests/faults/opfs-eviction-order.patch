@@ -1,0 +1,34 @@
+diff --git a/src/lib/engine/store/policy.ts b/src/lib/engine/store/policy.ts
+index d7d0fe1..bf94a09 100644
+--- a/src/lib/engine/store/policy.ts
++++ b/src/lib/engine/store/policy.ts
+@@ -133,20 +133,21 @@ export function planEviction(input: EvictionInput): EvictionPlan {
+   const deleteFiles: string[] = [];
+   let freedBytes = 0;
+ 
+-  // other releases first (ruling 5) …
+-  for (const f of others) {
+-    if (used <= budgetBytes) break;
+-    deleteFiles.push(f.file);
+-    used -= f.bytes;
+-    freedBytes += f.bytes;
+-  }
+-  // … and only then this release's own cold tiles.
++  // SEEDED FAULT (tests/faults/opfs-eviction-order.patch, atlas-8 npm run test:faults): the plan's
++  // literal "tiles first" order, which fix round 1's ruling 5 overruled -- restricted/other-version
++  // files must go BEFORE this release's own cold tiles, not after.
+   for (const t of tiles) {
+     if (used <= budgetBytes) break;
+     dropTables.push(t.name);
+     used -= t.bytes;
+     freedBytes += t.bytes;
+   }
++  for (const f of others) {
++    if (used <= budgetBytes) break;
++    deleteFiles.push(f.file);
++    used -= f.bytes;
++    freedBytes += f.bytes;
++  }
+ 
+   return { dropTables, deleteFiles, freedBytes, overBudget: used > budgetBytes };
+ }

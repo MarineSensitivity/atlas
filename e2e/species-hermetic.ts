@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { BUCKET, routeBucket, routeSealFixture, routeSession, waitForHydration } from "./hermetic";
 import { blockWasm, routeBasemapStyle, routeGlyphs, routeTitilerTiles } from "./map-hermetic";
+import { safeRoute } from "./routeSafety";
 
 // NOT a `declare global` augmentation of `Window.__atlasMap` — e2e/map.spec.ts already declares
 // one, and TypeScript requires every declaration of the SAME global interface member to have an
@@ -88,7 +89,7 @@ const SHARD_FILES: Record<string, string> = {
 export async function routeSpeciesShards(page: Page) {
   await page.route(
     (url) => url.href.startsWith(BUCKET) && url.href.includes("/app/"),
-    (route) => {
+    safeRoute((route) => {
       const path = route.request().url().slice(BUCKET.length);
       const file = SHARD_FILES[path];
       // NOT a known species shard path (e.g. app/boot.json) — fall through to routeBucket's
@@ -97,7 +98,7 @@ export async function routeSpeciesShards(page: Page) {
       // rather than this handler's own 404 shadowing routeBucket's real boot.json fixture).
       if (!file) return route.fallback();
       return route.fulfill({ status: 200, json: readFixture(file) });
-    },
+    }),
   );
 }
 

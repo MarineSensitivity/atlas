@@ -298,6 +298,39 @@ describe("performance (a Program-Area-sized place)", () => {
   );
 
   it(
+    "cost scales with the VERTEX count, not quadratically — WIDENED spread (atlas-8)",
+    () => {
+      // atlas-2's closing confirmation found the 600-vs-2400 pair above too weak to catch a real
+      // O(n^2) edge scan BY ITS RATIO: a seeded quadratic fault measured only ~2x there (the
+      // quadratic term is real, but 2400^2 is not yet big enough to dominate the *other*, genuinely
+      // linear costs this function pays per row -- it inflates the small denominator too). This is
+      // the widened pair the handover asked for: 600 vs a ~16k-vertex "huge" fixture, ~27x the
+      // vertices. Measured on this machine (`tests/faults/coverage-quadratic-scan.patch` applied):
+      // the CORRECT implementation's ratio stays 5-8x (noisy, but always well under 16); the SAME
+      // fault's ratio is 34-41x. 16 sits with wide margin on both sides and is the number
+      // `npm run test:faults` checks this gate against.
+      const grid = gridFromBoot(GLOBAL05);
+      const small = blob(600);
+      const huge = blob(16_000);
+      const cellsSmall = cellsInPolygon(small, grid);
+      const cellsHuge = cellsInPolygon(huge, grid);
+      expect(cellsHuge.length).toBeGreaterThan(65_000);
+      expect(Math.abs(cellsHuge.length - cellsSmall.length) / cellsSmall.length).toBeLessThan(0.02);
+
+      const mSmall = bestOfN(5, () => cellsInPolygon(small, grid));
+      const mHuge = bestOfN(5, () => cellsInPolygon(huge, grid));
+      const ratio = ratioOf(mHuge, mSmall);
+      console.log(describeMeasurement("coverage perf (600 vertices)", mSmall));
+      console.log(describeMeasurement("coverage perf (16,000 vertices)", mHuge));
+      console.log(
+        `coverage perf: ~27x vertices cost ${ratio.toFixed(2)}x (linear ~27, quadratic ~730)`,
+      );
+      expect(ratio).toBeLessThan(16);
+    },
+    PERF_TIMEOUT_MS,
+  );
+
+  it(
     "covers the traced GAA Program Area (many cells is cheap; many VERTICES is not)",
     () => {
       // the R-made fixture: 14,238 cells from a 63,417-vertex outline. Cost here is dominated by the

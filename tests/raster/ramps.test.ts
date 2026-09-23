@@ -4,6 +4,7 @@ import {
   choroplethBin,
   colorForValue,
   legendStops,
+  legendTicks,
   paletteStopsFromBoot,
   type PaletteStops,
 } from "../../src/lib/raster/ramps";
@@ -59,6 +60,40 @@ describe("legendStops", () => {
 
   it("handles a single-stop palette without dividing by zero", () => {
     expect(legendStops(["#000000"], 3, 9)).toEqual([{ color: "#000000", value: 3 }]);
+  });
+});
+
+describe("legendTicks — spec.md's continuous-ramp rule: label the endpoints, not every stop", () => {
+  it("an 11-stop ramp renders exactly 2 labels by default (the fault: all 11)", () => {
+    const stops = legendStops(SPECTRAL_R_11, 1, 100);
+    const ticks = legendTicks(stops);
+    expect(ticks).toHaveLength(2);
+    expect(ticks[0]).toEqual(stops[0]);
+    expect(ticks[1]).toEqual(stops[10]);
+  });
+
+  it("ticks=3 adds the exact midpoint", () => {
+    const stops = legendStops(SPECTRAL_R_11, 1, 100);
+    const ticks = legendTicks(stops, 3);
+    expect(ticks).toHaveLength(3);
+    expect(ticks[0]).toEqual(stops[0]);
+    expect(ticks[1]).toEqual(stops[5]);
+    expect(ticks[2]).toEqual(stops[10]);
+  });
+
+  it("ticks >= stops.length returns every stop, never more than what was handed in", () => {
+    const stops = legendStops(SPECTRAL_R_11, 1, 100);
+    expect(legendTicks(stops, 11)).toEqual(stops);
+    expect(legendTicks(stops, 50)).toEqual(stops);
+  });
+
+  it("a single-stop ramp returns that one stop regardless of ticks", () => {
+    const stops = legendStops(["#000000"], 3, 9);
+    expect(legendTicks(stops, 2)).toEqual(stops);
+  });
+
+  it("an empty ramp returns no ticks", () => {
+    expect(legendTicks([], 2)).toEqual([]);
   });
 });
 

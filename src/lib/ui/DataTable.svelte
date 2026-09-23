@@ -374,6 +374,17 @@
     outline-offset: 2px;
   }
 
+  /* atlas-8 fix (spec.md §11): touch-targets.css already gives the WRAPPING `.filter-field` label
+     44px on a coarse pointer, but the raw `<input>` inside it stayed ~27x28px (its own intrinsic
+     size) -- a coarse pointer landing anywhere on the label still hits the 44px hit target, but
+     the visible, tappable INPUT itself did not read as 44px tall, which is what spec §11 (unlike
+     SC 2.5.8, which only requires the target/hit-area) actually asks for. */
+  @media (pointer: coarse) {
+    .filter-field input {
+      min-height: var(--size-touch);
+    }
+  }
+
   .cell {
     position: relative;
     padding: var(--space-1) var(--space-2);

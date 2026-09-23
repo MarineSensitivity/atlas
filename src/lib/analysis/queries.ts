@@ -26,6 +26,7 @@ export interface Templates {
   species_for_zone: string;
   species_shares: string;
   cell_components: string;
+  cell_value: string;
   composition: string;
   cell_model_key: string;
   cell_model_seq: string;
@@ -218,6 +219,32 @@ export function cellComponents(
       { raw: { cols: colsOf(opts.metricKeys) } },
     ),
   );
+}
+
+/**
+ * One clicked cell's value for ONE caller-chosen `metric_key` -- `sql/cell_value.sql`, the scores
+ * click popup's own read (atlas-4 §6.6 fix round 3: "the displayed layer's value", which may be the
+ * composite, a component or a raw metric -- {@link cellComponents} only ever reads the component
+ * set). `null` when the cell carries no row (off-grid or the tile has not been mounted) or the
+ * column is NULL for that cell -- both real answers, never a throw.
+ */
+export function cellValue(
+  db: SqlRunner,
+  t: Templates,
+  opts: { cellId: number; metricKey: string },
+): Promise<number | null> {
+  // NOT an `async function`: `ident()` (inside `colsOf`) must throw SYNCHRONOUSLY, before any
+  // statement is built or `db.exec` is even called — the same rule `scoresForCells()` above
+  // follows, and `tests/analysis/queries.test.ts` pins it the same way `sqlTwins.test.ts` does.
+  const sql = renderSql(
+    t.cell_value,
+    { cell_id: opts.cellId },
+    { raw: { cols: colsOf([opts.metricKey]) } },
+  );
+  return db.exec<{ val: unknown }>(sql).then((rows) => {
+    const val = rows[0]?.val;
+    return typeof val === "number" && Number.isFinite(val) ? val : null;
+  });
 }
 
 // ---- species -----------------------------------------------------------------------------------

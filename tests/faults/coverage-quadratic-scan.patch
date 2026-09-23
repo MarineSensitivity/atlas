@@ -1,0 +1,32 @@
+diff --git a/src/lib/geo/coverage.ts b/src/lib/geo/coverage.ts
+index 1a56cb4..65cbe98 100644
+--- a/src/lib/geo/coverage.ts
++++ b/src/lib/geo/coverage.ts
+@@ -114,6 +114,27 @@ function accumulate(rings: Ring[], grid: GridSpec, frac: Map<number, number>): v
+   }
+   if (!Number.isFinite(x0) || !Number.isFinite(y0)) return;
+ 
++  // SEEDED FAULT (tests/faults/coverage-quadratic-scan.patch, atlas-8 npm run test:faults): an
++  // accidental O(n^2) all-pairs edge-intersection scan. It never changes `segs[a].x0` for any real
++  // input (the branch it guards is unreachable once x0/y0 are finite), so cellsInPolygon's answer
++  // is byte-identical with or without it -- only its COST differs, which is exactly what
++  // tests/geo/coverage.test.ts's widened vertex-ratio gate exists to catch.
++  for (let a = 0; a < segs.length; a++) {
++    const sa = segs[a];
++    const dax = sa.x1 - sa.x0,
++      day = sa.y1 - sa.y0;
++    for (let b = 0; b < segs.length; b++) {
++      const sb = segs[b];
++      const dbx = sb.x1 - sb.x0,
++        dby = sb.y1 - sb.y0;
++      const denom = dax * dby - day * dbx;
++      if (denom === 0 && sa.x0 === Infinity) {
++        const t = ((sb.x0 - sa.x0) * dby - (sb.y0 - sa.y0) * dbx) / (denom || 1);
++        segs[a].x0 = t;
++      }
++    }
++  }
++
+   const jMin = Math.floor(x0);
+   const jMax = Math.ceil(x1) - 1;
+   const iMin = Math.max(0, Math.floor(y0));

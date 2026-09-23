@@ -55,6 +55,9 @@
   // even when the Places PANEL itself (`../places/Places.svelte`, lazy) has never been opened.
   import { createPlacesMapStore } from "../places/placesMap.svelte";
   import type { RasterLayerSpec, SelectionSpec, ZoneUnitSpec } from "../lib/map/types";
+  // type-only: erased at build time (never pulls the scores lens' runtime module into the static
+  // bundle -- the SAME reason RasterLayerSpec/SelectionSpec/ZoneUnitSpec above are type-only).
+  import type { ScoresLegend as ScoresLegendType } from "../lens/scores/mapInputs";
 
   const selStore = createSelStore(location);
   const sel = selStore.sel;
@@ -96,11 +99,6 @@
     const onChange = (e: MediaQueryListEvent) => (isPhone = e.matches);
     mql.addEventListener("change", onChange);
     return () => mql.removeEventListener("change", onChange);
-  });
-
-  // --- page title tracks the view (spec.md/atlas-3 step 3 deliverable 4) -----------------------
-  $effect(() => {
-    document.title = `${sel.lens === "species" ? "Species" : "Scores"} · MarineSensitivity Atlas`;
   });
 
   // --- the tool rail: FIVE controls, the same five, in the same order, on every viewport -------
@@ -223,6 +221,20 @@
     track: (name, params) => analytics.track(name as never, params as never),
   });
 
+  // --- page title: the ONE writer (spec.md/atlas-3 step 3 deliverable 4; atlas-8 fix) -----------
+  // Used to be two independent `$effect`s -- this one and species/state.svelte.ts's own -- each
+  // with different reactive dependencies (`sel.lens` here, species-card state there), so either
+  // could re-fire and stomp the other's title depending on Svelte's own effect-scheduling order.
+  // `speciesLens.docTitle` is still computed in state.svelte.ts (it needs that module's card/`in`
+  // state); this is the only place anything assigns `document.title`, and
+  // tests/shell/documentTitle.test.ts's source scan pins that.
+  $effect(() => {
+    document.title =
+      sel.lens === "species" && speciesLens.docTitle
+        ? speciesLens.docTitle
+        : `${sel.lens === "species" ? "Species" : "Scores"} · MarineSensitivity Atlas`;
+  });
+
   // atlas-4: the ACTIVE lens' own composeStyle contribution (raster, overlays, zone fills/
   // highlights, selection). A lens computes it and hands it back through this one bucket -- the
   // shell still owns the ONE `applyStyle` call (below), so a lens never touches MapLibre itself
@@ -235,6 +247,10 @@
     raster?: RasterLayerSpec | null;
     overlays?: RasterLayerSpec[];
     selection?: SelectionSpec | null;
+    // atlas-4 defect fix: the scores lens' floating-legend contribution -- rendered through the
+    // SAME "lens legend" region species' `speciesLens.mapInputs.legend` already uses below (one
+    // slot, keyed on `sel.lens`), never inside LayersPanel.svelte any more.
+    legend?: ScoresLegendType;
   }>({});
 
   onMount(() => {
@@ -393,6 +409,8 @@
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let ScoresLensComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let ScoresLegendComp = $state<Component<any> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let SpeciesLensPanelComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let SpeciesPickerComp = $state<Component<any> | null>(null);
@@ -408,8 +426,14 @@
   let WelcomeModalComp = $state<Component<any> | null>(null);
 
   $effect(() => {
-    if (sel.lens === "scores" && !ScoresLensComp) {
+    if (sel.lens !== "scores") return;
+    if (!ScoresLensComp) {
       import("../lens/scores/ScoresLens.svelte").then((mod) => (ScoresLensComp = mod.default));
+    }
+    // the floating legend (atlas-4 defect fix) -- its own chunk, same trigger as the panel's, so
+    // a scores deep link downloads both together rather than waiting on the panel to mount first.
+    if (!ScoresLegendComp) {
+      import("../lens/scores/ScoresLegend.svelte").then((mod) => (ScoresLegendComp = mod.default));
     }
   });
 
@@ -630,9 +654,17 @@
     {/if}
   </div>
 
+  <!-- atlas-4 defect fix: ONE floating "lens legend" region, keyed on `sel.lens` -- spec.md's "one
+       legend on screen at a time". Species used to be the only lens with a floating legend at
+       all; the scores lens' copy used to live INSIDE LayersPanel.svelte (only visible with that
+       tool open, and never for the zone-choropleth branch) -- both branches now render here,
+       lazy, the same way every other lens component in this file is. -->
   {#if sel.lens === "species" && SpeciesLegendComp}
     {@const Comp = SpeciesLegendComp}
     <Comp legend={speciesLens.mapInputs.legend} />
+  {:else if sel.lens === "scores" && ScoresLegendComp}
+    {@const Comp = ScoresLegendComp}
+    <Comp legend={lensMapExtra.legend ?? null} />
   {/if}
 
   <div class="about-region" id="about-region" data-tour="about" data-control="about">

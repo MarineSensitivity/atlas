@@ -3,8 +3,8 @@
 // bundles already committed for the data-layer tests (tests/fixtures/species/**, see its README),
 // reused here through page.route rather than re-typed.
 //
-// Chromium only, serial: this suite drives the same WebGL map e2e/map.spec.ts does (S2's numbers
-// were only ever measured on headless Chromium/swiftshader — see that file's own header).
+// atlas-8 step 2: widened to all three engines (chromium/webkit/firefox all measured green here);
+// kept serial for the same WebGL-contention reason e2e/map.spec.ts documents.
 //
 // atlas-8: the COLD-load first-paint TIMING gate that used to live here moved to
 // e2e/species.timing.spec.ts, its own Playwright project (a timing gate must run alone, gated on
@@ -21,7 +21,6 @@ import {
 } from "./hermetic";
 import { blockWasm, routeGlyphs, routeZonesPmtiles } from "./map-hermetic";
 import {
-  type AtlasMapForSpecies,
   LEATHERBACK_SP,
   WALRUS_AM_MDL_KEY,
   WRYBILL_SP,
@@ -30,7 +29,6 @@ import {
   routeSpeciesShards,
 } from "./species-hermetic";
 
-test.skip(({ browserName }) => browserName !== "chromium", "WebGL gate: chromium only (S2)");
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -52,30 +50,35 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
     await expect
       .poll(() => page.getByTestId("species-title-sci").textContent(), { timeout: 10_000 })
       .toBe("Odobenus rosmarus");
-    await expect
-      .poll(
-        () =>
-          page.evaluate(() => {
-            const map = (window as unknown as { __atlasMap: AtlasMapForSpecies }).__atlasMap.handle
-              .map;
-            return !!map.getLayer("species-raster") && map.isSourceLoaded("species-raster");
-          }),
-        { timeout: 10_000 },
-      )
-      .toBe(true);
 
-    const sourceUrl = await page.evaluate(() => {
-      const style = (
-        window as unknown as {
-          __atlasMap: { handle: { map: { getStyle(): { sources: Record<string, unknown> } } } };
-        }
-      ).__atlasMap.handle.map.getStyle();
-      const source = style.sources["species-raster"] as { tiles?: string[] } | undefined;
-      return source?.tiles?.[0] ?? null;
-    });
+    const sourceUrl = () =>
+      page.evaluate(() => {
+        const style = (
+          window as unknown as {
+            __atlasMap: { handle: { map: { getStyle(): { sources: Record<string, unknown> } } } };
+          }
+        ).__atlasMap.handle.map.getStyle();
+        const source = style.sources["species-raster"] as { tiles?: string[] } | undefined;
+        return source?.tiles?.[0] ?? null;
+      });
+
+    // atlas-8 fix round 1 (root cause, instrumented -- repeated with --workers=1 --repeat-each=6,
+    // reproduced 5/6 on WebKit): `isSourceLoaded("species-raster")` above went TRUE the moment
+    // ANY style with that source id finished loading -- which can be leatherback's OWN (the
+    // FIRST, url-driven) style, not walrus's. Walrus's own `applyStyle` call is exactly the one
+    // `styleQueue.ts` describes queuing (`map.isStyleLoaded()` still false, this early): it only
+    // flushes on the map's next `"idle"` or its `DEFAULT_STYLE_FALLBACK_MS` (4000ms) fallback,
+    // WHICHEVER COMES FIRST. The old assertion checked "a species-raster source is loaded" once
+    // and then read the URL a single time with no further wait -- so on whichever engine's timing
+    // let leatherback's OWN load finish first, the check passed on THAT source, before the queue
+    // had flushed walrus's at all. The fix is not a longer wait before one read; it is polling the
+    // URL itself, so the assertion only succeeds once the QUEUE has actually flushed the write it
+    // is testing for -- covering the 4000ms fallback with margin.
+    await expect
+      .poll(sourceUrl, { message: "species-raster source URL", timeout: 10_000 })
+      .toContain("WORMS_137077");
     // walrus's merged COG (ms_merge_WORMS_137077.tif), never leatherback's stranded first request
-    expect(sourceUrl).toContain("WORMS_137077");
-    expect(sourceUrl).not.toContain("WORMS_137209");
+    expect(await sourceUrl()).not.toContain("WORMS_137209");
   });
 
   test("an AquaX 'Delivered' (native) tile URL carries rescale=0,1000 (the AquaX gate)", async ({
@@ -176,36 +179,47 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
     await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
     await page.waitForFunction(() => !!(window as unknown as { __atlasMap?: unknown }).__atlasMap);
 
-    await page.evaluate((url) => {
-      const api = (
-        window as unknown as {
-          __atlasMap: {
-            handle: { applyStyle(s: unknown): void };
-            composeStyle: (i: unknown) => unknown;
-            inputs: () => Record<string, unknown>;
-          };
-        }
-      ).__atlasMap;
-      api.handle.applyStyle(
-        api.composeStyle({
-          ...api.inputs(),
-          range: {
-            id: "species-range",
-            pmtiles: url,
-            sourceLayer: "programarea",
-            keyProperty: "programarea_key",
-            key: "GAA",
-            fillColor: "#3388ff",
-            opacity: 0.5,
-          },
-        }),
-      );
-    }, RANGE_URL);
+    // atlas-8 fix round 1 (same root cause as e2e/map.spec.ts's "paints a raster" test, see its
+    // own comment): this manually injects a "range" via a raw `handle.applyStyle` call, which
+    // races the species lens' OWN mount-driven effect (its card/mapInputs settling asynchronously
+    // and re-applying Shell's composed style without this test's injected range) -- reproduced
+    // under full-suite WebGL contention (multiple parallel specs' software-GL rendering), not
+    // deterministically per engine. Self-healing: re-inject on every poll iteration so whichever
+    // injection is temporally last (this test's) is the one that survives.
+    const injectRange = (url: string) =>
+      page.evaluate((rangeUrl) => {
+        const api = (
+          window as unknown as {
+            __atlasMap: {
+              handle: { applyStyle(s: unknown): void };
+              composeStyle: (i: unknown) => unknown;
+              inputs: () => Record<string, unknown>;
+            };
+          }
+        ).__atlasMap;
+        api.handle.applyStyle(
+          api.composeStyle({
+            ...api.inputs(),
+            range: {
+              id: "species-range",
+              pmtiles: rangeUrl,
+              sourceLayer: "programarea",
+              keyProperty: "programarea_key",
+              key: "GAA",
+              fillColor: "#3388ff",
+              opacity: 0.5,
+            },
+          }),
+        );
+      }, url);
+
+    await injectRange(RANGE_URL);
 
     await expect
       .poll(
-        () =>
-          page.evaluate(() => {
+        async () => {
+          await injectRange(RANGE_URL); // re-assert: cheap, idempotent once settled
+          return page.evaluate(() => {
             const map = (
               window as unknown as {
                 __atlasMap: {
@@ -220,7 +234,8 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
             ).__atlasMap.handle.map;
             if (!map.isSourceLoaded("species-range")) return -1;
             return map.queryRenderedFeatures({ layers: ["species-range"] }).length;
-          }),
+          });
+        },
         {
           message: 'source/layer "species-range" never rendered a vector feature',
           timeout: 10_000,
@@ -305,5 +320,49 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
         },
       )
       .toContain("WORMS_137077");
+  });
+});
+
+test.describe("atlas-4/5 defect fix: the topbar search field no longer overflows (the 'US only' switch)", () => {
+  test("the search field stays at its designed (closed) height, with no descendant overflowing it", async ({
+    page,
+  }) => {
+    await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
+    const field = page.locator('[data-control="search"]');
+    const fieldBox = (await field.boundingBox())!;
+    // the fault this pins: "Only species in US waters" used to be a static third row inside this
+    // fixed-height pill, which grew (and visually overflowed) the field on every load, whether or
+    // not the picker had ever been opened -- so this checks the CLOSED state, before any focus.
+    expect(fieldBox.height).toBeLessThanOrEqual(36); // shell.css's `.search-field { height: 32px }` + slack
+    const descendantBoxes = await field.locator("*").evaluateAll((els) =>
+      els.map((el) => {
+        const r = el.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, tag: el.tagName };
+      }),
+    );
+    for (const box of descendantBoxes) {
+      expect(box.top).toBeGreaterThanOrEqual(fieldBox.y - 0.5);
+      expect(box.bottom).toBeLessThanOrEqual(fieldBox.y + fieldBox.height + 0.5);
+    }
+  });
+
+  test("the 'US only' switch is reachable by keyboard from the field, inside the opened dropdown", async ({
+    page,
+    browserName,
+  }) => {
+    await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
+    const input = page.locator(".picker-input");
+    await input.focus();
+    // the picker's taxa index loads asynchronously (fetched on first focus) -- wait for the
+    // dropdown to actually be open, same as e2e/species.smoke.spec.ts's other us-only test above.
+    await expect
+      .poll(() => page.locator(".picker-option").count(), { timeout: 10_000 })
+      .toBeGreaterThan(0);
+    await expect(page.locator(".us-only input[type='checkbox']")).toBeVisible();
+    // WebKit's default Tab sequence skips non-text form controls (checkboxes included) unless
+    // "Full Keyboard Access" is on -- the same platform default e2e/shell.a11y.spec.ts:189
+    // documents for buttons; its equivalent key is Option+Tab, Playwright's "Alt+Tab" here.
+    await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
+    await expect(page.locator(".us-only input[type='checkbox']")).toBeFocused();
   });
 });

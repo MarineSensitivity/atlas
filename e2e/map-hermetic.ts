@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
+import { safeRoute } from "./routeSafety";
 
 /** the committed archive. Rebuild with:
  *   tippecanoe -o zones.pmtiles -l programarea -Z0 -z6 --no-tile-compression --force zones.geojson
@@ -123,31 +124,34 @@ export const RASTER_RGB: [number, number, number] = [255, 127, 42];
  */
 export async function routeZonesPmtiles(page: Page, url = ZONES_PMTILES_URL) {
   const file = readFileSync(ZONES_PMTILES_PATH);
-  await page.route(url, (route) => {
-    const range = route.request().headers()["range"];
-    const m = range ? /bytes=(\d+)-(\d*)/.exec(range) : null;
-    if (!m) {
+  await page.route(
+    url,
+    safeRoute((route) => {
+      const range = route.request().headers()["range"];
+      const m = range ? /bytes=(\d+)-(\d*)/.exec(range) : null;
+      if (!m) {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/octet-stream",
+          headers: { "accept-ranges": "bytes", "access-control-allow-origin": "*" },
+          body: file,
+        });
+      }
+      const start = Number(m[1]);
+      const end = m[2] ? Number(m[2]) : file.length - 1;
+      const slice = file.subarray(start, end + 1);
       return route.fulfill({
-        status: 200,
+        status: 206,
         contentType: "application/octet-stream",
-        headers: { "accept-ranges": "bytes", "access-control-allow-origin": "*" },
-        body: file,
+        headers: {
+          "accept-ranges": "bytes",
+          "content-range": `bytes ${start}-${end}/${file.length}`,
+          "access-control-allow-origin": "*",
+        },
+        body: slice,
       });
-    }
-    const start = Number(m[1]);
-    const end = m[2] ? Number(m[2]) : file.length - 1;
-    const slice = file.subarray(start, end + 1);
-    return route.fulfill({
-      status: 206,
-      contentType: "application/octet-stream",
-      headers: {
-        "accept-ranges": "bytes",
-        "content-range": `bytes ${start}-${end}/${file.length}`,
-        "access-control-allow-origin": "*",
-      },
-      body: slice,
-    });
-  });
+    }),
+  );
 }
 
 /** the fixture's own tiles.json + tile-template URLs — CARTO's real shape (verified live
@@ -219,35 +223,44 @@ async function routeBasemapVectorChain(
 ) {
   for (const theme of ["navy", "paper"] as const) {
     const body = JSON.stringify(styleFixture(theme));
-    await page.route(BASEMAP_STYLE_URL[theme], (route) =>
-      route.fulfill({ status: 200, contentType: "application/json", body }),
+    await page.route(
+      BASEMAP_STYLE_URL[theme],
+      safeRoute((route) => route.fulfill({ status: 200, contentType: "application/json", body })),
     );
   }
-  await page.route(BASEMAP_TILES_JSON_URL, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        tilejson: "2.2.0",
-        tiles: [BASEMAP_TILE_URL_TEMPLATE],
-        minzoom: 0,
-        maxzoom: 14,
-        vector_layers: [{ id: "water", minzoom: 0, maxzoom: 14, fields: {} }],
+  await page.route(
+    BASEMAP_TILES_JSON_URL,
+    safeRoute((route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          tilejson: "2.2.0",
+          tiles: [BASEMAP_TILE_URL_TEMPLATE],
+          minzoom: 0,
+          maxzoom: 14,
+          vector_layers: [{ id: "water", minzoom: 0, maxzoom: 14, fields: {} }],
+        }),
       }),
-    }),
+    ),
   );
   await page.route(
     (url) => /\/vectortiles\/carto\.streets\/v1\/\d+\/\d+\/\d+\.mvt$/.test(url.pathname),
-    (route) => route.fulfill({ status: 200, contentType: "application/x-protobuf", body: tile }),
+    safeRoute((route) =>
+      route.fulfill({ status: 200, contentType: "application/x-protobuf", body: tile }),
+    ),
   );
   await page.route(
     (url) => /\/gl\/(dark-matter|positron)-gl-style\/sprite(@2x)?\.json$/.test(url.pathname),
-    (route) => route.fulfill({ status: 200, contentType: "application/json", body: "{}" }),
+    safeRoute((route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: "{}" }),
+    ),
   );
   await page.route(
     (url) => /\/gl\/(dark-matter|positron)-gl-style\/sprite(@2x)?\.png$/.test(url.pathname),
-    (route) =>
+    safeRoute((route) =>
       route.fulfill({ status: 200, contentType: "image/png", body: solidPng(0, 0, 0, 1, 0) }),
+    ),
   );
 }
 
@@ -304,8 +317,9 @@ export async function routeVariedBasemapStyle(page: Page) {
 /** every titiler `/cog/tiles` request → one solid PNG of a different colour. */
 export async function routeTitilerTiles(page: Page) {
   const png = solidPng(...RASTER_RGB);
-  await page.route("https://titiler-v8.marinesensitivity.org/**", (route) =>
-    route.fulfill({ status: 200, contentType: "image/png", body: png }),
+  await page.route(
+    "https://titiler-v8.marinesensitivity.org/**",
+    safeRoute((route) => route.fulfill({ status: 200, contentType: "image/png", body: png })),
   );
 }
 
@@ -320,13 +334,19 @@ export async function routeTitilerTiles(page: Page) {
  * specifically (not the whole `tiles.basemaps.cartocdn.com` host) so it never shadows this file's
  * OWN tiles.json/`.mvt`/sprite routes on the same host. */
 export async function routeGlyphs(page: Page) {
-  await page.route("https://tiles.basemaps.cartocdn.com/fonts/**", (route) =>
-    route.fulfill({ status: 200, contentType: "application/x-protobuf", body: "" }),
+  await page.route(
+    "https://tiles.basemaps.cartocdn.com/fonts/**",
+    safeRoute((route) =>
+      route.fulfill({ status: 200, contentType: "application/x-protobuf", body: "" }),
+    ),
   );
 }
 
 /** the first-paint contract (plan D3 Tier 0): the map must paint with ZERO WASM bytes. Aborting
  * every `.wasm` makes that structural rather than aspirational. */
 export async function blockWasm(page: Page) {
-  await page.route("**/*.wasm", (route) => route.abort());
+  await page.route(
+    "**/*.wasm",
+    safeRoute((route) => route.abort()),
+  );
 }

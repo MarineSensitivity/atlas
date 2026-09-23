@@ -6,15 +6,46 @@ import { zoneUnitsFromBoot, zoneLabelsFromBoot } from "../../lib/map/layers/zone
 import type { RasterLayerSpec, SelectionSpec, ZoneUnitSpec } from "../../lib/map/types";
 import { SELECTION_COLOR } from "../../lib/map/colors";
 import { layerByKey, zoneRows, type BootLayerRow } from "./boot";
-import { outsidePraOverlaySpec, scoreRasterSpec, type ManifestOverlayRow } from "./raster";
-import { zoneChoropleth, zoneValuesFor } from "./zoneFill";
-import type { PaletteName } from "../../lib/raster/ramps";
+import {
+  outsidePraOverlaySpec,
+  rasterLegend,
+  scoreRasterSpec,
+  type ManifestOverlayRow,
+} from "./raster";
+import { zoneChoropleth, zoneLegendStops, zoneValuesFor } from "./zoneFill";
+import type { LegendStop, PaletteName } from "../../lib/raster/ramps";
+
+/**
+ * The scores lens' floating legend (atlas-4 defect fix: the scores lens had NO floating legend at
+ * all, unlike species' `SpeciesLegend.svelte`) — one of the two mutually-exclusive branches
+ * (`raster`: `signif(rescale,3)` endpoints; `zone`: `round(range,1)` endpoints, parity doc
+ * §6.2/§6.4), or a reason there is nothing to show (`unavailable`: no published palette stops;
+ * `empty`: the zone-choropleth Inf/-Inf guard — no zone carries a value). `null` only before a
+ * layer has resolved at all (no boot yet).
+ */
+export type ScoresLegend =
+  | { kind: "raster"; title: string; stops: LegendStop[] }
+  | { kind: "zone"; title: string; stops: LegendStop[] }
+  | { kind: "unavailable"; title: string }
+  | { kind: "empty"; title: string }
+  | null;
+
+/** `ScoresLegend`'s `formatValue` (`ScoresLegend.svelte`) — both branches' endpoints are ALREADY
+ * rounded upstream (`signif3` / `round(range,1)`, this module below); reformatting them here (e.g.
+ * `toLocaleString`'s implicit 3-fraction-digit cap) would re-round a 4-significant-digit value like
+ * 0.0123 down to "0.012" — the exact defect this function exists to avoid. A plain stringify prints
+ * exactly what was already computed. Exported (not inline in the component) so it is unit-testable
+ * without a DOM, per CLAUDE.md. */
+export function formatScoresLegendValue(value: number): string {
+  return String(value);
+}
 
 export interface ScoresMapInputs {
   zones: ZoneUnitSpec[];
   raster: RasterLayerSpec | null;
   overlays: RasterLayerSpec[];
   selection: SelectionSpec | null;
+  legend: ScoresLegend;
 }
 
 export interface ScoresMapState {
@@ -73,6 +104,11 @@ export function scoresMapInputs(state: ScoresMapState): ScoresMapInputs {
   }));
 
   const isCellBranch = state.unit === "cell";
+  // captured from the SAME zoneChoropleth() call the fill above already makes, rather than a
+  // second one just for the legend (zoneValuesFor/zoneChoropleth are pure but not free, and the
+  // release's real zone counts run into the hundreds).
+  let zoneLegend: ReturnType<typeof zoneChoropleth>["legend"] = null;
+  let zoneEmpty = false;
   const zones: ZoneUnitSpec[] = baseUnits.map((u) => {
     let out = u;
     if (!isCellBranch && u.unit === state.unit) {
@@ -84,6 +120,8 @@ export function scoresMapInputs(state: ScoresMapState): ScoresMapInputs {
         state.palette,
       );
       if (choro.fill) out = { ...out, fill: choro.fill };
+      zoneLegend = choro.legend;
+      zoneEmpty = choro.empty;
     }
     if (state.selection?.kind === "zone" && state.selection.unit === u.unit) {
       out = { ...out, highlightKey: state.selection.key };
@@ -97,5 +135,26 @@ export function scoresMapInputs(state: ScoresMapState): ScoresMapInputs {
   const selection: SelectionSpec | null =
     state.selection?.kind === "cell" ? cellRingSelection(state.selection) : null;
 
-  return { zones, raster, overlays: overlay ? [overlay] : [], selection };
+  // atlas-4 defect fix: the floating legend for whichever branch is on screen -- title is the
+  // layer's own label (falling back to its metric key, then "Score", matching the removed
+  // in-panel copy's own fallback so this is not a behaviour change, only a relocation).
+  const title = layer?.label ?? state.lyr ?? "Score";
+  const legend: ScoresLegend = isCellBranch
+    ? (() => {
+        const rl = rasterLegend(
+          state.boot as { palettes?: unknown } | null | undefined,
+          layer,
+          state.palette,
+        );
+        return rl.unavailable
+          ? { kind: "unavailable", title }
+          : { kind: "raster", title, stops: rl.stops };
+      })()
+    : zoneEmpty
+      ? { kind: "empty", title }
+      : zoneLegend
+        ? { kind: "zone", title, stops: zoneLegendStops(zoneLegend) }
+        : { kind: "unavailable", title };
+
+  return { zones, raster, overlays: overlay ? [overlay] : [], selection, legend };
 }

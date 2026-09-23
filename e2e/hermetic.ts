@@ -5,6 +5,9 @@
 import type { Page } from "@playwright/test";
 import type { IncompleteResult } from "axe-core";
 import { routeBasemapStyle, routeGlyphs, solidPng } from "./map-hermetic";
+import { isTeardownRaceError, safeRoute } from "./routeSafety";
+
+export { isTeardownRaceError, safeRoute };
 
 export const BUCKET = "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/";
 
@@ -27,10 +30,12 @@ export const EXPECTED_MISSING_FILES = new Set(["session.json", "boot.json"]);
  * The map's cross-origin tile/style/glyph origins → fixtures, so no spec ever reaches the live
  * network for them. The basemap is CARTO's vector GL style now (atlas-map basemap fix, 2026-09-23:
  * the raster endpoint started requiring a key) — `routeBasemapStyle()` (map-hermetic.ts) routes its
- * WHOLE chain (style.json, its TileJSON, every `.mvt` tile, the sprite); `routeGlyphs()` covers the
- * font range every basemap now needs for CARTO's own place/road labels, not just a zone label. A
- * spec that needs a distinguishable PAINTED score-raster pixel (e2e/map.spec.ts) still registers
- * its OWN, later-winning titiler route — Playwright matches handlers in reverse registration order.
+ * WHOLE chain (style.json, its TileJSON, every `.mvt` tile, the sprite, wrapped with `safeRoute()`
+ * throughout — see routeSafety.ts's own header for the teardown-race it guards); `routeGlyphs()`
+ * covers the font range every basemap now needs for CARTO's own place/road labels, not just a zone
+ * label. A spec that needs a distinguishable PAINTED score-raster pixel (e2e/map.spec.ts) still
+ * registers its OWN, later-winning titiler route — Playwright matches handlers in reverse
+ * registration order.
  */
 export async function routeMapTileOrigins(page: Page) {
   await routeBasemapStyle(page);
@@ -38,8 +43,11 @@ export async function routeMapTileOrigins(page: Page) {
   // a real (transparent) PNG, not a 204 and not a hand-typed base64 blob: MapLibre reports a tile
   // it cannot DECODE through `map.on("error")`, which logs to the console — and "zero console
   // errors" is the smoke spec's whole assertion (an invalid literal produced 35 of them).
-  await page.route("https://titiler-v8.marinesensitivity.org/**", (route) =>
-    route.fulfill({ status: 200, contentType: "image/png", body: solidPng(0, 0, 0, 1, 0) }),
+  await page.route(
+    "https://titiler-v8.marinesensitivity.org/**",
+    safeRoute((route) =>
+      route.fulfill({ status: 200, contentType: "image/png", body: solidPng(0, 0, 0, 1, 0) }),
+    ),
   );
 }
 
@@ -78,7 +86,7 @@ export async function routeBucket(page: Page, latest = "v7", boot?: object) {
   await routeMapTileOrigins(page);
   await page.route(
     (url) => url.href.startsWith(BUCKET),
-    async (route) => {
+    safeRoute(async (route) => {
       const path = route.request().url().slice(BUCKET.length);
       if (path.startsWith("latest.txt")) {
         return route.fulfill({ status: 200, contentType: "text/plain", body: `${latest}\n` });
@@ -94,7 +102,7 @@ export async function routeBucket(page: Page, latest = "v7", boot?: object) {
         return route.fulfill({ status: 200, json: boot });
       }
       return route.fulfill({ status: 404, body: "" }); // app/boot.json: not published until atlas-1
-    },
+    }),
   );
 }
 
@@ -106,11 +114,13 @@ export async function routeBucket(page: Page, latest = "v7", boot?: object) {
 export async function mountUnder(page: Page, prefix: string) {
   await page.route(
     (url) => url.pathname.startsWith(prefix),
-    async (route) => {
+    // the most likely site of the teardown race this file's header describes: a REAL cross-fetch
+    // (`route.fetch`) that can still be in flight when the test/page ends.
+    safeRoute(async (route) => {
       const url = new URL(route.request().url());
       url.pathname = url.pathname.slice(prefix.length - 1);
       route.fulfill({ response: await route.fetch({ url: url.toString() }) });
-    },
+    }),
   );
 }
 
@@ -118,10 +128,11 @@ export async function mountUnder(page: Page, prefix: string) {
 export async function routeSession(page: Page, body: object | null) {
   await page.route(
     (url) => url.pathname.endsWith("/session.json"),
-    (route) =>
+    safeRoute((route) =>
       body
         ? route.fulfill({ status: 200, json: body })
         : route.fulfill({ status: 404, body: "not found" }),
+    ),
   );
 }
 
@@ -140,8 +151,9 @@ export async function routeSealFixture(page: Page) {
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">' +
     '<circle cx="100" cy="100" r="90" fill="#123456"/></svg>';
-  await page.route("**/branding/mma-seal.svg", (route) =>
-    route.fulfill({ contentType: "image/svg+xml", body: svg }),
+  await page.route(
+    "**/branding/mma-seal.svg",
+    safeRoute((route) => route.fulfill({ contentType: "image/svg+xml", body: svg })),
   );
   await page.addInitScript(() => {
     try {
@@ -173,7 +185,7 @@ export async function gotoPublicShell(page: Page, path = "/") {
 export async function blockAppBundle(page: Page) {
   await page.route(
     (url) => /\/assets\/index-[^/]*\.js$/.test(url.pathname),
-    (route) => route.abort(),
+    safeRoute((route) => route.abort()),
   );
 }
 

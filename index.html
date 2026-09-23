@@ -83,6 +83,12 @@
       (function () {
         var theme;
         var q = new URLSearchParams(location.search).get("theme");
+        // atlas-8 fix: the gallery/mockups use navy/paper (their own resolved-theme names,
+        // docs/design/mockups/*.html) where the real app uses dark/light -- accepting both here
+        // means a link copied from a mockup still resolves instead of silently falling through
+        // to prefers-color-scheme.
+        if (q === "navy") q = "dark";
+        else if (q === "paper") q = "light";
         if (q === "dark") theme = "navy";
         else if (q === "light") theme = "paper";
         else {
@@ -330,6 +336,13 @@
     </script>
   </head>
   <body>
+    <!-- atlas-8 fix: a single skip link to #panel-region jumped straight past the topbar AND the
+         tool rail -- #rail-region's one roving-tabindex stop sits immediately before #panel-region
+         in DOM order, so Tab from the skip link landed inside the panel, and the rail was reachable
+         only by Shift+Tab backward from there. Two skip links, in DOM/visual/tab order, fixes it:
+         each is a real, separately-focusable stop (never display:none), consistent with WCAG's
+         "multiple ways to skip repeated content" pattern. -->
+    <a class="skip-link" href="#rail-region">Skip to the tools</a>
     <a class="skip-link" href="#panel-region">Skip to the details panel</a>
 
     <div id="shell" class="app">
@@ -448,11 +461,15 @@
               <!-- kept for tests/shell/tools.test.ts (index.html must still contain
                    TOOL_BODY.layers verbatim) -- no longer what the hydrated shell shows by
                    default (atlas-4's Layers panel), so it carries no layout weight of its own;
-                   the sk-field/sk-switch-row/sk-layers-control/sk-legend-note placeholders below
-                   are what e2e/shell.cls.spec.ts's geometry-equality gate actually matches
-                   against the real LayersPanel (measured at 1280px with no boot.json: 4 fields
-                   66px, one switch row 24px, the layers-control section 43px, the
-                   legend-unavailable note 36px, 12px gaps -- src/lens/scores/LayersPanel.svelte). -->
+                   the sk-field/sk-switch-row/sk-layers-control placeholders below are what
+                   e2e/shell.cls.spec.ts's geometry-equality gate actually matches against the real
+                   LayersPanel (measured at 1280px with no boot.json: 4 fields 66px, one switch row
+                   24px, the layers-control section 43px, 12px gaps --
+                   src/lens/scores/LayersPanel.svelte). The legend (once a `sk-legend-note`
+                   placeholder here, for the "not published yet" note) moved OUT of this panel
+                   entirely in the atlas-4/5 defect fix -- it is the shell's own floating region
+                   over the map now (ScoresLegend.svelte), which the skeleton does not model at all
+                   (same as the species lens' pre-existing floating legend never has been). -->
               <span hidden>Layers, palette and outline options arrive in a later phase.</span>
               <div class="sk-field"></div>
               <div class="sk-field"></div>
@@ -460,7 +477,6 @@
               <div class="sk-field"></div>
               <div class="sk-switch-row"></div>
               <div class="sk-layers-control"></div>
-              <div class="sk-legend-note"></div>
             </div>
           </div>
         </div>

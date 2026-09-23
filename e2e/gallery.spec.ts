@@ -563,6 +563,24 @@ test.describe("fix round 1, item 8 (SC 1.4.10): no horizontal overflow at 320 CS
   });
 });
 
+test.describe("atlas-8 fix: the Categories demo table no longer overflows the PAGE at 320 CSS px", () => {
+  // the deferred case item 8's own comment named: a data table's unbreakable-token cells are
+  // exempt from SC 1.4.10's no-2D-scroll rule (the table itself may scroll), but the table must
+  // not force the PAGE to scroll horizontally -- that check (unlike item 8's, which measures a
+  // fixed-width inner element) is the whole-document one.
+  test("#categories .cat-table-scroll contains the overflow; <html> does not scroll horizontally", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 800 });
+    await gotoGallery(page, "navy");
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    );
+    expect(overflow, "the whole page must not overflow horizontally at 320 CSS px").toBe(false);
+    await expect(page.locator("#categories .cat-table-scroll")).toBeVisible();
+  });
+});
+
 test.describe("fix round 1, item 9 (SC 2.2.1): a Toast's auto-dismiss pauses while focused", () => {
   test("focusing its Dismiss button keeps a toast alive past its 5s timeout", async ({ page }) => {
     await gotoGallery(page, "navy");
@@ -653,6 +671,23 @@ test.describe("fix round 1, item 13 (SC 2.5.8): every control reaches 44 CSS px 
   }
 });
 
+// atlas-8 fix: item 13 above only measured the WRAPPING `.filter-field` label -- the raw <input>
+// inside it (the actual visible, tappable text field) stayed ~27x28px, its own intrinsic size.
+// spec.md §11 (distinct from SC 2.5.8, which is satisfied by the label's hit area alone) asks for
+// the input itself to read as 44 CSS px tall on a coarse pointer.
+test.describe("atlas-8 fix: DataTable's filter INPUT itself reaches 44 CSS px tall on a coarse pointer", () => {
+  test.use({ hasTouch: true });
+
+  test("#data-table .filter-field input", async ({ page }) => {
+    await gotoGallery(page, "navy");
+    const input = page.locator("#data-table .filter-field input").first();
+    await expect(input).toBeVisible();
+    const box = await input.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height, "filter input height").toBeGreaterThanOrEqual(44);
+  });
+});
+
 test.describe("fix round 1, also: Panel/Sheet's collapse control is a pure disclosure (no static aria-pressed)", () => {
   test("Panel's collapse button carries aria-expanded but not aria-pressed", async ({ page }) => {
     await gotoGallery(page, "navy");
@@ -688,11 +723,17 @@ test.describe("fix round 1, also: the innermost open layer handles Esc first", (
 });
 
 test.describe("fix round 1, also: Panel's body is keyboard-reachable even with no focusable child", () => {
-  test("Panel's body region has tabindex=0 and its own accessible name", async ({ page }) => {
+  test("Panel's body has tabindex=0, and is NOT a second nested landmark (atlas-8 fix)", async ({
+    page,
+  }) => {
     await gotoGallery(page, "navy");
     const body = page.locator("#panel .panel-body");
     await expect(body).toHaveAttribute("tabindex", "0");
-    await expect(body).toHaveAttribute("role", "region");
+    // atlas-8 fix: this used to ALSO carry role="region" -- a second landmark nested directly
+    // inside the panel's own <section aria-labelledby>, which is already ONE region (named by its
+    // <h2>). tests/ui/panelLandmarks.test.ts is the source-level twin of this assertion.
+    await expect(body).not.toHaveAttribute("role", "region");
+    await expect(page.locator("#panel .panel-surface")).toHaveAttribute("aria-labelledby", /.+/);
   });
 });
 
