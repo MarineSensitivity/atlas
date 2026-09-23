@@ -3,8 +3,8 @@
 // bundles already committed for the data-layer tests (tests/fixtures/species/**, see its README),
 // reused here through page.route rather than re-typed.
 //
-// Chromium only, serial: this suite drives the same WebGL map e2e/map.spec.ts does (S2's numbers
-// were only ever measured on headless Chromium/swiftshader — see that file's own header).
+// atlas-8 step 2: widened to all three engines (chromium/webkit/firefox all measured green here);
+// kept serial for the same WebGL-contention reason e2e/map.spec.ts documents.
 //
 // atlas-8: the COLD-load first-paint TIMING gate that used to live here moved to
 // e2e/species.timing.spec.ts, its own Playwright project (a timing gate must run alone, gated on
@@ -30,7 +30,6 @@ import {
   routeSpeciesShards,
 } from "./species-hermetic";
 
-test.skip(({ browserName }) => browserName !== "chromium", "WebGL gate: chromium only (S2)");
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 800 } });
 

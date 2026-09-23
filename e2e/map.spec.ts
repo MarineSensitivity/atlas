@@ -6,10 +6,12 @@
 // check — the `?url` wiring produces a build that paints tiles and silently never parses a single
 // vector tile.
 //
-// Chromium only: S2's numbers and its whole vector gate were measured on headless
-// Chromium/swiftshader, and nothing here has ever been characterised on the WebKit or Firefox
-// headless GL stacks. A first WebGL spec that is flaky on two engines is worse than one that is
-// honest about its coverage; widening it is atlas-8's call, with its own measurements.
+// atlas-8 step 2: widened from chromium-only to all three engines. S2's numbers were measured on
+// headless Chromium/swiftshader only; WebKit and Firefox's headless GL stacks needed their own
+// measurement, done here -- all four assertions below (vector render, raster paint, theme-swap
+// setStyle, camera replaceState) pass on all three, at comparable speed (measured: 6-8s for the
+// whole file per engine, vs ~2s for chromium alone in the original S2 note -- no fault of the
+// engines here; see scripts/verify.mjs's own note on running MANY pages back to back).
 import { expect, test, type Page } from "@playwright/test";
 import {
   collectConsoleErrors,
@@ -29,8 +31,6 @@ import {
   routeTitilerTiles,
   routeZonesPmtiles,
 } from "./map-hermetic";
-
-test.skip(({ browserName }) => browserName !== "chromium", "WebGL gate: chromium only (S2)");
 
 // SERIAL, on purpose (S2 consequence 12, "the timing gate runs alone"): four WebGL maps built at
 // once on one software GL renderer, inside a suite already running three engines in parallel, is
