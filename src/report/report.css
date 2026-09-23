@@ -1,0 +1,310 @@
+/* report/report.css -- atlas-7 steps 2/3: the report document's own screen + print stylesheet.
+   Global (not a Svelte <style> block) because @page and its margin boxes cannot be scoped, and
+   because report.html needs it before any component mounts (a print triggered mid-load should
+   still look right). Imports ONLY tokens.css's custom properties, never fonts.css's @font-face
+   rules -- this document is never meant to match the app pixel-for-pixel, and skipping the
+   self-hosted Jost/Carlito weights keeps report.html's own critical-path budget (see docs on the
+   subplan's D13 line) free for the model + the map. `--font-body`'s own fallback chain
+   ("Calibri, Carlito, Segoe UI, system-ui, sans-serif") already reads fine as a system font. */
+@import "../lib/brand/tokens.css";
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--surface-page, #f4f6f8);
+  color: var(--text-primary, #1a1f29);
+  font-family: var(--font-body, system-ui, sans-serif);
+}
+
+#report-root {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 0 1rem 4rem;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display, Georgia, serif);
+  line-height: 1.2;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+th,
+td {
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--divider, #d8dee6);
+}
+
+td.num,
+th.num {
+  text-align: right;
+}
+
+caption {
+  text-align: left;
+  font-size: 0.85em;
+  color: var(--text-secondary, #55606f);
+  margin-bottom: 0.35rem;
+}
+
+figure {
+  margin: 0 0 1.5rem;
+}
+
+.progress-line {
+  font-size: 0.9rem;
+  color: var(--text-secondary, #55606f);
+}
+
+/* ---- header band (§0) ------------------------------------------------------------------- */
+
+.report-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem 1.5rem;
+  padding: 1.5rem 0 1rem;
+  border-bottom: 3px solid var(--fill-accent, #1b6e7a);
+}
+
+.report-header .mark {
+  height: 40px;
+}
+
+.report-header .titles {
+  flex: 1 1 auto;
+  min-width: 14rem;
+}
+
+.report-header h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.6rem;
+}
+
+.report-chip {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: var(--fill-control, #eef1f5);
+  font-size: 0.8rem;
+}
+
+.report-qr {
+  width: 84px;
+  height: 84px;
+}
+
+.agency-lockup {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.agency-lockup img {
+  height: 32px;
+}
+
+/* the guide's wave motif (p. 10), the same mask src/shell/shell.css's topbar and Sheet.svelte use
+   -- never a second hand-drawn wave asset. */
+.wave-footer {
+  height: var(--motif-wave-height, 10px);
+  background-color: var(--fill-accent, #1b6e7a);
+  opacity: var(--motif-wave-opacity, 0.4);
+  margin-top: 0.5rem;
+  -webkit-mask: url("../lib/brand/motifs/wave.svg") repeat-x center / auto 100%;
+  mask: url("../lib/brand/motifs/wave.svg") repeat-x center / auto 100%;
+}
+
+/* the gold PREVIEW banner (screen only -- print gets the diagonal watermark instead). */
+.preview-banner {
+  background: #b8860b;
+  color: #1a1200;
+  font-weight: 700;
+  padding: 0.5rem 1rem;
+  text-align: center;
+  border-radius: 6px;
+  margin: 1rem 0;
+}
+
+/* the diagonal print watermark -- fixed so it repeats on every printed page (Chromium repeats
+   position:fixed elements across pages; this is also this repo's own fallback strategy for a
+   running footer, below). Screen-only elements never show it. */
+.print-watermark,
+.print-footer {
+  display: none;
+}
+
+/* ---- disclosures (Parameters collapsed on screen, open in print) ------------------------ */
+
+.disclosure summary,
+.disclosure > button {
+  cursor: pointer;
+  font-weight: 600;
+  background: none;
+  border: none;
+  padding: 0.4rem 0;
+  font-size: 1rem;
+  color: inherit;
+}
+
+.disclosure-body[hidden] {
+  display: none;
+}
+
+/* ---- flowers: tabs on screen, sequential in print (§4) ----------------------------------- */
+
+.flower-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.flower-tabs button {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border-control, #c9d2dc);
+  border-radius: 999px;
+  background: var(--fill-control, #eef1f5);
+  cursor: pointer;
+}
+
+.flower-tabs button[aria-selected="true"] {
+  background: var(--fill-accent, #1b6e7a);
+  color: #fff;
+  border-color: transparent;
+}
+
+.flower-panel[hidden] {
+  display: none;
+}
+
+.flower-panels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+/* ---- footnotes ----------------------------------------------------------------------------- */
+
+.footnotes {
+  font-size: 0.85rem;
+  color: var(--text-secondary, #55606f);
+}
+
+.footnotes li {
+  break-inside: avoid;
+}
+
+/* ---- provenance / SQL (collapsed) --------------------------------------------------------- */
+
+.provenance pre {
+  white-space: pre-wrap;
+  font-size: 0.8rem;
+  background: var(--fill-control, #eef1f5);
+  padding: 0.6rem;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+/* =========================================================================================
+   PRINT (atlas-7 step 3)
+   ========================================================================================= */
+@media print {
+  @page {
+    size: Letter;
+    margin: 0.75in;
+    /* CSS Paged Media margin boxes: supported by Prince/Antenna House, not by Chromium's print
+       engine today -- kept as the spec-correct primary, with the position:fixed footer below as
+       the fallback that actually repeats under Chromium (this file's own header explains why a
+       page NUMBER cannot be reproduced there: counter(page) is undefined outside a margin box in
+       every engine this app targets). */
+    @bottom-center {
+      content: "MarineSensitivity Atlas — printed report";
+    }
+  }
+
+  html,
+  body {
+    background: #fff;
+  }
+
+  #report-root {
+    max-width: none;
+    padding: 0;
+  }
+
+  .no-print,
+  .export-bar,
+  .preview-banner {
+    display: none !important;
+  }
+
+  .print-watermark {
+    display: block;
+    position: fixed;
+    top: 40%;
+    left: 10%;
+    width: 80%;
+    transform: rotate(-30deg);
+    font-size: 5rem;
+    font-weight: 800;
+    color: rgba(184, 22, 22, 0.25);
+    text-align: center;
+    z-index: 1000;
+    pointer-events: none;
+  }
+
+  .print-footer {
+    display: block;
+    position: fixed;
+    bottom: 0.25in;
+    left: 0.75in;
+    right: 0.75in;
+    font-size: 0.75rem;
+    color: #555;
+    border-top: 1px solid #ccc;
+    padding-top: 0.15rem;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  figure,
+  table tr,
+  .flower-panel,
+  .species-section {
+    break-inside: avoid;
+  }
+
+  table thead {
+    display: table-header-group; /* repeats the header row on every page a table spans */
+  }
+
+  .disclosure-body[hidden] {
+    display: block !important;
+  }
+
+  .flower-panel[hidden] {
+    display: block !important;
+  }
+
+  .flower-tabs {
+    display: none;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: underline;
+  }
+}

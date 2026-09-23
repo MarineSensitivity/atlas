@@ -79,6 +79,16 @@ describe("findForbiddenMarkers", () => {
       ]);
     }
   });
+
+  // atlas-7: report.html's provenance text narrates "DuckDB-WASM 1.32.0" as PROSE (the engine
+  // itself stays a dynamic import; only its version NUMBER is static text) -- the optional
+  // `markers` param lets a caller drop that one marker for a report.html-shaped invocation while
+  // an index.html-shaped one (the default) still catches it.
+  it("an explicit markers list narrows what is checked, e.g. dropping duckdb for report.html's prose", () => {
+    const content = new Map([["x.js", "DuckDB-WASM 1.32.0"]]);
+    expect(findForbiddenMarkers(content)).toEqual([{ path: "x.js", marker: "duckdb" }]);
+    expect(findForbiddenMarkers(content, ["terra-draw", "docx", "shp", "treemap"])).toEqual([]);
+  });
 });
 
 describe("findWorkerAssets (atlas-0 review fix F3, extended N1)", () => {
@@ -255,6 +265,30 @@ describe("evaluateBudget", () => {
     const r = evaluateBudget({ manifest, entryKey: "index.html", readFile: (f) => buf(files[f]) });
     expect(r.ok).toBe(false);
     expect(r.reasons.some((x) => x.includes('"duckdb"'))).toBe(true);
+  });
+
+  it("a dropped marker (forbiddenMarkers) no longer fails the SAME static reachability", () => {
+    const manifest = {
+      "report.html": { file: "report.js", isEntry: true, imports: ["chunk-a"] },
+      "chunk-a": { file: "prose.js" },
+    };
+    const files: Record<string, string> = {
+      "report.js": "console.log('hi')",
+      "prose.js": "const duckdbWasm = 'DuckDB-WASM 1.32.0';",
+    };
+    const withDefault = evaluateBudget({
+      manifest,
+      entryKey: "report.html",
+      readFile: (f) => buf(files[f]),
+    });
+    expect(withDefault.ok).toBe(false);
+    const withDropped = evaluateBudget({
+      manifest,
+      entryKey: "report.html",
+      readFile: (f) => buf(files[f]),
+      forbiddenMarkers: ["terra-draw", "docx", "shp", "treemap"],
+    });
+    expect(withDropped.ok).toBe(true);
   });
 
   it("passes when the forbidden library is reachable only through a dynamicImport (lazy is fine)", () => {

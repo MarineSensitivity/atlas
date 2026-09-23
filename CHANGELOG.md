@@ -1,3 +1,78 @@
+# atlas 0.10.5
+
+`atlas-7` steps 2-3: the report document itself, its progressive rendering, the print stylesheet
+and the three client-side exporters. Landed together because the document and its export buttons
+are one file (`Report.svelte`); step 4 (entry points) follows in 0.10.6.
+
+- **`report.html` + `src/report/Report.svelte`** — the document, mounted by `src/report-main.ts`.
+  Header band (MST mark, the agency lockup behind `VITE_SEAL=1` via `lib/ui/sealVisibility.ts`,
+  release chip, generated stamp, the permalink and its QR — a PNG `<img>`, never `{@html}` — wave
+  footer); intro; Parameters (collapsed, a `hidden`-attribute disclosure so print CSS can force it
+  open); the map (places filled by mean score, `spectral_r`, opacity 0.6, point-on-surface labels
+  with a white halo, `Legend.svelte`, positron basemap + attribution); one flower per place (tabs
+  on screen, all panels always in the DOM so print shows them sequentially); the Table of Scores
+  with coverage footnotes; the Summary of Species per place (counts cross-tab, top 20 linking to
+  the Species lens, "Download full species list" as a client Blob, the empty-case string); Sources
+  and Method (citations via `lib/release/cite.ts`); Provenance (collapsed SQL, "Reproduce in R").
+  Progressive rendering: `placeInputs` starts every place's `scores`/`species` at `null` and
+  `buildReport()` (already-merged, untouched) re-runs after each place lands, with ONE visible
+  `.progress-line` plus `announce()` calls.
+- **`report.html`'s access gate** — the SAME inline early-fetch script as `index.html`,
+  byte-for-byte (this file's own header explains why it must be a second copy, not an import).
+  `tests/release/inline-early-fetch.test.ts` now asserts the two are identical and runs the shared
+  `ACCESS_CASES` table against report.html's own copy too.
+- **`src/report/data.ts`** — dispatches each place to the SAME engine paths the app already uses:
+  a zone place's scores come straight from `boot.zones` (`model.ts#zoneScoreInput`, no engine at
+  all) and its species from `speciesForZone()`; a custom place goes through
+  `places/{dataEngine,results}.ts`'s D7b-clipped blend — no second query path.
+- **`src/report/reportMap.ts` + `mapWiring.ts`** — a standalone MapLibre map for the print/export
+  figure, deliberately NOT importing `lib/map/{map,style,layers/*}.ts`: those are reachable
+  STATICALLY from `index.html` already, and report.html importing them too shared a Rollup chunk
+  with index.html's own entry, measured to grow its committed static budget by 6.3 KB gzip for
+  code only report.html needed. `mapWiring.ts` restates the small, load-bearing slice of
+  `map.ts#createMap` (named maplibre-gl imports, the `?worker&url` wiring, `preserveDrawingBuffer`)
+  and `reportMap.ts` restates `layers/{basemap,zones}.ts`'s two facts (the positron tile URL, a
+  zone's `label_pt`) instead. `captureMapPng()` waits for `idle`, forces a repaint, waits two
+  animation frames, then rejects an all-black/all-white capture.
+- **`src/report/{exportFiles,exportHtml,exportZip,exportDocx,flowerSvg,svgToPng,qr}.ts`** — Print
+  (`window.print()`); Download HTML (a detached DOM clone with the live map swapped for its
+  captured PNG, `collectPageCss()` inlining every stylesheet, self-contained because this document
+  loads no custom web font to begin with); the data-package ZIP (lazy `fflate` over
+  `buildDataPackageFiles()`'s pure file list — `scores_<place>.csv`, `species_<place>.csv` via the
+  app's own `lens/scores/species.ts#toCsv`, `places.geojson`, `query/*.sql`, `provenance.json`,
+  `CITATION.md`, `README.md`); Word (lazy `docx`, coded styles per D9 — no reference template
+  exists to match). `report.css` imports only `lib/brand/tokens.css`, never `fonts.css`, and sets
+  `data-theme="paper"` explicitly (tokens.css's un-themed default is `navy` — the very first e2e
+  run caught this as a real color-contrast failure). `@page { size: Letter; margin: .75in }`, a
+  `position: fixed` running footer/watermark (Chromium repeats fixed elements per page; CSS Paged
+  Media margin boxes are the spec-correct primary but unsupported there), `break-inside: avoid` on
+  figures/table rows/flowers, `table thead { display: table-header-group }` so a spanning table's
+  header repeats.
+- **`src/report/colors.ts`** — the report's own twin of `lib/map/colors.ts`: every color literal a
+  standalone SVG/canvas/MapLibre-style needs outside any stylesheet, in one file.
+  `tests/raster/ramps.wiring.test.ts` now exempts it the same way it exempts the map's.
+- **`scripts/size-budget.mjs` `--allow-marker`** — report.html's provenance section narrates
+  "DuckDB-WASM 1.32.0" as prose and its Word button used to say "Word (.docx)"; both are
+  `FORBIDDEN_LAZY_MARKERS` substrings that a build-output text scan cannot tell apart from an
+  actually-bundled dependency. `--allow-marker duckdb` drops that marker for report.html's own
+  invocation; `tests/report-lazy-import-duckdb.wiring.test.ts` (a source-level, entry-relative
+  scan, the same technique as `tests/treemap-lazy-import.wiring.test.ts`) is what still proves
+  `@duckdb/duckdb-wasm` and `docx` are never statically bundled by either entry.
+- **Gates measured on this branch**: `tsc` 0 errors; `svelte-check` 0/0; `vitest` 158 files / 2485
+  tests / 3 skipped, all green; `eslint` 0; `prettier --check` clean; `vite build` (both entries in
+  one graph) succeeds; `size-budget --entry index.html` 414.7 KB gzip static + 140.5 KB worker =
+  555.3 KB combined (budget 600 KB) — **up from the previously-committed 409.3 KB** because
+  `maplibre-gl` itself is now shared between the two entries (report.html genuinely needs it too,
+  and `tests/size-budget-gallery-isolation.test.ts` pins index.html and report.html to the SAME
+  Rollup config, unlike gallery.html) — the avoidable share (`lib/map/{style,layers/*}.ts`,
+  `camera.ts`) was eliminated via `mapWiring.ts`/`colors.ts` above, and 555.3 KB still clears the
+  600 KB combined budget comfortably; `size-budget --entry report.html --allow-marker duckdb`
+  52.6 KB gzip static, 0 worker (budget 450/150 KB); both committed red fixtures still fail;
+  `e2e/report.spec.ts` (chromium, hermetic, zone places only — see that file's own header for
+  scope) 9/9 green, and caught two real bugs before commit: the theme was never set (white text on
+  a light background) and a stray trailing CSS rule silently defeated the print watermark under
+  `@media print`.
+
 # atlas 0.10.0
 
 `atlas-7` step 1: the report data model — one pure function from `(release, places)` to a plain
