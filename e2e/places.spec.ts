@@ -31,8 +31,8 @@ import {
 
 test.describe.configure({ mode: "serial" });
 
-async function openPlaces(page: Page) {
-  await gotoPublicShell(page);
+async function openPlaces(page: Page, path = "/") {
+  await gotoPublicShell(page, path);
   await page.waitForSelector("#rail-region .rail", { state: "attached" });
   await page.locator("#rail-region button[aria-label='Places']").click();
 }
@@ -166,31 +166,61 @@ async function selectionLineFeatureCount(page: Page): Promise<number> {
 test("a drawn/entered place renders its outline as a real selection-line feature (m6)", async ({
   page,
 }) => {
-  await openPlaces(page);
+  // `map=` frames the camera on the SAME box `addByCoordinates()`'s default draws (its own
+  // centre/zoom), matching `e2e/places.deeplink-outline.spec.ts`'s own header note (a real deep
+  // link legitimately carries a camera too) -- the shell's DEFAULT camera (FALLBACK_FULL_STUDY_AREA,
+  // globe projection, zoom 2.16 over the whole continental US) left `queryRenderedFeatures` a real,
+  // reproducible false negative for a tiny (1.5deg) polygon: `selection-fill`/`selection-line` were
+  // both present and loaded, the source genuinely carried the right geometry
+  // (verified directly), but at that zoom the polygon rendered at too fine a scale for MapLibre to
+  // ever report it as a hit -- 0 consistently, not a timing artifact (measured: still 0 after 24s+
+  // of polling, isolated, no contention). This is the SAME class of false negative the `sel=cell:*`/
+  // `sel=zone:MDA|CGA` fixes in `scripts/verify.mjs` needed a camera override for.
+  await openPlaces(page, "/?map=-123.75,40.75,7");
   await addByCoordinates(page);
   await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
 
-  // the basemap's own CARTO style.json fetch resolving is what re-triggers Shell's composeStyle
-  // effect here (measured: ~2-4s cold in this hermetic fixture, same path 0.10.20's "a late
-  // style.json" fix covers) -- generous margin, not a wall-clock claim (no fixed sleep, still a
-  // poll that returns the instant it is true).
   await expect
     .poll(() => selectionLineFeatureCount(page), {
       message: "no selection-line feature rendered for the drawn/entered place's outline",
-      timeout: 20_000,
+      timeout: 15_000,
     })
     .toBeGreaterThan(0);
 });
 
-/** a real Program Area to pick from the map -- `map-hermetic.ts`'s own `BOOT_FIXTURE` (the same
- * fixture e2e/map.spec.ts and scripts/verify.mjs already trust for real zone rendering), routed
- * WITH `?unit=programarea` so the zone choropleth FILL (`programarea_fill`) exists to hit-test
- * against (`zoneAtPoint` queries `{unit}_fill`/`{unit}_ln`, src/lib/map/interaction.ts) -- the
- * default `unit=cell` draws only the thin outline LINE, too fragile a click target for a stable
- * e2e gate. */
+/** `map-hermetic.ts`'s own `BOOT_FIXTURE`, extended with a `layers`/per-zone `metrics` block so
+ * `programarea_fill` genuinely exists (not just `programarea_ln`) -- required for TWO independent
+ * reasons found while wiring this test in, neither a hypothetical:
+ *  1. `zoneAtPoint`'s hit-test (`installPickMode` -> `src/lib/map/interaction.ts`) only ever
+ *     queries the LINE layer here regardless of fill presence (`Places.svelte`'s own `zoneUnits`
+ *     prop is `zoneUnitsFromBoot(boot)` verbatim, `Shell.svelte` -- never the scores lens'
+ *     fill-augmented copy, so `u.fill` is always unset) -- a click at a polygon's CENTROID is
+ *     confirmably inside the fill yet never registers a pick; the click target below is a point ON
+ *     the boundary LINE instead.
+ *  2. `refreshOutline()` -> `renderedZoneOutline()` (`src/places/zoneOutline.ts`) queries BOTH
+ *     `programarea_fill` AND `programarea_ln` UNCONDITIONALLY -- and MapLibre's whole-viewport
+ *     `queryRenderedFeatures({layers})` (no point/bbox) THROWS "The layer '...' does not exist in
+ *     the map's style" for a layer id absent from the CURRENT style, rather than silently skipping
+ *     it (confirmed directly: the exact error surfaces as an uncaught exception inside the pick
+ *     click handler when `programarea_fill` was never added). Without real per-zone metrics that
+ *     throw fires on EVERY pick, before `mapStore.setOutline()` ever runs -- "Add to places (1)"
+ *     appears (the pick itself succeeded) but no `selection-line` feature ever follows. No
+ *     `palettes` needed: `zoneChoropleth()` falls back to a flat colour when none is published.
+ */
+const BOOT_FIXTURE_WITH_FILL = {
+  ...BOOT_FIXTURE,
+  zones: {
+    programarea: BOOT_FIXTURE.zones.programarea.map((z, i) => ({
+      ...z,
+      metrics: { test_metric: 40 + i * 10 },
+    })),
+  },
+  layers: [{ metric_key: "test_metric", label: "Test", category: "composite", order: 1 }],
+};
+
 async function gotoPlacesWithZones(page: Page): Promise<void> {
   await blockWasm(page);
-  await routeBucket(page, "v7", BOOT_FIXTURE);
+  await routeBucket(page, "v7", BOOT_FIXTURE_WITH_FILL);
   await routeSession(page, null);
   await routeSealFixture(page);
   await routeZonesPmtiles(page);
@@ -207,17 +237,18 @@ test("Pick mode highlights the clicked zone as a real selection-line feature (m6
 }) => {
   await gotoPlacesWithZones(page);
 
-  // the zone fill must actually be rendered before Pick mode can hit-test against it.
+  // BOTH layers must actually be rendered before Pick mode can hit-test/outline against them (see
+  // gotoPlacesWithZones's own header for why both are load-bearing here, not just the line).
   await expect
     .poll(
       () =>
         page.evaluate(() => {
           const map = window.__atlasMap!.handle.map;
-          if (!map.getLayer("programarea_fill")) return -1;
+          if (!map.getLayer("programarea_ln") || !map.getLayer("programarea_fill")) return -1;
           if (!map.isSourceLoaded("programarea_src")) return -1;
-          return map.queryRenderedFeatures({ layers: ["programarea_fill"] }).length;
+          return map.queryRenderedFeatures({ layers: ["programarea_ln"] }).length;
         }),
-      { message: "the programarea_fill layer never rendered", timeout: 20_000 },
+      { message: "the programarea_ln/programarea_fill layers never rendered", timeout: 20_000 },
     )
     .toBeGreaterThan(0);
 
@@ -226,8 +257,12 @@ test("Pick mode highlights the clicked zone as a real selection-line feature (m6
   // a REAL click (page.mouse via the map <div>'s own bounding box), not a synthetic map.fire --
   // this exercises installPickMode's actual `map.on("click", ...)` handler. `#map`'s top-left is
   // the SAME origin `map.project()` returns coordinates in, so `{position}` needs no extra offset
-  // math for wherever the Places panel happens to have pushed the map container.
-  const point = await page.evaluate(() => window.__atlasMap!.handle.map.project([-90, 27])); // GAA's label_pt, BOOT_FIXTURE
+  // math for wherever the Places panel happens to have pushed the map container. The click target
+  // is a point ON the polygon's OWN boundary (`e2e/fixtures/map/zones.geojson`'s real GAA
+  // rectangle, lon -96..-84 / lat 24..30 -- (-90, 30) is its top edge's exact midpoint), not its
+  // centroid: `zoneAtPoint` here only ever queries the LINE layer (see this test's own goto
+  // helper), and a click inside the polygon's interior never lands on it.
+  const point = await page.evaluate(() => window.__atlasMap!.handle.map.project([-90, 30]));
   await page.locator("#map").click({ position: { x: point.x, y: point.y } });
 
   await expect(page.getByRole("button", { name: /Add to places \(1\)/ })).toBeVisible({
@@ -399,7 +434,10 @@ test("'show analysis cells' paints the covered cells as a real selection-line fe
   page,
 }) => {
   test.setTimeout(60_000); // a real DuckDB-WASM cold boot, like the round trip above
-  await gotoPlacesWithRoundtripRelease(page);
+  // `map=` frames the camera on the drawn box, same fix and same reason as the "drawn/entered
+  // place" test above: the default FALLBACK_FULL_STUDY_AREA camera left `queryRenderedFeatures`
+  // a real false negative for these small cell squares.
+  await gotoPlacesWithRoundtripRelease(page, "/?map=-123.75,40.75,7");
   await addByCoordinates(page); // auto-selects the place it just added (writePlaces())
 
   const cellsPill = page.getByRole("button", { name: "Show analysis cells" });

@@ -252,8 +252,13 @@ test.describe("map module, first paint with **/*.wasm blocked", () => {
     const styleBefore = await getAppliedStyle(page);
     expect(styleBefore.sprite).toContain(beforeTheme === "navy" ? "dark-matter" : "positron");
     // a real painted pixel, not the declared style — open ocean, no zone line under it (0,0).
-    const pxBefore = await readPixel(page, 0, 0);
-    expect(pxBefore?.slice(0, 3)).toEqual(BASEMAP_RGB_BY_THEME[beforeTheme]);
+    // POLLED, not a single read: `zoneFeatureCount` above only proves the ZONE pmtiles fetch
+    // landed, a separate async source from the basemap's OWN CARTO style.json + tile fetch —
+    // under heavy contention (measured: a full multi-engine suite run) the basemap can still be
+    // mid-fetch (reading the flat `--surface-map` background colour) even after zones settle.
+    await expect
+      .poll(async () => (await readPixel(page, 0, 0))?.slice(0, 3), { timeout: 30_000 })
+      .toEqual(BASEMAP_RGB_BY_THEME[beforeTheme]);
 
     await page.locator('[data-control="theme"]').click();
     await expect
@@ -270,7 +275,7 @@ test.describe("map module, first paint with **/*.wasm blocked", () => {
     expect(BASEMAP_RGB_BY_THEME[afterTheme]).not.toEqual(BASEMAP_RGB_BY_THEME[beforeTheme]);
     // the SAME pixel now reads the OTHER theme's colour — proves the swap actually painted
     await expect
-      .poll(async () => (await readPixel(page, 0, 0))?.slice(0, 3))
+      .poll(async () => (await readPixel(page, 0, 0))?.slice(0, 3), { timeout: 30_000 })
       .toEqual(BASEMAP_RGB_BY_THEME[afterTheme]);
   });
 
