@@ -1,3 +1,92 @@
+# atlas 0.10.22
+
+The species cold first-paint regression that 0.10.20 introduced: `e2e/species.timing.spec.ts` (the
+"timing" project: a `?sp=` deep link's first raster pixel, median of 3 cold loads, laptop budget
+2500 ms) went from a steady 1.3–1.5 s on 0.10.19 to 1.4–3.2 s on 0.10.20 and 0.10.21. The
+orchestrator's finding (`--project=timing --no-deps` alone, interleaved, 1-min load 3–6):
+
+| tree              | medians (ms)       | samples                                          |
+| ----------------- | ------------------ | ------------------------------------------------ |
+| 0.10.19 `e178f52` | 1316 · 1480 · 1434 | 1321/1258/1316 · 1503/1431/1480 · 1434/1330/1535 |
+| 0.10.20 `60eefde` | 2351 · 2928 · 2579 | 1458/2351/2388 · 2928/2751/3015 · 2798/2579/2555 |
+| 0.10.21 `89895b1` | 1505 · 3078 · 2691 | 1505/2312/1386 · 3078/1811/3174 · 1904/2775/2691 |
+
+- **Root cause (instrumented, not inferred): `map/styleQueue.ts` ended a `setStyle`'s flight on
+  `"idle"`, so the species raster's style was parked until the species camera flight had
+  finished.** 0.10.20 made CARTO's style.json a reactive `composeStyle` input (right) and made the
+  queue hold "at most one `setStyle` in flight" (right), but it defined "in flight" as "until the
+  map next fires `"idle"`" — and MapLibre fires `"idle"` only at the end of a rendered frame with
+  every tile of every source loaded and the camera still. A scratch trace of every queue decision,
+  basemap report, shard resolve and raster event (never committed), 10 cold loads per tree at
+  1-min load 6–9 (0.10.21's second five at 9.0–9.5):
+
+  | tree    | first-pixel median | raster style issued after the shard | parked |
+  | ------- | ------------------ | ----------------------------------- | ------ |
+  | 0.10.19 | 1400 ms            | +3..+4 ms                           | 0/10   |
+  | 0.10.21 | 2632 ms            | +507..+588 ms (= `moveend`, 10/10)  | 10/10  |
+  | 0.10.22 | 1421 ms            | +2..+4 ms                           | 0/10   |
+
+  0.10.21, one load: the first composed style is issued at the map's first `"idle"` (144 ms) and
+  its cycle then waits for the NEXT `"idle"`; both style.json responses land (333 ms) and are
+  parked behind it; the shard lands (352 ms), the species `flyTo` starts (355 ms) and the raster's
+  style is parked too; `"idle"` cannot fire mid-flight, so it comes at `moveend` (859 ms) and only
+  then is the raster's style issued — every raster tile, and the first pixel, ~500 ms late, which
+  the spec's `expect.poll` back-off (100/250/500/1000 ms) rounds up to the ~1 s gap between the
+  two trees. On a loaded machine (a first, discarded-for-timing run at load 17–155) the in-flight
+  cycle was usually a different one — the INACTIVE theme's style.json reporting in recomposes an
+  IDENTICAL style, whose empty diff fires no MapLibre event at all (9 of 10 loads) — same
+  mechanism, parked +528..+1,899 ms. The bimodality in the table above is whether an `"idle"`
+  happens to end the in-flight cycle before the shard lands.
+
+- **Fix (`src/lib/map/styleQueue.ts`), at the definition of "in flight":**
+  - an issued style SETTLES on its own `"style.load"`. maplibre-gl 6.10 fires it at the end of a
+    diff that changed something (synchronously, inside `setStyle`: `Style#setState`) and when a
+    from-scratch rebuild has loaded. After it the style is diffable again — loading tiles are not
+    a `setStyle` in flight. `"idle"` and the 4 s fallback stay as the backstops.
+  - a style identical to the one last issued is not issued at all, and supersedes anything parked:
+    its empty diff would report nothing, which is what left a no-op cycle waiting for `"idle"`.
+  - "may this be diffed against yet?" is a latch (the map's style has loaded once — `"idle"`, a
+    confirmed issue, or `isStyleLoaded()`), not `isStyleLoaded()` on every call: that is false
+    while any tile loads, and re-created the same wait for a raster arriving just after the basemap.
+  - the one part of a diff `"style.load"` does not cover is a changed `sprite` (fetched afterwards;
+    `Style#_loadSprite` never aborts an earlier fetch, so two in flight land in network order). A
+    style that changes the sprite AGAIN while the last change loads still waits for `"idle"` —
+    0.10.20's behaviour, kept exactly where it matters (a double theme toggle).
+- **Every 0.10.20 guarantee holds**: at most one `setStyle` in flight (a parked style still waits
+  for the in-flight one to be APPLIED); `composeStyle()` synchronous and one composed style
+  (nothing outside the queue changed); a slow style.json still paints the basemap
+  (`e2e/scores.firstpaint.spec.ts`, 3 s-delayed style.json, green on three engines); the latest
+  request wins; a stale listener — `"idle"` or `"style.load"` — no-ops; and 0.10.10's rule that a
+  stale queued style can never clobber a newer one (`issue()` clears the queue and bumps the cycle).
+- **After** (`--project=timing --no-deps` alone, five rounds interleaved 0.10.19 → 0.10.21 → this
+  tree, every invocation started at 1-min load < 8; load 5.7–9.0 throughout):
+
+  | tree    | medians (ms)                         | samples                                                                            |
+  | ------- | ------------------------------------ | ---------------------------------------------------------------------------------- |
+  | 0.10.19 | 1459 · 1531 · 1396 · 1709 · 1447     | 1512/1459/1408 · 1531/2167/1360 · 1537/1396/1390 · 1801/1679/1709 · 1422/1453/1447 |
+  | 0.10.21 | 2398 · 2371 · 2386 · **2767** · 2385 | 2577/2398/2361 · 2570/2371/2359 · 2583/2356/2386 · 3008/2767/2690 · 2587/2385/2369 |
+  | 0.10.22 | 1453 · 1469 · 1406 · 1515 · 1442     | 1520/1453/1428 · 1578/1469/1435 · 1580/1406/1379 · 1832/1494/1515 · 1537/1420/1442 |
+
+  (0.10.21's fourth round is over the 2500 ms budget — the gate itself went red.)
+
+- **Gates**:
+  - `tests/map/styleQueue.test.ts`, "0.10.22" block — 10 new cases on a `DiffingFakeMap` that
+    models MapLibre's synchronous `"style.load"`, its silent empty diff and its tile loading, with
+    fake timers so the fallback cannot rescue a case and `"idle"` never emitted where it matters.
+    Against the 0.10.21 queue 8 of the 10 are red; each rule removed alone (the `"style.load"`
+    settle, the identical-style skip, the latch, the sprite rule, the stale-listener guard, a
+    settled style bypassing the gate) turns its own cases red.
+  - `e2e/species.smoke.spec.ts` "…the raster reaches the style before the basemap's 4 s fallback
+    could release it" (three engines): CARTO's vector tiles hang, so the map can never go idle once
+    the basemap is in the style; the taxon shard is released only when the PAGE reports the basemap
+    there. A queue that waits for idle can then release the raster only through the fallback armed
+    at the basemap's issue, so the assertion is exact, not a tuned budget: raster-in-style minus
+    basemap-in-style < 4000 ms, both the page's own `"style.load"` events. 0.10.21: RED on all
+    three engines (4005 / 4004 / 4188 ms); this tree: 13–267 ms.
+  - Seeded fault `tests/faults/style-settle-on-idle.patch` (the issued style's `"style.load"` settle
+    dropped, i.e. 0.10.20's cycle) turns that gate red (4003 ms), wired into `npm run test:faults`
+    (chromium, `PW_PORT` 4397); row in `tests/GATES.md`; `docs/map.md` describes the rule.
+
 # atlas 0.10.21
 
 The owner's live report on 0.10.17: no score raster on desktop, raster fine on the phone. Two
