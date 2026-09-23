@@ -22,6 +22,20 @@
 // `fallbackMs` (default 4000): `setStyle(diff:true)` on a partly-loaded style is safe (MapLibre
 // diffs and applies the new layers/sources regardless of whether some OTHER source's tiles are
 // still in flight), and a hung tile must never be allowed to block a lens forever.
+//
+// 0.10.20 — THE SETTLE CYCLE. Everything above only queued while `!isStyleLoaded()`. That left one
+// real hole: the map's blank first style (and any style whose sources have finished) is trivially
+// "loaded", so two `applyStyle` calls arriving close together could both take the direct branch and
+// hand MapLibre two back-to-back `setStyle(diff:true)` calls with nothing between them. That is the
+// "real MapLibre-level mis-ordering" `layers/basemap.ts`'s own header describes as measured, and
+// the reason the basemap fix deliberately never forced a recompose when its fetch resolved — which
+// in turn is what made the basemap silently NEVER paint on a slow load (see `warmBasemapStyles()`).
+// So the invariant is now stronger and stated once, here: **at most one `setStyle` is in flight at
+// a time.** An apply is issued only when nothing is settling; otherwise the LATEST style is queued
+// and issued when the in-flight one settles (`"idle"`, or the same bounded fallback). Callers may
+// therefore recompose as often as they like, from a promise or from a reactive effect, without
+// having to reason about MapLibre's internal timing — an extra recompose costs at most one more
+// cycle, never a mis-ordered pair of diffs.
 import type { StyleSpecification } from "./types";
 
 /** the narrow slice of MapLibre's `Map` this queue needs. `isStyleLoaded()`'s own real return type
@@ -46,13 +60,17 @@ export interface CreateStyleApplierOptions {
 }
 
 /**
- * Build the `applyStyle` function `map.ts`'s `MapHandle` exposes: apply immediately when the style
- * is already loaded, else queue the LATEST style (an older queued one is simply overwritten — the
- * lens only ever wants "what should be on screen now") and flush it on the next `"idle"` — or after
- * `fallbackMs`, whichever comes first (fix round 3 #4). Flushing is idempotent: whichever of
- * `"idle"`/the timer fires first clears the queue and cancels the other; a stale listener firing
- * later (MapLibre's `once` has no cancel this narrow interface exposes) finds nothing left to
- * apply and is a safe no-op.
+ * Build the `applyStyle` function `map.ts`'s `MapHandle` exposes.
+ *
+ * One rule: **at most one `setStyle` in flight**. A call that arrives while nothing is settling and
+ * the style is loaded is applied immediately; any other call parks the LATEST style (an older
+ * parked one is simply overwritten — the caller only ever wants "what should be on screen now") and
+ * it is issued when the current cycle settles, on `"idle"` or after `fallbackMs`, whichever comes
+ * first.
+ *
+ * Every armed listener/timer carries the cycle it belongs to, so a stale one — MapLibre's `once`
+ * has no cancel this narrow interface exposes, and a `once("idle")` registered for a superseded
+ * cycle still fires — compares unequal and is a no-op rather than an early, out-of-turn flush.
  */
 export function createStyleApplier(
   map: QueuedStyleTarget,
@@ -64,49 +82,62 @@ export function createStyleApplier(
   const clearTimer = opts.clearTimer ?? ((h) => clearTimeout(h));
 
   let queued: StyleSpecification | undefined;
-  let queuedListener = false;
+  /** true between issuing a `setStyle` and that style settling — the "in flight" flag. */
+  let settling = false;
+  /** bumped on every state change, so listeners/timers armed for an older cycle no-op. */
+  let cycle = 0;
+  /** the cycle a listener + timer are currently armed for, or `-1` when nothing is armed. */
+  let armedCycle = -1;
   let fallbackHandle: ReturnType<typeof setTimeout> | undefined;
 
-  function flush(): void {
-    queuedListener = false;
+  function clearFallback(): void {
     if (fallbackHandle !== undefined) {
       clearTimer(fallbackHandle);
       fallbackHandle = undefined;
     }
+  }
+
+  function arm(): void {
+    if (armedCycle === cycle) return; // already waiting on this cycle
+    armedCycle = cycle;
+    const armedFor = cycle;
+    map.once("idle", () => {
+      if (armedFor === cycle) settle();
+    });
+    fallbackHandle = setTimer(() => {
+      if (armedFor === cycle) settle();
+    }, fallbackMs);
+  }
+
+  /** the in-flight style (or the not-yet-loaded initial one) has settled: issue whatever is parked. */
+  function settle(): void {
+    cycle += 1;
+    armedCycle = -1;
+    clearFallback();
+    settling = false;
     const next = queued;
     queued = undefined;
-    if (next) apply(next);
+    if (next) issue(next);
+  }
+
+  /** the ONE place `apply` is called: starts a fresh cycle, so anything armed for the previous one
+   * (including a listener this interface cannot unregister) can no longer cut it short. */
+  function issue(style: StyleSpecification): void {
+    cycle += 1;
+    armedCycle = -1;
+    clearFallback();
+    queued = undefined;
+    settling = true;
+    apply(style);
+    arm();
   }
 
   return function applyQueued(style: StyleSpecification): void {
-    if (map.isStyleLoaded()) {
-      // FIX ROUND 2 (atlas-8): a call that arrives once the map is loaded applies immediately --
-      // but if an EARLIER call is still sitting in the queue (registered while the map was not
-      // yet loaded, waiting on its own "idle"/fallback), that entry is now STALE and, left alone,
-      // would flush over this one the moment its listener/timer fires. Measured on Firefox: the
-      // map transitions to `isStyleLoaded()===true` BETWEEN two `applyStyle` calls in the same
-      // reactive tick (e.g. a lens' zones-only call, then its raster-including one) -- the second
-      // call's raster layer got added here, then silently REMOVED again 100-4000ms later when the
-      // first call's queued, raster-less style finally flushed. Clearing the queue here extends
-      // the "an older queued one is simply overwritten" rule (already true BETWEEN two queued
-      // calls) to a queued call followed by a direct one: whichever call is temporally last always
-      // wins. The stale `once("idle", flush)` registration itself cannot be un-registered through
-      // this narrow interface, but `flush()` is already written to no-op safely when `queued` is
-      // undefined (see its own comment) -- clearing `queued` here is what makes that no-op fire.
-      queued = undefined;
-      queuedListener = false;
-      if (fallbackHandle !== undefined) {
-        clearTimer(fallbackHandle);
-        fallbackHandle = undefined;
-      }
-      apply(style);
+    if (settling || !map.isStyleLoaded()) {
+      queued = style;
+      arm();
       return;
     }
-    queued = style;
-    if (!queuedListener) {
-      queuedListener = true;
-      map.once("idle", flush);
-      fallbackHandle = setTimer(flush, fallbackMs);
-    }
+    issue(style);
   };
 }

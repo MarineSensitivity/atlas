@@ -1,0 +1,19 @@
+diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
+index 6bc1086..a27e55f 100644
+--- a/src/shell/Shell.svelte
++++ b/src/shell/Shell.svelte
+@@ -459,9 +459,11 @@
+     mapHandle?.applyStyle(
+       composeStyle({
+         theme: resolvedTheme,
+-        // the reactive half of the 0.10.20 basemap fix: reading this is what makes the effect
+-        // re-run (and the basemap actually appear) when the CARTO fetch resolves late.
+-        basemapStyle: basemapStyles[resolvedTheme],
++        // SEEDED FAULT (tests/faults/basemap-not-reactive.patch): `basemapStyle` is no longer
++        // passed, so `composeStyle()` falls back to the NON-reactive `getCachedBasemapStyle()`
++        // read -- 0.10.19 exactly. Nothing then tells this effect that CARTO's style.json has
++        // landed, and a style.json arriving after the last reactive change means the basemap
++        // never paints at all, for the life of the page.
+         projection: sel.proj,
+         zones: zonesForStyle,
+         raster: sel.lens === "scores" ? (lensMapExtra.raster ?? null) : raster,

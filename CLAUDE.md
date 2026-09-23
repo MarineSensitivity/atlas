@@ -2,7 +2,7 @@
 
 Guidance for Claude Code (claude.ai/code) when working in this repo: `atlas`, the MarineSensitivity
 static app (scores, species, places and reports for U.S. marine areas). Svelte 5 (runes) + Vite +
-TypeScript, no SvelteKit, no client router. See `../workflows/.claude/plans_todo/2026-09-20 atlas
+TypeScript, no SvelteKit, no client router. See `../workflows/.claude/plans/2026-09-20 atlas
 app plan.md` for the full plan and decisions (D1-D12); this file only covers what changes how you
 work in _this_ repo day to day.
 

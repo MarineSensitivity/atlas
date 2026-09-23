@@ -290,6 +290,50 @@ function zoneVectorProbe() {
   };
 }
 
+/**
+ * G-25 fix, `scores proj=X out=Y area=Z` states: this matrix's own assertion predated `out=`
+ * meaning anything -- it demanded a rendered zone LINE feature on every state, which is exactly
+ * the bug `zoneUnitsWithOutline()` (`src/lib/map/layers/zones.ts`) fixed: `out=none` (the species
+ * lens' own default) now correctly hides the line (`visibility: "none"`), and `out=ecoregion`
+ * never had anything to show in the first place (see below). The per-state check now follows
+ * `out`, and — since this family never sets `?unit=` (it stays the DEFAULT "cell", so there is no
+ * zone choropleth FILL to check here, only the raster) — asserts the raster still paints
+ * regardless of the outline, proving `out` only ever changes the outline, never blanks the map.
+ *
+ * `out="ecoregion"` is the SAME structural zero as `out="none"`, not a bug: plan D17
+ * (`src/lens/scores/boot.ts`'s own header, `docs/parity.html`'s intentional difference **ID-03**,
+ * "Only Program Areas are drawn as a choropleth") — `boot.units[]` carries exactly ONE unit per
+ * release (`programarea` on v2-v9, `planarea` on v1; confirmed against the real, orchestrator-
+ * verified v7/v9 bundles trimmed into `tests/lens/scores/fixtures.ts`) and no release EVER
+ * publishes a second, ecoregion-outline unit -- there is no PMTiles archive for `out=ecoregion`
+ * to draw, on ANY release, so the zone LINE layer renders zero features by construction. ID-03's
+ * own text ("subregion and ecoregion scores are still published and still used... they are simply
+ * never drawn as a choropleth") is about FILLS, but the same "exactly one published unit" fact
+ * governs outlines too -- there is only ever one `ZoneUnitSpec`, so `out=ecoregion` has nothing to
+ * outline either. `out="programarea"` is the one real, always-published unit and must render.
+ */
+function scoresOutlineProbe(out) {
+  return async (page) => {
+    const rasterProblems = await scoresRasterProbe()(page);
+    if (rasterProblems.length) return rasterProblems;
+
+    if (out === "programarea") return zoneVectorProbe()(page);
+
+    // out="none" / out="ecoregion": deterministically ZERO, once the source has settled -- not
+    // "polled for a value that might still climb", the way the > 0 branch above needs to be.
+    let count = -1;
+    for (let i = 0; i < 20; i++) {
+      count = await zoneFeatureCount(page);
+      if (count !== -1) break; // -1 = source not loaded yet; keep polling for READY, not for zero
+      await page.waitForTimeout(500);
+    }
+    if (count === -1) return ["zone source never loaded"];
+    return count === 0
+      ? []
+      : [`zone LINE layer rendered ${count} feature(s) with out=${out} (outline should be hidden)`];
+  };
+}
+
 const SHELL_STATES = [
   { name: "shell (default)", kind: "scores", path: "/" },
   { name: "shell (theme=dark)", kind: "scores", path: "/?theme=dark" },
@@ -311,7 +355,7 @@ const SCORES_STATES = [
         name: `scores proj=${proj} out=${out} area=${area}`,
         kind: "scores",
         path: `/?proj=${proj}&out=${out}&area=${area}`,
-        assert: zoneVectorProbe(),
+        assert: scoresOutlineProbe(out),
       })),
     ),
   ),

@@ -220,12 +220,19 @@ async function routeBasemapVectorChain(
   page: Page,
   styleFixture: (theme: "navy" | "paper") => unknown,
   tile: Buffer,
+  styleJsonDelayMs = 0,
 ) {
   for (const theme of ["navy", "paper"] as const) {
     const body = JSON.stringify(styleFixture(theme));
     await page.route(
       BASEMAP_STYLE_URL[theme],
-      safeRoute((route) => route.fulfill({ status: 200, contentType: "application/json", body })),
+      safeRoute(async (route) => {
+        // 0.10.20: a SLOW style.json is a first-class fixture, not an edge case — the basemap
+        // used to be dropped for the life of the page whenever this response landed after the
+        // last reactive recompose (see `scores.firstpaint.spec.ts`'s slow-basemap gate).
+        if (styleJsonDelayMs > 0) await new Promise((r) => setTimeout(r, styleJsonDelayMs));
+        return route.fulfill({ status: 200, contentType: "application/json", body });
+      }),
     );
   }
   await page.route(
@@ -267,8 +274,13 @@ async function routeBasemapVectorChain(
 /** the every-spec default: a flat, single-colour "water" fill (`BASEMAP_RGB`) — exact pixel math
  * for the raster-over-basemap blend assertions (`scores.firstpaint.spec.ts`,
  * `species.timing.spec.ts`), unchanged by the raster-to-vector basemap swap. */
-export async function routeBasemapStyle(page: Page) {
-  await routeBasemapVectorChain(page, basemapStyleFixture, readFileSync(BASEMAP_TILE_PATH));
+export async function routeBasemapStyle(page: Page, opts: { styleJsonDelayMs?: number } = {}) {
+  await routeBasemapVectorChain(
+    page,
+    basemapStyleFixture,
+    readFileSync(BASEMAP_TILE_PATH),
+    opts.styleJsonDelayMs ?? 0,
+  );
 }
 
 /** the committed archive for `routeVariedBasemapStyle()`: 64 alternating tippecanoe-built squares

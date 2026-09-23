@@ -17,7 +17,9 @@ import {
   getCachedBasemapStyle,
   loadBasemapStyle,
   resetBasemapStyleCacheForTests,
+  warmBasemapStyles,
   type BasemapStyleResponseLike,
+  type CartoStyleLike,
 } from "../../src/lib/map/layers/basemap";
 
 beforeEach(() => {
@@ -150,6 +152,52 @@ describe("getCachedBasemapStyle (the SYNCHRONOUS read composeStyle() uses)", () 
   it("a failed fetch leaves the cache EMPTY_BASEMAP_STYLE (never a stale partial style)", async () => {
     await loadBasemapStyle("navy", () => Promise.reject(new Error("offline")));
     expect(getCachedBasemapStyle("navy")).toEqual(EMPTY_BASEMAP_STYLE);
+  });
+});
+
+// 0.10.20: the invalidation half of the "basemap silently never paints" fix. `composeStyle()` is
+// synchronous and takes the resolved CARTO style as an input; before this, nothing told the caller
+// when that input had changed, so a style.json landing after the last reactive recompose was never
+// read again and the basemap never appeared at all (measured on Firefox under load, and
+// deterministically with the style.json delayed 3 s: ocean pixel `247,171,122` -- the raster over
+// the flat `--surface-map` colour -- with zero `basemap-` layers in `getStyle()`).
+describe("warmBasemapStyles (0.10.20: the caller is TOLD when a theme's style lands)", () => {
+  it("reports each requested theme exactly once, with its resolved style", async () => {
+    const seen: Array<[string, unknown]> = [];
+    const styles: Record<"navy" | "paper", CartoStyleLike> = {
+      navy: { sources: {}, layers: [{ id: "dark", type: "background" }] },
+      paper: { sources: {}, layers: [{ id: "light", type: "background" }] },
+    };
+    warmBasemapStyles(
+      ["navy", "paper"],
+      (t, s) => seen.push([t, s]),
+      (t) => Promise.resolve(styles[t]),
+    );
+    await vi.waitFor(() => expect(seen).toHaveLength(2));
+    expect(Object.fromEntries(seen)).toEqual(styles);
+  });
+
+  it("REGRESSION: a REJECTED load still reports, with EMPTY_BASEMAP_STYLE", async () => {
+    // the caller keys reactive state on "has this theme reported in" -- a theme that never reports
+    // would leave the effect waiting forever, which is the failure mode this whole fix is about.
+    // `loadBasemapStyle` resolves rather than rejects, but this helper must not depend on that.
+    const seen: Array<[string, unknown]> = [];
+    warmBasemapStyles(
+      ["navy"],
+      (t, s) => seen.push([t, s]),
+      () => Promise.reject(new Error("offline")),
+    );
+    await vi.waitFor(() => expect(seen).toHaveLength(1));
+    expect(seen[0]).toEqual(["navy", EMPTY_BASEMAP_STYLE]);
+  });
+
+  it("defaults to loadBasemapStyle, so a warmed theme is also in the synchronous cache", async () => {
+    const seen: string[] = [];
+    // the real default path, with `loadBasemapStyle`'s own injectable fetch left alone: no global
+    // fetch in this environment, so it takes the catch branch -- what matters here is that the
+    // default argument is wired at all and still reports.
+    warmBasemapStyles(["paper"], (t) => seen.push(t));
+    await vi.waitFor(() => expect(seen).toEqual(["paper"]));
   });
 });
 
