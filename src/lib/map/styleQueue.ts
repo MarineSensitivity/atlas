@@ -80,6 +80,25 @@ export function createStyleApplier(
 
   return function applyQueued(style: StyleSpecification): void {
     if (map.isStyleLoaded()) {
+      // FIX ROUND 2 (atlas-8): a call that arrives once the map is loaded applies immediately --
+      // but if an EARLIER call is still sitting in the queue (registered while the map was not
+      // yet loaded, waiting on its own "idle"/fallback), that entry is now STALE and, left alone,
+      // would flush over this one the moment its listener/timer fires. Measured on Firefox: the
+      // map transitions to `isStyleLoaded()===true` BETWEEN two `applyStyle` calls in the same
+      // reactive tick (e.g. a lens' zones-only call, then its raster-including one) -- the second
+      // call's raster layer got added here, then silently REMOVED again 100-4000ms later when the
+      // first call's queued, raster-less style finally flushed. Clearing the queue here extends
+      // the "an older queued one is simply overwritten" rule (already true BETWEEN two queued
+      // calls) to a queued call followed by a direct one: whichever call is temporally last always
+      // wins. The stale `once("idle", flush)` registration itself cannot be un-registered through
+      // this narrow interface, but `flush()` is already written to no-op safely when `queued` is
+      // undefined (see its own comment) -- clearing `queued` here is what makes that no-op fire.
+      queued = undefined;
+      queuedListener = false;
+      if (fallbackHandle !== undefined) {
+        clearTimer(fallbackHandle);
+        fallbackHandle = undefined;
+      }
       apply(style);
       return;
     }

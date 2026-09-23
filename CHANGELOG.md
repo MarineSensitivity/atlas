@@ -1,4 +1,74 @@
+# atlas 0.10.10
+
+`atlas-8` fix round 2 (of 2): merged with `main` (atlas-7 fix round 2, 0.10.9); the coordinator's
+survivor (`scores.firstpaint.spec.ts` v9's raster test, intermittently red alone on Firefox at
+load, ~1-in-13 to 1-in-40) was a REAL bug in `src/lib/map/styleQueue.ts`, not a test-timing gap.
+
+- **Root cause: a stale queued style could clobber a just-applied one.** Instrumented with a
+  wrapped `map.setStyle` (logging `isStyleLoaded()`, the style's layer ids, and any thrown error
+  around each real call): on the failing runs, TWO real `setStyle(diff:true)` calls landed close
+  together — the first (direct-apply, `r_lyr` included) added the raster; a SECOND, ~100-4000ms
+  later, silently REMOVED it again. That second call was the FALLBACK/`"idle"` flush of an OLDER,
+  now-stale queued style from an earlier `applyStyle` call made while `isStyleLoaded()` was still
+  false — `createStyleApplier`'s "apply immediately once loaded" branch never cancelled that
+  earlier call's still-armed listener/timer, so it fired later regardless and reapplied its
+  outdated (raster-less) content over the correct one. Fixed in `styleQueue.ts`: the direct-apply
+  branch now clears `queued`/`queuedListener`/the fallback timer first, so a stale flush finds
+  nothing left to apply (already-existing, safe no-op path) instead of undoing the newer style.
+  Two new regression tests in `tests/map/styleQueue.test.ts` reproduce it with a `MutableFakeMap`
+  (an `isStyleLoaded()` that flips false→true mid-scenario, which every prior `FakeMap`-based test
+  pinned constant and so could never have caught) and fail without the fix (verified by reverting
+  it locally and re-running).
+- `scripts/verify.mjs` self-sufficiency (fix round 1) re-verified on the merged tree: builds +
+  starts its own preview server on a fresh port, runs, tears down only what it started.
+- Gates: `tsc` 0 · `vitest` (styleQueue.test.ts) 10/10, including the 2 new regressions ·
+  `npx playwright test` (all three engine projects + timing, one combined run, a fresh port never
+  reused from a prior run): 262 passed, 21 skipped, 0 failed, 0 did not run. The originally-red
+  `scores.firstpaint.spec.ts` v9 raster test alone, repeated 8x on `--project=firefox`: 64/64 (all
+  four v7/v9 tests x 8 repeats), each raster-paint run now well under 1.5s (previously up to a
+  20s+ timeout).
+
 # atlas 0.10.9
+
+`atlas-8` fix round 1 (of 2): merged with `main` (atlas-7's report, 0.10.5-0.10.8); the widened
+specs were RED on webkit/firefox as reported, root-caused and fixed for real (not loosened).
+
+- **Root cause, both originally-reported failures (and two more found the same way): a raster
+  applied by a lens' own reactive effect, or manually injected by a test, can land while
+  `map.isStyleLoaded()` is still false** and get QUEUED (`src/lib/map/styleQueue.ts`), flushing
+  only on the map's next `"idle"` or its 4000ms fallback — `map.loaded()` says nothing about
+  whether that queue has flushed. Chromium usually won the race by luck of timing; WebKit/Firefox
+  reproducibly lost it.
+  - `e2e/map.spec.ts` "paints a raster": `ScoresLens.svelte`'s own lazy-mount effect
+    (`mapExtra = scoresMapInputs(...)`) was clobbering the test's manually-injected raster.
+    Fixed self-healingly: the raster is re-injected on every poll iteration, so whichever
+    injection is temporally last always wins, regardless of which engine's module-loading timing
+    is slower.
+  - `e2e/species.smoke.spec.ts` "switching species twice": the OLD assertion checked
+    `isSourceLoaded` once, then read the source URL once with no further wait — so it could
+    read a STALE (first-selected) URL while the SECOND selection's style was still sitting in the
+    queue. Fixed by polling the URL itself until it matches, covering the 4000ms fallback.
+  - `e2e/species.smoke.spec.ts` "a range draws >= 1 rendered feature": same shape as the
+    `map.spec.ts` fix (manual injection vs. the species lens' own mount effect) — same
+    self-healing fix.
+  - `e2e/scores.firstpaint.spec.ts` "paints the score raster" (v7 AND v9, on any engine): same
+    queue-flush race, no manual injection this time (`ScoresLens`'s OWN effect can queue). Fixed
+    by waiting for the real layer (`r_lyr`) to exist before polling pixels; the previous narrow
+    `browserName==="firefox" && ver==="v9"` skip is removed — no longer needed.
+- **`e2e/species.timing.spec.ts`**: a real, one-time browser-process warm-up cost (measured: the
+  FIRST page a freshly-launched browser ever navigates took 20.9s here vs ~1.1s for the 2nd-5th,
+  same browser, fresh contexts) can exceed this test's per-run polling ceilings. Widened them
+  (10s→30s per poll, plus `test.setTimeout(120_000)`) so this one-time cost is not the artificial
+  bottleneck; the actual gate (`BUDGET_MS` on the median of 3) is unchanged.
+- **`scripts/verify.mjs` is now self-sufficient**: if nothing answers `VERIFY_BASE_URL` yet, it
+  builds `dist/` and starts its own `vite preview`, waits for it, runs the matrix, and shuts down
+  ONLY the server it started (a server it finds already running is reused, never killed).
+  `--no-server` fails fast instead, for a caller that wants to manage the server itself.
+- Gates: `tsc` 0 · `svelte-check` 0/0 · `vitest` 169 files / 2548 tests, 3 skipped · `eslint` 0 ·
+  `prettier` clean · `npx playwright test --project={chromium,webkit,firefox} --workers=1` (run
+  one engine at a time per the shared-machine load rule): 91/91, 81/81 (10 chromium-only skips),
+  82/82 (9 skips) — 0 failed, 0 did not run, on all three. `node scripts/verify.mjs` (chromium,
+  self-started server): 6/6 on a `--limit=2` smoke check.
 
 `atlas-7` fix round 2 (Opus review of main@0ec0eb3): four static section narratives, D7b's own
 disclosure, a real (not just double) running footer, an honest coverage claim, two ported access
@@ -204,6 +274,119 @@ are one file (`Report.svelte`); step 4 (entry points) follows in 0.10.6.
   scope) 9/9 green, and caught two real bugs before commit: the theme was never set (white text on
   a light background) and a stray trailing CSS rule silently defeated the print watermark under
   `@media print`.
+
+# atlas 0.10.3
+
+`atlas-8` step 3: budgets and the browser suites in CI; `docs/performance.md`.
+
+- **`.github/workflows/pages.yml`, six new jobs**: `e2e` (the root Playwright suite, all three
+  engines, then the `timing` project as its own step after them), `e2e-gallery`, `e2e-engine`,
+  `e2e-opfs`, and `parity` (v9 against the real bucket — verified PASS, max|Δ| < 1e-9 on every
+  quantity, before this job was written). `publish` now depends on all of them, plus `checks` and
+  `test-faults` (0.10.1).
+- **`docs/performance.md`** — what every budget/timing gate measured on this laptop (size-budget:
+  409.4/140.5/549.9 KB gzip; the timing gate: median 1579 ms of 3 cold runs against a 2.5s budget)
+  and an honest accounting of what has NOT yet been observed on a real CI runner (this session has
+  no CI access) — the jobs are wired, not yet run for real; atlas-0's F6 ask ("record the runner's
+  number") is half-done until the first real `main` run's numbers are pasted back in.
+- **The three slowest `verify.mjs` states, profiled**: all three are early-in-the-run desktop
+  states within 500-1150ms of each other regardless of what they render — cost is dominated by
+  per-page browser/hydration overhead, not by any state's own data. No fix indicated.
+- `scripts/verify.mjs` now times every state and prints the slowest 3 at the end of a run.
+
+`atlas-8` step 4: the fiddly bits that are code, not data.
+
+- **Playwright route handlers now tolerate a test ending** (`e2e/routeSafety.ts`'s `safeRoute`) —
+  the Firefox teardown race ("`route.fetch: Test ended`" outside any test, skipping the next one)
+  is swallowed at the handler level in `e2e/{hermetic,map-hermetic,species-hermetic}.ts`; any other
+  error still propagates.
+- **`Panel.svelte`'s nested landmarks, fixed**: the panel body no longer carries a second
+  `role="region"` inside the section that is already the panel's one landmark. New gate:
+  `tests/ui/panelLandmarks.test.ts`.
+- **The skip link now reaches the tool rail too**: a second skip link ("Skip to the tools",
+  `#rail-region`) precedes the existing one — the rail's single roving-tabindex stop used to be
+  reachable only by Shift+Tab backward from the panel. New gate: `tests/shell/skipLinks.test.ts`.
+- **`?theme=navy|paper` accepted as aliases of `dark|light`** — the gallery/mockups' own theme-name
+  convention now resolves correctly if pasted into the real app, in both the real parser
+  (`THEME_ALIASES`, `src/lib/state/codec.ts`) and index.html's inline pre-paint script. New gate:
+  `tests/shell/themeAliases.test.ts`; `tests/shell/theme-preboot.test.ts`'s shared case table grew
+  two rows.
+- **`DataTable`'s filter `<input>` itself reaches 44 CSS px tall on a coarse pointer** (spec §11) —
+  the wrapping label already did; the visible, tappable input stayed ~28px. New gate:
+  `e2e/gallery.spec.ts`'s "atlas-8 fix" describe block.
+- **The Categories demo table no longer overflows the page at 320 CSS px** — wrapped in a
+  `overflow-x: auto` scroll container (SC 1.4.10 exempts a data table's own scroll, never the
+  page's). New gates: `tests/ui/categoriesOverflow.test.ts`, `e2e/gallery.spec.ts`'s "atlas-8 fix".
+- Found while running the full gallery suite: `e2e/gallery.spec.ts`'s own Panel-body test still
+  asserted the pre-fix `role="region"` — updated to assert its absence instead.
+
+# atlas 0.10.2
+
+`atlas-8` step 2: the Playwright state matrix, widened to three engines.
+
+- **`scripts/verify.mjs`, filled in** — grew from a 4-state, chromium-only skeleton to 58 named
+  view states (shell/theme, the scores lens' projection × outline × unit × palette × layer × area ×
+  zone-selection combinations, the species lens' species × US-only × representation combinations) ×
+  3 viewports (1280×800 / 390×844 / 320×800) × 3 engines (chromium/webkit/firefox) = 522 runs, fully
+  hermetic (reuses `e2e/{hermetic,map-hermetic,species-hermetic}.ts`'s own fixtures via the same
+  bundler-extension resolve hook `scripts/parity/run.mjs` uses). Per-state assertions beyond
+  `assertLayout()`: a `gl.readPixels` raster probe (alpha-blended against `SCORE_RASTER_OPACITY`,
+  not the raw fixture colour) and a rendered-vector-feature count, both run at desktop only (the
+  fixture camera is desktop-tuned; a Program Area can legitimately sit outside a phone's narrower
+  view at the same zoom — not a bug this matrix owns). `--engines=`/`--limit=`/`--states=` flags for
+  fast local iteration.
+- **Two real bugs the matrix found and fixed:**
+  - The version chip's unstyled `PREVIEW` badge (`src/lib/ui/VersionBadge.svelte`) widened
+    `button.chip` past its 84px CLS-stable min-width, pushing the topbar's theme toggle 0.7px past
+    the right edge at 320 CSS px — only reachable by viewing a restricted/preview release (the
+    species lens' v9 fixture). Fixed with a compact `.ms-preview-badge` style (`shell.css`).
+  - `e2e/places.spec.ts`'s keyboard-only rename test selected the existing text with `Home` then
+    `Shift+End`, which did not update WebKit's DOM selection the same way Chromium/Firefox's did —
+    the later `type()` call inserted instead of replaced. Switched to `ControlOrMeta+a`.
+- **`e2e/map.spec.ts`, `e2e/scores.firstpaint.spec.ts`, `e2e/species.smoke.spec.ts`,
+  `e2e/places.spec.ts` widened from chromium-only to all three engines** (all measured green,
+  except one open finding below).
+- **One open, honestly-scoped finding, not silently widened:** `scores.firstpaint.spec.ts`'s v9
+  raster probe reproducibly times out on Firefox specifically when run immediately after v7's four
+  tests in the same file/worker (passes reliably alone or as the first test); root cause not
+  isolated within this session. Skipped narrowly (`browserName==="firefox" && ver==="v9"`) with the
+  finding documented in the test file itself, rather than reverting the whole file to chromium-only.
+- **`e2e/verify.faults.spec.ts`** — the pyramid's three named seeded faults for this gate: a raster
+  source 404 (DOM/layout stays fine; the pixel probe is what catches it), `setStyle` losing the zone
+  layer (the vector-feature count is what catches it), and a panel pushed off-screen at 390 px
+  (`assertLayout`'s per-control bounding-box check catches it, its whole-document overflow check
+  does not).
+
+# atlas 0.10.1
+
+`atlas-8` step 1: gate inventory + the seeded-fault suite.
+
+- **`tests/GATES.md`** — every gate named across atlas-0…7/9's subplans and Progress logs, where it
+  lives, its committed seeded fault (or the rewrite that gave it one). ~95 gates inventoried; ~90
+  already self-prove on `npm test`; 4 were "CANNOT FAIL" and are fixed in this release.
+- **`npm run test:faults` (`scripts/test-faults.mjs`)** — the seeded faults that must be applied to
+  the REAL exported function (not a parallel copy in a test file): each one is a committed unified
+  diff under `tests/faults/*.patch`, applied in its own `git worktree add --detach` copy of HEAD
+  under `$TMPDIR`, run against its named gate, and asserted RED, then discarded. Ships with three
+  faults: `coverage-quadratic-scan` (the widened ratio gate below), `rmod-guard-drop`, and
+  `opfs-eviction-order`. Wired into `pages.yml` as its own job, gating `publish` the same way
+  `checks` does.
+- **The coverage vertex-ratio gate, widened** (`tests/geo/coverage.test.ts`) — the existing 600↔2400
+  vertex pair (threshold 8×) measured a real O(n²) fault at only ~2× (atlas-2's own closing-review
+  finding: too weak to be load-proof). Added a 600↔16,000-vertex pair, threshold 16× — the same
+  fault now measures 34–41× against a 5.4–7.6× baseline.
+- **Species lens source scan widened** (`tests/lens/species/sourceScan.test.ts`) — now also scans
+  `src/lib/map/**` (previously invisible to it), and follows one relative-import hop per file so a
+  forbidden grid constant re-exported from a sibling module is caught even when its literal digits
+  never appear in the scanned file's own text.
+- **`document.title` has exactly one writer** — `Shell.svelte` and the species lens
+  (`src/lens/species/state.svelte.ts`) each ran an independent effect writing it, racing on Svelte's
+  own effect-scheduling order. Consolidated to `Shell.svelte`; new source-scan gate
+  `tests/shell/documentTitle.test.ts`.
+- **Upload refusal-copy per-rule assertions** (`tests/geo/upload/messages.test.ts`) — the old
+  aggregate checks let a vague-but-grammatical "mysteryRule" through undetected. Added per-rule
+  tables: `what` must name the number/name that decided a count-based rule's outcome (13 rules);
+  `fix` must name a concrete format or tool (20 of 22 rules).
 
 # atlas 0.10.0
 

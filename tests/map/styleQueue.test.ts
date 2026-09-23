@@ -48,6 +48,34 @@ class FakeMap implements QueuedStyleTarget {
   }
 }
 
+/**
+ * Like `FakeMap`, but `isStyleLoaded()` is a mutable flag the test flips mid-scenario — needed for
+ * the fix-round-2 regression below, which is specifically about the map transitioning from
+ * not-loaded to loaded BETWEEN two `applyQueued` calls (every existing `FakeMap`-based test above
+ * pins `isStyleLoaded()` at one constant value for its whole run, so none of them could have
+ * caught this).
+ */
+class MutableFakeMap implements QueuedStyleTarget {
+  private listeners = new Map<string, Array<() => void>>();
+  loaded = false;
+
+  isStyleLoaded(): boolean {
+    return this.loaded;
+  }
+
+  once(event: string, cb: () => void): void {
+    const list = this.listeners.get(event) ?? [];
+    list.push(cb);
+    this.listeners.set(event, list);
+  }
+
+  emit(event: string): void {
+    const list = this.listeners.get(event) ?? [];
+    this.listeners.set(event, []);
+    for (const cb of list) cb();
+  }
+}
+
 describe("createStyleApplier", () => {
   it("applies immediately once the style is already loaded", () => {
     const map: QueuedStyleTarget = { isStyleLoaded: () => true, once: () => {} };
@@ -95,6 +123,51 @@ describe("createStyleApplier", () => {
     applyQueued(STYLE_A);
     map.emit("idle");
     expect(received).toBe(STYLE_A);
+  });
+
+  // FIX ROUND 2 (atlas-8, coordinator-reported): e2e/scores.firstpaint.spec.ts's v9 raster test
+  // reproduced this intermittently on Firefox -- a lens calls `applyStyle` once while the map is
+  // still not loaded (queued), then AGAIN once it has just settled to `isStyleLoaded()===true`
+  // (applied directly, bypassing the queue). The earlier call's `once("idle", ...)` listener +
+  // fallback timer were left armed and, left alone, fired later anyway -- reapplying the STALE,
+  // now-outdated style over the correct one that had just landed. Root-caused with
+  // `page.on("response")`/wrapped `map.setStyle` instrumentation: `getStyle().layers` showed the
+  // raster layer added, then REMOVED again 100-4000ms later by a second real `setStyle` call whose
+  // style never asked for it -- not a timing/assertion problem in the test, a real queue bug.
+  it("REGRESSION: a direct apply once loaded cancels an earlier still-queued call's idle listener", () => {
+    const map = new MutableFakeMap();
+    const applied: StyleSpecification[] = [];
+    const applyQueued = createStyleApplier(map, (s) => applied.push(s));
+
+    applyQueued(STYLE_A); // not loaded yet -- queued, "idle" + fallback armed
+    expect(applied).toEqual([]);
+
+    // the map settles to loaded BEFORE that queued call's own "idle" ever fires (measured: this
+    // can happen between two calls in the very same reactive tick).
+    map.loaded = true;
+    applyQueued(STYLE_B); // isStyleLoaded() now true -> applied immediately
+    expect(applied).toEqual([STYLE_B]);
+
+    // the STALE "idle" listener from the STYLE_A window finally fires. It must NOT re-apply
+    // STYLE_A over the already-applied STYLE_B -- that would silently undo it.
+    map.emit("idle");
+    expect(applied).toEqual([STYLE_B]);
+  });
+
+  it("REGRESSION: a direct apply once loaded also cancels the earlier call's fallback timer", () => {
+    vi.useFakeTimers();
+    const map = new MutableFakeMap();
+    const applied: StyleSpecification[] = [];
+    const applyQueued = createStyleApplier(map, (s) => applied.push(s), { fallbackMs: 4_000 });
+
+    applyQueued(STYLE_A); // not loaded -- queued, fallback timer armed for 4000ms out
+    map.loaded = true;
+    applyQueued(STYLE_B); // applied immediately; must cancel STYLE_A's fallback timer too
+    expect(applied).toEqual([STYLE_B]);
+
+    vi.advanceTimersByTime(10_000); // well past the old fallback bound
+    expect(applied).toEqual([STYLE_B]); // STYLE_A's cancelled timer never fires
+    vi.useRealTimers();
   });
 });
 

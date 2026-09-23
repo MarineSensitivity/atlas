@@ -9,27 +9,34 @@
 </script>
 
 <div class="col">
-  <table class="cat-table">
-    <caption>The eight species categories (docs/design/spec.md "Data color")</caption>
-    <thead>
-      <tr>
-        <th scope="col">Swatch</th>
-        <th scope="col">Key</th>
-        <th scope="col">Label</th>
-        <th scope="col">Color token</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each CATEGORIES as c (c.key)}
+  <!-- atlas-8 fix: an unconstrained 4-column table (two of them holding unbreakable `<code>`
+       tokens like `--cat-primprod`) overflowed the PAGE at 320 CSS px -- SC 1.4.10 (Reflow)
+       explicitly exempts data tables from the no-2D-scroll rule, so the fix is a scroll container
+       around just the table, not squeezing the table itself: the page never gets a horizontal
+       scrollbar, and the table's own content never truncates or wraps mid-token. -->
+  <div class="cat-table-scroll">
+    <table class="cat-table">
+      <caption>The eight species categories (docs/design/spec.md "Data color")</caption>
+      <thead>
         <tr>
-          <td><span class="swatch" style={`background: var(${c.color})`}></span></td>
-          <td><code>{c.key}</code></td>
-          <td>{c.label}</td>
-          <td><code>{c.color}</code></td>
+          <th scope="col">Swatch</th>
+          <th scope="col">Key</th>
+          <th scope="col">Label</th>
+          <th scope="col">Color token</th>
         </tr>
-      {/each}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {#each CATEGORIES as c (c.key)}
+          <tr>
+            <td><span class="swatch" style={`background: var(${c.color})`}></span></td>
+            <td><code>{c.key}</code></td>
+            <td>{c.label}</td>
+            <td><code>{c.color}</code></td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
 
   <p class="label">
     Every spelling of "primary producer" resolves to the SAME non-grey token (the seeded fault: a
@@ -59,6 +66,11 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+  }
+
+  .cat-table-scroll {
+    max-width: 100%;
+    overflow-x: auto;
   }
 
   .cat-table {

@@ -97,11 +97,6 @@
     return () => mql.removeEventListener("change", onChange);
   });
 
-  // --- page title tracks the view (spec.md/atlas-3 step 3 deliverable 4) -----------------------
-  $effect(() => {
-    document.title = `${sel.lens === "species" ? "Species" : "Scores"} · MarineSensitivity Atlas`;
-  });
-
   // --- the tool rail: FIVE controls, the same five, in the same order, on every viewport -------
   // (spec.md §5.1; data + order live in ./tools.ts, unit-tested there). The Flower control fades
   // in place -- never removed -- in the Species lens (spec.md §5.2): "activeTool" is chrome (which
@@ -220,6 +215,20 @@
     boot: () => boot,
     mapHandle: () => mapHandle,
     track: (name, params) => analytics.track(name as never, params as never),
+  });
+
+  // --- page title: the ONE writer (spec.md/atlas-3 step 3 deliverable 4; atlas-8 fix) -----------
+  // Used to be two independent `$effect`s -- this one and species/state.svelte.ts's own -- each
+  // with different reactive dependencies (`sel.lens` here, species-card state there), so either
+  // could re-fire and stomp the other's title depending on Svelte's own effect-scheduling order.
+  // `speciesLens.docTitle` is still computed in state.svelte.ts (it needs that module's card/`in`
+  // state); this is the only place anything assigns `document.title`, and
+  // tests/shell/documentTitle.test.ts's source scan pins that.
+  $effect(() => {
+    document.title =
+      sel.lens === "species" && speciesLens.docTitle
+        ? speciesLens.docTitle
+        : `${sel.lens === "species" ? "Species" : "Scores"} · MarineSensitivity Atlas`;
   });
 
   // atlas-4: the ACTIVE lens' own composeStyle contribution (raster, overlays, zone fills/

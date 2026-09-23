@@ -224,6 +224,25 @@ button.chip {
   border-color: var(--text-secondary);
 }
 
+/* atlas-8 fix: src/lib/ui/VersionBadge.svelte's "PREVIEW" span had NO style anywhere -- unstyled
+   text at the button's own font-size, which widens button.chip well past its 84px CLS-stable
+   min-width (measured 100.7px, `+16.7px`) and, at the 320 CSS px viewport, pushed the topbar's
+   theme toggle 0.7px past the right edge (scripts/verify.mjs's assertLayout caught it on the
+   species lens, where a v9 preview session is the only way to view a restricted release). Small
+   and compact, not hidden: the badge is the one visual cue that this release is not the public
+   one, so it must survive down to 320 px, just narrower. */
+.ms-preview-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: var(--radius-control);
+  background: var(--fill-accent);
+  color: var(--text-on-accent);
+  flex: none;
+}
+
 .search-field {
   display: inline-flex;
   align-items: center;

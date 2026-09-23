@@ -34,7 +34,7 @@ import {
   routeTitilerTiles,
 } from "./map-hermetic";
 
-test.skip(({ browserName }) => browserName !== "chromium", "WebGL gate: chromium only (S2)");
+// atlas-8 step 2: widened from chromium-only to all three engines (measured green on all three).
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -238,6 +238,7 @@ declare global {
           getCanvas(): HTMLCanvasElement;
           project(lngLat: [number, number]): { x: number; y: number };
           loaded(): boolean;
+          getLayer(id: string): unknown;
         };
         applyStyle(style: unknown): void;
       };
@@ -309,6 +310,11 @@ const BLENDED_RASTER_RGB = [0, 1, 2].map((i) =>
 for (const ver of ["v7", "v9"] as const) {
   test.describe(`scores lens — first paint with **/*.wasm blocked (atlas-4 step 1 gate), ${ver}`, () => {
     test("paints the score raster at two ocean probe points", async ({ page }) => {
+      // two probes at up to 40s of polling each (below) can exceed Playwright's 30s default test
+      // timeout on its own, independent of whether either poll actually needs the time -- widen
+      // the TEST's own budget so a slow-but-still-passing poll is never truncated by the wrong
+      // timer.
+      test.setTimeout(90_000);
       const errors = collectConsoleErrors(page);
       const requests = collectRequests(page);
       await gotoScoresMap(page, ver);
@@ -316,11 +322,38 @@ for (const ver of ["v7", "v9"] as const) {
         timeout: 20_000,
       });
 
+      // atlas-8 fix round 1 (root cause, replaces an earlier narrow Firefox-only skip that only
+      // papered over the symptom): ScoresLens.svelte's OWN `$effect` computes the real raster
+      // from `boot.layers` and applies it via Shell's composed-style effect -- exactly like
+      // e2e/map.spec.ts's manually-injected raster, this call can land while
+      // `map.isStyleLoaded()` is still false (the map's TRUE initial style, not yet settled) and
+      // get QUEUED (`src/lib/map/styleQueue.ts`), flushing only on the next `"idle"` or its 4000ms
+      // fallback. `map.loaded()` above says nothing about whether that queue has flushed yet --
+      // reproduced on Firefox AND (once, under load) WebKit as a 40s pixel-poll timeout with the
+      // BASEMAP colour still showing, i.e. the layer never having been added at all. Waiting for
+      // the real layer to exist first (generous timeout, comfortably past the queue's fallback)
+      // proves the queue has flushed before the pixel probe -- the fix is waiting on the right
+      // signal, not a longer/looser pixel poll.
+      await page.waitForFunction(
+        () => !!window.__atlasMap!.handle.map.getLayer("r_lyr"),
+        undefined,
+        {
+          timeout: 20_000,
+        },
+      );
+
       for (const [lon, lat] of OCEAN_PROBES) {
         await expect
           .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
             message: `no score raster pixel painted at ${lon},${lat}`,
-            timeout: 20_000,
+            // atlas-8 step 2 (widened to all three engines): 20s was enough for v7 and for v9 run
+            // ALONE, but the v9 case measured a reproducible timeout on Firefox specifically when
+            // it runs as the 5th WebGL-heavy test in this file's own serial sequence (v7's four
+            // tests, then v9's) -- Firefox's own GL-context teardown between successive test
+            // pages is slower to settle than Chromium's/WebKit's here. 40s is the generous,
+            // never-the-thing-that-fails number (tests/perf.ts's own PERF_TIMEOUT_MS philosophy);
+            // the assertion itself is unchanged.
+            timeout: 40_000,
           })
           .toBe(BLENDED_RASTER_RGB.join(","));
       }

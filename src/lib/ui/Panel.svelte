@@ -119,16 +119,18 @@
           </button>
         </div>
       </div>
-      <!-- tabindex="0": a scrollable region with no focusable child of its own must still be
-           reachable by keyboard (axe scrollable-region-focusable), the same fix Sheet.svelte's
-           own body already carries; svelte-check's a11y rule does not know that exception. -->
+      <!-- atlas-8 fix: this used to ALSO be given the region landmark role plus its own aria-label
+           -- a second landmark nested directly inside the section element above, which is already
+           the panel's ONE region (named by the h2 via aria-labelledby). Two nested regions with
+           near-duplicate names ("Layers" / "Layers details") is worse for a screen-reader user
+           than one, so this is now a plain div: still reachable by keyboard (tabindex, the
+           scrollable-region-focusable fix Sheet.svelte's own body carries; svelte-check's a11y
+           rule does not know that exception), but not a second landmark. -->
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <div
         class="panel-body"
         id={bodyId}
         class:panel-body--full={geometry.detent === "full"}
-        role="region"
-        aria-label="{title} details"
         tabindex="0"
       >
         {@render children()}

@@ -6,10 +6,12 @@
 // check — the `?url` wiring produces a build that paints tiles and silently never parses a single
 // vector tile.
 //
-// Chromium only: S2's numbers and its whole vector gate were measured on headless
-// Chromium/swiftshader, and nothing here has ever been characterised on the WebKit or Firefox
-// headless GL stacks. A first WebGL spec that is flaky on two engines is worse than one that is
-// honest about its coverage; widening it is atlas-8's call, with its own measurements.
+// atlas-8 step 2: widened from chromium-only to all three engines. S2's numbers were measured on
+// headless Chromium/swiftshader only; WebKit and Firefox's headless GL stacks needed their own
+// measurement, done here -- all four assertions below (vector render, raster paint, theme-swap
+// setStyle, camera replaceState) pass on all three, at comparable speed (measured: 6-8s for the
+// whole file per engine, vs ~2s for chromium alone in the original S2 note -- no fault of the
+// engines here; see scripts/verify.mjs's own note on running MANY pages back to back).
 import { expect, test, type Page } from "@playwright/test";
 import {
   collectConsoleErrors,
@@ -29,8 +31,6 @@ import {
   routeTitilerTiles,
   routeZonesPmtiles,
 } from "./map-hermetic";
-
-test.skip(({ browserName }) => browserName !== "chromium", "WebGL gate: chromium only (S2)");
 
 // SERIAL, on purpose (S2 consequence 12, "the timing gate runs alone"): four WebGL maps built at
 // once on one software GL renderer, inside a suite already running three engines in parallel, is
@@ -59,6 +59,7 @@ declare global {
           getCanvas(): HTMLCanvasElement;
           project(lngLat: [number, number]): { x: number; y: number };
           loaded(): boolean;
+          getLayer(id: string): unknown;
         };
         applyStyle(style: unknown): void;
       };
@@ -142,39 +143,58 @@ test.describe("map module, first paint with **/*.wasm blocked", () => {
 
   test("paints a raster at two ocean probe points", async ({ page }) => {
     await gotoMap(page);
-    // deliberately NOT gated on the vector count: this test is about the raster path, and a
-    // precondition it does not need is a second way for it to go red.
     await page.waitForFunction(() => window.__atlasMap!.handle.map.loaded(), undefined, {
       timeout: 20_000,
     });
 
-    // the basemap raster is already painted; compose the score raster on top of it, exactly the
-    // way atlas-4's lens will (composeStyle inputs in, one setStyle(diff) out), and assert the
-    // probe reads the RASTER's colour rather than the basemap's.
-    await page.evaluate((cog) => {
-      const api = window.__atlasMap!;
-      api.handle.applyStyle(
-        api.composeStyle({
-          ...api.inputs(),
-          projection: "mercator", // a flat probe: globe warps where a fixed lon/lat lands
-          raster: {
-            id: "r_lyr",
-            tiles: [
-              "https://titiler-v8.marinesensitivity.org/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png" +
-                `?url=${encodeURIComponent(cog)}&colormap_name=spectral_r&rescale=0,90`,
-            ],
-            opacity: 1,
-          },
-        }),
-      );
-    }, SCORE_COG_URL);
+    // atlas-8 fix round 1 (root cause, instrumented with page.on("response")/a monkey-patched
+    // applyStyle, not guessed): Shell.svelte's own `$effect` re-applies ITS composed style
+    // (`raster: lensMapExtra.raster ?? null`) whenever `lensMapExtra` changes -- and
+    // ScoresLens.svelte, lazy-loaded (`import("../lens/scores/...")`) and mounted by DEFAULT
+    // (lens="scores", activeTool="layers" are both defaults), runs its OWN `$effect` exactly once
+    // on mount: `mapExtra = scoresMapInputs({...})`. That whole-object reassignment (via
+    // `bind:mapExtra`) is what re-triggers Shell's effect and wipes out ANY raster this test
+    // injects before that lazy chunk finishes fetching+parsing+mounting -- a race this repo's own
+    // module-loading timing usually won on Chromium and reproducibly lost on WebKit/Firefox
+    // (measured: "no tile manager with ID 'r_lyr'" once the layer was removed out from under an
+    // in-flight tile). `map.loaded()` and even "boot's zones arrived" say nothing about whether
+    // that lazy mount has ALSO finished, so the fix is not a longer wait for a single event but a
+    // self-healing one: (re-)inject the raster as part of EVERY poll iteration, not once before
+    // it, so the injection that survives is always the LAST one relative to the lens's mount,
+    // whichever engine's module-loading timing wins that race.
+    const injectRaster = (cog: string) =>
+      page.evaluate((cogUrl) => {
+        const api = window.__atlasMap!;
+        api.handle.applyStyle(
+          api.composeStyle({
+            ...api.inputs(),
+            projection: "mercator", // a flat probe: globe warps where a fixed lon/lat lands
+            raster: {
+              id: "r_lyr",
+              tiles: [
+                "https://titiler-v8.marinesensitivity.org/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png" +
+                  `?url=${encodeURIComponent(cogUrl)}&colormap_name=spectral_r&rescale=0,90`,
+              ],
+              opacity: 1,
+            },
+          }),
+        );
+      }, cog);
+
+    await injectRaster(SCORE_COG_URL);
 
     for (const [lon, lat] of OCEAN_PROBES) {
       await expect
-        .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
-          message: `no raster pixel painted at ${lon},${lat}`,
-          timeout: 20_000,
-        })
+        .poll(
+          async () => {
+            await injectRaster(SCORE_COG_URL); // re-assert: cheap, idempotent once settled
+            return (await readPixel(page, lon, lat))?.slice(0, 3).join(",");
+          },
+          {
+            message: `no raster pixel painted at ${lon},${lat}`,
+            timeout: 20_000,
+          },
+        )
         .toBe(RASTER_RGB.join(","));
     }
   });
