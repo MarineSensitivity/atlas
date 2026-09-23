@@ -397,7 +397,7 @@ const FAULTS = [
     id: "theme-default-reverts-to-auto",
     patch: "tests/faults/theme-default-reverts-to-auto.patch",
     describe:
-      "DEFAULT_SEL.theme reverts from \"dark\" to \"auto\" -- a first-time visitor on a light-OS " +
+      'DEFAULT_SEL.theme reverts from "dark" to "auto" -- a first-time visitor on a light-OS ' +
       "system sees the paper theme again, undoing U2a's default-theme change",
     gate: ["npx", "vitest", "run", "tests/state/codec.test.ts"],
   },

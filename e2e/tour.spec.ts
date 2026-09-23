@@ -112,9 +112,7 @@ test.describe("every step's anchor actually exists on the lens it belongs to", (
     await walkAndAssertAnchors(page, SCORES_TOUR_STEPS);
   });
 
-  test("species: all 5 steps (the legend step needs a REAL resolved species)", async ({
-    page,
-  }) => {
+  test("species: all 5 steps (the legend step needs a REAL resolved species)", async ({ page }) => {
     // a real species resolution (search -> card -> map, each its own 10 s popover wait) can run
     // past the default 30 s test timeout before ever reaching "legend"'s own 8 s element wait --
     // species.smoke.spec.ts's own leatherback poll already budgets 10 s just for the title.
@@ -153,9 +151,7 @@ test.describe("keyboard: the popover is focusable and Tab stays inside it", () =
 });
 
 test.describe("axe on the popover", () => {
-  test("zero serious/critical violations while the tour's first step is open", async ({
-    page,
-  }) => {
+  test("zero serious/critical violations while the tour's first step is open", async ({ page }) => {
     await gotoScores(page, "/?tour=on");
     await expect(popover(page)).toBeVisible({ timeout: 10_000 });
     const bad = await seriousOrCritical(page);
