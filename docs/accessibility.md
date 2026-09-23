@@ -2,7 +2,7 @@
 
 **Product:** MarineSensitivity Atlas (`atlas`) — `index.html` (map app), `report.html` (print-first
 report), `gallery.html` (internal component gallery).
-**Version:** 0.10.15 · **Date of this evaluation:** 2026-09-23 · **Evaluator:** atlas-8 step 3.
+**Version:** 0.10.15 (on 0.10.16) · **Date of this evaluation:** 2026-09-23 · **Evaluator:** atlas-8 step 3.
 **Standard:** WCAG 2.1 Level A and AA, as incorporated by Section 508 (36 CFR 1194, Appendix A,
 E205.4 / 508 Chapter 5 & 6).
 

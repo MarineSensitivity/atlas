@@ -306,6 +306,6 @@ After the fix round, all of the following must be green with no `fixme`:
 2. `npx playwright test --project=chromium e2e/matrix.a11y.spec.ts` — 179/179, still zero
    serious/critical. (Today: 179/179 — none of the findings above is an axe finding; that is the
    point of doing the walk.)
-3. `npm run test:faults` — 5/5, including `hexbutton-unnamed` and `modal-focus-restore`.
+3. `npm run test:faults` — 7/7, including `hexbutton-unnamed` and `modal-focus-restore`.
 4. The `KNOWN_UNNAMED_STOPS` list in `e2e/keyboard-walk.spec.ts` is empty.
 5. New tests exist for #8-#14, which have none today.
