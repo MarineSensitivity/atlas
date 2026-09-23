@@ -139,10 +139,8 @@ figure {
 }
 
 /* the diagonal print watermark -- fixed so it repeats on every printed page (Chromium repeats
-   position:fixed elements across pages; this is also this repo's own fallback strategy for a
-   running footer, below). Screen-only elements never show it. */
-.print-watermark,
-.print-footer {
+   position:fixed elements across pages). Screen-only element; never shown outside print. */
+.print-watermark {
   display: none;
 }
 
@@ -225,13 +223,20 @@ figure {
   @page {
     size: Letter;
     margin: 0.75in;
-    /* CSS Paged Media margin boxes: supported by Prince/Antenna House, not by Chromium's print
-       engine today -- kept as the spec-correct primary, with the position:fixed footer below as
-       the fallback that actually repeats under Chromium (this file's own header explains why a
-       page NUMBER cannot be reproduced there: counter(page) is undefined outside a margin box in
-       every engine this app targets). */
+    /* fix round 2, item 3: Chromium DOES render `@bottom-center` (a prior comment here claiming it
+       doesn't was wrong -- measured false against a real page.pdf()). It used to hold a static
+       placeholder string while a position:fixed `.print-footer` carried the real permalink/release
+       text -- two footers on every page, no page number, and on page 3 the fixed footer collided
+       with body content and overprinted it. Now this margin box is the ONLY footer: the permalink
+       and release strings arrive as CSS custom properties (Report.svelte sets them -- generated
+       content has no element of its own to read a prop off of, so a custom property is the one
+       channel that both carries a runtime string and inherits into a page margin box), and
+       counter(page)/counter(pages) supply the page numbers without any JS at all. */
     @bottom-center {
-      content: "MarineSensitivity Atlas — printed report";
+      content: var(--report-footer-permalink, "") " \00b7 " var(--report-footer-release, "")
+        " \00b7 page " counter(page) " of " counter(pages);
+      font-size: 8pt;
+      color: #555;
     }
   }
 
@@ -264,20 +269,6 @@ figure {
     text-align: center;
     z-index: 1000;
     pointer-events: none;
-  }
-
-  .print-footer {
-    display: block;
-    position: fixed;
-    bottom: 0.25in;
-    left: 0.75in;
-    right: 0.75in;
-    font-size: 0.75rem;
-    color: #555;
-    border-top: 1px solid #ccc;
-    padding-top: 0.15rem;
-    display: flex;
-    justify-content: space-between;
   }
 
   figure,

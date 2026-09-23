@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatCount,
   formatCoveragePct,
+  formatCoveragePctFloor,
   formatErScore,
   formatScore0,
   isoInstant,
@@ -56,6 +57,30 @@ describe("formatCoveragePct -- the footnote's share", () => {
     [0.5, "50%"],
   ])("%s -> %s", (v, want) => {
     expect(formatCoveragePct(v)).toBe(want);
+  });
+});
+
+// fix round 2, item 4: `formatCoveragePct(0.998740)` rounds UP to "99.9%" -- fine as a neutral
+// display value, but a FALSE claim in the footnote's "scored over 99.9% of the place" sentence,
+// since the place's actual 99.874% coverage does not exceed 99.9%. formatCoveragePctFloor is the
+// one this sentence must use instead.
+describe("formatCoveragePctFloor -- never overstates an 'over X%' claim", () => {
+  it("floors 0.998740 to 99.8%, not round()'s 99.9%", () => {
+    expect(formatCoveragePctFloor(0.99874)).toBe("99.8%");
+    expect(formatCoveragePct(0.99874)).toBe("99.9%"); // the seeded fault, spelled out: round() lies here
+  });
+
+  it.each([
+    [1, "100%"],
+    [0.5, "50%"],
+    [0.0141, "1.4%"],
+  ])("%s -> %s (agrees with the rounded form off an exact tenth)", (v, want) => {
+    expect(formatCoveragePctFloor(v)).toBe(want);
+  });
+
+  it("a missing value is empty, never '0%'", () => {
+    expect(formatCoveragePctFloor(null)).toBe("");
+    expect(formatCoveragePctFloor(Number.NaN)).toBe("");
   });
 });
 

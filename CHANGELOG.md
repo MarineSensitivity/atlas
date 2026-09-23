@@ -1,3 +1,59 @@
+# atlas 0.10.9
+
+`atlas-7` fix round 2 (Opus review of main@0ec0eb3): four static section narratives, D7b's own
+disclosure, a real (not just double) running footer, an honest coverage claim, two ported access
+invariants, and a real map-PNG-capture guard -- plus the fix its own e2e fixture exposed.
+
+- **Four static narratives**, built from THIS release's own data, never hardcoded: the Map section
+  states the Spectral ramp + ecoregion rescale; each flower names exactly this release's
+  `scores.components` (and, when a ring folded a duplicate component, says so); the Table of
+  Scores states the N-cells/rescaling rule; the Summary of Species carries the FWS/NMFS->USA
+  extinction-risk consolidation note. `tests/lib/report/narratives.test.ts` (9 tests) pins these,
+  including a seeded-fault case (`bird, turtle, fish` must never read `reptile, other`).
+- **D7b disclosed for drawn places.** A `kind: "geom"` place's Parameters entry now states, in one
+  sentence, that it is scored over the U.S. study area cells by the published zone method and can
+  therefore differ slightly from a Program Area it traces (measured up to ~0.05 on a released
+  area); a zone place carries no such note (a published zone IS the study area).
+  `tests/lib/report/narratives.test.ts` covers both branches.
+- **The running footer was two footers, not one.** `@page { @bottom-center }` DOES render in
+  Chromium (a prior comment here claiming otherwise was wrong, measured false) -- it held a static
+  placeholder while a `position: fixed` `.print-footer` carried the real permalink/release text,
+  so every printed page carried both, no page number anywhere, and on page 3 the fixed copy
+  collided with body content. Fixed: the fixed `.print-footer` is gone; `@bottom-center`'s
+  `content` now reads the real permalink/release strings off two CSS custom properties
+  (`Report.svelte` sets them; generated content has no element of its own to read a prop off of)
+  plus `counter(page)`/`counter(pages)` for the page numbers.
+- **"Scored over 99.9%" was sometimes false.** A coverage of 0.998740 rounded UP to "99.9%"
+  (`Math.round`), which 99.874% does not exceed. The footnote now floors to one decimal
+  (`formatCoveragePctFloor`, new); the neutral Parameters-table display is unaffected (still
+  rounds).
+- **Two invariants ported into `e2e/report.spec.ts`** from the shell/places specs, since
+  `report.html` re-implements the same access gate and the same `#pl=` hash codec and neither
+  guarantee was ever proven for it directly: public host + `?ver=v9` makes zero requests under
+  `/v9/` (falls through to latest); the place token never appears in any request URL.
+- **The map-PNG-capture guard only rejected pure black/white.** A reviewer's captured report map
+  was 896x360 of one flat colour -- neither black nor white, so the old guard passed it.
+  `captureMapPng` now also rejects a flat, single-colour capture (a luminance-stdev floor); the
+  pure pixel-stats math is now its own exported, DOM-free function
+  (`luminanceStatsFromRgba`/`captureRejectionReason`) so `tests/report/reportMap.test.ts` can seed
+  the fault directly (a flat mid-grey capture that a mean-only check would have accepted).
+  Wiring this guard up against a REAL (not flat) hermetic basemap tile (`variedPng()`,
+  `e2e/map-hermetic.ts`) exposed a second, real bug: `captureMapPng` waited on `isStyleLoaded()`,
+  which says nothing about an in-flight animated `flyTo()` or a raster tile's still-pending image
+  decode, so the capture often fired at (or near) the pre-flight, pre-decode frame. Fixed: it now
+  waits for the map's `"idle"` event unconditionally (never short-circuited), twice, with a brief
+  settle in between -- bounded by the same fallback-timer pattern `styleQueue.ts` already uses
+  against a hung tile request.
+- `provenance.ts`'s "Reproduce in R" snippet now states `# requires msens >= {boot.msens}` (three
+  of its functions are unexported on `main` as of this writing) and no longer calls
+  `cells_in_study_area()` as a redundant second clip -- `scores_for_cells(..., denominator =
+"study_area")` already clips to the study area internally.
+- Gates: `tsc` 0 · `svelte-check` 0/0 · `vitest` 164 files / 2524 tests (3 skipped), all green ·
+  `eslint` 0 · `prettier` clean · `vite build` succeeds · `size-budget --entry index.html` 415.2 KB
+  gzip static / 555.7 KB combined (budgets 450/600) · `size-budget --entry report.html
+--allow-marker duckdb` 53.4 KB gzip static (budget 450) · `e2e/report.spec.ts` chromium 18/18
+  (36/36 under `--repeat-each=2`).
+
 # atlas 0.10.8
 
 - `e2e/report.spec.ts`'s `page.pdf()` block is skipped on webkit and firefox (`page.pdf()` exists only
