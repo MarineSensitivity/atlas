@@ -52,6 +52,17 @@ const FAULTS = [
       "planEviction() restored to the plan's literal 'tiles first' order (overruled by ruling 5)",
     gate: ["npx", "vitest", "run", "tests/engine/opfsPolicy.test.ts"],
   },
+  {
+    id: "feedback-location-href",
+    patch: "tests/faults/feedback-location-href.patch",
+    describe:
+      "pageUrlFromLocation() ignores its argument and reads the live location.href instead " +
+      "(atlas-8 Deliverable 4: leaks the hash into the 'Report a problem' link). This entry proves " +
+      "the mechanical (vitest) leg red; e2e/feedback.spec.ts also goes red under this same patch " +
+      "(verified by hand -- see docs/feedback.md and this deliverable's report, not re-run here " +
+      "since no other test:faults entry drives Playwright yet).",
+    gate: ["npx", "vitest", "run", "tests/feedback/noHash.test.ts"],
+  },
 ];
 
 function run(cmd, args, cwd) {

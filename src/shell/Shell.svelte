@@ -33,6 +33,7 @@
   import Announcer from "../lib/ui/Announcer.svelte";
   import { announce } from "../lib/ui/announcer";
   import { createSelStore } from "../lib/state/sel.svelte";
+  import { formatSel } from "../lib/state/codec";
   import { defaultOut, resolveTheme } from "../lib/state/types";
   import { createMap, type MapHandle } from "../lib/map/map";
   import { composeStyle } from "../lib/map/style";
@@ -40,6 +41,15 @@
   import { zoneUnitsFromBoot } from "../lib/map/layers/zones";
   import { studyAreaFromBoot } from "../lib/map/interaction";
   import { createAnalytics } from "../lib/analytics/analytics";
+  // atlas-8 Deliverable 4 (beta feedback, zero backend -- CLAUDE.md/GATES.md's "the CalCOFI
+  // zero-backend fallback"): both pure functions take a snapshot the caller builds -- neither ever
+  // reads `location`/`window.location` itself (tests/feedback/noHash.test.ts's source-scan gate).
+  import {
+    feedbackIssueUrl,
+    pageUrlFromLocation,
+    type FeedbackContext,
+  } from "../lib/feedback/issueUrl";
+  import { postFeedback } from "../lib/feedback/postFeedback";
   // atlas-5: the species lens. Shell owns WHERE it mounts (the "layers" panel body, the topbar
   // search field, a legend region over the map) and the ONE composeStyle call; the lens owns what
   // to draw (docs/map.md / this file's own header comment). `state.svelte.ts` is the lens' pure
@@ -388,6 +398,60 @@
       `published marine-atlas release. Basemap © OpenStreetMap contributors.`,
   );
 
+  // --- Deliverable 4: "Report a problem" -> a prefilled GitHub issue, zero backend --------------
+  // `viewport` is the one field with no existing reactive source (unlike lens/ver/theme, all read
+  // off `sel`/`earlyVersion`/`resolvedTheme` below) -- tracked the same way `isPhone` above is.
+  let viewportW = $state(0);
+  let viewportH = $state(0);
+  onMount(() => {
+    function measure() {
+      viewportW = window.innerWidth;
+      viewportH = window.innerHeight;
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  });
+
+  // the page URL, fragment stripped, query kept: built from `formatSel(sel).search` (the SAME
+  // string `selStore`'s own `history.replaceState` call just wrote), never `location.search`
+  // directly -- reading it through `sel` is what makes this recompute on every lens/ver/theme
+  // change instead of freezing at mount (plan D8's privacy rule: the hash, which carries a drawn
+  // place, must never reach this at all -- `pageUrlFromLocation`'s own `PageLocationLike` has no
+  // field for it).
+  const feedbackCtx = $derived<FeedbackContext>({
+    appVersion: __APP_VERSION__,
+    appSha: __APP_SHA__,
+    ver: earlyVersion,
+    lens: sel.lens,
+    pageUrl: pageUrlFromLocation({
+      origin: location.origin,
+      pathname: location.pathname,
+      search: formatSel(sel).search,
+    }),
+    userAgent: typeof navigator === "undefined" ? "" : navigator.userAgent,
+    viewport: `${viewportW}x${viewportH}`,
+    theme: resolvedTheme,
+  });
+  const feedbackHref = $derived(feedbackIssueUrl(feedbackCtx));
+
+  // set at build time only (VITE_FEEDBACK_URL); unset -> the control is a plain link to the GitHub
+  // issue above and this handler is never attached (see the template below).
+  const FEEDBACK_URL = import.meta.env.VITE_FEEDBACK_URL as string | undefined;
+
+  async function onFeedbackClick(e: MouseEvent) {
+    if (!FEEDBACK_URL) return; // plain <a>, default navigation to feedbackHref
+    e.preventDefault();
+    const ok = await postFeedback(FEEDBACK_URL, feedbackCtx, fetch);
+    if (ok) {
+      announce("Thanks — your feedback was sent.");
+    } else {
+      // falls back to the SAME GitHub link a plain click would have followed -- never silently
+      // swallows feedback because the configured endpoint failed.
+      window.open(feedbackHref, "_blank", "noopener");
+    }
+  }
+
   // --- lazy lens/panel chunks (atlas-4 fix round 2, D13) ----------------------------------------
   // Shell.svelte used to statically import every lens' panel component (ScoresLens,
   // SpeciesLensPanel/Picker/Legend/NotFoundModal, Places, VersionPickerModal, WelcomeModal) --
@@ -669,6 +733,23 @@
 
   <div class="about-region" id="about-region" data-tour="about" data-control="about">
     <About {releaseNote} />
+    <!-- Deliverable 4, zero backend (CLAUDE.md/GATES.md: "the CalCOFI zero-backend fallback"):
+         a real <a>, not a button, so it works with JS disabled/failed too -- `href` is a plain
+         `$derived` (feedbackHref, above), so it is always the CURRENT lens/ver/theme, never a value
+         captured once at mount. Desktop-only, same as the About card it sits beside (shell.css's
+         `.about-region { display:none }` below 899px) -- no room next to the phone bottom rail. -->
+    <a
+      class="feedback-link"
+      data-tour="feedback"
+      data-control="feedback"
+      href={feedbackHref}
+      target="_blank"
+      rel="noopener"
+      onclick={onFeedbackClick}
+    >
+      <Icon name="alert" size={14} />
+      Report a problem
+    </a>
   </div>
 </main>
 

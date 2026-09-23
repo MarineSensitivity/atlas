@@ -489,6 +489,17 @@
               <span class="sk-about-tool"></span>
             </div>
           </div>
+          <!-- atlas-8 Deliverable 4: mirrors the hydrated "Report a problem" link's box model
+               (shell.css's `.sk-feedback-link`/`.feedback-link`) so the About card's bottom-anchored
+               region shifts up by the SAME amount on both sides -- see shell.css's own comment.
+               tests/shell/shell-invariants.test.ts also requires this exact data-control/data-tour
+               pair to exist here, matching Shell.svelte's real control. -->
+          <span
+            class="sk-feedback-link"
+            data-tour="feedback"
+            data-control="feedback"
+            aria-hidden="true"
+          ></span>
         </div>
       </main>
     </div>

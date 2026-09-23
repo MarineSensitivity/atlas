@@ -30,9 +30,12 @@ export default ts.config(
   {
     // browser app code: src/, and the e2e/fixture pages that stand in for it. `__APP_VERSION__` is
     // `vite.config.ts`'s `define` (atlas-5: Analytics["appVersion"], inlined at build time — see
-    // that file's own comment for why not a runtime `import` of package.json).
+    // that file's own comment for why not a runtime `import` of package.json). `__APP_SHA__` is the
+    // same file's atlas-8 Deliverable 4 addition (git SHA, for the "Report a problem" issue body).
     files: ["src/**/*.ts", "src/**/*.svelte", "tests/fixtures/**/*.ts"],
-    languageOptions: { globals: { ...globals.browser, __APP_VERSION__: "readonly" } },
+    languageOptions: {
+      globals: { ...globals.browser, __APP_VERSION__: "readonly", __APP_SHA__: "readonly" },
+    },
   },
   {
     // Node-run tooling: build scripts and *.config.ts files. scripts/verify.mjs also drives
