@@ -1,3 +1,27 @@
+# atlas 0.10.16
+
+atlas-8 Deliverable 4: beta feedback, zero backend.
+
+- **"Report a problem"** — a new control in the on-map About card (bottom-left, desktop only) opens
+  a prefilled GitHub issue in `MarineSensitivity/atlas`, labeled `beta-feedback`: app version + git
+  SHA, the resolved release, the lens, the page URL (query kept, **fragment always stripped** — a
+  drawn place's geometry never leaves the browser, plan D8), user agent, viewport and theme, plus a
+  short "What happened / What you expected" template. Pure logic in
+  `src/lib/feedback/issueUrl.ts#feedbackIssueUrl()` (`tests/feedback/issueUrl.test.ts`, one fixture
+  per rule); the URL is capped at ~7,500 chars (GitHub truncates a `new/…` issue URL around 8 KB) by
+  trimming the user agent, then the template — never an identifier.
+- **New build-time define, `__APP_SHA__`** (`vite.config.ts`, `git rev-parse --short HEAD`,
+  `"unknown"` fallback when git is unavailable) — cites the exact build in the issue body, not just
+  `package.json`'s version.
+- **Optional `VITE_FEEDBACK_URL`**: when set at build time, the control POSTs the same context
+  there (`fetch`, `keepalive`) instead of opening GitHub, falling back to the GitHub link on any
+  failure (`src/lib/feedback/postFeedback.ts`). Documented in `docs/feedback.md` and `.env.example`.
+- **`tests/feedback/noHash.test.ts`**: a source-scan gate (the same technique
+  `tests/analytics/noRawLocation.wiring.test.ts` uses) proving nothing under `src/lib/feedback/`
+  ever reads the live page location's `href`/`hash`, or `window.location` — the URL is always passed
+  in by the caller (`Shell.svelte`, built from the reactive `Sel`, never `location.search`
+  directly). Seeded fault: `tests/faults/feedback-location-href.patch` (`npm run test:faults`).
+
 # atlas 0.10.13
 
 Two owner-reported defects, both screenshots: the species popup was unreadable in the navy theme,

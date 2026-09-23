@@ -1,7 +1,27 @@
+import { execFileSync } from "node:child_process";
 import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import pkg from "./package.json" with { type: "json" };
+
+// atlas-8 Deliverable 4 (beta feedback): the "Report a problem" issue body cites the exact build,
+// not just package.json's version -- two builds of the same 0.10.16 can differ by commit. Resolved
+// ONCE, at build time (never at runtime: this repo ships no server to ask); a CI fixture build (the
+// size-budget red fixtures, this file's own header explains why those exist) has no guarantee of a
+// git checkout at all, so a failed `git rev-parse` falls back to the string "unknown" -- never
+// throws, same contract as every other build-time default in this config.
+function resolveAppSha(): string {
+  try {
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+      cwd: fileURLToPath(new URL(".", import.meta.url)),
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+  } catch {
+    return "unknown";
+  }
+}
 
 // atlas-0 scaffold (plan D2, D3): the same dist/ must run under both
 // https://marinesensitivity.org/atlas/ and https://preview.marinesensitivity.org/v9/atlas/, and Cloudflare
@@ -29,7 +49,10 @@ export default defineConfig({
   // "duckdb"/"shp"/"treemap" strings, which then trips size-budget.mjs's forbidden-lazy-chunk scan
   // for those exact substrings (measured: a real build FAILs on it). `define` inlines only this
   // one string literal instead.
-  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_SHA__: JSON.stringify(resolveAppSha()),
+  },
   // D2: no client router, so there is no "route" for the dev/preview server to fall back to
   // index.html for. `appType: "mpa"` turns that SPA fallback OFF — without it, a missing sibling
   // file (latest.txt, session.json, ...) 200s with index.html's own markup in dev/preview instead
