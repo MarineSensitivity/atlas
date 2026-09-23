@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
+import { safeRoute } from "./routeSafety";
 
 /** the committed archive. Rebuild with:
  *   tippecanoe -o zones.pmtiles -l programarea -Z0 -z6 --no-tile-compression --force zones.geojson
@@ -123,46 +124,51 @@ export const RASTER_RGB: [number, number, number] = [255, 127, 42];
  */
 export async function routeZonesPmtiles(page: Page, url = ZONES_PMTILES_URL) {
   const file = readFileSync(ZONES_PMTILES_PATH);
-  await page.route(url, (route) => {
-    const range = route.request().headers()["range"];
-    const m = range ? /bytes=(\d+)-(\d*)/.exec(range) : null;
-    if (!m) {
+  await page.route(
+    url,
+    safeRoute((route) => {
+      const range = route.request().headers()["range"];
+      const m = range ? /bytes=(\d+)-(\d*)/.exec(range) : null;
+      if (!m) {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/octet-stream",
+          headers: { "accept-ranges": "bytes", "access-control-allow-origin": "*" },
+          body: file,
+        });
+      }
+      const start = Number(m[1]);
+      const end = m[2] ? Number(m[2]) : file.length - 1;
+      const slice = file.subarray(start, end + 1);
       return route.fulfill({
-        status: 200,
+        status: 206,
         contentType: "application/octet-stream",
-        headers: { "accept-ranges": "bytes", "access-control-allow-origin": "*" },
-        body: file,
+        headers: {
+          "accept-ranges": "bytes",
+          "content-range": `bytes ${start}-${end}/${file.length}`,
+          "access-control-allow-origin": "*",
+        },
+        body: slice,
       });
-    }
-    const start = Number(m[1]);
-    const end = m[2] ? Number(m[2]) : file.length - 1;
-    const slice = file.subarray(start, end + 1);
-    return route.fulfill({
-      status: 206,
-      contentType: "application/octet-stream",
-      headers: {
-        "accept-ranges": "bytes",
-        "content-range": `bytes ${start}-${end}/${file.length}`,
-        "access-control-allow-origin": "*",
-      },
-      body: slice,
-    });
-  });
+    }),
+  );
 }
 
 /** CARTO basemap tiles (both `dark_all` and `light_all`) → one solid PNG. */
 export async function routeBasemapTiles(page: Page) {
   const png = solidPng(...BASEMAP_RGB);
-  await page.route("https://basemaps.cartocdn.com/**", (route) =>
-    route.fulfill({ status: 200, contentType: "image/png", body: png }),
+  await page.route(
+    "https://basemaps.cartocdn.com/**",
+    safeRoute((route) => route.fulfill({ status: 200, contentType: "image/png", body: png })),
   );
 }
 
 /** every titiler `/cog/tiles` request → one solid PNG of a different colour. */
 export async function routeTitilerTiles(page: Page) {
   const png = solidPng(...RASTER_RGB);
-  await page.route("https://titiler-v8.marinesensitivity.org/**", (route) =>
-    route.fulfill({ status: 200, contentType: "image/png", body: png }),
+  await page.route(
+    "https://titiler-v8.marinesensitivity.org/**",
+    safeRoute((route) => route.fulfill({ status: 200, contentType: "image/png", body: png })),
   );
 }
 
@@ -174,13 +180,19 @@ export async function routeTitilerTiles(page: Page) {
  * here now does (atlas-4's zones carry labels by default). A zero-byte body is still a VALID
  * (empty) glyph protobuf, so MapLibre reads it as "no glyphs in this range", never an error. */
 export async function routeGlyphs(page: Page) {
-  await page.route("https://tiles.basemaps.cartocdn.com/**", (route) =>
-    route.fulfill({ status: 200, contentType: "application/x-protobuf", body: "" }),
+  await page.route(
+    "https://tiles.basemaps.cartocdn.com/**",
+    safeRoute((route) =>
+      route.fulfill({ status: 200, contentType: "application/x-protobuf", body: "" }),
+    ),
   );
 }
 
 /** the first-paint contract (plan D3 Tier 0): the map must paint with ZERO WASM bytes. Aborting
  * every `.wasm` makes that structural rather than aspirational. */
 export async function blockWasm(page: Page) {
-  await page.route("**/*.wasm", (route) => route.abort());
+  await page.route(
+    "**/*.wasm",
+    safeRoute((route) => route.abort()),
+  );
 }

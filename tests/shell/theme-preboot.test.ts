@@ -24,10 +24,12 @@ function extractThemeScript(html: string): string {
 
 const script = extractThemeScript(INDEX_HTML);
 
-/** codec.ts's `parseEnum(params.get("theme"), THEMES, "auto")`, mirrored: any value other than
- * exactly "light" or "dark" clamps to the "auto" default -- including "auto" itself, and garbage. */
+/** codec.ts's `parseEnum(aliasTheme(params.get("theme")), THEMES, "auto")`, mirrored: `navy`/
+ * `paper` alias to `dark`/`light` (atlas-8 fix, `THEME_ALIASES`); anything else other than exactly
+ * "light" or "dark" clamps to the "auto" default -- including "auto" itself, and garbage. */
 function themeFromQuery(q: string | undefined): Theme {
-  return q === "light" || q === "dark" ? q : "auto";
+  const aliased = q === "navy" ? "dark" : q === "paper" ? "light" : q;
+  return aliased === "light" || aliased === "dark" ? aliased : "auto";
 }
 
 function runThemeScript(search: string, prefersDark: boolean | null): string {
@@ -49,7 +51,16 @@ function runThemeScript(search: string, prefersDark: boolean | null): string {
 }
 
 describe("the pre-paint theme script agrees with resolveTheme() on every case", () => {
-  const queries: (string | undefined)[] = [undefined, "light", "dark", "auto", "garbage", ""];
+  const queries: (string | undefined)[] = [
+    undefined,
+    "light",
+    "dark",
+    "auto",
+    "garbage",
+    "",
+    "navy", // atlas-8 fix: aliases to "dark"
+    "paper", // atlas-8 fix: aliases to "light"
+  ];
   const prefersDarkCases: (boolean | null)[] = [true, false, null];
 
   for (const q of queries) {

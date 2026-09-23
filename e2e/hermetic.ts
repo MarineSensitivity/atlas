@@ -5,6 +5,9 @@
 import type { Page } from "@playwright/test";
 import type { IncompleteResult } from "axe-core";
 import { solidPng } from "./map-hermetic";
+import { isTeardownRaceError, safeRoute } from "./routeSafety";
+
+export { isTeardownRaceError, safeRoute };
 
 export const BUCKET = "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/";
 
@@ -37,8 +40,9 @@ export async function routeMapTileOrigins(page: Page) {
     "https://basemaps.cartocdn.com/**",
     "https://titiler-v8.marinesensitivity.org/**",
   ]) {
-    await page.route(glob, (route) =>
-      route.fulfill({ status: 200, contentType: "image/png", body: png }),
+    await page.route(
+      glob,
+      safeRoute((route) => route.fulfill({ status: 200, contentType: "image/png", body: png })),
     );
   }
   // glyphs: atlas-4 mounts the scores lens by default, and its zones carry `label_pt` in every
@@ -51,8 +55,11 @@ export async function routeMapTileOrigins(page: Page) {
   // "zero console errors" gate. Fixed with a 200 + an EMPTY body: a zero-byte protobuf is a valid
   // (if data-free) serialization of the glyph PBF schema — every field in it is optional/repeated
   // — so MapLibre parses it as "no glyphs in this range" rather than erroring.
-  await page.route("https://tiles.basemaps.cartocdn.com/**", (route) =>
-    route.fulfill({ status: 200, contentType: "application/x-protobuf", body: "" }),
+  await page.route(
+    "https://tiles.basemaps.cartocdn.com/**",
+    safeRoute((route) =>
+      route.fulfill({ status: 200, contentType: "application/x-protobuf", body: "" }),
+    ),
   );
 }
 
@@ -91,7 +98,7 @@ export async function routeBucket(page: Page, latest = "v7", boot?: object) {
   await routeMapTileOrigins(page);
   await page.route(
     (url) => url.href.startsWith(BUCKET),
-    async (route) => {
+    safeRoute(async (route) => {
       const path = route.request().url().slice(BUCKET.length);
       if (path.startsWith("latest.txt")) {
         return route.fulfill({ status: 200, contentType: "text/plain", body: `${latest}\n` });
@@ -107,7 +114,7 @@ export async function routeBucket(page: Page, latest = "v7", boot?: object) {
         return route.fulfill({ status: 200, json: boot });
       }
       return route.fulfill({ status: 404, body: "" }); // app/boot.json: not published until atlas-1
-    },
+    }),
   );
 }
 
@@ -119,11 +126,13 @@ export async function routeBucket(page: Page, latest = "v7", boot?: object) {
 export async function mountUnder(page: Page, prefix: string) {
   await page.route(
     (url) => url.pathname.startsWith(prefix),
-    async (route) => {
+    // the most likely site of the teardown race this file's header describes: a REAL cross-fetch
+    // (`route.fetch`) that can still be in flight when the test/page ends.
+    safeRoute(async (route) => {
       const url = new URL(route.request().url());
       url.pathname = url.pathname.slice(prefix.length - 1);
       route.fulfill({ response: await route.fetch({ url: url.toString() }) });
-    },
+    }),
   );
 }
 
@@ -131,10 +140,11 @@ export async function mountUnder(page: Page, prefix: string) {
 export async function routeSession(page: Page, body: object | null) {
   await page.route(
     (url) => url.pathname.endsWith("/session.json"),
-    (route) =>
+    safeRoute((route) =>
       body
         ? route.fulfill({ status: 200, json: body })
         : route.fulfill({ status: 404, body: "not found" }),
+    ),
   );
 }
 
@@ -153,8 +163,9 @@ export async function routeSealFixture(page: Page) {
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">' +
     '<circle cx="100" cy="100" r="90" fill="#123456"/></svg>';
-  await page.route("**/branding/mma-seal.svg", (route) =>
-    route.fulfill({ contentType: "image/svg+xml", body: svg }),
+  await page.route(
+    "**/branding/mma-seal.svg",
+    safeRoute((route) => route.fulfill({ contentType: "image/svg+xml", body: svg })),
   );
   await page.addInitScript(() => {
     try {
@@ -186,7 +197,7 @@ export async function gotoPublicShell(page: Page, path = "/") {
 export async function blockAppBundle(page: Page) {
   await page.route(
     (url) => /\/assets\/index-[^/]*\.js$/.test(url.pathname),
-    (route) => route.abort(),
+    safeRoute((route) => route.abort()),
   );
 }
 

@@ -83,6 +83,12 @@
       (function () {
         var theme;
         var q = new URLSearchParams(location.search).get("theme");
+        // atlas-8 fix: the gallery/mockups use navy/paper (their own resolved-theme names,
+        // docs/design/mockups/*.html) where the real app uses dark/light -- accepting both here
+        // means a link copied from a mockup still resolves instead of silently falling through
+        // to prefers-color-scheme.
+        if (q === "navy") q = "dark";
+        else if (q === "paper") q = "light";
         if (q === "dark") theme = "navy";
         else if (q === "light") theme = "paper";
         else {
@@ -330,6 +336,13 @@
     </script>
   </head>
   <body>
+    <!-- atlas-8 fix: a single skip link to #panel-region jumped straight past the topbar AND the
+         tool rail -- #rail-region's one roving-tabindex stop sits immediately before #panel-region
+         in DOM order, so Tab from the skip link landed inside the panel, and the rail was reachable
+         only by Shift+Tab backward from there. Two skip links, in DOM/visual/tab order, fixes it:
+         each is a real, separately-focusable stop (never display:none), consistent with WCAG's
+         "multiple ways to skip repeated content" pattern. -->
+    <a class="skip-link" href="#rail-region">Skip to the tools</a>
     <a class="skip-link" href="#panel-region">Skip to the details panel</a>
 
     <div id="shell" class="app">

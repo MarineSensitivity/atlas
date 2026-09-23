@@ -17,6 +17,32 @@
   per-page browser/hydration overhead, not by any state's own data. No fix indicated.
 - `scripts/verify.mjs` now times every state and prints the slowest 3 at the end of a run.
 
+`atlas-8` step 4: the fiddly bits that are code, not data.
+
+- **Playwright route handlers now tolerate a test ending** (`e2e/routeSafety.ts`'s `safeRoute`) —
+  the Firefox teardown race ("`route.fetch: Test ended`" outside any test, skipping the next one)
+  is swallowed at the handler level in `e2e/{hermetic,map-hermetic,species-hermetic}.ts`; any other
+  error still propagates.
+- **`Panel.svelte`'s nested landmarks, fixed**: the panel body no longer carries a second
+  `role="region"` inside the section that is already the panel's one landmark. New gate:
+  `tests/ui/panelLandmarks.test.ts`.
+- **The skip link now reaches the tool rail too**: a second skip link ("Skip to the tools",
+  `#rail-region`) precedes the existing one — the rail's single roving-tabindex stop used to be
+  reachable only by Shift+Tab backward from the panel. New gate: `tests/shell/skipLinks.test.ts`.
+- **`?theme=navy|paper` accepted as aliases of `dark|light`** — the gallery/mockups' own theme-name
+  convention now resolves correctly if pasted into the real app, in both the real parser
+  (`THEME_ALIASES`, `src/lib/state/codec.ts`) and index.html's inline pre-paint script. New gate:
+  `tests/shell/themeAliases.test.ts`; `tests/shell/theme-preboot.test.ts`'s shared case table grew
+  two rows.
+- **`DataTable`'s filter `<input>` itself reaches 44 CSS px tall on a coarse pointer** (spec §11) —
+  the wrapping label already did; the visible, tappable input stayed ~28px. New gate:
+  `e2e/gallery.spec.ts`'s "atlas-8 fix" describe block.
+- **The Categories demo table no longer overflows the page at 320 CSS px** — wrapped in a
+  `overflow-x: auto` scroll container (SC 1.4.10 exempts a data table's own scroll, never the
+  page's). New gates: `tests/ui/categoriesOverflow.test.ts`, `e2e/gallery.spec.ts`'s "atlas-8 fix".
+- Found while running the full gallery suite: `e2e/gallery.spec.ts`'s own Panel-body test still
+  asserted the pre-fix `role="region"` — updated to assert its absence instead.
+
 # atlas 0.10.2
 
 `atlas-8` step 2: the Playwright state matrix, widened to three engines.

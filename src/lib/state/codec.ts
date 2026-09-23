@@ -49,6 +49,20 @@ function parseEnum<T extends string>(v: string | null, allowed: readonly T[], fa
   return v !== null && (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
 }
 
+/** the gallery/mockups' own theme-name convention (`navy`/`paper`, docs/design/mockups/*.html) as
+ * aliases of the real app's `dark`/`light` (atlas-8 fix). index.html's inline pre-paint script
+ * carries the identical alias table (it must run before this module's bundle parses); both are
+ * driven through the same case rows in tests/shell/theme-preboot.test.ts and
+ * tests/shell/themeAliases.test.ts, exported so a test can address it directly. */
+export const THEME_ALIASES: Readonly<Record<string, "dark" | "light">> = {
+  navy: "dark",
+  paper: "light",
+};
+
+function aliasTheme(v: string | null): string | null {
+  return v !== null && v in THEME_ALIASES ? THEME_ALIASES[v] : v;
+}
+
 function parseVersionLike(v: string | null): string | undefined {
   return v !== null && isVersionLabel(v) ? v : undefined;
 }
@@ -134,7 +148,7 @@ function parseSelUnsafe(loc: UrlLike, alias: AliasLookup): Sel {
     sel: parseSelToken(params.get("sel")),
     show: parseList(params.get("show")),
     hide: parseList(params.get("hide")),
-    theme: parseEnum(params.get("theme"), THEMES, DEFAULT_SEL.theme),
+    theme: parseEnum(aliasTheme(params.get("theme")), THEMES, DEFAULT_SEL.theme),
     tour: parseEnum(params.get("tour"), ["on", "off"] as const, DEFAULT_SEL.tour),
     pl: cleanString(hashParams.get("pl")),
     t: cleanString(hashParams.get("t")),
