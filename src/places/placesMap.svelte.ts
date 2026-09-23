@@ -36,6 +36,18 @@
 // preview belongs to the selection that was current when it was set): pick/draw re-assert their
 // own interaction immediately if still active, through their own callbacks. `tests/places/
 // placesMap.test.ts` unit-tests the precedence.
+//
+// That reset effect surfaced a SECOND, newly-introduced collision while wiring item M1 (scores
+// clicks dispatched unconditionally, regardless of `activeTool`): a scores-lens zone click during
+// an ACTIVE pick session wrote `sel=zone:...` (its own selection), which this store's reset
+// effect then correctly read as "the selection changed" and cleared the pick highlight `refreshOutline()`
+// had just set -- the SAME click that was supposed to extend the pick set instead erased its own
+// highlight. `interactionOwned` (below) is the fix: Places.svelte sets it while pick mode or a
+// draw session has an EXCLUSIVE claim on map clicks, and Shell.svelte's one `map.on("click", ...)`
+// listener skips dispatching to the scores lens' `handleMapClick` while it is true -- restoring
+// the SAME exclusivity the old panel-mount-bound wiring gave Places by accident, without losing
+// M1's actual fix (a scores click with the Places tool merely OPEN, pick/draw NOT active, still
+// works).
 import type { FeatureCollection } from "geojson";
 import type { SelStore } from "../lib/state/sel.svelte";
 import { densifyGeometry } from "./densify";
@@ -54,10 +66,15 @@ export interface PlacesMapStore {
    * remount while `cells` (above) stayed painted, so the toggle and the map could disagree. Chrome
    * (never the URL), same lifetime as `outline`/`cells`. */
   readonly showCells: boolean;
+  /** true while Places' pick mode or an active draw session owns map clicks EXCLUSIVELY -- see
+   * this module's own header (item M1's regression). Shell.svelte reads this before dispatching a
+   * click to any lens' `handleMapClick`. */
+  readonly interactionOwned: boolean;
   /** sets the INTERACTION override (item m3) -- `null` releases it back to the baseline. */
   setOutline(fc: FeatureCollection | null): void;
   setCells(fc: FeatureCollection | null): void;
   setShowCells(value: boolean): void;
+  setInteractionOwned(value: boolean): void;
 }
 
 export interface PlacesMapDeps {
@@ -68,6 +85,7 @@ export function createPlacesMapStore(deps: PlacesMapDeps): PlacesMapStore {
   let interaction = $state<FeatureCollection | null>(null);
   let cells = $state<FeatureCollection | null>(null);
   let showCells = $state(false);
+  let interactionOwned = $state(false);
 
   // the baseline (this module's own header comment) -- a pure `$derived`, never an effect: it has
   // no side effect to race, so reading it can never disagree with a concurrent writer the way two
@@ -99,6 +117,9 @@ export function createPlacesMapStore(deps: PlacesMapDeps): PlacesMapStore {
     get showCells() {
       return showCells;
     },
+    get interactionOwned() {
+      return interactionOwned;
+    },
     setOutline(fc: FeatureCollection | null) {
       interaction = fc;
     },
@@ -107,6 +128,9 @@ export function createPlacesMapStore(deps: PlacesMapDeps): PlacesMapStore {
     },
     setShowCells(value: boolean) {
       showCells = value;
+    },
+    setInteractionOwned(value: boolean) {
+      interactionOwned = value;
     },
   };
 }

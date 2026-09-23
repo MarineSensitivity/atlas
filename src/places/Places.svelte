@@ -214,6 +214,13 @@
   let drawMode = $state<DrawShape | "select" | null>(null);
   let drawBusy = $state(false);
 
+  // item M1's regression (placesMap.svelte.ts's own header): keep the store's "who owns map
+  // clicks" flag in sync with local pick/draw state, so Shell.svelte's click dispatch can skip the
+  // scores lens' own handler while THIS panel has an active pick/draw session claiming clicks.
+  $effect(() => {
+    mapStore.setInteractionOwned(pickOn || drawMode !== null);
+  });
+
   /** Deliverable 7's `place_draw` param -- counts a vertex, never carries a coordinate. */
   function vertexCountOf(geometry: AreaGeometry): number {
     const rings = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates;
@@ -350,6 +357,11 @@
   $effect(() => {
     void selectedIndex; // any selection change invalidates an in-flight "show analysis cells" load
     cellsToken++;
+    // the invalidated call's own `finally` no longer owns `loadingCells` (its `token !==
+    // cellsToken` check skips it) -- without resetting it here, the toggle's label would be stuck
+    // reading "Loading analysed cells..." forever once the selection moves on, even though nothing
+    // is loading for the place now selected.
+    loadingCells = false;
   });
 
   // Fix round 1 (Opus review): paint the D7b-CLIPPED cell set (`placeCellsInStudyArea`, the

@@ -365,12 +365,21 @@
     // showing its popup, because neither depends on `ScoresLens.svelte` (the PANEL body) being
     // mounted at all. `scoresLens` is null until its lazy chunk resolves (see "lazy lens/panel
     // chunks" below) -- a click in that brief window is a no-op, same as before this fix.
+    //
+    // Dispatching unconditionally surfaced a SECOND collision while wiring this fix: a scores
+    // click during Places' OWN active pick mode / draw session wrote `sel=zone:...` (its own
+    // selection) over the top of the pick highlight the SAME click had just set
+    // (`placesMap.svelte.ts`'s own header explains why). `placesMap.interactionOwned` is Places'
+    // exclusive claim on clicks while one of those is active; the scores lens is skipped while it
+    // is true (species never writes `sel` from a click, so it is unaffected either way).
     const onMapClick = (e: {
       lngLat: { lng: number; lat: number };
       point: { x: number; y: number };
     }) => {
       void speciesLens.handleMapClick({ lng: e.lngLat.lng, lat: e.lngLat.lat }, e.point);
-      void scoresLens?.handleMapClick({ lng: e.lngLat.lng, lat: e.lngLat.lat }, e.point);
+      if (!placesMap.interactionOwned) {
+        void scoresLens?.handleMapClick({ lng: e.lngLat.lng, lat: e.lngLat.lat }, e.point);
+      }
     };
     handle.map.on("click", onMapClick);
     // the map's public test/automation seam (docs/map.md): the handle plus the CURRENT composeStyle
