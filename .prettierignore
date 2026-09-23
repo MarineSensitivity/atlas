@@ -23,3 +23,9 @@ tests/fixtures/species/schema
 # meaningful; reformatting them here would put them back out of step on the next regeneration
 # (and expand a 1 MB reference to many times that).
 tests/fixtures/parity
+
+# The atlas-7 report references (scripts/parity/report_fixtures.R), for the same reason as
+# tests/fixtures/parity above: one line at 17 significant digits is what makes the 1e-9 gate
+# meaningful, and prettifying them expands a 1.6 MB reference by ~50 % and puts it out of step
+# with the next regeneration.
+tests/fixtures/report/*/*.json
