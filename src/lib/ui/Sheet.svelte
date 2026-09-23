@@ -135,10 +135,7 @@
      property is defined (never happens today -- Sheet.svelte only ever mounts on the phone
      layout, inside `.panel-region`). */
   .sheet.detent-full {
-    height: min(
-      92svh,
-      calc(100svh - var(--size-topbar, 0px) - var(--size-rail-row, 0px))
-    );
+    height: min(92svh, calc(100svh - var(--size-topbar, 0px) - var(--size-rail-row, 0px)));
   }
 
   /* the sheet's upper edge is the wave (guide p. 10) */

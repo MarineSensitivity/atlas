@@ -34,9 +34,9 @@ async function gotoPhoneShell(page: Page) {
   // (hermetic.ts's own routeSealFixture seeds the "don't show again" key for every OTHER spec --
   // gotoPublicShell already calls it, so this is already true here; stated for the reader, not a
   // second suppression).
-  await expect(page.getByRole("dialog", { name: "Welcome to the Marine Sensitivity Atlas" })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("dialog", { name: "Welcome to the Marine Sensitivity Atlas" }),
+  ).toHaveCount(0);
 }
 
 async function setDetent(page: Page, buttonLabel: string) {

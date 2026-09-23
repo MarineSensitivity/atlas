@@ -256,12 +256,15 @@ describe("reportHash", () => {
     expect(reportHash(undefined, undefined)).toBe("");
   });
 
-  it("regression: the pre-fix `#pl=${pl}` splice (zero layers of percent-encoding) loses a place " +
-    "once report.html's parser (one layer of decoding) reads it back", () => {
-    const pl = hashFromPlaces(three);
-    const oldStyleHash = `#pl=${pl}`;
-    const decoded = parseSel({ search: "", hash: oldStyleHash });
-    const places = placesFromHash(decoded.pl);
-    expect(places.length).toBeLessThan(3);
-  });
+  it(
+    "regression: the pre-fix `#pl=${pl}` splice (zero layers of percent-encoding) loses a place " +
+      "once report.html's parser (one layer of decoding) reads it back",
+    () => {
+      const pl = hashFromPlaces(three);
+      const oldStyleHash = `#pl=${pl}`;
+      const decoded = parseSel({ search: "", hash: oldStyleHash });
+      const places = placesFromHash(decoded.pl);
+      expect(places.length).toBeLessThan(3);
+    },
+  );
 });

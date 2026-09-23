@@ -228,7 +228,14 @@ const FAULTS = [
     describe:
       "zoneUnitsFromBoot() stops attaching an invisible query fill -- pick mode can only " +
       "resolve a click on a Program Area's 1-px border again (B3's real defect, replayed)",
-    gate: ["npx", "playwright", "test", "--project=chromium", "e2e/places.pick.spec.ts", "--workers=1"],
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/places.pick.spec.ts",
+      "--workers=1",
+    ],
     env: { PW_PORT: "4397" },
   },
 ];

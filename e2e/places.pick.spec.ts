@@ -98,7 +98,10 @@ async function screenPointFor(page: Page, lonLat: [number, number]) {
   }, lonLat);
 }
 
-for (const unitMode of ["raster cells (no fill published by anything)", "Program areas selected"] as const) {
+for (const unitMode of [
+  "raster cells (no fill published by anything)",
+  "Program areas selected",
+] as const) {
   test(`B3: pick mode resolves a REAL click on the Western Gulf's INTERIOR -- ${unitMode}`, async ({
     page,
   }) => {

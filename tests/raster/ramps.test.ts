@@ -78,9 +78,10 @@ describe("paletteStopsWithFallback — one case per palette in the picker (M2)",
     });
 
     it(`${name}: still prefers a release's OWN published stops over the fallback, when it has them`, () => {
-      const published: PaletteStops = Array.from({ length: 11 }, (_, i) => `#${(i + 1)
-        .toString(16)
-        .padStart(6, "0")}`);
+      const published: PaletteStops = Array.from(
+        { length: 11 },
+        (_, i) => `#${(i + 1).toString(16).padStart(6, "0")}`,
+      );
       const boot = { palettes: { [name]: published } };
       expect(paletteStopsWithFallback(boot, name)).toEqual(published);
     });

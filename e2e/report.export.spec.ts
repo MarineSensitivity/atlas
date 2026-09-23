@@ -75,9 +75,9 @@ test.describe("B5: Download HTML, opened offline", () => {
       await offlinePage.goto(`file://${savedPath}`);
 
       // --- B5 part 1: readable text, not white-on-light ------------------------------------------
-      expect(await offlinePage.evaluate(() => document.documentElement.getAttribute("data-theme"))).toBe(
-        "paper",
-      );
+      expect(
+        await offlinePage.evaluate(() => document.documentElement.getAttribute("data-theme")),
+      ).toBe("paper");
       expect(
         await offlinePage.evaluate(() => getComputedStyle(document.documentElement).colorScheme),
       ).toBe("light");
