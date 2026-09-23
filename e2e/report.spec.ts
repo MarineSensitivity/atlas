@@ -9,7 +9,7 @@ import { blockWasm } from "./map-hermetic";
 import { normalizePdfText } from "./pdfText";
 // `routeVariedBasemapStyle` moved with `gotoReport` into report-hermetic.ts (atlas-8 step 3); it is
 // no longer called from this file directly.
-import { BOOT_V7, BOOT_V9, gotoReport, PL } from "./report-hermetic";
+import { BOOT_V7, BOOT_V9, gotoReport, mapPrintRampPixelCount, PL } from "./report-hermetic";
 import { encodePlace, type Place } from "../src/lib/geo/placeCodec";
 
 // atlas-7 steps 2-4, fix round 1: report.html's own hermetic smoke suite. HERMETIC per this
@@ -216,6 +216,11 @@ test.describe("exports", () => {
     // let the map's own PNG capture (idle + two animation frames) land before downloading, or the
     // exported document's .map-print would still show "Map rendering...".
     await expect(page.locator(".map-print img")).toBeVisible({ timeout: 15_000 });
+    // M4 (atlas-8 review round 2): an <img> being VISIBLE says nothing about what it shows --
+    // `captureRejectionReason` only rejects a blank/flat capture, never one whose places layer
+    // simply never painted. Prove the DATA (GAA/ALA's score-coloured circles), not just the
+    // basemap, is really in the captured PNG.
+    expect(await mapPrintRampPixelCount(page)).toBeGreaterThan(0);
 
     const [download] = await Promise.all([
       page.waitForEvent("download"),
@@ -245,6 +250,9 @@ test.describe("exports", () => {
       await offlinePage.goto(`file://${savedPath}`);
       await expect(offlinePage.locator("figure.flower-panel")).toHaveCount(2);
       await expect(offlinePage.locator(".map-print img")).toBeVisible();
+      // M4: the SELF-CONTAINED download's embedded PNG carries the real data too, not just a
+      // visible <img> whose src happens to decode (see the live-page assertion above for why).
+      expect(await mapPrintRampPixelCount(offlinePage)).toBeGreaterThan(0);
       await expect(
         offlinePage.locator("table", { hasText: "Mean component and overall scores" }),
       ).toBeVisible();
@@ -510,6 +518,10 @@ test.describe("page.pdf() (chromium): labels, table headers, watermark, map imag
     await gotoReport(page, { ver: "v9", preview: true });
     await expect(page.locator(".progress-line")).toContainText("Done");
     await expect(page.locator(".map-print img")).toBeVisible({ timeout: 15_000 });
+    // M4: "map image not blank" (this test's own title) means the DATA painted, not merely that
+    // an <img> decoded -- see mapPrintRampPixelCount's own header for why "visible" alone passes
+    // on the basemap with an empty places layer.
+    expect(await mapPrintRampPixelCount(page)).toBeGreaterThan(0);
 
     const pdfBuffer = await page.pdf({ printBackground: true, format: "Letter" });
     const { text } = await pdfParse(pdfBuffer);

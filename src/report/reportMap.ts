@@ -125,6 +125,12 @@ export function combinedBbox(
   ];
 }
 
+/** `places-circle`'s own `circle-opacity` (a zone place -- no polygon boundary is fetched for the
+ * report map, see `ReportMapFeatureInput.point`'s own doc -- draws as a circle, never a fill).
+ * Named (not an inline `0.85`) so M4's e2e pixel-proof (`e2e/report-hermetic.ts`) can compute the
+ * SAME alpha-blend a real capture paints, instead of a second, driftable copy of this literal. */
+export const PLACE_CIRCLE_OPACITY = 0.85;
+
 /** the maplibre `fill-color`/`circle-color` data expression: the 0-1e stop ramp over `domain`,
  * falling back to {@link REPORT_NODATA_COLOR} for a feature with no score. */
 export function scoreColorExpression(stops: PaletteStops, domain: [number, number]): unknown[] {
@@ -194,7 +200,7 @@ export async function buildReportMapStyle(opts: BuildReportMapStyleOptions): Pro
         filter: ["==", ["geometry-type"], "Point"],
         paint: {
           "circle-color": color as never,
-          "circle-opacity": 0.85,
+          "circle-opacity": PLACE_CIRCLE_OPACITY,
           "circle-radius": 14,
           "circle-stroke-color": REPORT_MAP_OUTLINE,
           "circle-stroke-width": 1,

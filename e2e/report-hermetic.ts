@@ -5,7 +5,8 @@
 // e2e/hermetic.ts and e2e/map-hermetic.ts).
 import type { Page } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession } from "./hermetic";
-import { blockWasm, routeVariedBasemapStyle } from "./map-hermetic";
+import { blockWasm, routeVariedBasemapStyle, VARIED_DARK, VARIED_LIGHT } from "./map-hermetic";
+import { PLACE_CIRCLE_OPACITY } from "../src/report/reportMap";
 
 /** the restricted (preview-only) release fixture: two Program Areas with real published metrics, so
  * the Table of Scores carries real numbers (model.ts's own "Overall = mean of the components
@@ -22,6 +23,11 @@ export const BOOT_V9 = {
       {
         key: "GAA",
         name: "Gulf of America",
+        // M4 (atlas-8 review round 2): a real `label_pt` so `zonePointFromBoot` resolves a place
+        // for the report map -- without one, `places`/`place-labels` are EMPTY FeatureCollections
+        // and the captured map is 100% basemap, which is exactly the "img visible" gate's blind
+        // spot (nothing painted the DATA layer at all, and nothing here could have caught it).
+        label_pt: [-90, 25],
         n_cells: 14238,
         area_km2: 600000,
         metrics: {
@@ -33,6 +39,7 @@ export const BOOT_V9 = {
       {
         key: "ALA",
         name: "Alaska",
+        label_pt: [-155, 60], // M4: see GAA's own note
         n_cells: 45685,
         area_km2: 900000,
         metrics: {
@@ -90,4 +97,83 @@ export async function gotoReport(
   await routeVariedBasemapStyle(page);
   const pl = opts.pl ?? PL;
   await page.goto(`/report.html?ver=${opts.ver}#pl=${pl}`);
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function blendOver(
+  src: readonly [number, number, number],
+  alpha: number,
+  bg: readonly [number, number, number],
+): [number, number, number] {
+  return [0, 1, 2].map((i) => Math.round(src[i] * alpha + bg[i] * (1 - alpha))) as [
+    number,
+    number,
+    number,
+  ];
+}
+
+/**
+ * M4 (atlas-8 review round 2): `.map-print img` used to be proven only by "is an `<img>` visible"
+ * (`report.spec.ts`), which passes on the basemap alone -- `reportMap.ts#captureRejectionReason`
+ * rejects a BLANK or FLAT capture, never one whose score-coloured places layer simply never
+ * painted (an empty `places`/`place-labels` FeatureCollection, say). This reads the captured img's
+ * real pixels back and counts how many match a colour ONLY a real place's score circle could have
+ * painted -- proof the DATA layer, not just the basemap, is actually in the image. Kept alongside
+ * `gotoReport` (not in `report.spec.ts`) so it stays paired with the ONE fixture (`BOOT_V9`) it is
+ * computed from.
+ *
+ * GAA (overall `(50+30+40)/3 = 40`) and ALA (overall `(55+20)/2 = 37.5`) are, by construction,
+ * exactly `BOOT_V9`'s `rampDomain` MAX and MIN (`src/lib/report/ramp.ts`) -- so each interpolates
+ * to EXACTLY one `spectral_r` ramp ENDPOINT, never an intermediate blend a maplibre `interpolate`
+ * expression would otherwise have to be replicated to predict. Each place draws as a CIRCLE
+ * (`places-circle`, `PLACE_CIRCLE_OPACITY`), alpha-blended over whichever of
+ * `routeVariedBasemapStyle`'s two checkerboard colours happens to be underneath -- both are
+ * candidate backgrounds, since which one a given circle lands on is a map-projection detail this
+ * helper does not need to reproduce (verified empirically: exact, tolerance-0 matches for 3 of the
+ * 4 candidates against a real capture; the 4th is simply the colour combination neither place's
+ * circle happened to land on in that camera position).
+ */
+export async function mapPrintRampPixelCount(page: Page, tolerance = 4): Promise<number> {
+  const stops = BOOT_V9.palettes.spectral_r;
+  const endpointColors = [hexToRgb(stops[0]), hexToRgb(stops[stops.length - 1])];
+  const backgrounds: Array<[number, number, number]> = [VARIED_DARK, VARIED_LIGHT];
+  const targets: Array<[number, number, number]> = [];
+  for (const c of endpointColors) {
+    for (const bg of backgrounds) targets.push(blendOver(c, PLACE_CIRCLE_OPACITY, bg));
+  }
+  return page.evaluate(
+    ({ selector, targets, tolerance }) => {
+      const img = document.querySelector(selector) as HTMLImageElement | null;
+      if (!img || !img.naturalWidth) return -1;
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return -1;
+      ctx.drawImage(img, 0, 0);
+      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      let count = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        for (const [tr, tg, tb] of targets) {
+          if (
+            Math.abs(r - tr) <= tolerance &&
+            Math.abs(g - tg) <= tolerance &&
+            Math.abs(b - tb) <= tolerance
+          ) {
+            count++;
+            break;
+          }
+        }
+      }
+      return count;
+    },
+    { selector: ".map-print img", targets, tolerance },
+  );
 }

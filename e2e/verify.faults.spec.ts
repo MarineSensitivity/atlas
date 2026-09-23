@@ -6,7 +6,6 @@ import { expect, test, type Page } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession, waitForHydration } from "./hermetic";
 import {
   BOOT_FIXTURE,
-  RASTER_RGB,
   SCORE_COG_URL,
   blockWasm,
   routeBasemapStyle,
@@ -16,7 +15,7 @@ import {
 // scripts/verify.mjs's own exports -- the SAME functions the real state matrix runs, so a fault
 // proven here is a fault the real matrix would have caught too (tests/map/no-fitbounds.test.ts's
 // convention: "the gate and its seeded fault run the SAME code").
-import { assertLayout, readPixel, zoneFeatureCount } from "../scripts/verify.mjs";
+import { assertLayout, scoresRasterProbe, zoneFeatureCount } from "../scripts/verify.mjs";
 
 test.skip(({ browserName }) => browserName !== "chromium", "WebGL gate: chromium only (S2)");
 test.describe.configure({ mode: "serial" });
@@ -93,14 +92,17 @@ test.describe("seeded fault: a raster source 404, DOM still fine", () => {
       "assertLayout must NOT flag a 404 raster -- it only sees layout",
     ).toEqual([]);
 
-    // the probe scripts/verify.mjs's own scoresRasterProbe uses IS what catches it: the pixel
-    // reads as the basemap alone, never the raster colour.
-    const px = await readPixel(page, -90, 26.5);
-    expect(px, "no WebGL context to read back").not.toBeNull();
+    // m10 (atlas-8 review round 2): call the REAL exported `scoresRasterProbe` the state matrix
+    // itself runs, not a hand-rolled `readPixel(...) != RASTER_RGB` check -- the old assertion
+    // would have passed on ANY wrong colour (a mis-blended pixel, say), not specifically "the
+    // basemap alone, never the raster", which is the actual property scoresRasterProbe checks.
+    // "a fault proven here is a fault the real matrix would have caught too" (this file's own
+    // header) only holds if the fault is run through the SAME function the matrix calls.
+    const problems = await scoresRasterProbe()(page);
     expect(
-      px!.slice(0, 3).join(","),
-      "a 404'd raster must never read back as the raster colour",
-    ).not.toBe(RASTER_RGB.join(","));
+      problems,
+      "a 404'd raster must be reported by the real scoresRasterProbe, not silently pass",
+    ).not.toEqual([]);
   });
 });
 

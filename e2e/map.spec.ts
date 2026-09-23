@@ -22,6 +22,7 @@ import {
   waitForHydration,
 } from "./hermetic";
 import {
+  BASEMAP_RGB_BY_THEME,
   BOOT_FIXTURE,
   RASTER_RGB,
   SCORE_COG_URL,
@@ -105,6 +106,21 @@ function zoneFeatureCount(page: Page) {
     if (!map.isSourceLoaded("programarea_src")) return -1;
     return map.queryRenderedFeatures({ layers: ["programarea_ln"] }).length;
   });
+}
+
+/** the REAL applied style (`map.getStyle()`), not a recomposed `composeStyle(inputs())` object —
+ * M5 (atlas-8 review round 2). `getStyle()` is not on the shared `Window.__atlasMap` global
+ * declaration (every `e2e/*.ts` file that declares that global must use the IDENTICAL shape —
+ * `species-hermetic.ts`'s own header explains why — so a method only this file needs is cast in
+ * locally instead of widening that shared interface everywhere). */
+function getAppliedStyle(page: Page) {
+  return page.evaluate(() =>
+    (
+      window.__atlasMap as unknown as {
+        handle: { map: { getStyle(): { sprite?: string } } };
+      }
+    ).handle.map.getStyle(),
+  );
 }
 
 /** read back one pixel of the WebGL canvas at a lon/lat (needs `preserveDrawingBuffer`). */
@@ -216,17 +232,28 @@ test.describe("map module, first paint with **/*.wasm blocked", () => {
     }
   });
 
+  // M5 (atlas-8 review round 2): the old version of this test proved neither the swap nor the
+  // paint — "swapped" was read off `JSON.stringify(composeStyle(inputs()))`, a RECOMPOSED style
+  // object the map may never have applied, and "painted" was `readPixel(...) != null`, which a
+  // dead WebGL context (`null` background too) would also satisfy trivially. Both fixture themes
+  // also shared one water colour (`map-hermetic.ts`'s old `BASEMAP_RGB` for both), so even a
+  // correct pixel probe could not have told them apart. Now: `map.getStyle()` (the REAL applied
+  // style, not a recomposition) carries the theme's `sprite`, and an ocean pixel is read back
+  // before/after and checked against each theme's OWN fixture colour
+  // (`BASEMAP_RGB_BY_THEME`, map-hermetic.ts) — proving the swap is actually rendered, not just
+  // declared.
   test("a theme switch swaps the basemap and keeps the zones drawn", async ({ page }) => {
     await gotoMap(page);
     await expect.poll(() => zoneFeatureCount(page), { timeout: 20_000 }).toBeGreaterThan(0);
 
     const before = await page.evaluate(() => document.documentElement.dataset.theme);
-    // the theme-distinguishing field of a composed style is CARTO's own `sprite` URL (its two GL
-    // styles' merged layers/sources are otherwise identical in this fixture).
-    const basemapBefore = await page.evaluate(() =>
-      JSON.stringify(window.__atlasMap!.composeStyle(window.__atlasMap!.inputs())),
-    );
-    expect(basemapBefore).toContain(before === "navy" ? "dark-matter" : "positron");
+    const beforeTheme = before === "navy" ? "navy" : "paper";
+
+    const styleBefore = await getAppliedStyle(page);
+    expect(styleBefore.sprite).toContain(beforeTheme === "navy" ? "dark-matter" : "positron");
+    // a real painted pixel, not the declared style — open ocean, no zone line under it (0,0).
+    const pxBefore = await readPixel(page, 0, 0);
+    expect(pxBefore?.slice(0, 3)).toEqual(BASEMAP_RGB_BY_THEME[beforeTheme]);
 
     await page.locator('[data-control="theme"]').click();
     await expect
@@ -235,13 +262,16 @@ test.describe("map module, first paint with **/*.wasm blocked", () => {
 
     // the zones survive the setStyle(diff) — the regression a piecemeal addLayer() would produce
     await expect.poll(() => zoneFeatureCount(page), { timeout: 20_000 }).toBeGreaterThan(0);
-    const basemapAfter = await page.evaluate(() =>
-      JSON.stringify(window.__atlasMap!.composeStyle(window.__atlasMap!.inputs())),
-    );
-    expect(basemapAfter).toContain(before === "navy" ? "positron" : "dark-matter");
-    // the basemap really is painted, not just declared
-    const px = await readPixel(page, 0, 0);
-    expect(px).not.toBeNull();
+
+    const afterTheme = beforeTheme === "navy" ? "paper" : "navy";
+    const styleAfter = await getAppliedStyle(page);
+    expect(styleAfter.sprite).toContain(afterTheme === "navy" ? "dark-matter" : "positron");
+    // the fixtures really do differ (would make the pixel assertion below vacuous otherwise)
+    expect(BASEMAP_RGB_BY_THEME[afterTheme]).not.toEqual(BASEMAP_RGB_BY_THEME[beforeTheme]);
+    // the SAME pixel now reads the OTHER theme's colour — proves the swap actually painted
+    await expect
+      .poll(async () => (await readPixel(page, 0, 0))?.slice(0, 3))
+      .toEqual(BASEMAP_RGB_BY_THEME[afterTheme]);
   });
 
   test("the camera is written back to the URL with replaceState, debounced", async ({ page }) => {

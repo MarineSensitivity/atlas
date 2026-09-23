@@ -21,6 +21,13 @@ import {
   routeSession,
   waitForHydration,
 } from "./hermetic";
+import {
+  BOOT_FIXTURE,
+  blockWasm,
+  routeBasemapStyle,
+  routeGlyphs,
+  routeZonesPmtiles,
+} from "./map-hermetic";
 
 test.describe.configure({ mode: "serial" });
 
@@ -138,6 +145,101 @@ test("the hash is absent from every request the browser makes during the whole f
   for (const url of urls) {
     expect(url).not.toContain(hash);
   }
+});
+
+// --- m6 (atlas-8 review round 2): the Places pick highlight, drawn outline and "show analysis
+// cells" layer had NO rendered-feature assertion anywhere -- `selection-line`/`selection-fill`
+// (map/style.ts#selectionLayers, source id "selection") is the ONE layer all three actually paint
+// through (placesMap.svelte.ts's `outline`/`cells`, folded into Shell.svelte's `placesSelection`),
+// so each test below polls `queryRenderedFeatures` on it exactly the way
+// e2e/places.deeplink-outline.spec.ts's own gate does for the (different) deep-link-restore case.
+
+async function selectionLineFeatureCount(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const map = window.__atlasMap!.handle.map;
+    if (!map.getLayer("selection-line")) return -1;
+    if (!map.isSourceLoaded("selection")) return -1;
+    return map.queryRenderedFeatures({ layers: ["selection-line"] }).length;
+  });
+}
+
+test("a drawn/entered place renders its outline as a real selection-line feature (m6)", async ({
+  page,
+}) => {
+  await openPlaces(page);
+  await addByCoordinates(page);
+  await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
+
+  // the basemap's own CARTO style.json fetch resolving is what re-triggers Shell's composeStyle
+  // effect here (measured: ~2-4s cold in this hermetic fixture, same path 0.10.20's "a late
+  // style.json" fix covers) -- generous margin, not a wall-clock claim (no fixed sleep, still a
+  // poll that returns the instant it is true).
+  await expect
+    .poll(() => selectionLineFeatureCount(page), {
+      message: "no selection-line feature rendered for the drawn/entered place's outline",
+      timeout: 20_000,
+    })
+    .toBeGreaterThan(0);
+});
+
+/** a real Program Area to pick from the map -- `map-hermetic.ts`'s own `BOOT_FIXTURE` (the same
+ * fixture e2e/map.spec.ts and scripts/verify.mjs already trust for real zone rendering), routed
+ * WITH `?unit=programarea` so the zone choropleth FILL (`programarea_fill`) exists to hit-test
+ * against (`zoneAtPoint` queries `{unit}_fill`/`{unit}_ln`, src/lib/map/interaction.ts) -- the
+ * default `unit=cell` draws only the thin outline LINE, too fragile a click target for a stable
+ * e2e gate. */
+async function gotoPlacesWithZones(page: Page): Promise<void> {
+  await blockWasm(page);
+  await routeBucket(page, "v7", BOOT_FIXTURE);
+  await routeSession(page, null);
+  await routeSealFixture(page);
+  await routeZonesPmtiles(page);
+  await routeBasemapStyle(page);
+  await routeGlyphs(page);
+  await page.goto("/?unit=programarea");
+  await waitForHydration(page);
+  await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
+  await page.locator("#rail-region button[aria-label='Places']").click();
+}
+
+test("Pick mode highlights the clicked zone as a real selection-line feature (m6)", async ({
+  page,
+}) => {
+  await gotoPlacesWithZones(page);
+
+  // the zone fill must actually be rendered before Pick mode can hit-test against it.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const map = window.__atlasMap!.handle.map;
+          if (!map.getLayer("programarea_fill")) return -1;
+          if (!map.isSourceLoaded("programarea_src")) return -1;
+          return map.queryRenderedFeatures({ layers: ["programarea_fill"] }).length;
+        }),
+      { message: "the programarea_fill layer never rendered", timeout: 20_000 },
+    )
+    .toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: "Pick mode" }).click();
+
+  // a REAL click (page.mouse via the map <div>'s own bounding box), not a synthetic map.fire --
+  // this exercises installPickMode's actual `map.on("click", ...)` handler. `#map`'s top-left is
+  // the SAME origin `map.project()` returns coordinates in, so `{position}` needs no extra offset
+  // math for wherever the Places panel happens to have pushed the map container.
+  const point = await page.evaluate(() => window.__atlasMap!.handle.map.project([-90, 27])); // GAA's label_pt, BOOT_FIXTURE
+  await page.locator("#map").click({ position: { x: point.x, y: point.y } });
+
+  await expect(page.getByRole("button", { name: /Add to places \(1\)/ })).toBeVisible({
+    timeout: 10_000,
+  });
+
+  await expect
+    .poll(() => selectionLineFeatureCount(page), {
+      message: "Pick mode's own highlight never rendered a selection-line feature",
+      timeout: 20_000,
+    })
+    .toBeGreaterThan(0);
 });
 
 // --- fresh-profile round trip (fix round 1, Opus review item 4) --------------------------------
@@ -286,4 +388,28 @@ test("fresh-profile round trip: copying the link and opening it elsewhere recomp
   } finally {
     await context2.close();
   }
+});
+
+// m6 (atlas-8 review round 2): "show analysis cells" is the THIRD selection-layer consumer with no
+// rendered-feature assertion anywhere. Needs the SAME real engine as the round trip above --
+// `toggleAnalysisCells()` (Places.svelte) round-trips through `placeCellsInStudyArea()`, a real
+// DuckDB-WASM query, not a pure function this file's hermetic (no-`app/boot.json`) tests could
+// exercise.
+test("'show analysis cells' paints the covered cells as a real selection-line feature (m6)", async ({
+  page,
+}) => {
+  test.setTimeout(60_000); // a real DuckDB-WASM cold boot, like the round trip above
+  await gotoPlacesWithRoundtripRelease(page);
+  await addByCoordinates(page); // auto-selects the place it just added (writePlaces())
+
+  const cellsPill = page.getByRole("button", { name: "Show analysis cells" });
+  await expect(cellsPill).toBeEnabled({ timeout: 15_000 });
+  await cellsPill.click();
+
+  await expect
+    .poll(() => selectionLineFeatureCount(page), {
+      message: "'show analysis cells' never rendered a selection-line feature for any covered cell",
+      timeout: 30_000, // a real placeCellsInStudyArea() round trip through the engine
+    })
+    .toBeGreaterThan(0);
 });
