@@ -1,3 +1,26 @@
+# atlas 0.10.13
+
+Two owner-reported defects, both screenshots: the species popup was unreadable in the navy theme,
+and the scores lens showed nothing on a map click.
+
+- **One themed map popup, shared by both lenses (`src/lib/map/popup.ts` + `popup.css`).** MapLibre's
+  own `Popup` ships a hard-coded white box and a black close glyph -- unthemed, so the navy theme's
+  light-on-dark text tokens painted white text on that white box; only the species value row's own
+  inline swatch style stayed legible. Every popup in this app now goes through `createPopup()`,
+  themed with the same glass recipe as every other floating card (`--surface-panel` at
+  `--glass-opacity` + `--glass-blur`, text `--text-primary`, close button and focus ring themed
+  too) -- `tests/map/popup.test.ts` pins the class/token wiring, and `e2e/species-popup.spec.ts`
+  measures the REAL computed contrast on a real click, in both themes (navy 10.79:1, paper
+  14.23:1, against the same `--surface-panel-basis` worst-case the site's own contrast gate uses).
+- **The scores lens now shows a popup on click.** A cell click shows "Cell {id} · lon {x.xxx}, lat
+  {y.yyy} · {layer label}: {value}" (atlas-4's Selection checklist); a zone click shows "{name or
+  key}: {round(value)}" (parity doc §6.4's tooltip text, `zoneFill.ts`'s `zoneTooltip()`, wired to a
+  click for the first time). The popup closes on the next click or Esc. The cell's value is read
+  from the wide `cell` Parquet tile through a new, minimal query (`analysis/queries.ts#cellValue()`,
+  `sql/cell_value.sql`) -- never a rendered raster pixel (plan D4); `tests/lens/scores/
+  no-readpixels.test.ts` is the source-scan gate that holds it, and `e2e/scores.popup.spec.ts`
+  exercises the real engine against a real Parquet fixture.
+
 # atlas 0.10.12
 
 Three owner-reported UI defects, screenshots in hand: an overcrowded legend, a missing Scores

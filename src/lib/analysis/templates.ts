@@ -9,6 +9,7 @@
 import cell_components from "../../../sql/cell_components.sql?raw";
 import cell_model_key from "../../../sql/cell_model_key.sql?raw";
 import cell_model_seq from "../../../sql/cell_model_seq.sql?raw";
+import cell_value from "../../../sql/cell_value.sql?raw";
 import cells_in_study_area from "../../../sql/cells_in_study_area.sql?raw";
 import composition from "../../../sql/composition.sql?raw";
 import scores_for_cells from "../../../sql/scores_for_cells.sql?raw";
@@ -21,6 +22,7 @@ export const TEMPLATES: Templates = {
   cell_components,
   cell_model_key,
   cell_model_seq,
+  cell_value,
   cells_in_study_area,
   composition,
   scores_for_cells,

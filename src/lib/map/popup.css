@@ -1,0 +1,66 @@
+/* atlas-4/5 fix round 3: MapLibre's own maplibregl-gl.css ships a hard-coded WHITE popup box
+   (see its `.maplibregl-popup-content` rule) and a black-on-transparent close glyph — neither
+   reads this app's theme, so the navy theme's light-on-dark text tokens painted white text on
+   MapLibre's white box: every line but the value row (which sets its OWN inline background/color,
+   src/lens/species/popup.ts) was invisible (owner screenshot). Every atlas popup is constructed
+   through map/popup.ts's `createPopup()`, which always carries the `atlas-popup` class this file
+   scopes every rule under, so a second, unthemed call site can never reintroduce the bug.
+
+   Same glass recipe as every other floating card (Panel.svelte/Rail.svelte/Sheet.svelte/
+   shell.css's own `.panel-surface`/`.rail`/`.sheet`): `--surface-panel` mixed at `--glass-opacity`
+   with a `--glass-blur` backdrop, never a literal colour (spec.md §2/§8: "component CSS reads
+   custom properties only"). */
+
+.atlas-popup .maplibregl-popup-content {
+  background: color-mix(in srgb, var(--surface-panel) var(--glass-opacity), transparent);
+  backdrop-filter: blur(var(--glass-blur));
+  color: var(--text-primary);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elev-3);
+  padding: var(--space-3);
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+}
+
+/* the tip is a 10px CSS border-triangle (no content box for `backdrop-filter` to blur), so it
+   takes the OPAQUE worst-case composite (`--surface-panel-basis`, spec.md §3: "what the contrast
+   checker measures against") rather than the glass mix — a translucent triangle over varying map
+   imagery would visibly seam against the content box behind it. */
+.atlas-popup .maplibregl-popup-anchor-top .maplibregl-popup-tip,
+.atlas-popup .maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+.atlas-popup .maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+  border-bottom-color: var(--surface-panel-basis);
+}
+
+.atlas-popup .maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+.atlas-popup .maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+.atlas-popup .maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
+  border-top-color: var(--surface-panel-basis);
+}
+
+.atlas-popup .maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: var(--surface-panel-basis);
+}
+
+.atlas-popup .maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: var(--surface-panel-basis);
+}
+
+.atlas-popup .maplibregl-popup-close-button {
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+  line-height: 1;
+  padding: var(--space-1);
+  border-radius: var(--radius-control);
+}
+
+.atlas-popup .maplibregl-popup-close-button:hover {
+  background: var(--fill-control);
+}
+
+.atlas-popup .maplibregl-popup-close-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
