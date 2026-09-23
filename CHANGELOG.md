@@ -1,3 +1,33 @@
+# atlas 0.10.10
+
+`atlas-8` fix round 2 (of 2): merged with `main` (atlas-7 fix round 2, 0.10.9); the coordinator's
+survivor (`scores.firstpaint.spec.ts` v9's raster test, intermittently red alone on Firefox at
+load, ~1-in-13 to 1-in-40) was a REAL bug in `src/lib/map/styleQueue.ts`, not a test-timing gap.
+
+- **Root cause: a stale queued style could clobber a just-applied one.** Instrumented with a
+  wrapped `map.setStyle` (logging `isStyleLoaded()`, the style's layer ids, and any thrown error
+  around each real call): on the failing runs, TWO real `setStyle(diff:true)` calls landed close
+  together — the first (direct-apply, `r_lyr` included) added the raster; a SECOND, ~100-4000ms
+  later, silently REMOVED it again. That second call was the FALLBACK/`"idle"` flush of an OLDER,
+  now-stale queued style from an earlier `applyStyle` call made while `isStyleLoaded()` was still
+  false — `createStyleApplier`'s "apply immediately once loaded" branch never cancelled that
+  earlier call's still-armed listener/timer, so it fired later regardless and reapplied its
+  outdated (raster-less) content over the correct one. Fixed in `styleQueue.ts`: the direct-apply
+  branch now clears `queued`/`queuedListener`/the fallback timer first, so a stale flush finds
+  nothing left to apply (already-existing, safe no-op path) instead of undoing the newer style.
+  Two new regression tests in `tests/map/styleQueue.test.ts` reproduce it with a `MutableFakeMap`
+  (an `isStyleLoaded()` that flips false→true mid-scenario, which every prior `FakeMap`-based test
+  pinned constant and so could never have caught) and fail without the fix (verified by reverting
+  it locally and re-running).
+- `scripts/verify.mjs` self-sufficiency (fix round 1) re-verified on the merged tree: builds +
+  starts its own preview server on a fresh port, runs, tears down only what it started.
+- Gates: `tsc` 0 · `vitest` (styleQueue.test.ts) 10/10, including the 2 new regressions ·
+  `npx playwright test` (all three engine projects + timing, one combined run, a fresh port never
+  reused from a prior run): 262 passed, 21 skipped, 0 failed, 0 did not run. The originally-red
+  `scores.firstpaint.spec.ts` v9 raster test alone, repeated 8x on `--project=firefox`: 64/64 (all
+  four v7/v9 tests x 8 repeats), each raster-paint run now well under 1.5s (previously up to a
+  20s+ timeout).
+
 # atlas 0.10.9
 
 `atlas-8` fix round 1 (of 2): merged with `main` (atlas-7's report, 0.10.5-0.10.8); the widened
@@ -39,6 +69,60 @@ specs were RED on webkit/firefox as reported, root-caused and fixed for real (no
   one engine at a time per the shared-machine load rule): 91/91, 81/81 (10 chromium-only skips),
   82/82 (9 skips) — 0 failed, 0 did not run, on all three. `node scripts/verify.mjs` (chromium,
   self-started server): 6/6 on a `--limit=2` smoke check.
+
+`atlas-7` fix round 2 (Opus review of main@0ec0eb3): four static section narratives, D7b's own
+disclosure, a real (not just double) running footer, an honest coverage claim, two ported access
+invariants, and a real map-PNG-capture guard -- plus the fix its own e2e fixture exposed.
+
+- **Four static narratives**, built from THIS release's own data, never hardcoded: the Map section
+  states the Spectral ramp + ecoregion rescale; each flower names exactly this release's
+  `scores.components` (and, when a ring folded a duplicate component, says so); the Table of
+  Scores states the N-cells/rescaling rule; the Summary of Species carries the FWS/NMFS->USA
+  extinction-risk consolidation note. `tests/lib/report/narratives.test.ts` (9 tests) pins these,
+  including a seeded-fault case (`bird, turtle, fish` must never read `reptile, other`).
+- **D7b disclosed for drawn places.** A `kind: "geom"` place's Parameters entry now states, in one
+  sentence, that it is scored over the U.S. study area cells by the published zone method and can
+  therefore differ slightly from a Program Area it traces (measured up to ~0.05 on a released
+  area); a zone place carries no such note (a published zone IS the study area).
+  `tests/lib/report/narratives.test.ts` covers both branches.
+- **The running footer was two footers, not one.** `@page { @bottom-center }` DOES render in
+  Chromium (a prior comment here claiming otherwise was wrong, measured false) -- it held a static
+  placeholder while a `position: fixed` `.print-footer` carried the real permalink/release text,
+  so every printed page carried both, no page number anywhere, and on page 3 the fixed copy
+  collided with body content. Fixed: the fixed `.print-footer` is gone; `@bottom-center`'s
+  `content` now reads the real permalink/release strings off two CSS custom properties
+  (`Report.svelte` sets them; generated content has no element of its own to read a prop off of)
+  plus `counter(page)`/`counter(pages)` for the page numbers.
+- **"Scored over 99.9%" was sometimes false.** A coverage of 0.998740 rounded UP to "99.9%"
+  (`Math.round`), which 99.874% does not exceed. The footnote now floors to one decimal
+  (`formatCoveragePctFloor`, new); the neutral Parameters-table display is unaffected (still
+  rounds).
+- **Two invariants ported into `e2e/report.spec.ts`** from the shell/places specs, since
+  `report.html` re-implements the same access gate and the same `#pl=` hash codec and neither
+  guarantee was ever proven for it directly: public host + `?ver=v9` makes zero requests under
+  `/v9/` (falls through to latest); the place token never appears in any request URL.
+- **The map-PNG-capture guard only rejected pure black/white.** A reviewer's captured report map
+  was 896x360 of one flat colour -- neither black nor white, so the old guard passed it.
+  `captureMapPng` now also rejects a flat, single-colour capture (a luminance-stdev floor); the
+  pure pixel-stats math is now its own exported, DOM-free function
+  (`luminanceStatsFromRgba`/`captureRejectionReason`) so `tests/report/reportMap.test.ts` can seed
+  the fault directly (a flat mid-grey capture that a mean-only check would have accepted).
+  Wiring this guard up against a REAL (not flat) hermetic basemap tile (`variedPng()`,
+  `e2e/map-hermetic.ts`) exposed a second, real bug: `captureMapPng` waited on `isStyleLoaded()`,
+  which says nothing about an in-flight animated `flyTo()` or a raster tile's still-pending image
+  decode, so the capture often fired at (or near) the pre-flight, pre-decode frame. Fixed: it now
+  waits for the map's `"idle"` event unconditionally (never short-circuited), twice, with a brief
+  settle in between -- bounded by the same fallback-timer pattern `styleQueue.ts` already uses
+  against a hung tile request.
+- `provenance.ts`'s "Reproduce in R" snippet now states `# requires msens >= {boot.msens}` (three
+  of its functions are unexported on `main` as of this writing) and no longer calls
+  `cells_in_study_area()` as a redundant second clip -- `scores_for_cells(..., denominator =
+"study_area")` already clips to the study area internally.
+- Gates: `tsc` 0 · `svelte-check` 0/0 · `vitest` 164 files / 2524 tests (3 skipped), all green ·
+  `eslint` 0 · `prettier` clean · `vite build` succeeds · `size-budget --entry index.html` 415.2 KB
+  gzip static / 555.7 KB combined (budgets 450/600) · `size-budget --entry report.html
+--allow-marker duckdb` 53.4 KB gzip static (budget 450) · `e2e/report.spec.ts` chromium 18/18
+  (36/36 under `--repeat-each=2`).
 
 # atlas 0.10.8
 

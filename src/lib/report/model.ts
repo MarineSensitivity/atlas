@@ -36,6 +36,7 @@
 import { bboxOf, polygonsOf, type AreaGeometry } from "../geo/types";
 import { citedDatasets, type Citation } from "../release/cite";
 import {
+  componentColumns,
   overallScore,
   scoresTable,
   type ReportComponent,
@@ -173,7 +174,21 @@ export interface ReportParameter {
   /** D7b's "share of this place inside the study area", as a PERCENT (0-100). */
   studyAreaPct: number | null;
   token: string;
+  /** fix round 2, item 2: D7b's own disclosure, present ONLY for a drawn (`kind: "geom"`) place --
+   * a zone place IS the study area (nothing to disclose). `null` for every other kind. */
+  d7bNote: string | null;
 }
+
+// fix round 2, item 2 (master plan D7b): a drawn place is never scored against ITS OWN raw
+// coverage -- `sql/cells_in_study_area.sql` clips to the cells inside the U.S. study area first,
+// the SAME published zone-metric method a Program Area's own score already uses. Undisclosed,
+// the only way a reader would learn this is by tracing a Program Area and finding the two numbers
+// disagree (v9 GAA: 40.4484 published vs 40.4982 traced, +0.0498 -- model.ts's own header).
+const D7B_NOTE =
+  "This place is scored by the same method a published Program Area uses: the coverage-weighted " +
+  "mean over the cells that fall inside the U.S. study area, never the place's own raw " +
+  "coverage. A drawn place that traces a Program Area can therefore differ slightly from that " +
+  "Area's own published score (measured up to about 0.05 on a released Program Area).";
 
 export interface ReportMapPlace {
   name: string;
@@ -187,6 +202,8 @@ export interface ReportMap {
   domain: [number, number] | null;
   legendTitle: string;
   summary: string;
+  /** the static method narrative (fix round 2, item 1 -- spec §2.4, verbatim). */
+  narrative: string;
 }
 
 export interface ReportFlower {
@@ -204,6 +221,12 @@ export interface ReportFlower {
   summary: string;
   /** the fuller listing, from the SAME shared function the lens's flower panel uses. */
   detail: string;
+  /** fix round 2, item 1 (spec §2.5, corrected -- the old report's own text was STALE, still
+   * saying "reptile, other", both retired on v8/v9): names THIS release's actual components
+   * (`scores.components`, never a hardcoded list), states the equal-weight/mean rule, and -- only
+   * when `droppedLabels` is non-empty -- says a duplicated component was folded rather than drawn
+   * as its own petal. */
+  narrative: string;
 }
 
 export interface ReportSpeciesTop {
@@ -242,6 +265,10 @@ export interface ReportModel {
   flowers: ReportFlower[];
   scores: ScoresTable;
   species: ReportSpecies[];
+  /** the static method narrative for the WHOLE Summary of Species section (fix round 2, item 1
+   * -- spec §2.7, verbatim): the counts/top-20/CSV description, then the ER-consolidation note.
+   * One narrative for the section, not per place -- it describes the method, not a place. */
+  speciesNarrative: string;
   sources: ReportSources;
   provenance: Provenance;
   /** every figure's text equivalent, in document order -- the accessibility gate reads THIS. */
@@ -475,6 +502,45 @@ const INTRO =
   "Ecoregion, so they reflect relative sensitivity within a region rather than absolute values " +
   "across regions.";
 
+// fix round 2, item 1 (spec §2.4, verbatim) -- static, but still a MODEL field (never a literal
+// in Report.svelte): the component just renders whatever this module hands it.
+const MAP_NARRATIVE =
+  "Areas of interest colored by mean sensitivity score using a Spectral color ramp (red = " +
+  "high, blue = low). Scores are ecoregionally rescaled to a 0–100 range within each BOEM " +
+  "Ecoregion, so they reflect relative sensitivity within a region rather than absolute values " +
+  "across regions.";
+
+/** fix round 2, item 1 (spec §2.5, CORRECTED): names `components` (this report's own, from
+ * `scores.components` -- never a hardcoded list, and never the retired "reptile"/"other"), states
+ * the equal-weight/mean rule, and -- only when a category collision folded a component -- says so. */
+function describeFlowerNarrative(
+  components: readonly string[],
+  droppedLabels: readonly string[],
+): string {
+  const list = components.length ? components.join(", ") : "no components";
+  let text =
+    `Flower plot where each petal represents one of this release's species-sensitivity ` +
+    `components (${list}). Petal length reflects the component sensitivity score (0–100); ` +
+    `every component carries equal weight, and the center value is the mean of the equally ` +
+    `weighted components.`;
+  if (droppedLabels.length) {
+    text +=
+      ` ${droppedLabels.join(", ")} duplicated an already-drawn category in this release and ` +
+      `was folded into the total rather than drawn as its own petal.`;
+  }
+  return text;
+}
+
+// fix round 2, item 1 (spec §2.7, verbatim): the method narrative for the WHOLE species section,
+// including the ER-consolidation note (er.ts#erConsolidate's own rule, spelled out for a reader).
+const SPECIES_NARRATIVE =
+  "Species counts by category and extinction risk, the top 20 highest-scoring species (ranked " +
+  "by habitat-weighted extinction risk), and a link to download the full species list as CSV. " +
+  'Extinction risk categories are consolidated: "FWS" and "NMFS" codes are combined to ' +
+  '"USA"; the parenthetical number is the extinction-risk score (1–100) used in sensitivity ' +
+  'weighting. The "other" category includes IUCN:DD (Data Deficient), IUCN:LC (Least ' +
+  "Concern), and species with no assigned risk code.";
+
 const SOURCES_TEXT = [
   "Component scores are the eight ecoregion-rescaled metrics of this release: seven " +
     "extinction-risk-weighted species-category surfaces plus primary productivity. Each is the " +
@@ -535,6 +601,7 @@ export function buildReport(input: BuildReportInput): ReportModel {
     nCells: p.scores?.nCells ?? null,
     studyAreaPct: studyAreaShare(p.scores),
     token: p.token,
+    d7bNote: p.place.kind === "geom" ? D7B_NOTE : null,
   }));
 
   // --- map ------------------------------------------------------------------------------------
@@ -549,7 +616,15 @@ export function buildReport(input: BuildReportInput): ReportModel {
     domain,
     legendTitle: "Mean score",
     summary: describeMap(mapPlaces, domain),
+    narrative: MAP_NARRATIVE,
   };
+
+  // this report's own component columns (the SAME list the Table of Scores has -- componentColumns()
+  // itself, not a second derivation), used by the flower narrative below so it can never drift from
+  // what the table actually shows.
+  const allComponents = componentColumns(
+    input.places.map((p) => ({ components: p.scores?.components ?? [] })),
+  );
 
   // --- flowers --------------------------------------------------------------------------------
   const flowers: ReportFlower[] = input.places.map((p, i) => {
@@ -574,6 +649,10 @@ export function buildReport(input: BuildReportInput): ReportModel {
       droppedLabels: [...deduped.droppedLabels, ...safe.droppedKeys],
       summary: describeFlower(p.name, safe.geometry, overall),
       detail: describeFlowerSummary(p.name, safe.geometry),
+      narrative: describeFlowerNarrative(allComponents, [
+        ...deduped.droppedLabels,
+        ...safe.droppedKeys,
+      ]),
     };
   });
 
@@ -681,6 +760,7 @@ export function buildReport(input: BuildReportInput): ReportModel {
     flowers,
     scores,
     species,
+    speciesNarrative: SPECIES_NARRATIVE,
     sources,
     provenance,
     summaries,

@@ -4,8 +4,8 @@ import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import pdfParse from "pdf-parse";
 import { unzipSync } from "fflate";
-import { BUCKET, routeBucket, routeSealFixture, routeSession } from "./hermetic";
-import { blockWasm } from "./map-hermetic";
+import { BUCKET, collectRequests, routeBucket, routeSealFixture, routeSession } from "./hermetic";
+import { blockWasm, variedPng } from "./map-hermetic";
 import { encodePlace, type Place } from "../src/lib/geo/placeCodec";
 
 // atlas-7 steps 2-4, fix round 1: report.html's own hermetic smoke suite. HERMETIC per this
@@ -85,6 +85,14 @@ async function gotoReport(page: Page, opts: { ver: "v9" | "v7"; preview?: boolea
   await routeBucket(page, opts.ver, opts.ver === "v9" ? BOOT_V9 : BOOT_V7);
   await routeSession(page, opts.preview ? { preview: true, ver: opts.ver } : null);
   await routeSealFixture(page);
+  // fix round 2, item 6: `routeBucket()`'s own tile route (`routeMapTileOrigins()`, hermetic.ts) is
+  // a flat, near-1x1 transparent PNG -- fine for specs that never look at the captured map PNG, but
+  // exactly the shape of the reviewer's bug (a flat, single-colour capture that a luminance-only
+  // guard let through). Registered AFTER `routeBucket()`, so it wins (Playwright: reverse
+  // registration order) -- every report.html capture in this file is now of a REAL, varied tile.
+  await page.route("https://basemaps.cartocdn.com/**", (route) =>
+    route.fulfill({ status: 200, contentType: "image/png", body: variedPng() }),
+  );
   const pl = opts.pl ?? PL;
   await page.goto(`/report.html?ver=${opts.ver}#pl=${pl}`);
 }
@@ -152,6 +160,57 @@ test.describe("D6 access gate + the PREVIEW banner/watermark (plan D6, master pl
     // v7's boot has no GAA/ALA-matching report content for a request that named v9 explicitly and
     // was denied -- the document still renders (against v7, the fallback), just not a PREVIEW one.
     await expect(page.locator(".preview-banner")).toHaveCount(0);
+  });
+});
+
+// fix round 2, item 5: two invariants the shell/places specs already prove for index.html, ported
+// here because report.html re-implements the SAME access gate (its inline early-fetch script is a
+// verbatim second copy of index.html's, per this file's own header) and reads the SAME `#pl=` hash
+// codec (src/lib/state/codec.ts) -- neither guarantee is specific to the map/places UI, so nothing
+// here should assume report.html gets them for free.
+test.describe("two invariants ported from shell.smoke.spec.ts / places.spec.ts", () => {
+  // ported from shell.smoke.spec.ts's "public host + ?ver=v9: not one request under /v9/, falls
+  // through to latest" -- same D6 gate, same fallback rule, exercised against report.html instead
+  // of index.html. Fault: point `dataBase()` (or this file's own copy of it) at `/v9/`
+  // unconditionally and `urls.filter(...)` is no longer empty -- red.
+  test("public host + ?ver=v9: not one request under /v9/, falls through to latest", async ({
+    page,
+  }) => {
+    const urls = collectRequests(page);
+    await blockWasm(page);
+    await routeBucket(page, "v7", BOOT_V7); // latest.txt = v7, a public release
+    await routeSession(page, null); // no session.json -- this is the public host
+    await routeSealFixture(page);
+
+    await page.goto(`/report.html?ver=v9#pl=${PL}`);
+    // two `.progress-line` paragraphs render here: the top status line ("Done -- N places.") AND
+    // the denied-version note ("v9 is not available..."), both matching this class -- `.first()` is
+    // the status line, source order.
+    await expect(page.locator(".progress-line").first()).toContainText("Done");
+
+    expect(urls.filter((u) => u.includes("/v9/"))).toEqual([]);
+    expect(urls).toContain(`${BUCKET}v7/manifest.json`);
+    await expect(page.locator(".preview-banner")).toHaveCount(0);
+  });
+
+  // ported from places.spec.ts's "the hash is absent from every request the browser makes during
+  // the whole flow" -- report.html's place token lives in the same `#pl=` hash (parseSel), and a
+  // browser never sends the fragment in a request by spec; the second-order check is that no URL
+  // this app itself built (a fetch, an analytics payload logged as a request) carries the literal
+  // token either. Fault: a request built from `location.hash` (or `sel.pl` reattached to a URL)
+  // would carry the token and the loop below goes red.
+  test("the hash (place token) is absent from every request the browser makes", async ({
+    page,
+  }) => {
+    const urls = collectRequests(page);
+    await gotoReport(page, { ver: "v9", preview: true });
+    await expect(page.locator(".progress-line")).toContainText("Done");
+
+    const hash = await page.evaluate(() => location.hash.replace(/^#pl=/, ""));
+    expect(hash.length).toBeGreaterThan(0);
+    for (const url of urls) {
+      expect(url).not.toContain(hash);
+    }
   });
 });
 
@@ -482,5 +541,36 @@ test.describe("page.pdf() (chromium): labels, table headers, watermark, map imag
     const { text } = await pdfParse(pdfBuffer);
     expect(text).toContain("Gulf of America");
     expect(containsWatermark(text)).toBe(false);
+  });
+
+  // fix round 2, item 3: the running footer used to be TWO footers (a static `@bottom-center`
+  // placeholder plus a position:fixed `.print-footer` carrying the real permalink/release text) --
+  // no page number anywhere, and on page 3 the fixed footer collided with body content. Now
+  // `@bottom-center` is the ONLY footer, fed the real strings through CSS custom properties
+  // (Report.svelte sets them), with `counter(page)`/`counter(pages)` for the page numbers -- drop
+  // either `counter(page)` from report.css or the custom-property wiring from Report.svelte and
+  // this goes red (no "page N of M" match / no permalink in the extracted text).
+  test("the running footer: real permalink + release + page N of M on every page, no overprinted/dropped body text", async ({
+    page,
+  }) => {
+    await gotoReport(page, { ver: "v9", preview: true });
+    await expect(page.locator(".progress-line")).toContainText("Done");
+    await expect(page.locator(".map-print img")).toBeVisible({ timeout: 15_000 });
+
+    const permalinkHref = await page.locator(".report-header a").getAttribute("href");
+    expect(permalinkHref).toBeTruthy();
+
+    const pdfBuffer = await page.pdf({ printBackground: true, format: "Letter" });
+    const { text, numpages } = await pdfParse(pdfBuffer);
+
+    expect(numpages).toBeGreaterThan(1); // a single-page PDF can't prove "on every page"
+    expect(text).toMatch(/page 1 of \d+/); // counter(page)/counter(pages) -- no JS page-counting
+    expect(text).toContain(permalinkHref);
+    // the ONE footer now, never the old fixed-position second copy.
+    expect(text).not.toContain("MarineSensitivity Atlas — printed report");
+
+    // the Sources section's own last sentence, intact -- exactly what a page-3 overprint used to
+    // corrupt/drop (model.ts's SOURCES_TEXT, static and known).
+    expect(text).toContain("the governing extinction-risk score and the overlapping area.");
   });
 });

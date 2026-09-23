@@ -182,6 +182,20 @@
     void permalinkQrDataUrl(href).then((url) => (qrDataUrl = url));
   });
 
+  // fix round 2, item 3: the printed running footer's real content (permalink · release · page N
+  // of M) has to reach the `@page { @bottom-center }` margin box, which is generated content with
+  // no element of its own to read a prop off of -- CSS custom properties are the one channel that
+  // both (a) carries an arbitrary runtime string and (b) inherits down into a page margin box
+  // (Chromium does render `@bottom-center`; the plan's earlier note that it doesn't was wrong --
+  // measured false). `report.css`'s own `content:` reads these two vars; `counter(page)`/
+  // `counter(pages)` supply the page numbers, which need no JS at all.
+  $effect(() => {
+    if (!model) return;
+    const root = document.documentElement.style;
+    root.setProperty("--report-footer-permalink", JSON.stringify(model.header.permalink.href));
+    root.setProperty("--report-footer-release", JSON.stringify(model.header.releaseChip));
+  });
+
   // ---- the map (lazy maplibre, per this module's own budget note) --------------------------
   let mapEl = $state<HTMLDivElement | undefined>(undefined);
   let mapPngUrl = $state<string | null>(null);
@@ -404,11 +418,19 @@
           {/each}
         </tbody>
       </table>
+      <!-- fix round 2, item 2: D7b's own disclosure, per drawn place -- a zone place has none
+           (d7bNote is null: a published zone IS the study area, nothing to disclose). -->
+      {#each model.parameters as p (p.token)}
+        {#if p.d7bNote}
+          <p class="d7b-note">{p.name}: {p.d7bNote}</p>
+        {/if}
+      {/each}
     </div>
   </section>
 
   <section aria-labelledby="s-map">
     <h2 id="s-map">Map</h2>
+    <p class="narrative">{model.map.narrative}</p>
     <figure aria-describedby="map-summary">
       <div bind:this={mapEl} class="map-live no-print" style="height: 360px;"></div>
       <div class="map-print">
@@ -463,6 +485,7 @@
           aria-describedby={`flower-summary-${i}`}
         >
           <figcaption>{f.name}</figcaption>
+          <p class="narrative">{f.narrative}</p>
           <svg
             viewBox="0 0 200 200"
             width="200"
@@ -501,6 +524,7 @@
 
   <section aria-labelledby="s-scores">
     <h2 id="s-scores">Table of Scores</h2>
+    <p class="narrative">{model.scores.narrative}</p>
     <table aria-describedby="scores-summary">
       <caption>Mean component and overall scores per area.</caption>
       <thead>
@@ -543,6 +567,7 @@
 
   <section aria-labelledby="s-species">
     <h2 id="s-species">Summary of Species</h2>
+    <p class="narrative">{model.speciesNarrative}</p>
     {#each model.species as species, i (species.name)}
       <div class="species-section">
         <h3>{species.name}</h3>
@@ -694,11 +719,6 @@
       {/each}
     </div>
   </section>
-
-  <div class="print-footer" aria-hidden="true">
-    <span>{model.header.permalink.href}</span>
-    <span>{model.header.releaseChip}</span>
-  </div>
 {:else if progressDone === 0 && places.length === 0 && earlySettled}
   <p>No places in this link — nothing to report on.</p>
 {/if}

@@ -30,12 +30,26 @@ export function formatErScore(v: unknown): string {
   return finite(v) ? `${Math.round(v * 100)}%` : "";
 }
 
-/** a coverage FRACTION (0-1) as a percent with up to 1 dp -- the footnote's "over 96.9 % of the
- * place". Whole percents print without a decimal. */
+/** a coverage FRACTION (0-1) as a percent with up to 1 dp, ROUNDED (not for an "over X%" claim --
+ * see {@link formatCoveragePctFloor} for that). Whole percents print without a decimal. */
 export function formatCoveragePct(v: unknown): string {
   if (!finite(v)) return "";
   const pct = v * 100;
   const r = Math.round(pct * 10) / 10;
+  return Number.isInteger(r) ? `${r}%` : `${r.toFixed(1)}%`;
+}
+
+/**
+ * A coverage fraction as a percent, FLOORED to 1 dp -- fix round 2, item 4: the footnote's
+ * "scored over X% of the place" is a claim that coverage EXCEEDS X, and `Math.round()` can make
+ * that claim false (0.998740 rounds to "99.9%", which the place's actual 99.874% coverage does
+ * NOT exceed). Flooring instead means "over {this}%" is always true, never a rounding artifact.
+ * A whole percent still prints without a decimal.
+ */
+export function formatCoveragePctFloor(v: unknown): string {
+  if (!finite(v)) return "";
+  const pct = v * 100;
+  const r = Math.floor(pct * 10) / 10;
   return Number.isInteger(r) ? `${r}%` : `${r.toFixed(1)}%`;
 }
 

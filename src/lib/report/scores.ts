@@ -18,7 +18,7 @@
 // covering 1.4 % of the place means 17.7 blended over the whole place from a mean of 1,255 where it
 // exists. Printing 17.7 with no footnote implies 17.7 everywhere. The old report printed exactly
 // that, for every component, on every area.
-import { formatCoveragePct, formatScore0 } from "./format";
+import { formatCoveragePctFloor, formatScore0 } from "./format";
 
 /** a component score as the engine returns it (`sql/scores_for_cells.sql`), widened so a ZONE
  * place -- whose numbers come from published `zone_metric` rows, which carry no coverage of their
@@ -102,7 +102,15 @@ export interface ScoresTable {
   footnotes: ScoresTableFootnote[];
   /** the accessibility gate's text equivalent for the whole table. */
   summary: string;
+  /** the static method narrative (fix round 2, item 1 -- spec §2.6, verbatim). */
+  narrative: string;
 }
+
+// fix round 2, item 1 (spec §2.6, verbatim).
+const TABLE_NARRATIVE =
+  "Mean component and overall sensitivity scores per area of interest, with the count of " +
+  "raster cells (N cells) included in the analysis. Component scores are ecoregionally " +
+  "rescaled (0–100) averages across all cells in each area.";
 
 /** coverage is a 0-1 fraction; anything short of the whole place footnotes. The epsilon is float
  * slack on `w_present / w_all`, not a tolerance for "nearly complete" -- 99.87 % footnotes. */
@@ -142,7 +150,7 @@ export function scoresTable(places: readonly ScoresTablePlace[]): ScoresTable {
           coverage: c.coverage,
           meanWherePresent: c.mean_where_present,
           text:
-            `${p.name}, ${component}: scored over ${formatCoveragePct(c.coverage)} of the place` +
+            `${p.name}, ${component}: scored over ${formatCoveragePctFloor(c.coverage)} of the place` +
             (c.mean_where_present !== null && Number.isFinite(c.mean_where_present)
               ? `, where its mean is ${formatScore0(c.mean_where_present)}.`
               : "."),
@@ -154,7 +162,13 @@ export function scoresTable(places: readonly ScoresTablePlace[]): ScoresTable {
     return { name: p.name, areaKm2: p.areaKm2, nCells: p.nCells, cells, overall: p.overall };
   });
 
-  return { components, rows, footnotes, summary: describeScoresTable(rows) };
+  return {
+    components,
+    rows,
+    footnotes,
+    summary: describeScoresTable(rows),
+    narrative: TABLE_NARRATIVE,
+  };
 }
 
 /** SC 1.1.1: the table's own text equivalent -- one sentence per place naming its Overall. */

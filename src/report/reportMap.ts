@@ -221,51 +221,126 @@ export interface CapturedMapPng {
   height: number;
 }
 
-/** mean 0-255 luminance of a canvas's current pixels (cheap 2D-context readback, not a WebGL
- * `readPixels` -- `preserveDrawingBuffer` already makes `drawImage` from the live canvas safe). */
-function meanLuminance(canvas: HTMLCanvasElement): number {
+/** mean and population stdev of 0-255 luminance across a buffer of RGBA pixels. Pure and DOM-free
+ * on purpose (CLAUDE.md: core logic lives in an exported, testable function; a canvas readback
+ * just calls it) -- `tests/report/reportMap.test.ts` exercises this directly with synthetic pixel
+ * arrays, since this repo's vitest environment is `node` (no real canvas to draw a fixture into).
+ * The stdev is fix round 2 item 6: a reviewer's captured map was 896x360 of one flat colour -- the
+ * hermetic basemap tile has no variation -- and a luminance-only check passed it, because a
+ * mid-range flat grey is neither "all black" nor "all white". */
+export function luminanceStatsFromRgba(data: ArrayLike<number>): { mean: number; stdev: number } {
+  const n = data.length / 4;
+  if (n === 0) return { mean: 128, stdev: Number.POSITIVE_INFINITY }; // no pixels -- do not block
+  const lum = new Float64Array(n);
+  let sum = 0;
+  for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+    const l = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    lum[j] = l;
+    sum += l;
+  }
+  const mean = sum / n;
+  let sq = 0;
+  for (let j = 0; j < n; j++) sq += (lum[j] - mean) ** 2;
+  return { mean, stdev: Math.sqrt(sq / n) };
+}
+
+/** below this, the capture is treated as a flat, single-colour fill rather than real map imagery
+ * (a real basemap/zone fill has anti-aliased edges, labels, or multiple colours -- all of which
+ * push the stdev well above this floor; a uniform test fixture or a blank tile reads exactly 0). */
+const FLAT_STDEV_FLOOR = 2;
+
+/** the pass/fail rule itself, pure (fix round 2, item 6) -- `null` means "accept this capture",
+ * otherwise the string is the rejection reason `captureMapPng` throws. */
+export function captureRejectionReason(stats: { mean: number; stdev: number }): string | null {
+  if (stats.mean < 1 || stats.mean > 254) {
+    return `rejected an all-black/all-white capture (luminance ${stats.mean.toFixed(1)})`;
+  }
+  if (stats.stdev < FLAT_STDEV_FLOOR) {
+    return `rejected a flat, single-colour capture (luminance stdev ${stats.stdev.toFixed(2)}, floor ${FLAT_STDEV_FLOOR})`;
+  }
+  return null;
+}
+
+/** cheap 2D-context readback of a live canvas's current pixels, not a WebGL `readPixels` --
+ * `preserveDrawingBuffer` already makes `drawImage` from the live canvas safe. */
+function luminanceStats(canvas: HTMLCanvasElement): { mean: number; stdev: number } {
   const probe = document.createElement("canvas");
   probe.width = canvas.width;
   probe.height = canvas.height;
   const ctx = probe.getContext("2d");
-  if (!ctx) return 128; // cannot measure -- do not block the capture on a missing 2d context
+  if (!ctx) return { mean: 128, stdev: Number.POSITIVE_INFINITY }; // cannot measure -- do not block
   ctx.drawImage(canvas, 0, 0);
   const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
-  let sum = 0;
-  const n = data.length / 4;
-  for (let i = 0; i < data.length; i += 4)
-    sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-  return sum / n;
+  return luminanceStatsFromRgba(data);
 }
 
 function nextFrame(): Promise<void> {
   return new Promise((r) => requestAnimationFrame(() => r()));
 }
 
+/** how long to wait for `"idle"` before capturing anyway -- the same bound `styleQueue.ts` uses
+ * against a hung tile request (fix round 2, item 6's real root cause, below). */
+const CAPTURE_IDLE_FALLBACK_MS = 4_000;
+
+/** a raster tile's fetch can resolve (which is what `"idle"`'s own bookkeeping tracks) before its
+ * IMAGE DECODE finishes -- measured, fix round 2 item 6, below. */
+const CAPTURE_DECODE_SETTLE_MS = 300;
+
 /**
- * Captures the map as a PNG data URL, after `idle`, forcing a repaint and waiting two animation
- * frames first (`calcofi explore review.md` lesson 8) -- then rejects an all-black/all-white
- * capture rather than shipping a blank print figure silently.
+ * Waits for the NEXT `"idle"`, unconditionally, bounded by a fallback timer (`styleQueue.ts`'s own
+ * lesson: MapLibre fires `"idle"` every time the map settles -- repeatedly, for the map's whole
+ * life -- but a hung tile request would otherwise mean this never resolves).
+ *
+ * fix round 2, item 6's REAL bug, found while wiring in this item's own e2e fixture (a real, varied
+ * basemap tile the map-PNG-capture assertions could actually tell apart from a flat one -- see
+ * e2e/map-hermetic.ts's `variedPng()`): the caller (`Report.svelte#mountMap`) calls `applyStyle()`
+ * then `flyToBounds()` (an ANIMATED `flyTo`) right before capturing -- but the old code
+ * short-circuited on `map.isStyleLoaded()`, which is true the moment the style's OWN metadata is
+ * loaded and says NOTHING about whether the camera is still mid-flight or the destination bounds'
+ * tiles have painted yet. That raced: `isStyleLoaded()` often flips true before `flyTo` even starts
+ * moving, so the capture fired at (or near) the STARTING view/paint -- a flat, uninteresting frame
+ * the old luminance-only guard couldn't tell from a real one.
+ *
+ * Waiting for the NEXT `"idle"` unconditionally fixes THAT race, but not a second one measured
+ * right after: `"idle"`'s own bookkeeping considers a raster tile "loaded" once its network fetch
+ * resolves, not once the browser's own (separately async) IMAGE DECODE of those bytes finishes --
+ * so a capture taken the instant `"idle"` fires can still read the pre-decode (blank/background)
+ * frame. `captureMapPng` calls this TWICE, with {@link CAPTURE_DECODE_SETTLE_MS} of real wall-clock
+ * time between the two: the second call almost always resolves immediately (truly idle by then),
+ * but gives any in-flight decode the time it measurably needs.
+ */
+async function waitForIdle(map: { once(ev: "idle", cb: () => void): unknown }): Promise<void> {
+  await new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    map.once("idle", finish);
+    setTimeout(finish, CAPTURE_IDLE_FALLBACK_MS);
+  });
+}
+
+/**
+ * Captures the map as a PNG data URL, after `idle` settles TWICE (see {@link waitForIdle}'s own
+ * header for why once is not enough), forcing a repaint and waiting two animation frames first
+ * (`calcofi explore review.md` lesson 8) -- then rejects an all-black/all-white capture, AND a
+ * flat single-colour one (fix round 2, item 6), rather than shipping a blank print figure silently.
  */
 export async function captureMapPng(map: {
-  isStyleLoaded(): boolean;
   once(ev: "idle", cb: () => void): void;
   triggerRepaint(): void;
   getCanvas(): HTMLCanvasElement;
 }): Promise<CapturedMapPng> {
-  await new Promise<void>((resolve) => {
-    if (map.isStyleLoaded()) resolve();
-    else map.once("idle", () => resolve());
-  });
+  await waitForIdle(map);
+  await new Promise((r) => setTimeout(r, CAPTURE_DECODE_SETTLE_MS));
+  await waitForIdle(map);
   map.triggerRepaint();
   await nextFrame();
   await nextFrame();
   const canvas = map.getCanvas();
-  const luminance = meanLuminance(canvas);
-  if (luminance < 1 || luminance > 254) {
-    throw new Error(
-      `captureMapPng: rejected an all-black/all-white capture (luminance ${luminance.toFixed(1)})`,
-    );
-  }
+  const reason = captureRejectionReason(luminanceStats(canvas));
+  if (reason) throw new Error(`captureMapPng: ${reason}`);
   return { dataUrl: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height };
 }
