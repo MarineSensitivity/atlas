@@ -564,6 +564,9 @@ test.describe("0.10.22: the species raster's style is issued when its shard land
       return { shardAt: entry?.responseEnd || w.__gate!.released!, rasterAt: w.__gate!.raster! };
     });
     const afterShardMs = Math.round(rasterAt - shardAt);
+    console.log(
+      `species raster in the style ${afterShardMs} ms after its shard (budget ${RASTER_AFTER_SHARD_BUDGET_MS})`,
+    );
     expect(
       afterShardMs,
       `the species raster reached the style ${afterShardMs} ms after its shard: it was parked ` +

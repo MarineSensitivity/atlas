@@ -124,7 +124,9 @@ export function getCachedBasemapStyle(theme: ResolvedTheme): CartoStyleLike {
  * at a network-timed moment inside a burst of other style changes exposed a MapLibre-level
  * mis-ordering. That is now fixed where it belongs, in `map/styleQueue.ts`: at most one `setStyle`
  * is in flight at a time, so an extra recompose costs one more settle cycle and can no longer
- * produce a mis-ordered pair of diffs. Hence this helper, rather than another workaround.
+ * produce a mis-ordered pair of diffs. Hence this helper, rather than another workaround. (0.10.22:
+ * that cycle ends on the issued style's own `"style.load"`, not `"idle"`, and an identical recompose
+ * — the other theme reporting in — is not issued at all; see `styleQueue.ts`'s header.)
  *
  * `onResolved` is called exactly once per theme, ALWAYS — `loadBasemapStyle()` resolves to
  * {@link EMPTY_BASEMAP_STYLE} rather than rejecting, and the rejection path is covered anyway, so a
