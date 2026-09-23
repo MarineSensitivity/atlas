@@ -165,17 +165,34 @@ a {
   pointer-events: none;
 }
 
-.mark {
+/* R5: the wave-in-hexagon mark (src/lib/brand/WaveHexMark.svelte's own header explains the
+   source). Geometry only here -- width/height are explicit SVG attributes on both the skeleton's
+   inline copy and the component's own markup, so this rule never has to reproduce a size (unlike
+   the sk-* rules below, which duplicate a REAL component's box model). Global, not scoped, on
+   purpose: it must style the skeleton's plain inline <svg> (index.html), which has no component of
+   its own to carry scoped styles -- and it styles the hydrated WaveHexMark identically, since a
+   global class selector matches a Svelte-scoped element just as it matches any other. */
+.wavehex {
   display: block;
-  width: 28px;
-  height: 28px;
   flex: none;
 }
-:root:not([data-theme="paper"]) .mark--paper {
-  display: none;
+.wavehex-bg {
+  fill: var(--mma-navy);
 }
-:root[data-theme="paper"] .mark--navy {
-  display: none;
+.wavehex-wave {
+  fill: var(--mma-gold);
+}
+.wavehex-crest {
+  fill: none;
+  stroke: var(--surface-seal-plate);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+.wavehex-ring {
+  fill: none;
+  stroke: var(--border-accent);
+  stroke-width: 3.5;
+  stroke-linejoin: round;
 }
 
 .brand-title {
@@ -408,17 +425,18 @@ button.chip {
      rail. Raising the rail's z-index instead was rejected: at "peek" the rail's box lands almost
      exactly over the sheet's OWN grab handle / detent controls, so it would only have swapped
      which control became unreachable. The sheet now gets its own reserved row instead: `--size-
-     rail-row` is the rail's real footprint (its own height -- `--size-touch` plus the padding
-     Rail.svelte/HexButton already build it with -- plus its `bottom` offset plus a small gap), so
-     it can never drift from the rail's actual size. It is set HERE (not on `:root`) so it inherits
-     down to `.sheet` itself (Sheet.svelte's root renders as this element's own DOM child) -- see
-     that component's `detent-full` rule, which reads it back to shrink "Full height" so the sheet
-     never grows back down over the reserved row the way a flat `92svh` did. */
+     rail-row` is the rail's real footprint (a RailButton's own height -- content-driven, not the
+     `--size-touch` floor, see shell.css's `.sk-railitem` comment above for the 48.1px math --
+     plus the rail's own 6px top/bottom padding, Rail.svelte's `.rail` -- plus its `bottom` offset
+     plus a small gap), so it can never drift from the rail's actual size. It is set HERE (not on
+     `:root`) so it inherits down to `.sheet` itself (Sheet.svelte's root renders as this element's
+     own DOM child) -- see that component's `detent-full` rule, which reads it back to shrink "Full
+     height" so the sheet never grows back down over the reserved row the way a flat `92svh` did. */
   .panel-region {
     top: auto;
     right: 0;
     left: 0;
-    --size-rail-row: calc(var(--size-touch) + var(--space-2) * 2 + var(--space-3) + var(--space-2));
+    --size-rail-row: calc(48.1px + 12px + var(--space-3) + var(--space-2));
     bottom: var(--size-rail-row);
     /* `left`, `right` AND an explicit `width` together over-constrain an absolutely positioned
        box (CSS 2.1 10.3.7) -- the desktop rule's `width` above would otherwise win and `right`
@@ -490,12 +508,15 @@ button.chip {
   font-weight: 700;
 }
 
+/* R4: a labelled stack (src/lib/ui/Rail.svelte's own `.rail`), not the old rounded pill of hexes --
+   geometry duplicated from that component and from RailButton.svelte, per this file's own header
+   comment (a deliberate, narrow duplication, not a restyle). */
 .sk-rail {
   display: inline-flex;
   flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--space-1);
-  border-radius: var(--radius-pill);
+  gap: 6px;
+  padding: 6px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--surface-panel) var(--glass-opacity), transparent);
   backdrop-filter: blur(var(--glass-blur));
   box-shadow: var(--elev-2);
@@ -505,28 +526,20 @@ button.chip {
     flex-direction: row;
   }
 }
-.sk-hexbtn {
-  position: relative;
-  width: var(--size-touch);
-  height: var(--size-touch);
+/* RailButton.svelte's `.railitem`: width 60px is its own box (border-box, this file's global
+   reset); height is CONTENT-driven, not the `min-height: var(--size-touch)` floor -- the icon
+   (20px) + row gap (2px) + the 11px/1.1 label's own line box (12.1px) sum to 34.1px, which already
+   exceeds the 30px of vertical room the 44px floor would leave inside the 8px/6px padding, so the
+   real button grows to fit content: 8 + 34.1 + 6 = 48.1px. */
+.sk-railitem {
+  width: 60px;
+  height: 48.1px;
   flex: none;
+  border-radius: var(--radius-control);
 }
-.sk-hexbtn::before,
-.sk-hexbtn::after {
-  content: "";
-  position: absolute;
-  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-}
-.sk-hexbtn::before {
-  inset: 0;
-  background: var(--border-control);
-}
-.sk-hexbtn::after {
-  inset: 2px;
-  background: var(--fill-control);
-}
-.sk-hexbtn.is-pressed::after {
+.sk-railitem.is-pressed {
   background: var(--fill-accent);
+  box-shadow: 0 0 0 2px var(--border-accent);
 }
 
 .sk-panel {

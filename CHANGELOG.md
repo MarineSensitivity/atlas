@@ -1,3 +1,38 @@
+# atlas 0.10.32
+
+R2 round U5 (`docs/usability.md` §7 R4/R5): the tool rail, the logo and the light theme's yellow.
+
+- **R4 — the tool rail is now a vertical labelled stack** (desktop) and a labelled bottom tab bar
+  (phone), not a row of icon-only hexagons whose meaning lived only in a hover tooltip. New
+  `src/lib/ui/RailButton.svelte` replaces `HexButton.svelte` as the rail's own button (HexButton
+  stays, unused by the rail, still shown in the gallery); the active tool is now marked by
+  `aria-current="true"` plus a small hexagon "pip" beside the button, matching the reviewed
+  mockup (`docs/design/mockups/r2/r2.css`'s `.rail-stack`). New `e2e/shell.rail.spec.ts` (visible
+  labels, the active marker, arrow-key/Home/End roving focus, the phone tab bar at every sheet
+  detent); seeded fault `tests/faults/railbutton-active-marker-lost.patch`. The pre-existing
+  `hexbutton-unnamed` fault is renamed `railbutton-unnamed` and now patches `RailButton.svelte`
+  (patching `HexButton.svelte`, no longer in the rail, had stopped moving anything the gate could
+  see).
+- **R5 — the wave-in-hexagon mark** replaces the "wave in a circle" pair
+  (`src/lib/brand/vendor/mst-mark*.svg`) in the top bar, the report header and the favicon. New
+  `src/lib/brand/WaveHexMark.svelte` inlines the SVG so one definition serves both themes through
+  `--border-accent`, rather than a two-file `.mark--navy`/`.mark--paper` swap; `public/brand/
+mark-wavehex.svg` and `public/favicon.svg` carry the same mark as a static asset. New
+  `tests/brand/logo.test.ts`.
+- **R5 — light theme (paper) palette candidate y1**: `--fill-accent` is now the same brand gold as
+  the dark theme's (`var(--mma-gold)`, was Steel), carrying its active state through a new
+  `--border-accent` ring (navy on paper, gold on navy) rather than contrast alone — gold on white
+  is 1.49:1 (now `exempt`, ring pairs replace it in the `@contrast` manifest at ≥ 14:1). New
+  `--text-on-cat` (label text on a `--cat-*` fill) and nine neutrals warmed from slate to cream
+  (`--surface-sunken`, `--fill-control`, `--fill-track`, `--border-control`, `--divider`,
+  `--icon-muted`, `--icon-inactive`, `--scrim`, `--shadow-color`). `--focus-ring` stays Steel (gold
+  fails 3:1 there). The dark theme is unchanged. `node scripts/contrast.mjs` now checks 88 pairs
+  (was 86). The ring also carries the state on `Segmented`/`Switch`/`Pill`/`Chip`/`HexButton`
+  (`--border-accent` in place of `--fill-accent` as each control's own boundary) — `Places.svelte`,
+  `LayerBarView.svelte` and `Treemap.svelte` still need the same edit (docs/usability.md §7 R5's
+  full ~10-selector list) but were left alone here as files other in-flight rounds own.
+  `gallery.html`'s screenshots change with the palette; darwin baselines regenerated deliberately.
+
 # atlas 0.10.28
 
 Six fixes from the atlas-8 phase review round 2 (`workflows/.claude/plans_todo/atlas-refs/2026-09-23

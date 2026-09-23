@@ -40,7 +40,10 @@
   import { speciesCsv } from "./exportFiles";
   import "./report.css";
   import { REPORT_COLOR_UNRESOLVED } from "./colors";
-  import markUrl from "../lib/brand/vendor/mst-mark.svg?url";
+  // R5: the wave-in-hexagon mark (src/lib/brand/WaveHexMark.svelte's own header). report.html is
+  // always `data-theme="paper"` (this file's own head comment), so the ring resolves navy without
+  // any extra logic here.
+  import WaveHexMark from "../lib/brand/WaveHexMark.svelte";
   import type { DataEngineContext } from "../places/dataEngine";
   import type { PlaceStub } from "../lib/report/model";
 
@@ -378,7 +381,7 @@
 
 {#if model}
   <header class="report-header">
-    <img class="mark" src={markUrl} alt="" />
+    <WaveHexMark size={40} class="mark" />
     {#if showAgencyLockup}
       <div class="agency-lockup">
         <img
