@@ -11,6 +11,8 @@ const TYPES = {
   ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".woff2": "font/woff2",
   ".js": "text/javascript; charset=utf-8",
 };
 
@@ -84,3 +86,143 @@ export const THEMES = ["navy", "paper"];
 
 export const mockupUrl = (origin, file, theme) =>
   `${origin}/docs/design/mockups/${file}?theme=${theme}`;
+
+/**
+ * Round 2 (U0 usability, docs/usability.md): the R1–R5 decision mockups. One page, `r2/shell.html`,
+ * renders every option from its query string; `r2/brand.html` is the R5 mark + palette sheet.
+ * `shot` is the JPEG name under docs/usability/ (scripts/mockup-shots-r2.mjs); the axe run
+ * (`node scripts/axe-mockups.mjs --set=r2`) iterates the same list.
+ */
+const R1 = "r2/shell.html?chrome=proposed&rail=stack&layers=stack&notes=r1";
+export const R2_MOCKUPS = [
+  {
+    shot: "mock-r1-dock-right-1280-dark",
+    file: `${R1}&panel=dock&dock=right`,
+    width: 1280,
+    height: 800,
+    theme: "navy",
+  },
+  {
+    shot: "mock-r1-dock-full-1280-dark",
+    file: `${R1}&panel=dock&dock=full&tool=table`,
+    width: 1280,
+    height: 800,
+    theme: "navy",
+  },
+  {
+    shot: "mock-r1-float-1280-dark",
+    file: `${R1}&panel=float`,
+    width: 1280,
+    height: 800,
+    theme: "navy",
+  },
+  {
+    shot: "mock-r1-dock-390-dark",
+    file: `${R1}&panel=dock`,
+    width: 390,
+    height: 844,
+    theme: "navy",
+  },
+  {
+    shot: "mock-r1-float-390-dark",
+    file: `${R1}&panel=float`,
+    width: 390,
+    height: 844,
+    theme: "navy",
+  },
+  {
+    shot: "mock-r2-about-1280-dark",
+    file: "r2/shell.html?chrome=proposed&rail=stack&layers=stack&open=about&notes=r2",
+    width: 1280,
+    height: 800,
+    theme: "navy",
+  },
+  {
+    shot: "mock-r2-feedback-1280-dark",
+    file: "r2/shell.html?chrome=proposed&rail=stack&layers=stack&open=feedback&notes=r2",
+    width: 1280,
+    height: 800,
+    theme: "navy",
+  },
+  {
+    shot: "mock-r3-split-1280-dark",
+    file: "r2/shell.html?chrome=proposed&rail=stack&layers=split&notes=r3",
+    width: 1280,
+    height: 800,
+    theme: "navy",
+  },
+  {
+    shot: "mock-r3-tabs-1280-dark",
+    file: "r2/shell.html?chrome=proposed&rail=stack&layers=tabs&notes=r3",
+    width: 1280,
+    height: 800,
+    theme: "navy",
+  },
+  {
+    shot: "mock-r3-stack-1280-dark",
+    file: "r2/shell.html?chrome=proposed&rail=stack&layers=stack&notes=r3",
+    width: 1280,
+    height: 800,
+    theme: "navy",
+  },
+  {
+    shot: "mock-r4-hex-1280-dark",
+    file: "r2/shell.html?chrome=proposed&rail=hex&layers=stack&notes=r4",
+    width: 1280,
+    height: 800,
+    theme: "navy",
+  },
+  {
+    shot: "mock-r4-stack-1280-dark",
+    file: "r2/shell.html?chrome=proposed&rail=stack&layers=stack&notes=r4",
+    width: 1280,
+    height: 800,
+    theme: "navy",
+  },
+  {
+    shot: "mock-r4-top-1280-light",
+    file: "r2/shell.html?chrome=proposed&rail=top&layers=stack&notes=r4",
+    width: 1280,
+    height: 800,
+    theme: "paper",
+  },
+  {
+    shot: "mock-r5-brand-1280-dark",
+    file: "r2/brand.html",
+    width: 1280,
+    height: 900,
+    theme: "navy",
+  },
+  {
+    shot: "mock-r5-brand-1280-light",
+    file: "r2/brand.html",
+    width: 1280,
+    height: 900,
+    theme: "paper",
+  },
+  {
+    shot: "mock-proposed-1280-dark",
+    file: "r2/shell.html?panel=dock&dock=right&rail=stack&chrome=proposed&layers=stack&mark=wavehex&notes=proposed",
+    width: 1280,
+    height: 800,
+    theme: "navy",
+  },
+  {
+    shot: "mock-proposed-1280-light",
+    file: "r2/shell.html?panel=dock&dock=right&rail=stack&chrome=proposed&layers=stack&mark=wavehex&tokens=y1&notes=proposed",
+    width: 1280,
+    height: 800,
+    theme: "paper",
+  },
+  {
+    shot: "mock-proposed-390-dark",
+    file: "r2/shell.html?panel=dock&rail=stack&chrome=proposed&layers=stack&mark=wavehex&notes=proposed",
+    width: 390,
+    height: 844,
+    theme: "navy",
+  },
+];
+
+/** an R2 entry's URL: its own query string plus the theme (the page's pre-paint script reads it). */
+export const r2MockupUrl = (origin, entry) =>
+  `${origin}/docs/design/mockups/${entry.file}${entry.file.includes("?") ? "&" : "?"}theme=${entry.theme}`;
