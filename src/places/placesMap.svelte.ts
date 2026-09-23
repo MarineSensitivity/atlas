@@ -19,24 +19,45 @@
 // shape as fix 1's scores-lens bug (map state computed only inside panel-gated UI). Shell.svelte
 // already instantiates this store UNCONDITIONALLY, at module scope, regardless of which tool is
 // active -- mirroring `createSpeciesLens`/`createScoresLens`, this is now "a lens/place-level store
-// the shell instantiates", not panel-only UI. `Places.svelte`'s own effect stays, for the part this
-// baseline cannot do without its local `pickOn`/`drawMode` state: honouring an in-progress
-// pick/draw interaction rather than restoring the selection outline out from under it the instant
-// either ends (see that effect's own comment for why the two do not fight over `outline`).
+// the shell instantiates", not panel-only UI.
+//
+// atlas-8 review round 2, item m3: that baseline restore used to be a SECOND `$effect` writing the
+// SAME `outline` state `Places.svelte`'s own "the selected row's outline persists..." effect also
+// wrote (gated on `!pickOn && !drawMode`) -- two independent writers of one bucket, ordered only by
+// Svelte's own effect-scheduling, the shape GATES.md already flagged for `document.title` (fixed
+// there by making Shell.svelte the ONE writer). Fixed the same way: `baseline` is now a pure
+// `$derived` (never an effect -- nothing to race), `interaction` is the ONE piece of `$state` a
+// caller can set (pick mode's highlight, a draw's live preview -- everything `Places.svelte`'s own
+// `mapStore.setOutline(...)` calls already meant), and `outline` composes them ONCE, here:
+// `interaction ?? baseline`. `Places.svelte` no longer needs its own baseline-restoring effect at
+// all -- clearing the interaction override (pick/draw ending) falls straight back to the baseline
+// this module already tracks; see that component's own `setOutline(null)` call sites, unchanged.
+// A place/pl selection change drops any STALE interaction override (a pick highlight or a draw
+// preview belongs to the selection that was current when it was set): pick/draw re-assert their
+// own interaction immediately if still active, through their own callbacks. `tests/places/
+// placesMap.test.ts` unit-tests the precedence.
 import type { FeatureCollection } from "geojson";
 import type { SelStore } from "../lib/state/sel.svelte";
 import { densifyGeometry } from "./densify";
-import { featureCollectionOf, selectedGeomPlaceGeometry } from "./model";
+import { composeOutline, featureCollectionOf, selectedGeomPlaceGeometry } from "./model";
 
 export interface PlacesMapStore {
-  /** the pick-mode highlight (Deliverable 2) or a selected place's outline (Deliverable 4) --
-   * whichever is current; `null` when nothing should be highlighted. */
+  /** `interaction ?? baseline` -- the pick-mode highlight or a draw's live preview (Deliverable
+   * 2/3) when one is set, else the selected place's own outline restored from `sel.pl`/`sel.sel`
+   * alone (Deliverable 4); `null` when nothing should be highlighted. */
   readonly outline: FeatureCollection | null;
   /** "show analysis cells" (Deliverable 2): the covered cells, each carrying `pct` (1-100) and
    * `opacity` (`pct / 100`) properties for the selection layer's data-driven fill-opacity. */
   readonly cells: FeatureCollection | null;
+  /** atlas-8 review round 2, item m4: the "Show analysis cells" toggle's own on/off state, moved
+   * out of `Places.svelte`'s local `$state` -- it used to read "off" after a collapse/tool-switch/
+   * remount while `cells` (above) stayed painted, so the toggle and the map could disagree. Chrome
+   * (never the URL), same lifetime as `outline`/`cells`. */
+  readonly showCells: boolean;
+  /** sets the INTERACTION override (item m3) -- `null` releases it back to the baseline. */
   setOutline(fc: FeatureCollection | null): void;
   setCells(fc: FeatureCollection | null): void;
+  setShowCells(value: boolean): void;
 }
 
 export interface PlacesMapDeps {
@@ -44,18 +65,29 @@ export interface PlacesMapDeps {
 }
 
 export function createPlacesMapStore(deps: PlacesMapDeps): PlacesMapStore {
-  let outline = $state<FeatureCollection | null>(null);
+  let interaction = $state<FeatureCollection | null>(null);
   let cells = $state<FeatureCollection | null>(null);
+  let showCells = $state(false);
 
-  // the baseline restore (this module's own header comment). Depends ONLY on `sel.pl`/`sel.sel`,
-  // so it stays quiet for the whole duration of an interactive pick/draw session (neither changes
-  // `sel` until the session commits a place) and never fights `Places.svelte`'s own effect over
-  // that window -- it only re-asserts the baseline at the moments `sel` itself changes, which is
-  // exactly when the two agree on what the outline should be anyway.
-  $effect(() => {
+  // the baseline (this module's own header comment) -- a pure `$derived`, never an effect: it has
+  // no side effect to race, so reading it can never disagree with a concurrent writer the way two
+  // effects writing the same `$state` could.
+  const baseline = $derived.by(() => {
     const geometry = selectedGeomPlaceGeometry(deps.selStore.sel.pl, deps.selStore.sel.sel);
-    outline = geometry ? featureCollectionOf(densifyGeometry(geometry)) : null;
+    return geometry ? featureCollectionOf(densifyGeometry(geometry)) : null;
   });
+
+  // a place/pl selection change drops any interaction override left over from a PREVIOUS
+  // selection (this module header's own rule) -- `Places.svelte`'s pick/draw callbacks
+  // (`refreshOutline()`, `onDrawFinish()`) re-assert a fresh one immediately if still active.
+  $effect(() => {
+    void deps.selStore.sel.pl;
+    void deps.selStore.sel.sel;
+    interaction = null;
+  });
+
+  // composed ONCE, here (item m3), through the unit-tested `model.ts#composeOutline`.
+  const outline = $derived(composeOutline(interaction, baseline));
 
   return {
     get outline() {
@@ -64,11 +96,17 @@ export function createPlacesMapStore(deps: PlacesMapDeps): PlacesMapStore {
     get cells() {
       return cells;
     },
+    get showCells() {
+      return showCells;
+    },
     setOutline(fc: FeatureCollection | null) {
-      outline = fc;
+      interaction = fc;
     },
     setCells(fc: FeatureCollection | null) {
       cells = fc;
+    },
+    setShowCells(value: boolean) {
+      showCells = value;
     },
   };
 }
