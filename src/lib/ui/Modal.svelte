@@ -4,7 +4,7 @@
   // (top-layer focus containment, Escape fires 'cancel' then 'close', and closing restores focus
   // to whatever had it before showModal() was called). Hand-rolling any of that would only
   // reproduce what the platform already guarantees, less reliably.
-  import type { Snippet } from "svelte";
+  import { onMount, type Snippet } from "svelte";
   import Icon from "./Icon.svelte";
   import { uid } from "./uid";
 
@@ -29,25 +29,45 @@
     if (!open && dialogEl.open) dialogEl.close();
   });
 
+  // fix list #2 (SC 2.4.3): `:not(:disabled)` on every selector that can carry it -- the trap
+  // below fires only when `document.activeElement === last`, and a DISABLED control (the
+  // coordinate dialog's own "Add place", disabled until you type something) can never actually
+  // hold focus, so a bare selector that still matched it made `last` unreachable and the trap
+  // dead. `isVisible` below additionally filters a HIDDEN one (display:none/visibility:hidden),
+  // for the same reason: neither can be the real boundary a Tab cycle should wrap at.
   const FOCUSABLE_SELECTOR =
-    "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])";
+    "button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), " +
+    "textarea:not(:disabled), [tabindex]:not([tabindex='-1'])";
 
-  // Belt-and-suspenders on top of the platform's own containment: measured in Chromium, a
-  // <dialog> with only a couple of focusable children can let a Tab cycle land outside it (focus
-  // falls through to <body>) for one step instead of wrapping straight back inside. Trap Tab at
-  // the dialog's own first/last focusable element explicitly, so the browser's default handling
-  // for the boundary case never runs at all.
-  function handleDialogKeydown(event: KeyboardEvent) {
+  function isVisible(el: HTMLElement): boolean {
+    return typeof el.checkVisibility === "function"
+      ? el.checkVisibility()
+      : el.offsetParent !== null;
+  }
+
+  // fix list #1 (SC 2.4.3/3.2.x): attached IMPERATIVELY on the dialog element itself, in
+  // onMount -- exactly Popover.svelte's own pattern (see its header comment for the full
+  // reasoning). Svelte 5 DELEGATES a template `onkeydown` to the app root: the native keydown has
+  // already finished bubbling through every REAL ancestor listener (including an enclosing
+  // Panel's own Esc-collapses-it handler, attached the same imperative way) by the time a
+  // delegated handler ever runs, so `stopPropagation()` there is always too late. A real listener
+  // on `dialogEl` -- BELOW any ancestor Panel in the DOM -- runs during the actual bubble phase,
+  // before the event ever reaches that ancestor, so stopping it here actually stops it.
+  function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
-      // the innermost open layer handles Esc first: if this modal is ever rendered nested inside
-      // a Panel's DOM subtree, the raw keydown would otherwise keep bubbling past the dialog (the
-      // browser's own Escape-closes-the-dialog default action does not stop propagation) and also
-      // collapse the enclosing panel.
+      // NOT preventDefault() here: measured (chromium AND firefox), calling it suppresses the
+      // browser's own "Escape closes a modal <dialog>" default action entirely, so the dialog
+      // never closes at all -- that behaviour is tied to the keydown's default action, not (as
+      // MDN's `cancel`-event guidance might suggest) a separate mechanism. stopPropagation() alone
+      // is enough to stop an ancestor Panel's Esc-collapses-it listener from also seeing this
+      // event, without touching the platform's own close.
       event.stopPropagation();
       return;
     }
     if (event.key !== "Tab" || !dialogEl) return;
-    const focusable = [...dialogEl.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)];
+    const focusable = [...dialogEl.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
+      isVisible,
+    );
     if (focusable.length === 0) return;
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
@@ -60,14 +80,15 @@
       last.focus();
     }
   }
+
+  onMount(() => {
+    const el = dialogEl;
+    el?.addEventListener("keydown", handleKeydown);
+    return () => el?.removeEventListener("keydown", handleKeydown);
+  });
 </script>
 
-<dialog
-  bind:this={dialogEl}
-  aria-labelledby={titleId}
-  onclose={() => onclose?.()}
-  onkeydown={handleDialogKeydown}
->
+<dialog bind:this={dialogEl} aria-labelledby={titleId} onclose={() => onclose?.()}>
   <div class="modal-head">
     <h2 id={titleId}>{title}</h2>
     <button type="button" class="modal-close" aria-label="Close" onclick={() => dialogEl?.close()}>

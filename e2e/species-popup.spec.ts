@@ -84,6 +84,23 @@ function contrastRatio(a: [number, number, number], b: [number, number, number])
   return (l1 + 0.05) / (l2 + 0.05);
 }
 
+// fix list #12 (SC 4.1.3): the species click popup used to be a plain MapLibre div, never
+// announced. Fix: `state.svelte.ts`'s `show()` also calls the shared `announce()`, with
+// `popupAnnounceText()` (popup.ts) -- the SAME content as `popupHtml()`, unescaped. REVERTED
+// (this fix alone) -> RED: the live region's text never changes on a map click.
+test("the species popup's text is also announced through the shared live region", async ({
+  page,
+}) => {
+  await gotoSpeciesTheme(page, "dark");
+  const live = page.locator('[role="status"]').first();
+  await fireMapClick(page, { lng: -70, lat: 40 });
+  await expect(page.locator(".atlas-popup")).toBeVisible({ timeout: 15_000 });
+  await expect(live).toContainText("Value: 50", { timeout: 15_000 });
+  // never markup: announce() sets text content, so an unescaped "<" would prove the wrong
+  // (HTML-escaped) string leaked through instead of the plain one popupAnnounceText() builds.
+  expect(await live.innerHTML()).not.toContain("&lt;");
+});
+
 for (const theme of ["dark", "light"] as const) {
   test(`species popup text clears 4.5:1 contrast against its background — ${theme} theme (fix round 3)`, async ({
     page,

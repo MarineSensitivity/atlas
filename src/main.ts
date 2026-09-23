@@ -13,3 +13,9 @@ if (target) {
   target.replaceChildren();
   mount(Shell, { target });
 }
+
+// fix list #14 (atlas-3 handover item (b)): the ONE signal index.html's own timed fallback script
+// waits for -- set only once mount() has actually returned (never inside a try/catch that would
+// swallow a real crash and still set it), so a bundle that 404s, fails to parse, or throws before
+// this line runs leaves it absent, which is exactly the condition that script treats as failure.
+document.documentElement.setAttribute("data-hydrated", "true");

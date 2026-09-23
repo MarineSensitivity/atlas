@@ -9,6 +9,7 @@
   // INSIDE `LayersPanel.svelte` -- only ever visible when the Layers panel/tool was open, and never
   // shown at all for the zone-choropleth branch.
   import Legend from "../../lib/ui/Legend.svelte";
+  import { uid } from "../../lib/ui/uid";
   import { formatScoresLegendValue, type ScoresLegend } from "./mapInputs";
 
   interface Props {
@@ -16,6 +17,10 @@
   }
 
   let { legend }: Props = $props();
+  // fix list #11 (SC 1.3.1): the "not published yet"/"no zones" notes below render their OWN h2,
+  // never through the shared Legend.svelte -- so they need the same region/aria-labelledby fix
+  // applied locally, per instance (not a shared literal).
+  const noteTitleId = uid("scores-legend-note-title");
 </script>
 
 {#if legend?.kind === "raster" || legend?.kind === "zone"}
@@ -28,13 +33,23 @@
     />
   </div>
 {:else if legend?.kind === "unavailable"}
-  <div class="scores-legend scores-legend--note" data-testid="scores-legend">
-    <h2>{legend.title}</h2>
+  <div
+    class="scores-legend scores-legend--note"
+    role="region"
+    aria-labelledby={noteTitleId}
+    data-testid="scores-legend"
+  >
+    <h2 id={noteTitleId}>{legend.title}</h2>
     <p>This release has not published a legend ramp for this palette yet.</p>
   </div>
 {:else if legend?.kind === "empty"}
-  <div class="scores-legend scores-legend--note" data-testid="scores-legend">
-    <h2>{legend.title}</h2>
+  <div
+    class="scores-legend scores-legend--note"
+    role="region"
+    aria-labelledby={noteTitleId}
+    data-testid="scores-legend"
+  >
+    <h2 id={noteTitleId}>{legend.title}</h2>
     <p>No zones carry a value for this layer.</p>
   </div>
 {/if}

@@ -230,6 +230,16 @@
     cursor: pointer;
   }
 
+  /* fix list #3 (SC 2.4.7): the transparent input stretched over this label is a legitimate
+     pattern -- the input itself is what actually receives focus, but with no rule of its own
+     `.dropzone` painted IDENTICALLY focused and unfocused, so a keyboard user tabbing through
+     this panel simply lost the caret for one stop. The only other `:focus-within` rule in `src/`
+     today is shell.css's search field. */
+  .dropzone:focus-within {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
   .refusal,
   .multi-prompt {
     padding: var(--space-3);

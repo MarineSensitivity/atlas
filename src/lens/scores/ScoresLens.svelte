@@ -21,7 +21,13 @@
   import { cellValue, componentMetricKeys } from "../../lib/analysis/queries";
   import { cellFlowerComponents, type CellComponentRow, type DedupResult } from "./flower";
   import { getAnalysisSources } from "./engine";
-  import { cellPopupText, zonePopupText } from "./popup";
+  import { announce } from "../../lib/ui/announcer";
+  import {
+    cellPopupAnnounceText,
+    cellPopupText,
+    zonePopupAnnounceText,
+    zonePopupText,
+  } from "./popup";
   import LayersPanel from "./LayersPanel.svelte";
   import FlowerPanel from "./FlowerPanel.svelte";
   import TablePanel from "./TablePanel.svelte";
@@ -114,7 +120,15 @@
     mapLibrePopup = null;
   }
 
-  function showPopup(lngLat: { lng: number; lat: number }, html: string): void {
+  // fix list #12 (SC 4.1.3): the popup is a plain MapLibre div, not a live region -- nothing ever
+  // announced its text. `announceText` is the SAME content as `html`, just unescaped (see
+  // popup.ts's `cellPopupAnnounceText`/`zonePopupAnnounceText` for why they are separate
+  // functions rather than one shared string).
+  function showPopup(
+    lngLat: { lng: number; lat: number },
+    html: string,
+    announceText: string,
+  ): void {
     const handle = mapHandle;
     clearPopup();
     if (!handle) return;
@@ -122,6 +136,7 @@
       .setLngLat([lngLat.lng, lngLat.lat])
       .setHTML(html)
       .addTo(handle.map);
+    announce(announceText);
   }
 
   async function showCellPopup(
@@ -144,10 +159,8 @@
     }
     if (token !== popupToken) return; // a later click superseded this one
     const label = layerByKey(bootObj, lyr)?.label ?? lyr ?? "value";
-    showPopup(
-      lngLat,
-      cellPopupText({ cellId, lon: lngLat.lng, lat: lngLat.lat, layerLabel: label, value }),
-    );
+    const input = { cellId, lon: lngLat.lng, lat: lngLat.lat, layerLabel: label, value };
+    showPopup(lngLat, cellPopupText(input), cellPopupAnnounceText(input));
   }
 
   $effect(() => {
@@ -178,7 +191,12 @@
         }
       } else if (result.zone) {
         selStore.set({ sel: formatZoneToken(result.zone.unit, result.zone.key) });
-        showPopup(e.lngLat, zonePopupText(zoneRows(boot, result.zone.unit), lyr, result.zone));
+        const zRows = zoneRows(boot, result.zone.unit);
+        showPopup(
+          e.lngLat,
+          zonePopupText(zRows, lyr, result.zone),
+          zonePopupAnnounceText(zRows, lyr, result.zone),
+        );
       }
     }
     function onKeydown(e: KeyboardEvent) {

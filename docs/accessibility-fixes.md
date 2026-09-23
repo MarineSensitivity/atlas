@@ -5,33 +5,33 @@ Found by the axe sweep over every `scripts/verify.mjs` matrix state (`e2e/matrix
 (`e2e/keyboard-walk.spec.ts`), and a read of the real accessibility tree
 (`ariaSnapshot()`) for every region of the shell, the report and the gallery.
 
-**Nothing here is fixed in this change except A11Y-0** (it blocked the audit from running at all).
-Every other item is for the Sonnet fix round; this file is its work list, and the re-audit after it
-is what closes them. Each open item already has a **failing test** — a `test.fixme` in
-`e2e/keyboard-walk.spec.ts` where the walk can prove it, or the exact reproduction below where it
-cannot — so "fixed" means that test goes green, not that the code looks different.
+**Status as of the fix round (0.10.18): all 14 items below are fixed.** Every `test.fixme` this
+file's own round committed is now a real, passing assertion; items #8-14 (which had none before)
+each have a new test. "Fixed" means the named test goes green with the fix in place and RED when
+the fix (or, for #1, the new seeded fault `tests/faults/modal-esc-delegated.patch`) is reverted —
+not that the code merely looks different.
 
 Severity: **serious** = a keyboard or screen-reader user cannot complete a task, or is silently
 dropped somewhere with no way back. **moderate** = the task is completable but the semantics are
 wrong or missing, so the experience is materially worse than a sighted mouse user's.
 
-| #   | SC                                         | Where                                                             | Severity       | Gate                                                                               |
-| --- | ------------------------------------------ | ----------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------- |
-| 0   | — (broken gate)                            | `scripts/verify.mjs:35,140`                                       | **fixed here** | `e2e/matrix.a11y.spec.ts`                                                          |
-| 1   | 2.4.3 Focus Order (A)                      | `src/lib/ui/Modal.svelte:69`                                      | serious        | `keyboard-walk.spec.ts` "A11Y-1: …"                                                |
-| 2   | 2.4.3 Focus Order (A)                      | `src/lib/ui/Modal.svelte:32-33`                                   | serious        | `keyboard-walk.spec.ts` "A11Y-2: …"                                                |
-| 3   | 2.4.7 Focus Visible (AA)                   | `src/places/UploadPanel.svelte:212-231`                           | serious        | `keyboard-walk.spec.ts` "A11Y-3: …"                                                |
-| 4   | 4.1.3 Status Messages (AA)                 | `src/report/Report.svelte:332`                                    | serious        | `keyboard-walk.spec.ts` "A11Y-4: …"                                                |
-| 5   | 2.4.3 Focus Order (A)                      | `src/shell/Shell.svelte` / `src/lib/ui/Rail.svelte` (WebKit only) | serious        | `keyboard-walk.spec.ts` "activating a rail tool leaves focus on that tool"         |
-| 6   | 2.4.1 Bypass Blocks (A)                    | `index.html:345-346` (Firefox only)                               | serious        | `keyboard-walk.spec.ts` "'Skip to the tools' lands the caret on the tool rail"     |
-| 7   | 4.1.2 Name, Role, Value (A)                | `src/lib/ui/Panel.svelte:130-135`                                 | serious        | `keyboard-walk.spec.ts` "the panel body is a named region, like the sheet body is" |
-| 8   | 4.1.2 (A) + 1.3.1 (A)                      | `src/lens/species/SpeciesPicker.svelte:107-155`                   | serious        | none yet — write one with the fix                                                  |
-| 9   | 1.1.1 Non-text Content (A)                 | `src/shell/Shell.svelte:587-594`                                  | moderate       | none yet — write one with the fix                                                  |
-| 10  | 1.3.1 Info and Relationships (A)           | `src/lens/scores/LayersPanel.svelte:164`                          | moderate       | none yet — write one with the fix                                                  |
-| 11  | 1.3.1 (A) + 2.4.6 Headings and Labels (AA) | `src/lib/ui/Legend.svelte:44-46`                                  | moderate       | none yet — write one with the fix                                                  |
-| 12  | 4.1.3 Status Messages (AA)                 | `src/lib/map/popup.ts` + both lenses' click handlers              | moderate       | none yet — write one with the fix                                                  |
-| 13  | 4.1.2 Name, Role, Value (A)                | `src/report/Report.svelte:468-479`                                | moderate       | none yet — write one with the fix                                                  |
-| 14  | 3.3.1-adjacent (robustness)                | `index.html:496-498`                                              | moderate       | none yet — write one with the fix                                                  |
+| #   | SC                                         | Where                                                                     | Severity | Gate                                                                                                             |
+| --- | ------------------------------------------ | ------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| 0   | — (broken gate)                            | `scripts/verify.mjs:35,140`                                               | fixed    | `e2e/matrix.a11y.spec.ts`                                                                                        |
+| 1   | 2.4.3 Focus Order (A)                      | `src/lib/ui/Modal.svelte`                                                 | serious  | **fixed** — `keyboard-walk.spec.ts` "A11Y-1: …"; seeded fault `tests/faults/modal-esc-delegated.patch`           |
+| 2   | 2.4.3 Focus Order (A)                      | `src/lib/ui/Modal.svelte`                                                 | serious  | **fixed** — `keyboard-walk.spec.ts` "A11Y-2: …"                                                                  |
+| 3   | 2.4.7 Focus Visible (AA)                   | `src/places/UploadPanel.svelte`                                           | serious  | **fixed** — `keyboard-walk.spec.ts` "A11Y-3: …"                                                                  |
+| 4   | 4.1.3 Status Messages (AA)                 | `src/report/Report.svelte`                                                | serious  | **fixed** — `keyboard-walk.spec.ts` "A11Y-4: …"                                                                  |
+| 5   | 2.4.3 Focus Order (A)                      | `src/shell/Shell.svelte` (WebKit only)                                    | serious  | **fixed** — `keyboard-walk.spec.ts` "activating a rail tool leaves focus on that tool"                           |
+| 6   | 2.4.1 Bypass Blocks (A)                    | `src/shell/Shell.svelte`, `index.html` (Firefox only)                     | serious  | **fixed** — `keyboard-walk.spec.ts` "'Skip to the tools' lands the caret on the tool rail"                       |
+| 7   | 4.1.2 Name, Role, Value (A)                | `src/lib/ui/Panel.svelte`                                                 | serious  | **fixed** — `keyboard-walk.spec.ts` "the panel body is a named region…"; `gallery.spec.ts`                       |
+| 8   | 4.1.2 (A) + 1.3.1 (A)                      | `src/lens/species/SpeciesPicker.svelte`                                   | serious  | **fixed** — `species.smoke.spec.ts` "fix list #8: …" (3 tests, 3 engines)                                        |
+| 9   | 1.1.1 Non-text Content (A)                 | `src/shell/Shell.svelte`                                                  | moderate | **fixed** — `keyboard-walk.spec.ts` "the map points at its own text equivalent"                                  |
+| 10  | 1.3.1 Info and Relationships (A)           | `src/lens/scores/LayersPanel.svelte`                                      | moderate | **fixed** — `keyboard-walk.spec.ts` "no second region landmark nested inside…"                                   |
+| 11  | 1.3.1 (A) + 2.4.6 Headings and Labels (AA) | `src/lib/ui/Legend.svelte`, `ScoresLegend.svelte`, `SpeciesLegend.svelte` | moderate | **fixed** — `keyboard-walk.spec.ts` "the floating legend is reachable as a landmark"                             |
+| 12  | 4.1.3 Status Messages (AA)                 | `src/lib/map/popup.ts` + both lenses' click handlers                      | moderate | **fixed** — `scores.popup.spec.ts` / `species-popup.spec.ts` "…is also announced through the shared live region" |
+| 13  | 4.1.2 Name, Role, Value (A)                | `src/report/Report.svelte`                                                | moderate | **fixed** — `report.spec.ts` "the flower tabs are a real tab widget…"                                            |
+| 14  | 3.3.1-adjacent (robustness)                | `index.html`, `src/main.ts`                                               | moderate | **fixed** — `shell.smoke.spec.ts` "index.html reveals a visible role=alert message…"                             |
 
 ---
 
@@ -70,6 +70,7 @@ wrong or missing, so the experience is materially worse than a sighted mouse use
   on the dialog element, in `onMount` — and `preventDefault()` as well as `stopPropagation()`.
   Popover's own header comment (`Popover.svelte:37-42`) states this exact reasoning; Modal is the
   one layer that did not follow it. ~8 lines.
+- **Status:** ✅ Fixed. keyboard-walk.spec.ts "A11Y-1: Esc in the coordinate dialog returns focus to the opener, not the panel pill" -- REVERTED (this fix alone, tests/faults/modal-esc-delegated.patch) -> RED.
 - **Severity:** serious.
 
 ## 2. Tab escapes an open modal when its last control is disabled
@@ -90,6 +91,7 @@ wrong or missing, so the experience is materially worse than a sighted mouse use
 - **The fix:** filter `FOCUSABLE_SELECTOR`'s result to elements that can actually take focus
   (`:not([disabled])`, plus an `offsetParent !== null` / `checkVisibility()` filter for hidden
   ones). ~3 lines.
+- **Status:** ✅ Fixed. keyboard-walk.spec.ts "A11Y-2: Tab never leaves an open modal, even when its last control is disabled" -- reverted -> RED.
 - **Severity:** serious.
 
 ## 3. The file-upload control shows no focus indicator at all
@@ -105,6 +107,7 @@ wrong or missing, so the experience is materially worse than a sighted mouse use
 - **The fix:** add a `.dropzone:focus-within { outline: 2px solid var(--focus-ring); outline-offset:
 2px; }` rule. (The transparent-input-over-a-label pattern itself is fine and should stay.)
   ~4 lines. The only `:focus-within` rule in `src/` today is `shell.css:274`'s search field.
+- **Status:** ✅ Fixed. keyboard-walk.spec.ts "A11Y-3: the file-upload control shows a visible focus indicator" -- reverted -> RED.
 - **Severity:** serious.
 
 ## 4. The report's progress/status line is announced to nobody
@@ -122,6 +125,7 @@ wrong or missing, so the experience is materially worse than a sighted mouse use
 [aria-live=polite]`), so after the fix the page has two polite regions — either route the
   progress text through `announce()` instead, or keep both and accept the duplication (the
   Announcer's per-place "… scored." messages and the progress line say different things).
+- **Status:** ✅ Fixed. keyboard-walk.spec.ts "A11Y-4: the report's progress line is actually announced" -- reverted -> RED.
 - **Severity:** serious.
 
 ## 5. WebKit: activating a rail tool drops focus to `<body>`
@@ -142,6 +146,7 @@ wrong or missing, so the experience is materially worse than a sighted mouse use
   `Panel.svelte`'s `collapse()`/`restore()` already re-establish focus), and confirm against the
   gate. Check whether the `aria-pressed`/`tabindex` rewrite on the rail's buttons, or the
   `{#if PlacesComp}` branch swap, is what WebKit treats as removing the focused node.
+- **Status:** ✅ Fixed. keyboard-walk.spec.ts "activating a rail tool leaves focus on that tool" (webkit) -- reverted -> RED on webkit.
 - **Severity:** serious (on one of the three engines, which is the one VoiceOver users are on).
 
 ## 6. Firefox: "Skip to the tools" skips the tools
@@ -158,6 +163,7 @@ wrong or missing, so the experience is materially worse than a sighted mouse use
   firefox.
 - **The fix:** `tabindex="-1"` on `#rail-region` and `#panel-region` (the standard remedy), so the
   target itself takes focus and every engine agrees. 2 attributes.
+- **Status:** ✅ Fixed. keyboard-walk.spec.ts "'Skip to the tools' lands the caret on the tool rail" (firefox) -- reverted -> RED on firefox.
 - **Severity:** serious.
 
 ## 7. The desktop panel's body is a nameless tab stop
@@ -176,6 +182,7 @@ aria-label="{title} details"` (a `group` is not a landmark, so the "two nested r
   near-duplicate names" problem that item (a) fixed does not come back). 2 attributes. Then update
   `e2e/gallery.spec.ts`'s "Panel's body has tabindex=0, and is NOT a second nested landmark" test to
   also assert the name, and remove the `KNOWN_UNNAMED_STOPS` entry in `e2e/keyboard-walk.spec.ts`.
+- **Status:** ✅ Fixed. keyboard-walk.spec.ts "the panel body is a named region, like the sheet body is"; gallery.spec.ts "Panel's body has tabindex=0..." -- reverted -> RED.
 - **Severity:** serious (it is on the Tab path of every page).
 
 ## 8. The species picker is a listbox with no combobox
@@ -198,6 +205,7 @@ species">`. Focusing it opens a `role="listbox"` beneath it, but the input carri
   ~22k rows are in the DOM), so `aria-activedescendant` must be paired with scrolling the active
   option into the rendered window — `computeVisibleWindow` already gives the arithmetic. Moderate
   amount of work; not a one-liner.
+- **Status:** ✅ Fixed. species.smoke.spec.ts, describe "fix list #8" (3 tests, 3 engines) -- reverted -> RED.
 - **Severity:** serious (the species lens has no other way in).
 
 ## 9. The map never points at its own text equivalent
@@ -215,6 +223,7 @@ species">`. Focusing it opens a `role="listbox"` beneath it, but the input carri
   equivalent and how to reach it ("Every zone's score is also in the Zones table, under the Table
   tool"), and ideally a skip-style link to it. ~6 lines. This is the one exception
   `docs/accessibility.md` claims; the claim is only honest once the pointer exists.
+- **Status:** ✅ Fixed. keyboard-walk.spec.ts "the map points at its own text equivalent" -- reverted -> RED.
 - **Severity:** moderate.
 
 ## 10. A second `region` landmark nested inside the panel's own region
@@ -229,6 +238,7 @@ species">`. Focusing it opens a `role="listbox"` beneath it, but the input carri
   reintroduced one level down.
 - **The fix:** make it a `<div>` (or `role="group"`), and rename the `h3` to something that is not
   the panel's own title. ~2 lines.
+- **Status:** ✅ Fixed. keyboard-walk.spec.ts "no second region landmark nested inside the Layers panel's own region" -- reverted -> RED.
 - **Severity:** moderate.
 
 ## 11. The floating legend is not in any landmark, and its heading breaks the outline
@@ -243,6 +253,7 @@ species">`. Focusing it opens a `role="listbox"` beneath it, but the input carri
 - **The fix:** wrap it in `<section aria-labelledby>` (or give the existing div `role="region"` and
   point `aria-labelledby` at the `h2`) so it is reachable as a landmark, and confirm the heading
   level against the surrounding outline. ~3 lines.
+- **Status:** ✅ Fixed. keyboard-walk.spec.ts "the floating legend is reachable as a landmark" -- reverted -> RED.
 - **Severity:** moderate.
 
 ## 12. The map-click popup is never announced
@@ -259,6 +270,7 @@ species">`. Focusing it opens a `role="listbox"` beneath it, but the input carri
   it is shown (one call in each of the two call sites). The map itself is not keyboard-operable
   and is not proposed to become so — the zones table is its equivalent (see #9) — but a value the
   app computed and displayed should not be invisible to AT.
+- **Status:** ✅ Fixed. scores.popup.spec.ts + species-popup.spec.ts "...is also announced through the shared live region" -- reverted -> RED.
 - **Severity:** moderate.
 
 ## 13. The report's flower tabs are half a tab widget
@@ -275,9 +287,10 @@ species">`. Focusing it opens a `role="listbox"` beneath it, but the input carri
   tab, and ArrowLeft/ArrowRight with a roving tabindex on the tablist. ~15 lines. (Alternatively,
   drop the ARIA tab roles entirely and let them be plain toggle buttons — a smaller change that is
   also correct.)
+- **Status:** ✅ Fixed. report.spec.ts "the flower tabs are a real tab widget: linked panels and Arrow-key navigation" -- reverted -> RED.
 - **Severity:** moderate.
 
-## 14. A failed bundle load says nothing — atlas-3 handover item (b), still open
+## 14. A failed bundle load says nothing — atlas-3 handover item (b), fixed this round
 
 - **SC:** no single SC; a robustness/`3.3.1`-adjacent gap.
 - **Where:** `index.html:496-498` — the only fallback is a `<noscript>`, which does not cover
@@ -293,19 +306,22 @@ species">`. Focusing it opens a `role="listbox"` beneath it, but the input carri
   reveals a plain visible message with `role="alert"` ("This page could not load its application
   code. Reload, or try again later."), plus a spec that aborts `**/assets/*.js` and asserts it.
   ~15 lines.
+- **Status:** ✅ Fixed. shell.smoke.spec.ts "index.html reveals a visible role=alert message when the bundle never runs" -- reverted -> RED.
 - **Severity:** moderate.
 
 ---
 
-## What the re-audit must show
+## What the re-audit must show — done (0.10.18)
 
-After the fix round, all of the following must be green with no `fixme`:
-
-1. `npx playwright test e2e/keyboard-walk.spec.ts` on **chromium, webkit and firefox** — 15/15,
-   nothing skipped. (Today: 10/5, 9/6, 9/6.)
+1. `npx playwright test e2e/keyboard-walk.spec.ts` on **chromium, webkit and firefox** —
+   **18/18, nothing skipped**, on all three engines. (Before the fix round: 10/5, 9/6, 9/6 of 15;
+   3 new tests for #9/#10/#11 were added in this round, so the total grew from 15 to 18.)
 2. `npx playwright test --project=chromium e2e/matrix.a11y.spec.ts` — 179/179, still zero
-   serious/critical. (Today: 179/179 — none of the findings above is an axe finding; that is the
-   point of doing the walk.)
-3. `npm run test:faults` — 7/7, including `hexbutton-unnamed` and `modal-focus-restore`.
+   serious/critical (unchanged by this round — none of the findings above was ever an axe
+   finding; that is the point of the walk).
+3. `npm run test:faults` — **8/8**, including `hexbutton-unnamed`, `modal-focus-restore`, and the
+   new `modal-esc-delegated` (fix list #1).
 4. The `KNOWN_UNNAMED_STOPS` list in `e2e/keyboard-walk.spec.ts` is empty.
-5. New tests exist for #8-#14, which have none today.
+5. New tests exist for #8-#14: `species.smoke.spec.ts` (#8, 3 tests), `keyboard-walk.spec.ts`
+   (#9, #10, #11), `scores.popup.spec.ts` + `species-popup.spec.ts` (#12), `report.spec.ts`
+   (#13), `shell.smoke.spec.ts` (#14).

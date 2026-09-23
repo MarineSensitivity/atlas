@@ -14,6 +14,7 @@
   import Announcer from "../lib/ui/Announcer.svelte";
   import { announce } from "../lib/ui/announcer";
   import Legend from "../lib/ui/Legend.svelte";
+  import { nextRovingIndex } from "../lib/ui/roving";
   import { agencyDisplayName, shouldShowSeal } from "../lib/ui/sealVisibility";
   import { createAnalytics } from "../lib/analytics/analytics";
   import { parseSel } from "../lib/state/codec";
@@ -247,6 +248,26 @@
   // ---- flowers: tabs on screen, sequential in print -----------------------------------------
   let activeFlower = $state(0);
 
+  // fix list #13 (SC 4.1.2): the tabs were named correctly and aria-selected was right, but there
+  // was no role="tabpanel", no aria-controls/aria-labelledby linking a tab to its figure, and no
+  // Arrow-key navigation -- a screen reader announced "tab, 1 of 2", Arrow Right (the role's own
+  // promise) did nothing, and there was no way to jump from a tab to the figure it controls.
+  // `nextRovingIndex` (roving.ts) is the SAME wrap-at-both-ends math the tool rail already uses,
+  // horizontal orientation (a row of place tabs, like the rail's phone layout).
+  function selectFlower(i: number) {
+    activeFlower = i;
+  }
+
+  function handleFlowerTabsKeydown(event: KeyboardEvent) {
+    const container = event.currentTarget as HTMLElement;
+    const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const next = nextRovingIndex(activeFlower, tabs.length, event.key, "horizontal");
+    if (next === null) return;
+    event.preventDefault();
+    activeFlower = next;
+    tabs[next]?.focus();
+  }
+
   // ---- disclosures ---------------------------------------------------------------------------
   let parametersOpen = $state(false);
   let provenanceOpen = $state(false);
@@ -329,7 +350,14 @@
   <button type="button" onclick={onDownloadDocx} disabled={!model}>Word document</button>
 </div>
 
-<p class="progress-line" role="status" aria-live="off">{progressLabel}</p>
+<!-- fix list #4 (SC 4.1.3): an explicit aria-live="off" used to OVERRIDE the implicit `polite`
+     role="status" carries, so the one message telling a screen-reader user the document is
+     building, and then that it finished, was announced to nobody. Dropping it (role="status"'s
+     own implicit polite is exactly what this needs) also means this page now has TWO polite
+     regions -- the shared Announcer below and this line -- which is accepted, not routed through
+     announce() instead, because they say different things (this is the build's OWN progress; the
+     Announcer's per-place messages are separate events). -->
+<p class="progress-line" role="status" aria-atomic="true">{progressLabel}</p>
 
 {#if model}
   <header class="report-header">
@@ -465,13 +493,25 @@
 
   <section aria-labelledby="s-flowers">
     <h2 id="s-flowers">Plot of Scores</h2>
-    <div class="flower-tabs no-print" role="tablist" aria-label="Places">
+    <!-- tabindex="-1" on the CONTAINER (role="tablist") is not a real tab stop -- same as
+         Rail.svelte's own role="toolbar" div; only the tabs inside it are (roving tabindex,
+         below) -- but svelte-check's a11y rule wants an explicit value on any interactive role. -->
+    <div
+      class="flower-tabs no-print"
+      role="tablist"
+      aria-label="Places"
+      tabindex="-1"
+      onkeydown={handleFlowerTabsKeydown}
+    >
       {#each model.flowers as f, i (f.name)}
         <button
           type="button"
+          id={`flower-tab-${i}`}
           role="tab"
           aria-selected={activeFlower === i}
-          onclick={() => (activeFlower = i)}
+          aria-controls={`flower-panel-${i}`}
+          tabindex={activeFlower === i ? 0 : -1}
+          onclick={() => selectFlower(i)}
         >
           {f.name}
         </button>
@@ -480,7 +520,10 @@
     <div class="flower-panels">
       {#each model.flowers as f, i (f.name)}
         <figure
+          id={`flower-panel-${i}`}
           class="flower-panel"
+          role="tabpanel"
+          aria-labelledby={`flower-tab-${i}`}
           hidden={activeFlower !== i}
           aria-describedby={`flower-summary-${i}`}
         >

@@ -118,8 +118,60 @@
   let activeTool = $state<ToolName>("layers");
   const railItems = $derived(buildRailItems(sel.lens === "species"));
 
+  // fix list #5 (SC 2.4.3), WEBKIT ONLY: activating a rail tool that CHANGES the open tool drops
+  // `document.activeElement` to `<body>` roughly 100ms later, once the newly-chosen tool's lazy
+  // panel chunk resolves and the panel body swaps -- chromium and firefox never do this. Not
+  // traced to one line inside that swap; instead of re-focusing once at a single known instant
+  // (too early: the import has not resolved yet), a MutationObserver on `#panel-region` restores
+  // focus to the rail button the user actually activated WHENEVER a mutation settles there, for
+  // as long as this tool activation is still "pending" -- and only while focus has actually been
+  // lost to `<body>` in the meantime, so a user who has since Tabbed into the panel on purpose is
+  // never overridden (Panel.svelte's own collapse()/restore() re-establish focus the same way,
+  // just for a swap that happens synchronously rather than on an async import's own schedule).
+  let panelRegionEl: HTMLDivElement | undefined;
+  let railFocusObserver: MutationObserver | undefined;
+  let railFocusDeadline = 0;
+  // the observer below is created ONCE and lives for the shell's whole lifetime; this is what it
+  // reads on every mutation, so a LATER call to armRailFocusRestore (a second tool switch) always
+  // retargets the SAME observer rather than being silently ignored by an `if (railFocusObserver)`
+  // early-return that would otherwise freeze it on whichever tool was activated first.
+  let railFocusTarget: string | null = null;
+
+  function focusRailButton(name: string): void {
+    const label = railItems.find((i) => i.name === name)?.label;
+    if (!label) return;
+    const btn = document.querySelector<HTMLButtonElement>(
+      `#rail-region button.hexbtn[aria-label="${CSS.escape(label)}"]`,
+    );
+    btn?.focus();
+  }
+
+  function armRailFocusRestore(name: string): void {
+    railFocusTarget = name;
+    railFocusDeadline = Date.now() + 1500;
+    if (railFocusObserver || !panelRegionEl) return;
+    railFocusObserver = new MutationObserver(() => {
+      if (!railFocusTarget || Date.now() > railFocusDeadline) return;
+      const active = document.activeElement;
+      // measured on webkit: giving `#rail-region` its own `tabindex="-1"` (fix list #6) changed
+      // WHERE this exact focus loss lands -- instead of falling all the way back to `<body>`, it
+      // now settles on the nearest ancestor that IS focusable, `#rail-region` itself (the nav).
+      // Both are "focus was lost, not deliberately moved" for this purpose.
+      if (active === document.body || active?.id === "rail-region") {
+        focusRailButton(railFocusTarget);
+      }
+    });
+    railFocusObserver.observe(panelRegionEl, { childList: true, subtree: true });
+  }
+
+  onMount(() => {
+    panelRegionEl = (document.getElementById("panel-region") as HTMLDivElement | null) ?? undefined;
+    return () => railFocusObserver?.disconnect();
+  });
+
   function selectTool(name: string) {
     activeTool = name as ToolName;
+    armRailFocusRestore(name);
   }
 
   // --- top bar: version chip, lens switch, search, Share / Report / Help / theme ---------------
@@ -654,10 +706,34 @@
     class="map"
     role="img"
     aria-label="Map of U.S. marine areas"
+    aria-describedby="map-table-equivalent"
     data-tour="map"
   ></div>
+  <!-- fix list #9 (SC 1.1.1): the map announces itself as an image and nothing more -- the
+       project's declared equivalent (docs/accessibility.md §3.1: "a sighted user reads colour-
+       by-value on the map; this table is the SAME ranking as text", ZonesTable.svelte) is four
+       keystrokes away behind the Table rail tool, and nothing in the map's own semantics said so.
+       This is the pointer; the equivalence itself is proven end to end by
+       e2e/keyboard-walk.spec.ts's step 1. -->
+  <p id="map-table-equivalent" class="visually-hidden">
+    Every zone's score is also in the Zones table, under the Table tool.
+  </p>
 
-  <nav class="rail-region" id="rail-region" aria-label="Tools" data-tour="rail" data-control="rail">
+  <!-- fix list #6 (SC 2.4.1), FIREFOX: `tabindex="-1"` on the skip targets -- without it,
+       activating "Skip to the tools" only moved the sequential-focus STARTING POINT to this
+       `<nav>`, and Firefox (unlike chromium/webkit) places that point AFTER the target's whole
+       subtree, so the next Tab landed on the panel's "Collapse to a pill" and skipped the rail
+       entirely. With `tabindex="-1"` the target itself becomes the thing that takes focus, so
+       every engine agrees on where the next Tab starts from -- the usual remedy for a skip link
+       whose target is not natively focusable. -->
+  <nav
+    class="rail-region"
+    id="rail-region"
+    aria-label="Tools"
+    tabindex="-1"
+    data-tour="rail"
+    data-control="rail"
+  >
     <Rail
       items={railItems}
       active={activeTool}
@@ -667,7 +743,9 @@
     />
   </nav>
 
-  <div class="panel-region" id="panel-region" data-tour="panel" data-control="panel">
+  <!-- fix list #6 (SC 2.4.1): the "Skip to the details panel" link's own target -- same
+       `tabindex="-1"` remedy as #rail-region above, for the same reason. -->
+  <div class="panel-region" id="panel-region" tabindex="-1" data-tour="panel" data-control="panel">
     <!-- the ONE panel body: places owns its tool on either lens; otherwise the active lens
          decides what the tool's panel shows (the scores lens takes every tool and falls back to
          the tool's own text; the species lens takes "layers" only). -->

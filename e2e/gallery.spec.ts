@@ -734,6 +734,13 @@ test.describe("fix round 1, also: Panel's body is keyboard-reachable even with n
     // <h2>). tests/ui/panelLandmarks.test.ts is the source-level twin of this assertion.
     await expect(body).not.toHaveAttribute("role", "region");
     await expect(page.locator("#panel .panel-surface")).toHaveAttribute("aria-labelledby", /.+/);
+    // fix list #7 (SC 4.1.2): that atlas-8 fix dropped the NAME along with the landmark --
+    // `tabindex="0"` with no role and no accessible name, a stop a screen reader announced as
+    // nothing (e2e/keyboard-walk.spec.ts's finding A11Y-7). `role="group"` (never a landmark)
+    // restores the name without reintroducing the region. REVERTED (this fix alone) -> RED: no
+    // role, no aria-label, no computed accessible name.
+    await expect(body).toHaveAttribute("role", "group");
+    expect(await body.getAttribute("aria-label")).toBe("Layers details");
   });
 });
 

@@ -161,8 +161,14 @@
     </div>
   {/if}
 
-  <section class="layers-control" aria-label="Layers on the map">
-    <h3>Layers</h3>
+  <!-- fix list #10 (SC 1.3.1): this used to be a `<section aria-label="Layers on the map">` -- a
+       SECOND `region` landmark nested directly inside Panel.svelte's own `<section
+       aria-labelledby>` (already named "Layers"), plus an `h3` that just repeated the panel's own
+       `h2` title. A plain `div` (never a landmark) with a heading that says something the panel's
+       own title does not fixes both: landmark navigation offers "Layers" once, not twice, and the
+       outline no longer reads two adjacent "Layers" entries. -->
+  <div class="layers-control">
+    <h3>Layers on the map</h3>
     <ul>
       {#if unit === "cell"}
         <li>Raster cell values</li>
@@ -173,7 +179,7 @@
         <li>{unitChoices.find((u) => u.value === unit)?.label ?? unit} values</li>
       {/if}
     </ul>
-  </section>
+  </div>
 </div>
 
 <style>

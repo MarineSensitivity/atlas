@@ -123,13 +123,22 @@
            -- a second landmark nested directly inside the section element above, which is already
            the panel's ONE region (named by the h2 via aria-labelledby). Two nested regions with
            near-duplicate names ("Layers" / "Layers details") is worse for a screen-reader user
-           than one, so this is now a plain div: still reachable by keyboard (tabindex, the
-           scrollable-region-focusable fix Sheet.svelte's own body carries; svelte-check's a11y
-           rule does not know that exception), but not a second landmark. -->
+           than one, so this is a plain `group` (NOT a landmark role -- `group` is never one),
+           still reachable by keyboard (tabindex, the scrollable-region-focusable fix Sheet.svelte's
+           own body carries; svelte-check's a11y rule does not know that exception).
+
+           fix list #7 (SC 4.1.2): that earlier fix dropped the name along with the landmark --
+           `tabindex="0"` with no role and no accessible name at all, a tab stop a screen reader
+           announces as nothing (KNOWN_UNNAMED_STOPS in e2e/keyboard-walk.spec.ts, finding A11Y-7).
+           `role="group"` + `aria-label` restores a name WITHOUT reintroducing the landmark this
+           file's own atlas-8 fix removed -- exactly Sheet.svelte's `.sheet-body` pattern
+           (`region "{title} details"`), just with `group` in place of `region`. -->
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <div
         class="panel-body"
         id={bodyId}
+        role="group"
+        aria-label={`${title} details`}
         class:panel-body--full={geometry.detent === "full"}
         tabindex="0"
       >

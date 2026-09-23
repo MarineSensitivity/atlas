@@ -15,6 +15,7 @@ import { gridFromBoot } from "../../lib/grid/grid";
 import type { MapHandle } from "../../lib/map/map";
 import type { CameraBoundsInput } from "../../lib/map/camera";
 import { createPopup } from "../../lib/map/popup";
+import { announce } from "../../lib/ui/announcer";
 import { mapClick, type LngLat, type QueryableMap } from "../../lib/map/interaction";
 import { createTitilerValueSource, type ValueSource } from "../../lib/raster/point";
 import { paletteStopsFromBoot, type PaletteName } from "../../lib/raster/ramps";
@@ -42,7 +43,7 @@ import {
 import { defaultSpecies, loadTaxa, type TaxaIndex } from "./data/picker";
 import { builtinFetchJson, loadTaxon, type ShardError, type TaxonCard } from "./data/shards";
 import { DEFAULT_SPECIES_COLORMAP, speciesMapInputs, type SpeciesMapInputs } from "./mapInputs";
-import { popupContent, popupHtml, type PopupContent } from "./popup";
+import { popupAnnounceText, popupContent, popupHtml, type PopupContent } from "./popup";
 
 const EMPTY_MAP_INPUTS: SpeciesMapInputs = {
   raster: null,
@@ -399,6 +400,11 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
               .setHTML(popupHtml(content))
               .addTo(handle.map)
           : null;
+        // fix list #12 (SC 4.1.3): the popup is a plain MapLibre div, not a live region -- nothing
+        // ever announced its text (a value the app computed and displayed should not be invisible
+        // to AT, even though the map itself stays outside the keyboard model -- see accessibility
+        // .md §3.1).
+        announce(popupAnnounceText(content));
       }
 
       const boot = deps.boot();

@@ -1,3 +1,57 @@
+# atlas 0.10.18
+
+atlas-8 step 3's fix round: all 14 items in `docs/accessibility-fixes.md` (the previous version's
+audit) are now fixed, and every one of them has a real, provably-red-without-the-fix test.
+
+- **Fixed, serious (#1-#7):**
+  - **#1 Esc in a panel-hosted modal no longer collapses the panel.** `Modal.svelte` now attaches
+    its Esc/Tab handling IMPERATIVELY on the dialog element in `onMount` — `Popover.svelte`'s own
+    pattern — so it runs during the real bubble phase, before the event reaches an ancestor
+    Panel's own Esc-collapses-it listener (Svelte 5 delegates a template `onkeydown` to the app
+    root, which always ran too late for this).
+  - **#2 Tab no longer escapes an open modal when its last control is disabled.**
+    `FOCUSABLE_SELECTOR` now excludes `:disabled` (and a hidden-element filter), so the trap's
+    `active === last` check can actually become true.
+  - **#3 The file-upload control shows a visible focus indicator** — `.dropzone:focus-within`.
+  - **#4 The report's progress line is announced** — dropped the `aria-live="off"` that overrode
+    `role="status"`'s own implicit `polite`.
+  - **#5 WebKit: activating a rail tool no longer drops focus to `<body>`** — `Shell.svelte`'s
+    `armRailFocusRestore` (a `MutationObserver` on `#panel-region`) restores focus to the activated
+    rail button once the lazy panel swap settles, only when focus was actually lost.
+  - **#6 Firefox: "Skip to the tools" reaches the tools** — `tabindex="-1"` on `#rail-region` and
+    `#panel-region`.
+  - **#7 The desktop panel's body has a name again** — `Panel.svelte`'s `.panel-body` now carries
+    `role="group" aria-label="{title} details"` (a `group`, not a `region`, so the near-duplicate
+    nested-landmark problem an earlier atlas-8 fix addressed does not come back).
+- **Fixed, moderate (#8-#14):**
+  - **#8 The species picker is a real combobox** — `role="combobox"`, `aria-expanded`,
+    `aria-controls`, `aria-autocomplete="list"` and `aria-activedescendant` on the search field;
+    Arrow Up/Down/Enter/Esc drive the (still virtualized) list from the input, options stay out of
+    the Tab order, and the result count is announced.
+  - **#9 The map points at its own text equivalent** — `aria-describedby` on `#map` naming the
+    zones table and how to reach it.
+  - **#10 No more second region nested inside the Layers panel's own region** —
+    `LayersPanel.svelte`'s "Layers on the map" section is a plain `div` with a renamed heading.
+  - **#11 The floating legend is reachable as a landmark** — `role="region"` + `aria-labelledby`
+    on `Legend.svelte` and on the "not published yet"/categorical fallback notes in
+    `ScoresLegend.svelte`/`SpeciesLegend.svelte`.
+  - **#12 The map-click popup is announced** — `announce()` carries the same text (unescaped) as
+    the popup, for both lenses.
+  - **#13 The report's flower tabs are a real tab widget** — `role="tabpanel"` +
+    `aria-labelledby`/`aria-controls`, roving tabindex with Arrow Left/Right (`roving.ts`, the same
+    math the tool rail uses).
+  - **#14 A failed bundle load says something** — `src/main.ts` marks `<html data-hydrated>` once
+    `mount()` returns; `index.html`'s own timed inline script reveals a visible `role="alert"`
+    message if that attribute is still absent 8s later.
+- **New seeded fault: `tests/faults/modal-esc-delegated.patch`** (`npm run test:faults`) — reverts
+  fix #1 alone (Modal's Esc handler moved back to a delegated template `onkeydown`) and turns
+  `e2e/keyboard-walk.spec.ts`'s A11Y-1 regression test red.
+- **`e2e/keyboard-walk.spec.ts`'s `KNOWN_UNNAMED_STOPS` list is now empty**; every `test.fixme` the
+  previous audit committed is now a real, passing assertion (or, for #8-14, a brand-new one).
+- `docs/accessibility-fixes.md` and `docs/accessibility.md` updated: every item's status, and every
+  criterion that moves from "not yet verified"/"partially supports" to "supports", names the test
+  that now proves it.
+
 # atlas 0.10.17
 
 atlas-8 step 5 / Deliverable 2: `docs/parity.html`, the page the cutover is signed against.
