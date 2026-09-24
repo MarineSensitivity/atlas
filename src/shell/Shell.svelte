@@ -49,15 +49,24 @@
   } from "../lib/ui/sheetGeometry";
   import { createSelStore } from "../lib/state/sel.svelte";
   import { formatSel } from "../lib/state/codec";
-  import { DEFAULT_SEL, defaultOut, resolveTheme } from "../lib/state/types";
+  import { DEFAULT_SEL, defaultOut, resolveTheme, type LayerStackEntry } from "../lib/state/types";
   import { createMap, type MapHandle } from "../lib/map/map";
   import { composeStyle, BASEMAP_LAYER_PREFIX } from "../lib/map/style";
+  // R3 (round-2 plan §5 U4): the layer stack — resolved here (the SAME resolved object both
+  // `composeStyleInput` and each lens's `LayersPanel` mount read, per this task's own instructions
+  // to keep Shell.svelte's edits to exactly "the panel mount and the composeStyle input").
+  import { defaultLayerStackEntries, isDefaultLayerStack } from "../lib/map/layerStack";
   import {
     warmBasemapStyles,
     BASEMAP_ATTRIBUTION,
     type CartoStyleLike,
   } from "../lib/map/layers/basemap";
   import { zoneUnitsFromBoot, zoneUnitsWithOutline } from "../lib/map/layers/zones";
+  // R3 orchestrator audit item 2: the standalone ecoregion outline, read from the release's
+  // MANIFEST (never `boot.units[]`, which stays exactly one row per D17) -- a plain `.ts` reader,
+  // not a `.svelte` SFC, so it is exempt from `tests/shell/lazy-lens-imports.test.ts`'s static-
+  // import ban the same way `state.svelte.ts` already is (that file's own header explains why).
+  import { ecoregionZoneUnitFromManifest } from "../lens/scores/boot";
   import { studyAreaFromBoot, type StudyArea } from "../lib/map/interaction";
   import {
     INITIAL_AREA_CAMERA_STATE,
@@ -536,6 +545,27 @@
     ),
   );
 
+  // R3 orchestrator audit item 2: the standalone ecoregion outline (black, 3px --
+  // `layers/zones.ts#ZONE_LINE_STYLE.ecoregion`, unchanged) drawn on every SCORES view,
+  // independent of `sel.unit`/`sel.out` -- `null` when the release's manifest has not loaded yet or
+  // does not publish one. Appended AFTER `zoneUnitsWithOutline()` (never fed through it): this is
+  // decoration, not the release's one selectable unit, so `sel.out` never hides it. Kept OUT of
+  // `zoneUnits`/`zonesForStyle` (Places/pick-mode's own inputs) so drawing it can never make
+  // "ecoregion" a pickable zone type by accident.
+  //
+  // m9 (review round 1): a release whose OWN `boot.units[]` already publishes an "ecoregion"
+  // selectable unit (so `zonesForStyle` already carries one, e.g. via `sel.out=ecoregion`) must
+  // not ALSO get this manifest-published outline appended -- `composeStyle` keys every zone unit's
+  // ids on `unit` (`ecoregion_ln`, …), so two "ecoregion" entries in the same `zones` array collide
+  // into duplicate layer ids and break the style. No release does this today (the manifest outline
+  // exists precisely BECAUSE no release has an ecoregion `boot` unit), but the guard is cheap and
+  // makes the combination structurally safe rather than "currently doesn't happen to occur."
+  const ecoregionUnit = $derived(
+    sel.lens === "scores" && !zonesForStyle.some((u) => u.unit === "ecoregion")
+      ? ecoregionZoneUnitFromManifest(manifest)
+      : null,
+  );
+
   // usability M4: "the default camera frames Canada; panel/sheet cover the study area" -- the
   // FALLBACK study area's own center+zoom never accounted for the panel/sheet's own reserved
   // space, so the point it frames could render partly or wholly BEHIND the chrome. Applied only
@@ -786,19 +816,29 @@
   // optional-chain call) means it is ALWAYS evaluated regardless of whether `mapHandle` happens to
   // be null yet -- the same "defensive belt" the old local `raster`/`range` statements existed
   // for, now structural rather than a comment to remember.
+  // R3 (round-2 plan §5 U4): resolved ONCE here — `sel.layers` (URL deltas) filled in with the
+  // release's default stack (`defaultLayerStackEntries()`, a no-op on `composeStyle`'s own default
+  // when nothing has been customized). Both lens panels below and `composeStyleInput` read this
+  // SAME value, so the panel's rows and what the map actually draws can never disagree.
+  const layerStack = $derived<readonly LayerStackEntry[]>(sel.layers ?? defaultLayerStackEntries());
+  function onLayerStackChange(next: readonly LayerStackEntry[]) {
+    selStore.set({ layers: isDefaultLayerStack(next) ? undefined : next });
+  }
+
   const composeStyleInput = $derived({
     theme: resolvedTheme,
     // the reactive half of the 0.10.20 basemap fix: reading this is what makes the effect below
     // re-run (and the basemap actually appear) when the CARTO fetch resolves late.
     basemapStyle: basemapStyles[resolvedTheme],
     projection: sel.proj,
-    zones: zonesForStyle,
+    zones: ecoregionUnit ? [...zonesForStyle, ecoregionUnit] : zonesForStyle,
     raster:
       sel.lens === "scores" ? (scoresLens?.mapExtra.raster ?? null) : speciesLens.mapInputs.raster,
     range: sel.lens === "species" ? speciesLens.mapInputs.range : null,
     overlays: sel.lens === "scores" ? (scoresLens?.mapExtra.overlays ?? []) : [],
     selection:
       placesSelection ?? (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
+    layerStack,
   });
 
   $effect(() => {
@@ -1358,7 +1398,7 @@
       {:else if sel.lens === "species" && activeTool === "layers"}
         {#if SpeciesLensPanelComp}
           {@const Comp = SpeciesLensPanelComp}
-          <Comp lens={speciesLens} rep={sel.rep} />
+          <Comp lens={speciesLens} rep={sel.rep} {layerStack} {onLayerStackChange} />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
         {/if}
@@ -1375,6 +1415,8 @@
             {activeTool}
             fallbackBody={TOOL_BODY[activeTool]}
             lens={scoresLens}
+            {layerStack}
+            {onLayerStackChange}
           />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>

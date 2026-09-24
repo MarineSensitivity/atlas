@@ -22,6 +22,165 @@ phone legend chip overlapped the bottom sheet, and the legend it opened was blan
   it only as space allows (never wrapping to a second line); the full title is unaffected in the
   modal.
 
+# atlas 0.10.38
+
+**U4 — the Layers model (round-2 plan §5 U4, `docs/usability.md` §7 R3, Ben's decision 2026-09-24):
+"one Layers panel that IS the stack, the data row expanding into today's controls — PLUS the
+ability to change the stacking of data layers (Program Areas, the score raster) relative to map
+layers (place names, bathymetry)."**
+
+- **The layer stack model** (`src/lib/map/layerStack.ts`, pure + unit-tested): five basemap
+  sub-roles classified from the merged CARTO style (`classifyBasemapLayer`: land/water,
+  bathymetry — empty today, ready for GEBCO — boundaries, roads, labels) and three data groups
+  (the lens's raster, Program Areas, places/selection), each with `visible`/`opacity`, reorderable
+  bottom-to-top. `composeStyle({layerStack})` consumes it: `rankForStack()` expands the group order
+  into `orderLayers()`'s rank table, and `applyLayerGroupStyling()` overrides a layer's
+  `layout.visibility`/opacity paint key(s) uniformly, basemap or data. Omitting the input (every
+  pre-existing caller) is a byte-identical no-op — the single "basemap" role that used to sit
+  entirely UNDER the raster is now five sub-roles in the SAME default position, so `basemap-labels`
+  above `data-raster` (a map layer's name over a semi-transparent score raster) is a new capability,
+  not a changed default view.
+- **`layers=` is the new URL key** (`state/codec.ts` calls `layerStack.ts#parseLayerStack`/
+  `formatLayerStack`): `<id>[:h][:oNN],...`, written only as a deviation from the default stack; a
+  known group missing from a token is appended at its default position (forward-compatible with a
+  future group), an unknown id is dropped, never a throw. Grammar documented in `docs/map.md`.
+- **The Layers panel is now the stack** (`src/lib/ui/LayersPanel.svelte`, shared by both lenses):
+  each group is a row (name, visibility switch, opacity slider, ▲▼ move buttons with an
+  `aria-live` position announcement); the "Data" row expands into the existing per-lens controls
+  (scores: study area/units/layer/palette/projection/outside-PRA; species: title/layer bar/card) via
+  a `dataControls` snippet, unchanged content, new container. "Reset layers" restores the default
+  (disabled when already there). `src/lens/scores/LayersPanel.svelte` is now ONLY that data-row
+  content (the old non-interactive "Layers on the map" bullet list is gone — the stack itself is
+  that list now, made real).
+- **Both lenses keep the same basemap-group choices across a lens switch** (`sel.layers` is one
+  lens-independent field on `Sel`).
+- **Orchestrator parity-audit fixes folded in**: (1) the eye toggle is gated by a real e2e pixel
+  probe, not just a unit test. (2) The standalone ECOREGION outline (black, 3px —
+  `layers/zones.ts#ZONE_LINE_STYLE.ecoregion`, already in the table but never drawn) is read from
+  the release's MANIFEST (`boot.ts#ecoregionZoneUnitFromManifest`, verified live against v7's real
+  `manifest.json`) and drawn on every scores view, independent of `sel.unit`/`sel.out` — before
+  this, the Atlantic/Hawaii/Puerto Rico portions of the study area (outside every Program Area) had
+  no outline at all. (3) The layer picker's `<select>` and the legend title now prefer the
+  manifest's own SHORT label (`boot.ts#metricLabelsFromManifest`) over `boot.layers[].label`, which
+  is actually the LONG description text (verified live: `primprod`'s is a full paragraph) — the
+  long text is now a "What is this layer?" description line under the picker instead.
+- Seeded fault: `tests/faults/layerstack-order-ignored.patch` (`composeStyle` stops reading
+  `input.layerStack`'s order) — wired into `npm run test:faults`.
+
+**Fix round 1 (Opus 5.5 review, `atlas-refs/"2026-09-24 U4 layer-stack review (Opus 5.5) on
+5a7c731.md"`), merged onto main 0.10.35:**
+
+- **BLOCKER B1 fixed**: a group's opacity used to REPLACE a layer's existing paint value instead of
+  scaling it, so the invisible B3 query-fill placeholder (`fill-opacity: 0`) painted VISIBLE the
+  moment its group was dimmed, a per-cell `["get","opacity"]` selection expression collapsed to one
+  flat number, and the raster went non-monotonic (0.6 at 100% slider, 0.95 at a 95% one).
+  `layerStack.ts#scaleOpacity(existing, k)` now multiplies through every real MapLibre paint-value
+  shape (a plain number, a legacy `{stops}` function, a zoom `interpolate`/`step` expression, or an
+  arbitrary expression wrapped as `["*", existing, k]`); `k=1` is a guaranteed no-op (same object
+  reference back).
+- **M1**: `rankForStack()` now assigns ONE shared rank to every contiguous run of basemap sub-roles
+  (a `Map<LayerRole, number>`, not an array), so CARTO's own layer-type interleaving (a boundary
+  line between two fills, a country boundary between roads and labels) survives instead of being
+  regrouped by our five sub-roles. Consequence documented in `docs/map.md`: a basemap row can only
+  ever move relative to a DATA row — moving it past another basemap row changes the stack model but
+  paints nothing differently.
+- **M2**: a KNOWN group missing from a `layers=` token is now inserted right after the nearest
+  EARLIER default id present in the token (not appended at the array's end/top) — `?layers=data-
+raster:o50` used to bury the raster it named under every other group, including a fully-opaque
+  land fill.
+- **M3**: three new pixel/feature-proof e2e tests for the Layers panel eyes beyond the Data row's
+  (Zone outlines: `programarea_ln` rendered-feature count >0 -> 0; Selection: the picked cell's
+  ring >0 -> 0; Land & water: the theme's plain background colour shows through once both Data and
+  Land & water are hidden) — every one proves the layer stays registered (`getLayer` still
+  resolves), never merely removed.
+- **m4** (a MINOR, mislabeled "M4" here through round 2 — the review's own **M4** is the
+  order-test/fault-gate finding folded into the seeded-fault bullet below, a different thing
+  entirely): a move that lands its own button at the stack's edge (top/bottom) disables that
+  button; since a disabled element cannot hold focus, a keyboard user's focus used to silently
+  revert to `<body>`. `move()` now refocuses a real button in the same row after the DOM settles
+  (the same direction if still enabled, otherwise the opposite one).
+- **M5**: a real zone choropleth fill (computed stops) now classifies as role `"choropleth"` ->
+  group `data-raster` ("the lens's data"), not `data-zones` — dimming "Program Areas" used to
+  silently ALSO dim a real choropleth's fill, which is the lens's data, not the outline row. The
+  `data-zones` row is renamed "Zone outlines" (it now only ever holds the outline/label roles and
+  B3's invisible query-fill placeholder).
+- **M6**: "code right, test missing" — `scoresMapInputs` already preferred the manifest's short
+  metric label over `boot.layers[].label`'s long description; no fixture exercised a populated
+  `metricLabels` at all. New unit + e2e coverage against v7's REAL primprod strings (long: "Primary
+  productivity VGPM/VIIRS npp_avg (mg C/m2/day)"; short: "prim prod, 2014-2023 avg (mg C/m^2/day)").
+  The Data row's description paragraph is now hidden when it would repeat the option text verbatim
+  (a release with no short label of its own).
+- **M7**: `data-raster < data-zones < data-places` is now a FIXED relative order and `data-places`
+  is PINNED — `moveLayerStackEntry()` rejects any move that would invert that order or place
+  anything at/above Selection's own position, and a move starting FROM `data-places` is a no-op.
+  Selection can no longer be buried under Program Areas or the raster by accident.
+- **M8 (partial)**: corrected two stale "no release ever publishes a second, ecoregion-outline
+  unit" comments (`scripts/verify.mjs`, `tests/map/style.test.ts`) that predated the standalone,
+  manifest-published ecoregion outline this same 0.10.36 already draws — both now say SELECTABLE
+  explicitly and cross-reference the separate manifest feature. Deferred: consolidating `out=`'s
+  per-lens default into one named, tested helper — a real refactor, not a comment fix; today's
+  `DEFAULT_OUT_BY_LENS`/`zoneUnitsWithOutline()` behavior is unchanged and correct.
+- **m1–m10 of 11 minors** (m11 folded into the merge itself): 44px Switch hit area (SC 2.5.5);
+  `aria-valuetext` on the opacity slider; the slider now commits on `onchange` (once per drag)
+  instead of `oninput` (every ~0.05 step, which could exceed Safari's `history.replaceState` rate
+  limit); the Bathymetry "coming soon" row's switch/move buttons are now `disabled` alongside its
+  slider; `aria-controls` on the Data row's expander; deleted `layersControlItems()` and its whole
+  describe block (dead code since R3 built the real, interactive panel — parity page evidence
+  repointed at the M3 eye-toggle e2e); `Shell.svelte` now skips the manifest ecoregion outline if
+  `zonesForStyle` already carries a real "ecoregion" selectable unit (no release does this today,
+  but two "ecoregion" zone entries would collide into duplicate layer ids); `composeStyle` no
+  longer throws on a `layerStack` input missing a whole group — `normalizeLayerStack()` appends it
+  at its default.
+- Version bumped 0.10.35 -> 0.10.36; merged `main` (F1a, U6, flower, study-area camera) per the
+  review's own merge notes.
+
+**Fix round 2 (last, Opus 5.5 re-check on branch `9d2d47b`), merged onto main `147d2d2`:**
+
+- **M7 re-check**: the MODEL was already fixed round 1, but two real gaps around it. (1) The panel
+  never disabled a rejected move — the ▲/▼ buttons only checked the array BOUNDARY, blind to the
+  pin/fixed-order rules, so Selection's own DOWN button (never at the boundary; it sits at the top)
+  stayed enabled and a click announced a phantom "moved to position N". New exported
+  `canMoveLayerStackEntry()` reports whether a move would actually change anything; the panel
+  disables on that instead. (2) `parseLayerStack` never enforced
+  `data-raster < data-zones < data-places` on groups a token ALREADY names explicitly (only ever
+  repaired MISSING ones) — a crafted `?layers=data-places,data-zones,data-raster` put Selection
+  under the raster, live, repairable only by "Reset layers". New `enforceDataOrder()` (shared by
+  `parseLayerStack` and `normalizeLayerStack`) pins `data-places` to the end and swaps a
+  `data-raster`/`data-zones` inversion's two slots. `normalizeLayerStack` also stopped
+  bare-APPENDING missing groups at the array's end — it now inserts each one at its own default
+  position (the SAME algorithm `parseLayerStack`'s M2 fix already used), which `docs/map.md`
+  incorrectly already claimed it did.
+- **M6 re-check**: swapped in v7's REAL LIVE long primprod label (fetched verbatim from the live
+  `v7/app/boot.json`) in place of round 1's v8 paraphrase — "Primary productivity: Oregon State
+  Vertically Generalized Production Model (VGPM) from Visible Infrared Imaging Radiometer Suite
+  (VIIRS) satellite data (mg C / m^2 / day) from daily averages available as monthly averaged to
+  annual and averaged to overall for the most recently available full years of data 2014 to 2023".
+- **ID-11 (parity page)**: documented the standalone manifest ecoregion outline's actual behaviour
+  (scores draws it always, even `out=none`; species never draws it, gated structurally in
+  `Shell.svelte`) — the page's prose only ever described the unrelated, legacy Shiny "Ecoregions"
+  outline-select option and could be read as implying the opposite.
+- **B1 re-check**: the e2e suite had no pixel probe INSIDE a real zone polygon (every
+  `OCEAN_PROBES` point lies outside this fixture's 20 Program Areas) — added one at a Program
+  Area's centre, dimming "Zone outlines" to 50% in cell mode and asserting the plain raster blend;
+  verified red-first by hand against a planted replacing implementation.
+- **M5 decision**: hiding "Zone outlines" used to ALSO hide the invisible B3 query-fill placeholder
+  (`layout.visibility: "none"` excludes a layer from `queryRenderedFeatures`), silently breaking
+  zone click/pick while the row was hidden. Decided and implemented: the query fill (role
+  "zone-fill", which after M5 round 1 is ALWAYS that placeholder) stays composed and queryable
+  regardless of the group's own visibility — `fill-opacity: 0` alone already keeps it invisible.
+  Hiding "Data" in zone mode still hides a REAL choropleth with no exception, which is simply
+  correct.
+- Ride-along comment/doc corrections: `layerStack.ts`'s `OPACITY_PAINT_KEYS` doc (described the
+  PRE-B1 "sets directly, never multiplies" behaviour) and `LAYER_GROUP_LABEL` doc (referenced the
+  deleted `style.ts#layersControlLabel`); `layers.spec.ts`'s `DEFAULT_ORDER` doc ("missing groups
+  append at the end", now "inserted at default position"); `docs/map.md`'s `LAYER_ORDER` listing
+  (missing `choropleth`), "Five lines" (now eight, point 8 added), and the `normalizeLayerStack`
+  paragraph (now says it actually inserts at default position, not merely claims to);
+  `test-faults.mjs`'s M4 fault-gate comment (verified empirically that the order-only test ALSO
+  catches this fault — the pixel probe is targeted for being the stronger proof, not because the
+  order test fails to); this file's own "M4" mislabel, above (that bullet is the MINOR m4, not the
+  review's own M4 finding, which is the fault-gate comment just described).
+
 # atlas 0.10.37
 
 R2, round 2 (owner finding on live 0.10.36 at 390x844): once the welcome modal is dismissed, the
