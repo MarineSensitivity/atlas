@@ -3,7 +3,7 @@
 // matrix state -- reaches the same document through the same fixtures rather than a near-copy of
 // them. Not a `*.spec.ts` file, so Playwright never runs it as a test on its own (same convention as
 // e2e/hermetic.ts and e2e/map-hermetic.ts).
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession } from "./hermetic";
 import { blockWasm, routeVariedBasemapStyle, VARIED_DARK, VARIED_LIGHT } from "./map-hermetic";
 
@@ -216,4 +216,19 @@ export async function mapPrintRampPixelCount(page: Page, tolerance = 4): Promise
     },
     { selector: ".map-print img", targets, tolerance },
   );
+}
+
+/**
+ * Waits for the map's PNG capture to land (`mapPngUrl` set -> the `<img src>` attribute non-empty),
+ * WITHOUT requiring `.map-print img` to be on-screen VISIBLE -- P4 (Ben, phone, "Report" tool):
+ * `report.css` now hides `.map-print` on screen by default (only `@media print`/the HTML export's
+ * own inline-style override show it; see that file's own header), so a `toBeVisible()` wait on the
+ * LIVE page would time out even once the capture has genuinely landed. Every caller here used
+ * `.map-print img` visibility only as a proxy for "the capture finished" (see each call site's own
+ * comment), never as a claim about what is on screen -- `toHaveAttribute` asserts the same
+ * underlying fact (a real `data:` PNG landed) without depending on CSS display. */
+export function waitForMapCapture(page: Page, timeout = 15_000) {
+  return expect(page.locator(".map-print img")).toHaveAttribute("src", /^data:image\/png/, {
+    timeout,
+  });
 }

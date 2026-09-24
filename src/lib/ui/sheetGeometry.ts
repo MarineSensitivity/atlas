@@ -48,3 +48,28 @@ export function saveSheetDetent(
     // chrome, not correctness -- see panelGeometry.ts
   }
 }
+
+/** the sheet's current size, as Sheet.svelte reports it (`ongeometry`) -- `height` is the REAL
+ * measured `offsetHeight` in px, not a detent-keyed constant, so a caller (Shell.svelte) never has
+ * to duplicate `.sheet`'s own `--size-sheet-peek`/`--size-sheet-half`/`detent-full` CSS formula to
+ * know where the sheet's top edge currently is. */
+export interface SheetGeometry {
+  detent: SheetDetent;
+  height: number;
+}
+
+/** P1 fix (Ben's phone report, 2026-09-24): where the phone legend chip (LegendChip.svelte) should
+ * render, given the sheet's current detent. At every detent EXCEPT "full" the chip floats over the
+ * map, anchored just above the sheet's measured top edge (Shell.svelte turns `SheetGeometry.height`
+ * into a CSS custom property the floating region's `bottom` reads) -- covers "peek" too, since a
+ * fixed offset there used to land squarely on the sheet's own header controls (the bug: the chip
+ * sat at a FIXED distance from the bottom regardless of detent, so it read as "above the tab bar"
+ * only by coincidence at whatever detent was active when that offset was tuned). At "full" there is
+ * no room above the sheet to float in (the sheet already reaches its own max height), so the chip
+ * instead renders INSIDE the sheet's own header block (Shell.svelte passes it to Sheet's
+ * `headerExtra` snippet) -- never over the scrolling body, never over the header buttons. */
+export type LegendChipMode = "floating" | "inline";
+
+export function legendChipMode(detent: SheetDetent): LegendChipMode {
+  return detent === "full" ? "inline" : "floating";
+}

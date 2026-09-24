@@ -227,19 +227,30 @@ export const STATUS = {
     status: "partial",
     evidence: [
       {
-        file: "tests/map/style.test.ts",
-        name: "excludes page chrome, EVERY merged CARTO basemap layer, and the click-driven selection ring (never user-toggleable)",
+        file: "e2e/layers.spec.ts",
+        name: "the Data row's eye toggle hides the raster's PAINTED pixel without removing the layer",
       },
       {
-        file: "tests/map/style.test.ts",
-        name: "labels the well-known raster/overlay ids exactly as the ported app named them",
+        file: "e2e/layers.spec.ts",
+        name: "M3: the Zone outlines row's eye hides programarea_ln's rendered features (>0 -> 0), never removes the layer",
       },
       {
-        file: "tests/map/style.test.ts",
-        name: "a bare background+basemap style (nothing selected yet) lists no items",
+        file: "e2e/layers.spec.ts",
+        name: "M3: the Selection row's eye hides the picked cell's selection-line ring (>0 -> 0), never removes the layer",
+      },
+      {
+        file: "e2e/layers.spec.ts",
+        name: "M3: the Land & water row's eye hides the basemap fill, showing the theme's plain background colour through",
       },
     ],
-    note: "the dead-switch bug is fixed with a named test (`layersControlItems`). NOT built: MapLibre's fullscreen / navigation / scale controls and the Nominatim geocoder — they are real buttons that would nest inside `#map[role=img]` and fail axe, so where map chrome lives is one cross-lens decision still open (known gap G-02).",
+    // R3 (round-2 plan §5 U4) replaced the dead-switch fix's structural, uncalled-in-production
+    // `layersControlItems()` (derived-from-style ids, but no caller) with the REAL, interactive
+    // `LayersPanel.svelte` stack -- one row per `LayerGroupId`, wired to `moveLayerStackEntry`/
+    // `composeStyle`'s own `layerStack` input. Review round 1 (2026-09-24) flagged the old evidence
+    // as testing dead code with no caller; the evidence above is the panel's own eyes proven
+    // against a REAL rendered map (a pixel handoff or a rendered-feature-count drop to exactly 0,
+    // never merely "the id list changed"), the stronger, load-bearing claim this row makes.
+    note: "the dead-switch bug is fixed by construction (the panel's ids come from `layerStack.ts`'s own `LayerGroupId` enum, never a hand-maintained list) and proven end-to-end by the eye-toggle e2e above. NOT built: MapLibre's fullscreen / navigation / scale controls and the Nominatim geocoder — they are real buttons that would nest inside `#map[role=img]` and fail axe, so where map chrome lives is one cross-lens decision still open (known gap G-02).",
     diffs: ["ID-10"],
   },
   "S-09": {
@@ -946,7 +957,6 @@ export const STATUS = {
     match: "With a place active, its outline stays on the map",
     status: "partial",
     evidence: [
-      { file: "tests/map/style.test.ts", name: "every real composed data layer DOES appear" },
       {
         file: "e2e/places.spec.ts",
         name: "keyboard-only: Enter coordinates creates a place, rename, then remove -- drawing is never the only way",
@@ -981,7 +991,7 @@ export const STATUS = {
       },
       {
         file: "tests/lib/report/model.test.ts",
-        name: "splits keys, names them from boot, and re-encodes a one-key token each",
+        name: "splits keys, names them 'Full Name (KEY)' from boot (P3: paLabel), and re-encodes a one-key token each",
       },
       {
         file: "e2e/report.spec.ts",

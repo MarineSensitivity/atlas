@@ -9,7 +9,14 @@ import { blockWasm } from "./map-hermetic";
 import { normalizePdfText } from "./pdfText";
 // `routeVariedBasemapStyle` moved with `gotoReport` into report-hermetic.ts (atlas-8 step 3); it is
 // no longer called from this file directly.
-import { BOOT_V7, BOOT_V9, gotoReport, mapPrintRampPixelCount, PL } from "./report-hermetic";
+import {
+  BOOT_V7,
+  BOOT_V9,
+  gotoReport,
+  mapPrintRampPixelCount,
+  PL,
+  waitForMapCapture,
+} from "./report-hermetic";
 import { encodePlace, type Place } from "../src/lib/geo/placeCodec";
 
 // atlas-7 steps 2-4, fix round 1: report.html's own hermetic smoke suite. HERMETIC per this
@@ -214,8 +221,10 @@ test.describe("exports", () => {
     await gotoReport(page, { ver: "v9", preview: true });
     await expect(page.locator(".progress-line")).toContainText("Done");
     // let the map's own PNG capture (idle + two animation frames) land before downloading, or the
-    // exported document's .map-print would still show "Map rendering...".
-    await expect(page.locator(".map-print img")).toBeVisible({ timeout: 15_000 });
+    // exported document's .map-print would still show "Map rendering...". P4: `.map-print` is
+    // hidden on screen by default now (report.css), so this waits on the <img>'s `src` attribute
+    // rather than visibility -- see waitForMapCapture's own header.
+    await waitForMapCapture(page);
     // M4 (atlas-8 review round 2): an <img> being VISIBLE says nothing about what it shows --
     // `captureRejectionReason` only rejects a blank/flat capture, never one whose places layer
     // simply never painted. Prove the DATA (GAA/ALA's score-coloured circles), not just the
@@ -517,7 +526,7 @@ test.describe("page.pdf() (chromium): labels, table headers, watermark, map imag
   }) => {
     await gotoReport(page, { ver: "v9", preview: true });
     await expect(page.locator(".progress-line")).toContainText("Done");
-    await expect(page.locator(".map-print img")).toBeVisible({ timeout: 15_000 });
+    await waitForMapCapture(page); // P4: attribute-based wait -- `.map-print` is off-screen by default
     // M4: "map image not blank" (this test's own title) means the DATA painted, not merely that
     // an <img> decoded -- see mapPrintRampPixelCount's own header for why "visible" alone passes
     // on the basemap with an empty places layer.
@@ -560,7 +569,7 @@ test.describe("page.pdf() (chromium): labels, table headers, watermark, map imag
   }) => {
     await gotoReport(page, { ver: "v9", preview: true });
     await expect(page.locator(".progress-line")).toContainText("Done");
-    await expect(page.locator(".map-print img")).toBeVisible({ timeout: 15_000 });
+    await waitForMapCapture(page); // P4: attribute-based wait -- `.map-print` is off-screen by default
 
     const permalinkHref = await page.locator(".report-header a").getAttribute("href");
     expect(permalinkHref).toBeTruthy();

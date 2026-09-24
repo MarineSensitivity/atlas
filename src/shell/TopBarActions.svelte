@@ -20,6 +20,15 @@
   // navigating the tab to the GitHub fallback link in the background -- everything else here is
   // unchanged, exactly the "this file never has to change for that" promise.
   //
+  // R2, round 2 (owner finding on live 0.10.36 at 390x844): once the welcome modal is dismissed,
+  // the guided tour was reachable ONLY through the desktop (?) Help menu (`topbar-desktop-only`),
+  // so a phone visitor had no way to start it at all. The ⋯ menu now carries the SAME "Take a
+  // tour" action Shell.svelte's Help menu uses (`onTakeTour`, its `onHelpTakeTour` passed through
+  // verbatim -- this file never imports `./tourRuntime`/driver.js itself, keeping that dynamic
+  // import's lazy-loading boundary exactly where U6 put it) beside "Docs" (`helpDocsHref`, now its
+  // own item rather than one "Help" item covering both). "Send feedback" is renamed to "Feedback"
+  // (owner decision R2) to match the desktop control's own label one-for-one.
+  //
   // tests/shell/shell-invariants.test.ts scans this file (alongside Shell.svelte) for its
   // data-control/data-tour anchors and the same "no src/lib/release, no history.pushState"
   // invariants -- this file reads only plain props, never `src/lib/release` or `window.__early`
@@ -46,9 +55,21 @@
     onShare: () => void;
     onReportTop: () => void;
     /** the Help menu's own "Docs" destination (Shell.svelte's `docsHref`) -- the phone ⋯ menu's
-     * "Help" item opens this directly rather than toggling Shell.svelte's Help disclosure, which
+     * "Docs" item opens this directly rather than toggling Shell.svelte's Help disclosure, which
      * is `topbar-desktop-only` and so invisible at the width the ⋯ menu itself only exists at. */
     helpDocsHref: string;
+    /** starts the SAME guided tour the desktop Help menu's "Take a tour" item starts
+     * (Shell.svelte's `onHelpTakeTour`, passed through verbatim) -- the phone ⋯ menu's own
+     * "Take a tour" item. */
+    onTakeTour: () => void;
+    /** P5 fix round 2 (coordinator finding, 390px eyes-on evidence): the desktop theme toggle
+     * (Shell.svelte's own button) is now `topbar-desktop-only` -- its own width was what pushed
+     * the theme button itself, and everything after it, past the phone viewport's right edge once
+     * the P1 search button was added beside it. `resolvedTheme` mirrors Shell.svelte's own
+     * `$derived` (never re-resolved here from `sel`/`prefersDark`); `onToggleTheme` is its
+     * `toggleTheme`, passed through verbatim, same convention as `onTakeTour` above. */
+    resolvedTheme: "navy" | "paper";
+    onToggleTheme: () => void;
     sealFlag?: string;
     agency?: string;
     sealUrl?: string;
@@ -65,6 +86,9 @@
     onShare,
     onReportTop,
     helpDocsHref,
+    onTakeTour,
+    resolvedTheme,
+    onToggleTheme,
     sealFlag = import.meta.env.VITE_SEAL,
     agency = import.meta.env.VITE_AGENCY,
     sealUrl = import.meta.env.VITE_SEAL_URL || DEFAULT_SEAL_URL,
@@ -98,20 +122,39 @@
 
   interface MoreItem {
     label: string;
-    icon: "share" | "report" | "feedback" | "info" | "help";
+    icon: "share" | "report" | "feedback" | "info" | "help" | "tour" | "themeSun" | "themeMoon";
     run: (e: MouseEvent) => void;
     href?: string;
   }
+  // R2, round 2: "Help" split into its two destinations ("Take a tour" / "Docs") so the tour is
+  // actually reachable on the phone -- see this file's header comment. Order: Share, Report,
+  // Feedback, About this release, Take a tour, Docs, Theme -- e2e/shell.chrome.spec.ts asserts
+  // this exact item-name list. "Theme" (P5 fix round 2) is last, mirroring its own rightmost
+  // position in the desktop topbar.
   const moreItems = $derived<MoreItem[]>([
     { label: "Share", icon: "share", run: () => onShare() },
     { label: "Report", icon: "report", run: () => onReportTop() },
-    { label: "Send feedback", icon: "feedback", run: handleFeedback, href: feedbackHref },
+    { label: "Feedback", icon: "feedback", run: handleFeedback, href: feedbackHref },
     { label: "About this release", icon: "info", run: () => (aboutOpen = true) },
+    // `run` (not `href`): starts the tour directly, same as the desktop Help menu's own button --
+    // never a link, so no `<a>`/no-op split like Docs below.
+    // P7 (Opus eyes-on assessment, 2026-09-24): this used to reuse the "help" (?) glyph, so "Take
+    // a tour" and "Docs" (below) were visually identical rows in this menu -- its own `icon` name
+    // (icon-map.json's `mdiCompassOutline`, added by this fix via
+    // `scripts/build-icon-paths.mjs`), distinct from Docs' "help" glyph just below.
+    { label: "Take a tour", icon: "tour", run: () => onTakeTour() },
     // a real <a>, same as Feedback above -- opens the SAME docs link the desktop Help menu's own
     // "Docs" item does (Shell.svelte's `docsHref`), rather than toggling that disclosure itself
     // (invisible at the width this ⋯ menu only exists at -- see helpDocsHref's own doc comment).
     // `run` is a no-op: the `<a href target="_blank">` below does the whole job on its own.
-    { label: "Help", icon: "help", run: () => {}, href: helpDocsHref },
+    { label: "Docs", icon: "help", run: () => {}, href: helpDocsHref },
+    // P5 fix round 2: the SAME vocabulary/icon-swap as the desktop button (this file's own
+    // `resolvedTheme` doc comment) -- "the DESTINATION theme", never "navy"/"paper".
+    {
+      label: resolvedTheme === "navy" ? "Switch to light theme" : "Switch to dark theme",
+      icon: resolvedTheme === "navy" ? "themeSun" : "themeMoon",
+      run: () => onToggleTheme(),
+    },
   ]);
 
   async function openMore() {
@@ -191,7 +234,7 @@
   class="tool topbar-phone-only"
   data-tour="more"
   data-control="more-menu"
-  aria-label="More: Share, Report, Send feedback, About, Help"
+  aria-label="More: Share, Report, Feedback, About, Take a tour, Docs, Theme"
   aria-haspopup="menu"
   aria-expanded={moreOpen}
   bind:this={moreTriggerEl}

@@ -13,6 +13,8 @@
   import Icon from "../lib/ui/Icon.svelte";
   import Select from "../lib/ui/Select.svelte";
   import { primaryUnitLabel, primaryUnitType, zoneRows } from "../lens/scores/boot";
+  import { unitSingularLabel } from "../lens/scores/species";
+  import { paLabel } from "../places/zoneStats";
   import {
     loadRecentReports,
     recordRecentReport,
@@ -44,8 +46,19 @@
 
   const action = $derived(reportAction(sel, ver));
   const unit = $derived(primaryUnitType(boot) ?? "programarea");
-  const unitLabel = $derived(primaryUnitLabel(boot) ?? "Program Area");
-  const zones = $derived(zoneRows(boot, unit));
+  // P3 fix (orchestrator-directed, 2026-09-24): `boot.units[0].label` is a PLURAL section heading
+  // ("Program areas"), not a word that reads right inside a sentence -- interpolating it straight
+  // into "Pick a {unitLabel}…" produced "Pick a Program areas…" / "Report on this Program areas".
+  // `unitSingularLabel` (species.ts, already the species header's own singular-name rule) gives
+  // "Program Area" -- reused here rather than a second, local pluralization rule.
+  const unitLabelSingular = $derived(unitSingularLabel(unit, primaryUnitLabel(boot)));
+  // P3 fix: "Program area selection should list full names and parenthetical acronyms" -- sorted
+  // by that resolved "Full Name (KEY)" label, not boot's own publish order.
+  const zones = $derived(
+    [...zoneRows(boot, unit)].sort((a, b) =>
+      paLabel(a.key, a.name).localeCompare(paLabel(b.key, b.name)),
+    ),
+  );
 
   let pickedKey = $state("");
 
@@ -67,7 +80,7 @@
     const href = zoneReportHref(unit, pickedKey, ver);
     if (!href) return;
     const zone = zones.find((z) => z.key === pickedKey);
-    open(href, zone?.name ?? pickedKey);
+    open(href, paLabel(pickedKey, zone?.name));
   }
 </script>
 
@@ -86,16 +99,16 @@
     {#if zones.length}
       <div class="report-pick-row">
         <Select
-          label={`Pick a ${unitLabel}`}
+          label={`Pick a ${unitLabelSingular}`}
           value={pickedKey}
           onchange={(v) => (pickedKey = v)}
           options={[
-            { value: "", label: `Pick a ${unitLabel}…` },
-            ...zones.map((z) => ({ value: z.key, label: z.name ?? z.key })),
+            { value: "", label: `Pick a ${unitLabelSingular}…` },
+            ...zones.map((z) => ({ value: z.key, label: paLabel(z.key, z.name) })),
           ]}
         />
         <button type="button" onclick={openPicked} disabled={!pickedKey}>
-          Report on this {unitLabel}
+          Report on this {unitLabelSingular}
         </button>
       </div>
     {/if}

@@ -66,3 +66,22 @@ export const MISTAGGED_BASEMAP_LAYER = {
  * `tests/fixtures/map/raster-basemap-fault/` so the SAME scan run against it is proved to fail.
  */
 export const RASTER_BASEMAP_FAULT_DIR = "tests/fixtures/map/raster-basemap-fault";
+
+/**
+ * FAULT 5 — R3's layer stack (round-2 plan §5 U4): a layer already correctly classified into a
+ * basemap SUB-role, but by a name the declared stack order does not recognize — as if
+ * `classifyBasemapLayer` (or a future caller building its own custom order) produced a plausible-
+ * looking group id that was never added to `layerStack.ts#BASEMAP_GROUPS`/`GROUP_ROLES`. Mirrors
+ * FAULT 1 one level down: if `orderLayers` swallowed an unrecognized role instead of throwing, this
+ * layer would silently vanish from the composed style (never rendered, never explained) rather than
+ * failing loudly at build/test time — the property `tests/map/style.test.ts`'s R3 section asserts.
+ */
+export const UNGROUPED_BASEMAP_LAYER = {
+  role: "basemap-seafloor-relief" as never, // reads like a real sub-role; is not declared anywhere
+  layer: {
+    id: "basemap-seafloor-relief",
+    type: "fill",
+    source: "basemap-carto",
+    paint: { "fill-color": "#335577" },
+  } as LayerSpecification,
+};

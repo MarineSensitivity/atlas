@@ -13,7 +13,7 @@
   // there is exactly one source for every geometry value the CLS gate depends on. The real
   // src/lib/ui/* components below (Rail, Panel, Sheet, Segmented, About, VersionBadge, Announcer)
   // bring their own scoped styles and are used only by import, per this step's instructions.
-  import { onMount, type Component } from "svelte";
+  import { onMount, tick, type Component } from "svelte";
   import "./shell.css";
   import { buildRailItems, TOOL_BODY, TOOL_LABEL, type ToolName } from "./tools";
   // R5: the wave-in-hexagon mark replaces the old two-file "wave in a circle" pair
@@ -41,18 +41,32 @@
     viewportBucket,
     type PanelGeometry,
   } from "../lib/ui/panelGeometry";
-  import { loadSheetDetent } from "../lib/ui/sheetGeometry";
+  import {
+    DEFAULT_SHEET_DETENT,
+    legendChipMode,
+    loadSheetDetent,
+    type SheetGeometry,
+  } from "../lib/ui/sheetGeometry";
   import { createSelStore } from "../lib/state/sel.svelte";
   import { formatSel } from "../lib/state/codec";
-  import { DEFAULT_SEL, defaultOut, resolveTheme } from "../lib/state/types";
+  import { DEFAULT_SEL, defaultOut, resolveTheme, type LayerStackEntry } from "../lib/state/types";
   import { createMap, type MapHandle } from "../lib/map/map";
   import { composeStyle, BASEMAP_LAYER_PREFIX } from "../lib/map/style";
+  // R3 (round-2 plan §5 U4): the layer stack — resolved here (the SAME resolved object both
+  // `composeStyleInput` and each lens's `LayersPanel` mount read, per this task's own instructions
+  // to keep Shell.svelte's edits to exactly "the panel mount and the composeStyle input").
+  import { defaultLayerStackEntries, isDefaultLayerStack } from "../lib/map/layerStack";
   import {
     warmBasemapStyles,
     BASEMAP_ATTRIBUTION,
     type CartoStyleLike,
   } from "../lib/map/layers/basemap";
   import { zoneUnitsFromBoot, zoneUnitsWithOutline } from "../lib/map/layers/zones";
+  // R3 orchestrator audit item 2: the standalone ecoregion outline, read from the release's
+  // MANIFEST (never `boot.units[]`, which stays exactly one row per D17) -- a plain `.ts` reader,
+  // not a `.svelte` SFC, so it is exempt from `tests/shell/lazy-lens-imports.test.ts`'s static-
+  // import ban the same way `state.svelte.ts` already is (that file's own header explains why).
+  import { ecoregionZoneUnitFromManifest } from "../lens/scores/boot";
   import { studyAreaFromBoot, type StudyArea } from "../lib/map/interaction";
   import {
     INITIAL_AREA_CAMERA_STATE,
@@ -171,6 +185,13 @@
   // shell.css position `#panel-region` (data-dock/data-maximized/`--panel-size`, below), per this
   // file's "the shell owns WHERE it floats" convention (docs/map.md's sibling rule for the map).
   let panelGeom = $state<PanelGeometry>(DEFAULT_PANEL_GEOMETRY);
+  // P1 fix: Sheet.svelte's own mirror of `panelGeom` above -- its `ongeometry` reports the
+  // sheet's current detent + REAL measured height (svh-based CSS, not a number this shell could
+  // otherwise know), which is what lets the floating legend chip track the sheet's actual top
+  // edge (`legendChipMode`, `.legend-chip-region`'s `--legend-chip-sheet-height`, below) instead
+  // of sitting at a fixed offset that used to land on the sheet's own header controls at "peek"
+  // and the last table row at "half" (Ben's phone report, 2026-09-24).
+  let sheetGeom = $state<SheetGeometry>({ detent: DEFAULT_SHEET_DETENT, height: 0 });
   let railFocusObserver: MutationObserver | undefined;
   let railFocusDeadline = 0;
   // the observer below is created ONCE and lives for the shell's whole lifetime; this is what it
@@ -501,6 +522,13 @@
   // the old `{}` default did.
   let scoresLens = $state<ScoresLensState | null>(null);
 
+  // P1 fix: hoisted out of the template (it used to be a `{@const}` inline where the legend chip
+  // rendered) so BOTH the floating placement and the "full" detent's inline-in-sheet placement can
+  // read the SAME value without recomputing it or duplicating the lens/kind branch.
+  const phoneLegend = $derived(
+    sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresLens?.mapExtra.legend ?? null),
+  );
+
   // G-25 fix: `Sel.out`'s ONE effect on the map, applied to whichever `zones` array (the shell's
   // own outline-only `zoneUnits`, or the scores lens' richer `scoresLens.mapExtra.zones`) is about
   // to reach `composeStyle()` below -- see `zoneUnitsWithOutline`'s own header. This is the ONLY
@@ -515,6 +543,27 @@
       sel.lens === "scores" ? (scoresLens?.mapExtra.zones ?? zoneUnits) : zoneUnits,
       sel.out,
     ),
+  );
+
+  // R3 orchestrator audit item 2: the standalone ecoregion outline (black, 3px --
+  // `layers/zones.ts#ZONE_LINE_STYLE.ecoregion`, unchanged) drawn on every SCORES view,
+  // independent of `sel.unit`/`sel.out` -- `null` when the release's manifest has not loaded yet or
+  // does not publish one. Appended AFTER `zoneUnitsWithOutline()` (never fed through it): this is
+  // decoration, not the release's one selectable unit, so `sel.out` never hides it. Kept OUT of
+  // `zoneUnits`/`zonesForStyle` (Places/pick-mode's own inputs) so drawing it can never make
+  // "ecoregion" a pickable zone type by accident.
+  //
+  // m9 (review round 1): a release whose OWN `boot.units[]` already publishes an "ecoregion"
+  // selectable unit (so `zonesForStyle` already carries one, e.g. via `sel.out=ecoregion`) must
+  // not ALSO get this manifest-published outline appended -- `composeStyle` keys every zone unit's
+  // ids on `unit` (`ecoregion_ln`, …), so two "ecoregion" entries in the same `zones` array collide
+  // into duplicate layer ids and break the style. No release does this today (the manifest outline
+  // exists precisely BECAUSE no release has an ecoregion `boot` unit), but the guard is cheap and
+  // makes the combination structurally safe rather than "currently doesn't happen to occur."
+  const ecoregionUnit = $derived(
+    sel.lens === "scores" && !zonesForStyle.some((u) => u.unit === "ecoregion")
+      ? ecoregionZoneUnitFromManifest(manifest)
+      : null,
   );
 
   // usability M4: "the default camera frames Canada; panel/sheet cover the study area" -- the
@@ -782,19 +831,29 @@
   // optional-chain call) means it is ALWAYS evaluated regardless of whether `mapHandle` happens to
   // be null yet -- the same "defensive belt" the old local `raster`/`range` statements existed
   // for, now structural rather than a comment to remember.
+  // R3 (round-2 plan §5 U4): resolved ONCE here — `sel.layers` (URL deltas) filled in with the
+  // release's default stack (`defaultLayerStackEntries()`, a no-op on `composeStyle`'s own default
+  // when nothing has been customized). Both lens panels below and `composeStyleInput` read this
+  // SAME value, so the panel's rows and what the map actually draws can never disagree.
+  const layerStack = $derived<readonly LayerStackEntry[]>(sel.layers ?? defaultLayerStackEntries());
+  function onLayerStackChange(next: readonly LayerStackEntry[]) {
+    selStore.set({ layers: isDefaultLayerStack(next) ? undefined : next });
+  }
+
   const composeStyleInput = $derived({
     theme: resolvedTheme,
     // the reactive half of the 0.10.20 basemap fix: reading this is what makes the effect below
     // re-run (and the basemap actually appear) when the CARTO fetch resolves late.
     basemapStyle: basemapStyles[resolvedTheme],
     projection: sel.proj,
-    zones: zonesForStyle,
+    zones: ecoregionUnit ? [...zonesForStyle, ecoregionUnit] : zonesForStyle,
     raster:
       sel.lens === "scores" ? (scoresLens?.mapExtra.raster ?? null) : speciesLens.mapInputs.raster,
     range: sel.lens === "species" ? speciesLens.mapInputs.range : null,
     overlays: sel.lens === "scores" ? (scoresLens?.mapExtra.overlays ?? []) : [],
     selection:
       placesSelection ?? (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
+    layerStack,
   });
 
   $effect(() => {
@@ -921,6 +980,14 @@
   let VersionPickerModalComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let WelcomeModalComp = $state<Component<any> | null>(null);
+  // P1 (Opus eyes-on assessment, 2026-09-24): the phone-only search modal's own lazy chunk --
+  // loaded on first tap of the phone search button (below), the same "load on first open" idiom
+  // PlacesComp/ReportToolComp already use, rather than a preemptive `$effect` -- a phone visitor
+  // who never opens search never pays for it.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let ModalComp = $state<Component<any> | null>(null);
+  let phoneSearchOpen = $state(false);
+  let phoneSearchBodyEl: HTMLDivElement | undefined = $state();
 
   // item m5 (atlas-8 review round 2): none of the dynamic imports below had a `.catch` -- a chunk
   // -load failure (a flaky network, an ad blocker, a stale service worker) left the promise
@@ -934,6 +1001,35 @@
   // effect's own trigger).
   function announceChunkFailure(what: string): void {
     announce(`Couldn't load ${what}. Try switching tools again.`);
+  }
+
+  // P1 (Opus eyes-on assessment, 2026-09-24): the topbar `.search-field` -- which also hosts the
+  // species picker while the species lens is active -- is `topbar-desktop-only` (shell.css), and
+  // the ⋯ menu had nothing in its place: a phone visitor could not search a place at all, and in
+  // the species lens could not change species either. This opens the SAME content the desktop
+  // field renders, as a near-full-width modal, focused on open. Modal.svelte's native <dialog>
+  // `showModal()` only auto-focuses a descendant carrying `autofocus`, which neither the
+  // SpeciesPicker's own input nor the plain stub one below sets -- so focus is moved by hand,
+  // after `tick()` flushes both this component's OWN re-render (the lazy `ModalComp` arriving)
+  // and Modal.svelte's own mount effect that calls `showModal()`.
+  async function openPhoneSearch(): Promise<void> {
+    phoneSearchOpen = true;
+    if (!ModalComp) {
+      try {
+        const mod = await import("../lib/ui/Modal.svelte");
+        ModalComp = mod.default;
+      } catch {
+        announceChunkFailure("search");
+        phoneSearchOpen = false;
+        return;
+      }
+    }
+    await tick();
+    phoneSearchBodyEl?.querySelector<HTMLInputElement>("input")?.focus();
+  }
+
+  function closePhoneSearch(): void {
+    phoneSearchOpen = false;
   }
 
   $effect(() => {
@@ -1057,8 +1153,14 @@
     aria-haspopup="dialog"
     onclick={onVersionClick}
   >
-    <Icon name="version" size={14} />
+    <!-- D13 (Opus eyes-on assessment, 2026-09-24): the chevron ("version" -> mdiChevronDown, an
+         alias, icon-paths.ts) used to render FIRST, so it sat to the LEFT of "v7" -- every other
+         select-like control in the app (Select.svelte, the native Layer select) puts its chevron
+         AFTER the value, on the right. Text first, chevron last matches that convention; the
+         accessible name (this button's flattened text content, including the visually-hidden span
+         below) is unaffected by visual order. -->
     <VersionBadge />
+    <Icon name="version" size={14} />
     <span class="visually-hidden">Change release version</span>
   </button>
 
@@ -1176,12 +1278,33 @@
       </a>
     </div>
   </span>
+  <!-- P1 (Opus eyes-on assessment, 2026-09-24): the desktop `.search-field` above is
+       `topbar-desktop-only`, and nothing replaced it in the ⋯ menu -- a phone visitor could not
+       search a place, nor (in the species lens) change species, at all. This phone-only button
+       sits right beside the ⋯ trigger below (Feedback/About, TopBarActions.svelte's own first two
+       controls, are themselves `topbar-desktop-only`, so nothing else renders between them at
+       this width) and opens the SAME search content in a modal -- see `openPhoneSearch`'s own
+       header comment. Desktop never renders this (`topbar-phone-only`, the same class the ⋯
+       trigger itself carries). -->
+  <button
+    type="button"
+    class="tool topbar-phone-only"
+    data-tour="search-phone"
+    data-control="search-phone"
+    aria-label="Search species and places"
+    onclick={openPhoneSearch}
+  >
+    <Icon name="search" size={18} />
+  </button>
   <!-- R2 (docs/usability.md §7): About + Feedback + the phone ⋯ menu -- ONE mount line, per this
        round's own instructions (U5/U6 touch the rail and Report/Help/theme in parallel; see
-       TopBarActions.svelte's header for why this stays a separate component). Its "Help" overflow
-       item opens `docsHref` directly (`helpDocsHref`) rather than toggling the desktop Help
-       disclosure just above, which is `topbar-desktop-only` and so invisible at the width the ⋯
-       menu itself only exists at -- see that disclosure's own comment. -->
+       TopBarActions.svelte's header for why this stays a separate component). Its "Docs" item
+       opens `docsHref` directly (`helpDocsHref`) rather than toggling the desktop Help disclosure
+       just above, which is `topbar-desktop-only` and so invisible at the width the ⋯ menu itself
+       only exists at -- see that disclosure's own comment. R2 round 2: its "Take a tour" item runs
+       the SAME `onHelpTakeTour` the desktop Help menu's own button does (below) -- `closeHelp(false)`
+       is a no-op when the desktop disclosure was never open, so this reuses that one function
+       unchanged rather than wrapping it. -->
   <TopBarActions
     {earlyVersion}
     restricted={releaseRestricted}
@@ -1193,16 +1316,26 @@
     {onShare}
     onReportTop={onReport}
     helpDocsHref={docsHref}
+    onTakeTour={onHelpTakeTour}
+    {resolvedTheme}
+    onToggleTheme={toggleTheme}
   />
   <!-- U2a (round 2): sun/moon, CalCOFI's convention (src/App.tsx's `.cc-theme-toggle`) -- the
        icon shown is the DESTINATION theme (a sun while dark invites switching to light, a moon
        while light invites switching to dark), and the accessible name states the action in ONE
        vocabulary (light/dark -- the URL's own words, docs/usability.md p3), never "navy"/"paper"
        (those stay internal token-set names only). mdiBrightness7/mdiBrightness4 are Apache-2.0
-       (@mdi/js, already a project dependency -- see LICENSE.md / node_modules/@mdi/js/LICENSE). -->
+       (@mdi/js, already a project dependency -- see LICENSE.md / node_modules/@mdi/js/LICENSE).
+       P5 fix round 2 (coordinator finding, 390px eyes-on evidence): this used to be the ONE
+       control with no `topbar-desktop-only` -- with the new P1 search button added beside ⋯, the
+       phone topbar's fixed content (mark hidden already, lens switch, search, ⋯, theme) no longer
+       fit at 390px OR 360px: this button's own right edge landed ~20px/~2px past the viewport.
+       `topbar-desktop-only` here, and a "Switch to light/dark theme" item in the ⋯ menu
+       (TopBarActions.svelte, same as Feedback/About's own phone route) reclaims exactly one
+       button's width instead of shaving pixels off every other control. -->
   <button
     type="button"
-    class="tool"
+    class="tool topbar-desktop-only"
     data-tour="theme"
     data-control="theme"
     aria-label={resolvedTheme === "navy" ? "Switch to light theme" : "Switch to dark theme"}
@@ -1212,7 +1345,19 @@
   </button>
 </header>
 
-<main class="stage" id="stage">
+<main
+  class="stage"
+  id="stage"
+  data-panel-dock={isPhone ? undefined : panelGeom.dock}
+  data-panel-maximized={isPhone ? undefined : panelGeom.maximized}
+  style={isPhone ? undefined : `--panel-size: ${panelGeom.size}px`}
+>
+  <!-- D1 (Opus eyes-on assessment, 2026-09-24): `data-panel-dock`/`data-panel-maximized`/
+       `--panel-size` above mirror `panelGeom` the SAME way `#panel-region` itself already does
+       (its own comment just below) -- ScoresLegend.svelte/SpeciesLegend.svelte read them off THIS
+       ancestor (`.stage`, their own positioned parent) to keep the floating legend clear of
+       whichever corner the docked panel currently fills; see those two files' own header comments
+       for why the legend used to render invisibly under it. -->
   <div
     bind:this={mapEl}
     id="map"
@@ -1301,6 +1446,27 @@
        read them. Absent on the phone (Panel never mounts there; Sheet.svelte keeps its own
        detents), which is also why the desktop-only CSS rules never need an `isPhone` guard of
        their own. -->
+  <!-- P1 fix: declared here, as a sibling of BOTH `#panel-region` (below) and the floating legend
+       region (further below, after `#panel-region` closes) -- a snippet is only in scope within
+       the block it is declared in, so it has to live at THIS level to be referenced from both
+       `<Sheet>`'s `headerExtra` prop (inside `#panel-region`) and the floating placement (a
+       sibling of `#panel-region`, outside it). Exactly one `<LegendChip>` instance exists no
+       matter which placement is active -- switching between them (the sheet crossing the "full"
+       boundary) unmounts/remounts it, which simply closes an open modal rather than leaving two
+       chips live at once. -->
+  {#snippet legendChipContent()}
+    {#if phoneLegend}
+      <LegendChip title={phoneLegend.title}>
+        {#if sel.lens === "species" && SpeciesLegendComp}
+          {@const Comp = SpeciesLegendComp}
+          <Comp legend={phoneLegend} />
+        {:else if sel.lens === "scores" && ScoresLegendComp}
+          {@const Comp = ScoresLegendComp}
+          <Comp legend={phoneLegend} />
+        {/if}
+      </LegendChip>
+    {/if}
+  {/snippet}
   <div
     class="panel-region"
     id="panel-region"
@@ -1336,7 +1502,7 @@
       {:else if sel.lens === "species" && activeTool === "layers"}
         {#if SpeciesLensPanelComp}
           {@const Comp = SpeciesLensPanelComp}
-          <Comp lens={speciesLens} rep={sel.rep} />
+          <Comp lens={speciesLens} rep={sel.rep} {layerStack} {onLayerStackChange} />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
         {/if}
@@ -1353,6 +1519,8 @@
             {activeTool}
             fallbackBody={TOOL_BODY[activeTool]}
             lens={scoresLens}
+            {layerStack}
+            {onLayerStackChange}
           />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
@@ -1362,7 +1530,14 @@
       {/if}
     {/snippet}
     {#if isPhone}
-      <Sheet id="shell" title={TOOL_LABEL[activeTool]}>
+      <Sheet
+        id="shell"
+        title={TOOL_LABEL[activeTool]}
+        ongeometry={(g) => (sheetGeom = g)}
+        headerExtra={phoneLegend && legendChipMode(sheetGeom.detent) === "inline"
+          ? legendChipContent
+          : undefined}
+      >
         {@render panelBody()}
       </Sheet>
     {:else}
@@ -1384,29 +1559,33 @@
        branches render here, lazy, the same way every other lens component in this file is. On the
        phone the desktop-only floating legends (`display:none` below 900px, "no room beside the
        sheet") are replaced by ONE compact chip (LegendChip.svelte) sharing the SAME legend object
-       -- `isPhone` gates the two branches, so exactly one ever renders, never both. -->
+       -- `isPhone` gates the two branches, so exactly one ever renders, never both.
+
+       P1 fix (Ben's phone report, 2026-09-24): the chip used to float here at a FIXED offset
+       regardless of the sheet's detent, which put it on top of the sheet's own header controls at
+       "peek" and the last table row at "half"/"full". It now only floats here while
+       `legendChipMode` says "floating" (peek/half, or any future drag-resized height in between
+       -- see sheetGeometry.ts); at "full" it moves INSIDE the sheet instead (`headerExtra`,
+       above), so this region renders nothing then. `--legend-chip-sheet-height` (read by
+       shell.css's `.legend-chip-region`) is the sheet's REAL measured height (`sheetGeom.height`),
+       so the chip tracks the sheet's actual top edge -- the CSS fallback (`0px`, shell.css) is
+       what "no sheet mounted yet" degrades to, the same position the chip has always had. -->
   {#if isPhone}
-    {@const legend =
-      sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresLens?.mapExtra.legend ?? null)}
-    {#if legend}
-      <div class="legend-chip-region">
-        <LegendChip title={legend.title}>
-          {#if sel.lens === "species" && SpeciesLegendComp}
-            {@const Comp = SpeciesLegendComp}
-            <Comp {legend} />
-          {:else if sel.lens === "scores" && ScoresLegendComp}
-            {@const Comp = ScoresLegendComp}
-            <Comp {legend} />
-          {/if}
-        </LegendChip>
+    {#if phoneLegend && legendChipMode(sheetGeom.detent) === "floating"}
+      <div class="legend-chip-region" style={`--legend-chip-sheet-height: ${sheetGeom.height}px`}>
+        {@render legendChipContent()}
       </div>
     {/if}
   {:else if sel.lens === "species" && SpeciesLegendComp}
     {@const Comp = SpeciesLegendComp}
-    <Comp legend={speciesLens.mapInputs.legend} />
+    <div class="lens-legend-region">
+      <Comp legend={speciesLens.mapInputs.legend} />
+    </div>
   {:else if sel.lens === "scores" && ScoresLegendComp}
     {@const Comp = ScoresLegendComp}
-    <Comp legend={scoresLens?.mapExtra.legend ?? null} />
+    <div class="lens-legend-region">
+      <Comp legend={scoresLens?.mapExtra.legend ?? null} />
+    </div>
   {/if}
 </main>
 
@@ -1458,4 +1637,56 @@
 {#if WelcomeModalComp}
   {@const Comp = WelcomeModalComp}
   <Comp tour={sel.tour} onTakeTour={() => void beginTour()} />
+{/if}
+
+<!-- P1 (Opus eyes-on assessment, 2026-09-24): the phone-only search modal -- see
+     `openPhoneSearch`'s own header comment above. Content mirrors the desktop `.search-field`
+     exactly (same SpeciesPickerComp instance/props in the species lens, the same plain stub input
+     otherwise), just laid out for the modal's own width/touch target (`.search-field-phone` /
+     `.search-field-phone-input`, shell.css) instead of the topbar's fixed 32px pill.
+
+     `search-field-phone--species` (species lens only): eyes-on evidence caught Modal.svelte's
+     `.modal-body { overflow: auto }` -- entirely reasonable for ordinary text content -- clipping
+     SpeciesPicker's own results list, which is `position: absolute` (so it contributes NOTHING to
+     the dialog's natural, content-driven height): the dialog shrank to the search row's own ~50px
+     and the dropdown rendered past that box's bottom edge. A first fix (a fixed min-height guess)
+     still let it render past the dialog's own bottom edge on review -- shell.css's own
+     `.search-field-phone--species .picker-dropdown` override forces it into NORMAL FLOW instead
+     (`position: static`), so the dialog's real height always includes it, growing/scrolling
+     (`.modal-body`'s own `overflow: auto`) to hold whatever it actually is, not a guessed number. -->
+{#if ModalComp}
+  {@const ModalC = ModalComp}
+  <ModalC open={phoneSearchOpen} title="Search" onclose={closePhoneSearch}>
+    <div
+      class="search-field-phone"
+      class:search-field-phone--species={sel.lens === "species"}
+      bind:this={phoneSearchBodyEl}
+    >
+      <Icon name="search" size={16} />
+      <div class="search-field-phone-control">
+        {#if sel.lens === "species" && SpeciesPickerComp}
+          {@const PickerComp = SpeciesPickerComp}
+          <PickerComp
+            index={speciesLens.taxaIndex}
+            selected={sel.sp}
+            usOnly={sel.us}
+            onSelect={(key: string) => {
+              speciesLens.selectSpecies(key);
+              closePhoneSearch();
+            }}
+            onSetUsOnly={(enabled: boolean) => speciesLens.setUsOnly(enabled)}
+            onSearchLogged={(query: string) => analytics.track("search_species", { query })}
+            onFocusIndex={() => speciesLens.ensureTaxaIndex()}
+          />
+        {:else}
+          <input
+            type="search"
+            class="search-field-phone-input"
+            aria-label="Search species and places"
+            placeholder="Search species and places"
+          />
+        {/if}
+      </div>
+    </div>
+  </ModalC>
 {/if}

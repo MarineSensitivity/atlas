@@ -276,7 +276,18 @@ test.describe("keyboard", () => {
     await page.evaluate(() => {
       let i = 0;
       for (const el of document.querySelectorAll<HTMLElement>("*")) {
-        if (el.tabIndex >= 0 && el.offsetParent !== null) {
+        // P5 fix (post-merge finding): `.tabIndex >= 0` alone does not exclude a DISABLED native
+        // form control -- per the HTML spec, `tabIndex` reflects an interactive element's default
+        // (0 for a <button>) regardless of `disabled`; the browser's real Tab cycle skips it
+        // anyway (a separate "focusable area" check `.tabIndex` does not capture), but this
+        // heuristic did not know that. Never mattered before U4's Layers stack: `disabled` on
+        // Bathymetry's row (LAYER_GROUP_ENABLED, "coming soon") and on the boundary/pinned move
+        // buttons (Switch.svelte's own doc comment: "the native `disabled` attribute... also
+        // removes it from the Tab order") is the shell's FIRST visible-but-genuinely-disabled
+        // control -- `(el as HTMLButtonElement).disabled` reads `undefined` (falsy) on every
+        // element type without the IDL property, so this is safe everywhere else on the page.
+        const disabled = (el as HTMLButtonElement).disabled === true;
+        if (el.tabIndex >= 0 && el.offsetParent !== null && !disabled) {
           el.setAttribute("data-tabstop", String(i++));
         }
       }

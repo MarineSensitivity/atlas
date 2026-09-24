@@ -28,6 +28,19 @@ import {
   zoneSources,
   zonesNeedGlyphs,
 } from "./layers/zones";
+// R3 layer stack model (round-2 plan §5 U4, docs/usability.md §7 R3): the user-reorderable/
+// dimmable GROUPS a merged CARTO layer or a data layer belongs to. `layerStack.ts` is the pure
+// model (classify/apply/codec); this file only CONSUMES it — composeStyle still returns ONE style
+// object, applied with ONE `setStyle(diff:true)` (this file's own header).
+import {
+  applyLayerGroupStyling,
+  classifyBasemapLayer,
+  DEFAULT_LAYER_STACK,
+  defaultLayerStackEntries,
+  normalizeLayerStack,
+  type LayerGroupId,
+  type LayerStackEntry,
+} from "./layerStack";
 import type {
   BasemapSpec,
   LayerSpecification,
@@ -44,8 +57,9 @@ import type {
 /** every merged CARTO source/layer id gets this prefix — CARTO's own style.json literally has a
  * layer id `"background"` (a `type: "background"` layer painting land colour), which collides with
  * this module's OWN synthetic `background` role/id (the theme's flat fallback colour, used when the
- * CARTO fetch fails). Prefixing avoids that collision unconditionally, and doubles as the "is this
- * a basemap-origin layer" test `layersControlItems()` needs (chrome, never user-toggleable). */
+ * CARTO fetch fails). Prefixing avoids that collision unconditionally, and is also how
+ * `composeStyle`'s own basemap loop below strips it back off before classifying a CARTO layer into
+ * one of the five basemap sub-roles (`classifyBasemapLayer`). */
 export const BASEMAP_LAYER_PREFIX = "basemap-";
 
 /**
@@ -89,13 +103,33 @@ export function cartoStyleHasSymbolLayer(carto: CartoStyleLike): boolean {
  * the basemap under the score raster, the raster under the zone fills, every outline above every
  * fill, labels above outlines, and the selection above everything so a selection ring is never
  * hidden by the layer it selects.
+ *
+ * R3 (round-2 plan §5 U4): the single "basemap" bucket used to hold EVERY merged CARTO layer, all of
+ * it under the raster — so CARTO's own place/road labels painted invisibly, under an opaque score
+ * raster, and there was no way to change that. It is now five sub-roles
+ * (`layerStack.ts#BasemapGroupId`, `classifyBasemapLayer`), each a `LayerGroupId` a user can move —
+ * `basemap-labels` above `raster` is the new capability (Ben's example: "names above a
+ * semi-transparent raster"). This constant is still the DEFAULT flat order (`rankForStack()` below,
+ * called with no argument) — the five sub-roles sit exactly where the old "basemap" bucket sat, so
+ * every existing composeStyle call (no `layerStack` input) renders byte-identical output.
  */
 export const LAYER_ORDER = [
   "background",
-  "basemap",
+  "basemap-land",
+  "basemap-bathymetry",
+  "basemap-boundaries",
+  "basemap-roads",
+  "basemap-labels",
   "raster",
   "range",
   "overlay",
+  // M5 fix (Opus 5.5 review): a zone's CHOROPLETH fill (real computed values, `zoneFillLayer(u)`
+  // when `u.fill.stops.length > 0`) belongs to `data-raster` ("the lens's data"), not `data-zones`
+  // (the outline) — in zone/choropleth mode (`unit=programarea`) the raster is `null` and the
+  // choropleth IS the visible data the "Data" row's eye/opacity must control, exactly like the
+  // raster does in cell mode. The invisible B3 query-fill placeholder (`stops: []`, every unit
+  // always carries one for pick-mode) stays `zone-fill`/`data-zones` — it is not real data.
+  "choropleth",
   "zone-fill",
   "zone-line",
   "zone-label",
@@ -108,6 +142,86 @@ export type LayerRole = (typeof LAYER_ORDER)[number];
 export interface RoledLayer {
   role: LayerRole;
   layer: LayerSpecification;
+}
+
+/** which stack GROUP each fine `LayerRole` belongs to — `undefined` (background only) means "never
+ * part of the user-facing stack; always bottom." `raster`/`range`/`overlay` fold into ONE group
+ * (`data-raster`, "the lens's data") and the three zone roles into `data-zones`, matching
+ * `layerStack.ts`'s own doc comment on why `data-places` folds "places" and "selection" together. */
+const ROLE_GROUP: Partial<Record<LayerRole, LayerGroupId>> = {
+  "basemap-land": "basemap-land",
+  "basemap-bathymetry": "basemap-bathymetry",
+  "basemap-boundaries": "basemap-boundaries",
+  "basemap-roads": "basemap-roads",
+  "basemap-labels": "basemap-labels",
+  raster: "data-raster",
+  range: "data-raster",
+  overlay: "data-raster",
+  choropleth: "data-raster",
+  "zone-fill": "data-zones",
+  "zone-line": "data-zones",
+  "zone-label": "data-zones",
+  "selection-fill": "data-places",
+  "selection-line": "data-places",
+};
+
+/** each group's constituent fine roles, in their OWN fixed sub-order (never user-reorderable —
+ * moving the whole `data-zones` group above `data-raster` is a stack decision; whether a zone's
+ * FILL sits under its own LINE is not). */
+const GROUP_ROLES: Record<LayerGroupId, readonly LayerRole[]> = {
+  "basemap-land": ["basemap-land"],
+  "basemap-bathymetry": ["basemap-bathymetry"],
+  "basemap-boundaries": ["basemap-boundaries"],
+  "basemap-roads": ["basemap-roads"],
+  "basemap-labels": ["basemap-labels"],
+  "data-raster": ["raster", "range", "overlay", "choropleth"],
+  "data-zones": ["zone-fill", "zone-line", "zone-label"],
+  "data-places": ["selection-fill", "selection-line"],
+};
+
+/**
+ * Expands a group-level stack order into the `LayerRole` -> rank map `orderLayers()` sorts against.
+ * `"background"` is always rank 0, unconditionally (it is not part of the user-facing stack: the
+ * theme's flat fallback colour must always be the bottom of everything, stack or no stack).
+ *
+ * **M1 fix (Opus 5.5 review)**: a contiguous RUN of adjacent basemap groups shares ONE rank, not
+ * one rank per group. Before this fix, every CARTO layer classified as "basemap-land" sorted
+ * before every layer classified "basemap-boundaries" — full stop — even though CARTO's OWN
+ * dark-matter/positron style.json interleaves them (`water`/`water_shadow` UNDER
+ * `boundary_county`/`boundary_state`, country boundaries under roads/buildings; verified live
+ * against both real styles). A stable sort by (rank, ORIGINAL CARTO INDEX) inside one shared-rank
+ * run reproduces CARTO's own order regardless of which of the 5 sub-roles each layer classified
+ * into — `composeStyle()`'s merge loop pushes CARTO layers in their own style.json order, so
+ * "same rank" IS "sort by original index only" for every layer in that run.
+ *
+ * This has a documented, DELIBERATE consequence: **basemap rows only move relative to a DATA
+ * row.** Moving one basemap group past another basemap group that stays adjacent to it (e.g.
+ * "Roads" above "Land & water," both still under "Data") is a no-op — they still share one run and
+ * still resolve to CARTO's own order. A basemap group only visibly moves when a DATA row is
+ * interposed on one side or the other of it, splitting the run (Ben's own example — "Place labels"
+ * above "Data" — does exactly this: it separates "Place labels" from the other four basemap groups,
+ * so it gets its OWN rank instead of sharing theirs).
+ */
+export function rankForStack(
+  stack: readonly LayerGroupId[] = DEFAULT_LAYER_STACK,
+): Map<LayerRole, number> {
+  const rank = new Map<LayerRole, number>();
+  rank.set("background", 0);
+  let next = 1;
+  let i = 0;
+  while (i < stack.length) {
+    if (stack[i].startsWith("basemap-")) {
+      const runRank = next++;
+      while (i < stack.length && stack[i].startsWith("basemap-")) {
+        for (const role of GROUP_ROLES[stack[i]] ?? []) rank.set(role, runRank);
+        i++;
+      }
+    } else {
+      for (const role of GROUP_ROLES[stack[i]] ?? []) rank.set(role, next++);
+      i++;
+    }
+  }
+  return rank;
 }
 
 /** the selection highlight's colour (atlas-4 §6.6/§7.1-7.3), from the module's one colour file. */
@@ -135,23 +249,35 @@ export interface ComposeStyleInput {
   /** override only in a test: skips `loadBasemapStyle()`'s network fetch entirely and merges this
    * pre-built CARTO style instead — `basemapForTheme(theme)`'s URL is never touched. */
   basemapStyle?: CartoStyleLike;
+  /** R3 (round-2 plan §5 U4): the user's layer stack — order (`.map(e => e.id)`) AND each group's
+   * `visible`/`opacity`. `undefined` (every existing caller) is `defaultLayerStackEntries()`, which
+   * is a no-op on both counts — draw order unchanged, `applyLayerGroupStyling` never touches a
+   * layer's own paint at opacity 1 — so this input is purely additive. */
+  layerStack?: readonly LayerStackEntry[];
 }
 
 /**
- * Sort tagged layers into {@link LAYER_ORDER}, stably within a role (so two units' outlines keep
- * boot's own order: Program Areas first, then finest first).
+ * Sort tagged layers into `rank` (default: {@link rankForStack} of the default stack), stably
+ * within a rank (so two units' outlines keep boot's own order: Program Areas first, then finest
+ * first — and so a shared-rank basemap RUN, M1, sorts by original CARTO index).
  *
- * @throws if a layer carries a role the order table does not name — the seeded fault for
- * "a layer order that would cascade". Silently appending an unknown role would reintroduce exactly
- * the failure this table exists to prevent.
+ * @throws if a layer carries a role `rank` does not name — the seeded fault for "a layer order
+ * that would cascade" (originally about the fixed `LAYER_ORDER` table; R3 generalizes it to any
+ * rank a `layerStack` input expands to, via {@link rankForStack} — a group id that is not a real
+ * `LayerGroupId` expands to nothing, so a layer tagged with the role that WOULD have named it still
+ * throws here, never silently vanishing). Silently appending an unknown role would reintroduce
+ * exactly the failure this table exists to prevent.
  */
-export function orderLayers(roled: readonly RoledLayer[]): LayerSpecification[] {
-  const rank = new Map<string, number>(LAYER_ORDER.map((r, i) => [r, i]));
+export function orderLayers(
+  roled: readonly RoledLayer[],
+  rank: ReadonlyMap<LayerRole, number> = rankForStack(),
+): LayerSpecification[] {
   for (const { role, layer } of roled) {
     if (!rank.has(role)) {
       throw new Error(
-        `map/style: layer "${layer.id}" has role "${role}", which is not in LAYER_ORDER ` +
-          `(${LAYER_ORDER.join(", ")}) — add it to the declared order, never append it blindly`,
+        `map/style: layer "${layer.id}" has role "${role}", which is not in the declared stack ` +
+          `order (${[...rank.keys()].join(", ")}) — add it to LAYER_ORDER/layerStack.ts, never ` +
+          `append it blindly`,
       );
     }
   }
@@ -240,7 +366,16 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
   if (basemap) {
     const carto = input.basemapStyle ?? getCachedBasemapStyle(input.theme);
     const merged = mergeCartoStyle(carto, sources);
-    for (const layer of merged.layers) roled.push({ role: "basemap", layer });
+    // R3: each CARTO layer classifies into ONE of five basemap sub-roles (land/bathymetry/
+    // boundaries/roads/labels) instead of one flat "basemap" bucket — `classifyBasemapLayer` reads
+    // the UN-prefixed id (the prefix is app-added namespacing, not part of CARTO's own semantics).
+    for (const layer of merged.layers) {
+      const unprefixed = layer.id.startsWith(BASEMAP_LAYER_PREFIX)
+        ? layer.id.slice(BASEMAP_LAYER_PREFIX.length)
+        : layer.id;
+      const role = classifyBasemapLayer({ id: unprefixed, type: layer.type });
+      roled.push({ role, layer });
+    }
     cartoSprite = merged.sprite;
     cartoGlyphs = merged.glyphs;
     cartoHasSymbolLayer = cartoStyleHasSymbolLayer(carto);
@@ -262,7 +397,16 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
   Object.assign(sources, zoneSources(zones));
   for (const u of zones) {
     const fill = zoneFillLayer(u);
-    if (fill) roled.push({ role: "zone-fill", layer: fill });
+    // M5 fix: a REAL choropleth (computed values, `stops.length > 0`) is "the lens's data," role
+    // "choropleth" (group `data-raster`) — the invisible B3 query-fill placeholder every unit
+    // always carries (`stops: []`, pick-mode's own interior hit-test) stays "zone-fill"
+    // (`data-zones`, the outline group), since it is not real data a viewer would dim/hide.
+    if (fill) {
+      const role = (u.fill?.stops.length ?? 0) > 0 ? "choropleth" : "zone-fill";
+      roled.push({ role, layer: fill });
+    }
+    // U5: the outline's own stroke colour is theme-aware (`ZONE_OUTLINE_STROKE_BY_THEME`) --
+    // `zoneLineLayer` now takes the resolved theme to pick it.
     roled.push({ role: "zone-line", layer: zoneLineLayer(u, input.theme) });
   }
   for (const u of zones) {
@@ -279,11 +423,45 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
     roled.push(...selectionLayers(input.selection));
   }
 
+  // R3: the user's layer stack decides BOTH the final draw order (via `rankForStack`, which
+  // `orderLayers` sorts against below) AND each group's visible/opacity (`applyLayerGroupStyling`,
+  // applied uniformly to every layer regardless of whether it came from the basemap merge above or
+  // from a data spec — one mechanism, not a raster-specific and a zone-specific and a selection-
+  // specific one). `defaultLayerStackEntries()` is a no-op on both counts, so an existing caller
+  // that never passes `layerStack` sees byte-identical output to before this input existed.
+  //
+  // m10 (review round 1): `normalizeLayerStack` appends any group a caller's `layerStack` omits
+  // entirely (default visible/opacity) — a complete stack (the common case: `parseLayerStack`'s
+  // own output, or the default) passes through untouched; only a hand-built, PARTIAL array (a
+  // caller bypassing the URL layer) gets repaired here, before `orderLayers` below would otherwise
+  // throw on the missing group's roles.
+  const stackEntries = normalizeLayerStack(input.layerStack ?? defaultLayerStackEntries());
+  const groupById = new Map(stackEntries.map((e) => [e.id, e]));
+  const styledRoled: RoledLayer[] = roled.map(({ role, layer }) => {
+    const group = ROLE_GROUP[role];
+    const entry = group ? groupById.get(group) : undefined;
+    if (!entry) return { role, layer };
+    // M5 decision (review round 2's "new observation"): role "zone-fill" is, by construction,
+    // ALWAYS the invisible B3 query-fill placeholder now (`composeStyle`'s own zone loop below
+    // gives a REAL choropleth role "choropleth" -> group `data-raster` instead) -- so toggling
+    // "Zone outlines" (data-zones) invisible must not ALSO make this layer un-queryable
+    // (MapLibre excludes `visibility: "none"` layers from `queryRenderedFeatures`), or zone
+    // click/pick silently stops working the moment a viewer hides the outline row. It stays
+    // COMPOSED and hit-testable regardless of the group's own visibility; `fill-opacity: 0`
+    // already keeps it invisible on screen either way, so nothing is drawn that was not drawn
+    // before. The OTHER half of the same observation -- hiding "Data" (data-raster) in zone mode
+    // hides a REAL choropleth, its own hit-test target -- is simply correct as-is: a hidden
+    // choropleth is a choropleth a viewer asked not to see, not a hit-test surface anything
+    // still depends on (unlike the always-invisible query fill, nothing else reads through it).
+    const styledEntry = role === "zone-fill" ? { ...entry, visible: true } : entry;
+    return { role, layer: applyLayerGroupStyling(layer, styledEntry) };
+  });
+
   const style: StyleSpecification = {
     version: 8,
     projection: { type: input.projection ?? "globe" },
     sources,
-    layers: orderLayers(roled),
+    layers: orderLayers(styledRoled, rankForStack(stackEntries.map((e) => e.id))),
   };
   // CARTO's own icon layers (POI markers, etc.) read this — carried over verbatim from the fetched
   // style; absent when the fetch failed (EMPTY_BASEMAP_STYLE has no sprite).
@@ -296,73 +474,6 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
     style.glyphs = input.glyphs ?? cartoGlyphs ?? GLYPHS_URL;
   }
   return style;
-}
-
-/** page chrome (background/basemap) and the click-driven selection ring — never something a real
- * "layers control" toggles on/off. Every OTHER id in a composed style is a real, toggleable data
- * layer and is listed by {@link layersControlItems}. Every merged CARTO layer carries the
- * {@link BASEMAP_LAYER_PREFIX} prefix, so a prefix check catches all of them regardless of how
- * many CARTO contributes (93, today) — never a hand-maintained list of CARTO's own layer ids. */
-const LAYERS_CONTROL_EXCLUDED_IDS = new Set(["background", "selection-fill", "selection-line"]);
-
-function isChromeLayerId(id: string): boolean {
-  return LAYERS_CONTROL_EXCLUDED_IDS.has(id) || id.startsWith(BASEMAP_LAYER_PREFIX);
-}
-
-export interface LayersControlItem {
-  id: string;
-  /** best-effort text derived straight from `id` (a composed `LayerSpecification` carries no
-   * separate display label) — good enough for a checkbox's visible text; see this function's own
-   * header for why it is derived, never a hand-maintained id/label pair. */
-  label: string;
-}
-
-function titleCaseFromId(s: string): string {
-  return s.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-/** parity doc §6.2 step 7's `"Raster cell values" = "r_lyr"` / `"Cells outside Program Areas" =
- * "outside_pra_lyr"`, and §6.4's `zone_ctrl_layers()` naming convention (`"{label} outlines" =
- * "{type}_ln"`, `"{label} labels" = "{type}_lbl"`, `"{label} values" = "{unit}_fill"`) — applied to
- * the id alone (this module has no access to `boot.units[].label` here), falling back to a plain
- * title-cased id for anything the table does not recognize (a species range layer, a future layer
- * kind, etc.) rather than throwing. */
-function layersControlLabel(id: string): string {
-  if (id === "r_lyr") return "Raster cell values";
-  if (id === "outside_pra_lyr") return "Cells outside Program Areas";
-  const highlight = /^(.+)_highlight_ln$/.exec(id);
-  if (highlight) return `${titleCaseFromId(highlight[1])} selection`;
-  const line = /^(.+)_ln$/.exec(id);
-  if (line) return `${titleCaseFromId(line[1])} outlines`;
-  const label = /^(.+)_lbl$/.exec(id);
-  if (label) return `${titleCaseFromId(label[1])} labels`;
-  const fill = /^(.+)_fill$/.exec(id);
-  if (fill) return `${titleCaseFromId(fill[1])} values`;
-  return titleCaseFromId(id);
-}
-
-/**
- * The "layers control" a real map UI would offer, derived from the style MapLibre actually
- * renders — never a hand-maintained list of ids.
- *
- * **This is the structural fix for a known bug in the ported Shiny app** (parity doc §6.4:
- * `add_layers_control(layers = c(zone_ctrl_layers(), list("Raster cell values" = "r_lyr", "Cells
- * outside Program Areas" = "outside_pra_lyr")))`). That control was hardcoded to `pra_ln`,
- * `pra_lbl`, `er_ln`, `r_lyr`, `outside_pra_lyr` while the layers actually created were named
- * `programarea_ln`/`programarea_lbl`/`ecoregion_ln`/… — after any sidebar change in cell mode,
- * three of the five switches pointed at nothing (`app.R:2136-2143`). Building the control's
- * entries FROM `style.layers` makes that class of bug impossible by construction: every id this
- * function returns is, by definition, a layer id that is ACTUALLY in the style passed in — there
- * is no separate literal string that can drift out of sync with it.
- *
- * The zone LABEL layer only ever appears once a release publishes `label_pt` (currently absent
- * from every boot — atlas-1's TODO, not this function's problem): until then, this simply lists
- * one fewer item, exactly matching what `composeStyle` actually drew.
- */
-export function layersControlItems(style: StyleSpecification): LayersControlItem[] {
-  return style.layers
-    .filter((l) => !isChromeLayerId(l.id))
-    .map((l) => ({ id: l.id, label: layersControlLabel(l.id) }));
 }
 
 /** the narrow slice of MapLibre's `Map` this module needs — so `applyStyle` is unit-testable with
