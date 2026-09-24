@@ -723,6 +723,68 @@ describe("composeStyle + layerStack (R3: the layer stack model)", () => {
     expect(fill && "paint" in fill ? fill.paint : null).toMatchObject({ "fill-opacity": 0 });
   });
 
+  // review round 2 ("new observation" on M5): hiding "Zone outlines" (data-zones) used to ALSO
+  // hide the invisible query-fill placeholder (`layout.visibility: "none"`), which MapLibre
+  // excludes from `queryRenderedFeatures` -- so zone click/pick silently stopped working the
+  // moment a viewer hid the outline row, even though the placeholder was never visible anyway.
+  // Decision: the query fill stays COMPOSED and queryable regardless of data-zones' own
+  // visibility; `fill-opacity: 0` alone already keeps it invisible.
+  it("M5 decision: hiding data-zones does NOT hide the invisible query fill -- it stays queryable (no layout.visibility)", () => {
+    const stack = defaultLayerStackEntries().map((e) =>
+      e.id === "data-zones" ? { ...e, visible: false } : e,
+    );
+    const queryFillUnit = zoneUnitsFromBoot({
+      units: [{ fld: "programarea_key", pmtiles: PRA.pmtiles, source_layer: "programarea" }],
+    })[0];
+    const s = composeStyle({
+      theme: "navy",
+      basemap: null,
+      layerStack: stack,
+      zones: [queryFillUnit],
+    });
+    const fill = s.layers.find((l) => l.id === "programarea_fill");
+    expect(fill).toBeDefined();
+    expect((fill as { layout?: { visibility?: string } } | undefined)?.layout?.visibility).not.toBe(
+      "none",
+    );
+    // the REAL outline line, by contrast, DOES respect data-zones' own visibility -- only the
+    // always-invisible query fill gets the exception.
+    const line = s.layers.find((l) => l.id === "programarea_ln");
+    expect((line as { layout?: { visibility?: string } } | undefined)?.layout?.visibility).toBe(
+      "none",
+    );
+  });
+
+  // the OTHER half of the same decision: a REAL choropleth (unlike the query fill) is simply
+  // hidden when the viewer hides "Data" (data-raster) -- no exception, since nothing else depends
+  // on reading through it the way pick-mode depends on the query fill.
+  it('M5 decision: hiding data-raster ("Data") DOES hide a real choropleth fill -- no exception, it is the visible data', () => {
+    const stack = defaultLayerStackEntries().map((e) =>
+      e.id === "data-raster" ? { ...e, visible: false } : e,
+    );
+    const s = composeStyle({
+      theme: "navy",
+      basemap: null,
+      layerStack: stack,
+      zones: [
+        {
+          ...PRA,
+          fill: {
+            keyProperty: "programarea_key",
+            stops: [{ key: "GAA", color: "#111111" }],
+            defaultColor: "lightgrey",
+            opacity: 0.7,
+            outlineColor: "white",
+          },
+        },
+      ],
+    });
+    const fill = s.layers.find((l) => l.id === "programarea_fill");
+    expect((fill as { layout?: { visibility?: string } } | undefined)?.layout?.visibility).toBe(
+      "none",
+    );
+  });
+
   // B1 fix, the exact regression the review names: EVERY zone unit (including one with no `fill`
   // spec at all) carries an INVISIBLE query fill (`layers/zones.ts#queryFillFor`, B3 0.10.26:
   // `fill-opacity: 0`, `defaultColor: QUERY_FILL_COLOR` -- a near-black placeholder so pick-mode can

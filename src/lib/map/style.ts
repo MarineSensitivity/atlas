@@ -440,7 +440,21 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
   const styledRoled: RoledLayer[] = roled.map(({ role, layer }) => {
     const group = ROLE_GROUP[role];
     const entry = group ? groupById.get(group) : undefined;
-    return entry ? { role, layer: applyLayerGroupStyling(layer, entry) } : { role, layer };
+    if (!entry) return { role, layer };
+    // M5 decision (review round 2's "new observation"): role "zone-fill" is, by construction,
+    // ALWAYS the invisible B3 query-fill placeholder now (`composeStyle`'s own zone loop below
+    // gives a REAL choropleth role "choropleth" -> group `data-raster` instead) -- so toggling
+    // "Zone outlines" (data-zones) invisible must not ALSO make this layer un-queryable
+    // (MapLibre excludes `visibility: "none"` layers from `queryRenderedFeatures`), or zone
+    // click/pick silently stops working the moment a viewer hides the outline row. It stays
+    // COMPOSED and hit-testable regardless of the group's own visibility; `fill-opacity: 0`
+    // already keeps it invisible on screen either way, so nothing is drawn that was not drawn
+    // before. The OTHER half of the same observation -- hiding "Data" (data-raster) in zone mode
+    // hides a REAL choropleth, its own hit-test target -- is simply correct as-is: a hidden
+    // choropleth is a choropleth a viewer asked not to see, not a hit-test surface anything
+    // still depends on (unlike the always-invisible query fill, nothing else reads through it).
+    const styledEntry = role === "zone-fill" ? { ...entry, visible: true } : entry;
+    return { role, layer: applyLayerGroupStyling(layer, styledEntry) };
   });
 
   const style: StyleSpecification = {
