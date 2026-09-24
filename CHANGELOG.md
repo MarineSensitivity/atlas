@@ -1,3 +1,13 @@
+# atlas 0.10.53
+
+Places: choosing a Program Area now opens the same results panel a drawn or uploaded place gets --
+a coverage note (cells, area, published composite), the flower, and the component table, all read
+straight from the release. Its species table loads on request through the same path the scores
+lens' Table ▸ Zones tool uses. "Show analysis cells" is not yet available for Program Areas (no
+per-zone cell data is published to the app yet) and now says so plainly instead of showing a
+disabled button with a misleading reason. Also: fixed a rare race where "Show analysis cells"
+could paint the wrong place's cells if the selection moved while a load was in flight.
+
 # atlas 0.10.50
 
 P10: Help ▸ Docs (desktop Help menu and the phone ⋯ menu) now opens the current release's **Atlas

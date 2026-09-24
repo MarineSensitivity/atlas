@@ -19,6 +19,13 @@ import type { DataEngineContext } from "./dataEngine";
 import type { AreaGeometry } from "../lib/geo/types";
 import type { CellCoverage } from "../lib/geo/coverage";
 import { PUBLIC_DATA_BASE } from "../lib/release/dataBase";
+// Q3 (P round, item 1): a ZONE place's species table goes through the SAME path the scores lens'
+// own Table > Zones tool uses -- `loadSpeciesRowsFor` (given an already-booted `sources`, not the
+// lens' memoised singleton) and `zoneAllKey` (unused for a `kind: "zone"` selection but part of
+// its options shape) -- see `zoneSpeciesResults`'s own header below for why this needs no fetch
+// plan, unlike {@link computeSpeciesResults} just above it.
+import { loadSpeciesRowsFor } from "../lens/scores/speciesLoad";
+import { zoneAllKey } from "../lens/scores/boot";
 
 export interface CoverageSummary {
   /** cells this place's geometry overlaps, before any study-area clip. */
@@ -194,6 +201,32 @@ export function computeSpeciesResults(
       },
     });
     return { rows, tilesUsed: tiles.length };
+  });
+}
+
+/**
+ * ONE zone's species table (Q3, item 1: "the species table on request through the same zone-
+ * species path the Table > Zones tool uses"). `speciesLoad.ts#loadSpeciesRowsFor`, given THIS
+ * module's own already-booted `ctx.sources` rather than the scores lens' own memoised singleton --
+ * so a zone place selected in Places never depends on ScoresLens having been mounted at all, and
+ * cannot race it (`loadSpeciesRowsFor` already wraps the whole read in `exclusive(sources.db, ...)`,
+ * the same FIFO {@link computeScoreResults} and {@link computeSpeciesResults} use).
+ *
+ * Unlike {@link computeSpeciesResults} (a custom place's cell-model tiles, fetched in bounded-memory
+ * batches), `species_for_zone.sql` reads the WHOLE `zone_taxon` table `AnalysisSources#coreTables()`
+ * already loaded before this is ever called -- one query against data already in memory, so there
+ * is no fetch plan/tile-count confirmation step here (`ResultsPanel.svelte`'s own "Loading species
+ * needs N tiles" prompt is a custom-place-only concept: it simply does not apply to a zone).
+ */
+export function zoneSpeciesResults(
+  ctx: DataEngineContext,
+  boot: unknown,
+  unit: string,
+  key: string,
+): Promise<SpeciesRow[]> {
+  return loadSpeciesRowsFor(ctx.sources, (boot ?? {}) as Record<string, unknown>, {
+    selection: { kind: "zone", unit, key },
+    zoneAllKey: zoneAllKey(boot),
   });
 }
 

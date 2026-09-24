@@ -534,16 +534,18 @@ test("P8 item 7: dropping a GeoPackage shows an honest 'not supported yet' refus
 // place before its two `await`s and applied whatever came back unconditionally. `cellsToken` now
 // keys the load on the place and drops a late result once the selection has moved on.
 //
-// FIXME (P9, orchestrator-requested, 2026-09-24): this test cannot force the race it claims to --
-// investigated with millisecond-timestamped network/worker instrumentation, not guessed at:
-// the ONE shared `cell/tile=0` fetch both places need completes ~1.5s before any `page.route()`
-// registered at this test's own call site (after both places exist) can possibly hold it.
-// The fixed 2.5s route delay only shifts UNRELATED scheduling -- it does not force the overlap --
-// and against the current (correctly guarded) code, 4 of 6 repeat runs fail on BOTH chromium and
-// webkit, not just webkit (measured: `--repeat-each=3` on each engine).
-// A real fix needs a test-only hook into `toggleAnalysisCells()`'s own async gap (or a component-
-// test harness this repo doesn't have yet), not another network/worker timing trick -- follow-up.
-test.fixme("'show analysis cells' drops a late result once the selection moves to a different place (item 3b)", async ({
+// Q3 item 2 (P round, 2026-09-24): the OLD version of this test used a `page.route()` network delay
+// to try to hold place A's load open, and could not force the race it claims to -- investigated with
+// millisecond-timestamped network/worker instrumentation: the ONE shared `cell/tile=0` fetch both
+// places need completes ~1.5s before any `page.route()` registered at the test's own call site can
+// possibly hold it, so it was left `test.fixme` (4 of 6 repeat runs failed on both chromium and
+// webkit against the CORRECTLY GUARDED code -- a false negative, not a real gap). Fixed with a
+// test-only hook: `toggleAnalysisCells()` now awaits `window.__atlasTest?.holdCells` right after its
+// real fetch resolves, before applying the result -- this test arms that hook BEFORE clicking the
+// pill, so A's load parks deterministically at that exact point, selects B (which bumps
+// `cellsToken`), and only THEN releases the hold -- proving the guard drops the late result instead
+// of guessing at timing.
+test("'show analysis cells' drops a late result once the selection moves to a different place (item 3b)", async ({
   page,
 }) => {
   test.setTimeout(60_000);
@@ -552,30 +554,36 @@ test.fixme("'show analysis cells' drops a late result once the selection moves t
   await addByCoordinates(page, "-124.9, 39.0, -124.6, 39.8"); // place B -- auto-selected instead
   await expect(page.locator(".place-row")).toHaveCount(2);
 
-  // select place A (row 0) and delay the ONE cell tile this fixture publishes (both places' loads
-  // read the same tile, `grid.tile.size === grid.nc`) so A's "show analysis cells" load is still
-  // in flight when the selection below moves to B.
+  // select place A (row 0), then arm the hold hook -- `_releaseCells` is stashed on the SAME
+  // `window.__atlasTest` object so this page can call it back later, never exposed outside a test.
   await page.locator(".place-row .row-select").nth(0).locator(".icon").click();
-  await page.route(
-    (url) => /\/app\/cell\/tile=0\/data_0\.parquet$/.test(url.pathname),
-    async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 2500));
-      await route.fulfill({
-        status: 200,
-        contentType: "application/octet-stream",
-        body: CELL_TILE0,
-      });
-    },
-  );
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __atlasTest?: { holdCells?: Promise<void>; _releaseCells?: () => void };
+    };
+    const seam: { holdCells?: Promise<void>; _releaseCells?: () => void } = {};
+    seam.holdCells = new Promise<void>((resolve) => {
+      seam._releaseCells = resolve;
+    });
+    w.__atlasTest = seam;
+  });
+
   const cellsPill = page.getByRole("button", { name: "Show analysis cells" });
   await expect(cellsPill).toBeEnabled({ timeout: 15_000 });
-  await cellsPill.click(); // place A's load starts, held ~2.5s by the route above
+  await cellsPill.click(); // place A's load starts; it will park at the hold hook once it resolves
 
-  // before it resolves, select place B instead (B's own toggle is never clicked)
+  // before releasing the hold, select place B instead (B's own toggle is never clicked) -- this
+  // bumps `cellsToken` via Places.svelte's own selection-change effect, which is what A's parked
+  // continuation must see once it resumes below.
   await page.locator(".place-row .row-select").nth(1).locator(".icon").click();
+  await page.waitForTimeout(50); // let that effect's `cellsToken++` land before releasing
 
-  // give A's held fetch time to resolve and (if the bug were back) paint its stale result
-  await page.waitForTimeout(4000);
+  // release the hold -- A's parked continuation resumes and must drop its own (now-stale) result.
+  await page.evaluate(() => {
+    (
+      window as unknown as { __atlasTest?: { _releaseCells?: () => void } }
+    ).__atlasTest?._releaseCells?.();
+  });
 
   // A's late result was dropped: the toggle never turns "on" under B's selection (B's own outline
   // still renders as an ordinary selection-line/-fill feature -- that IS correct, so this checks
@@ -1001,3 +1009,109 @@ test("P8 item 2: a Program Area row shows its published composite, read from the
   await expect(row).toContainText("27.2 composite");
   await expect(row).not.toContainText("not analysed yet");
 });
+
+// Q3 item 1 (P round, 2026-09-24 -- "Selecting a Program Area place opens no results panel in
+// Places, its row does show a real composite score, but there is no coverage note or flower
+// there"): `ResultsPanel.svelte` used to be gated to `place.kind === "geom"` -- a zone (Program
+// Area) place's row got a composite chip (P8 item 2's fixture/test above) but selecting it opened
+// nothing below the list. Fixed: the SAME panel now renders for a `kind: "zone"` place too, reading
+// coverage/flower/components straight off `boot` -- no engine/DuckDB needed (`ResultsPanel.svelte`'s
+// own header), so this needs only a `boot.json`-shaped fixture, the same convention as the P8 item 2
+// test right above it.
+const ZONE_RESULTS_BOOT = {
+  schema: 1,
+  ver: "v7",
+  grid_id: "usa05",
+  grid: {
+    nc: 3103,
+    nr: 2006,
+    xmin: 141.1,
+    ymax: 74.75,
+    resx: 0.05,
+    resy: 0.05,
+    lon360: true,
+    tile: { size: 50 },
+  },
+  study_areas: [{ key: "FULL", label: "All US waters", lon: -101.3, lat: 46.9, zoom: 2.16 }],
+  units: [],
+  layers: [
+    { metric_key: "extrisk_bird_ecoregion_rescaled", label: "Bird", category: "component" },
+    { metric_key: "extrisk_mammal_ecoregion_rescaled", label: "Mammal", category: "component" },
+    {
+      metric_key: "primprod_ecoregion_rescaled",
+      label: "Primary productivity",
+      category: "component",
+    },
+    {
+      metric_key: "score_extriskspcat_primprod_ecoregionrescaled_equalweights",
+      label: "Combined score",
+      category: "composite",
+    },
+  ],
+  zones: {
+    programarea: [
+      {
+        key: "GAA",
+        name: "Gulf of America",
+        n_cells: 45790,
+        area_km2: 875225.03,
+        n_taxa: 2503,
+        metrics: {
+          extrisk_bird_ecoregion_rescaled: 42.39,
+          extrisk_mammal_ecoregion_rescaled: 31.5,
+          primprod_ecoregion_rescaled: 12.4,
+          score_extriskspcat_primprod_ecoregionrescaled_equalweights: 27.2,
+        },
+        coverage: null,
+      },
+    ],
+  },
+};
+
+async function gotoPlacesWithZoneResultsFixture(page: Page): Promise<void> {
+  await routeBucket(page, "v7", ZONE_RESULTS_BOOT);
+  await routeSession(page, null);
+  await routeSealFixture(page);
+  await page.goto("/");
+  await waitForHydration(page);
+  await page.locator("#rail-region button[aria-label='Places']").click();
+  await page.getByLabel("Add a Program Area").selectOption("GAA");
+  await page.getByRole("button", { name: "Add this Program Area" }).click();
+  await expect(page.locator(".place-row")).toHaveCount(1);
+}
+
+for (const viewport of [
+  { name: "desktop (1280x800)", width: 1280, height: 800 },
+  { name: "phone (390x844)", width: 390, height: 844 },
+]) {
+  test.describe(`Q3 item 1: Program Area results panel -- ${viewport.name}`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+
+    test("choosing a Program Area shows its results panel: coverage note, flower, component table", async ({
+      page,
+    }) => {
+      await gotoPlacesWithZoneResultsFixture(page);
+
+      const results = page.locator(".results");
+      await expect(results).toBeVisible();
+
+      // the coverage note ("N cells, area km²; published composite")
+      const coverageNote = results.locator(".coverage-note");
+      await expect(coverageNote).toContainText("45,790");
+      await expect(coverageNote).toContainText("cells");
+      await expect(coverageNote).toContainText("km²");
+      await expect(coverageNote).toContainText("published composite");
+      await expect(coverageNote).toContainText("27.2");
+
+      // the flower -- the bundle's published composite, not a re-derived number
+      await expect(results.locator(".composite-figure")).toContainText("27.2");
+      await expect(results.locator(".composite-row svg").first()).toBeVisible();
+
+      // the component table -- real component rows, not an empty grid
+      const componentsGrid = results.getByRole("grid", { name: "Components" });
+      await expect(componentsGrid).toBeVisible();
+      await expect(componentsGrid).toContainText("bird");
+      await expect(componentsGrid).toContainText("mammal");
+    });
+  });
+}

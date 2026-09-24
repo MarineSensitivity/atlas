@@ -3,10 +3,14 @@ import {
   allZoneStats,
   paLabel,
   summarizeZoneStats,
+  zoneCellsAvailable,
   zoneCenterFromBoot,
+  zoneComponentScores,
   zoneDisplayName,
+  zoneNCellsFor,
   zoneStatFromBoot,
   zoneStatsFor,
+  ZONE_CELLS_UNAVAILABLE_REASON,
 } from "../../src/places/zoneStats";
 
 const BOOT = {
@@ -263,5 +267,70 @@ describe("zoneCenterFromBoot", () => {
 
   it("is null when none of the picked keys has a label point", () => {
     expect(zoneCenterFromBoot(BOOT, "programarea", ["WGA"])).toBeNull();
+  });
+});
+
+// Q3 (P round, item 1): the zone results panel's own model -- coverage note ("N cells")/component
+// table -- read straight off REAL_V7_BOOT above, the same "real v7 boot.json shape" fixture the
+// composite/coverage tests already pin (n_cells/metrics/`coverage: null`).
+describe("zoneNCellsFor (Q3 item 1: the results panel's coverage note)", () => {
+  it("reads one zone's published n_cells", () => {
+    expect(zoneNCellsFor(REAL_V7_BOOT, "programarea", ["ALA"])).toBe(45790);
+    expect(zoneNCellsFor(REAL_V7_BOOT, "programarea", ["ALB"])).toBe(10272);
+  });
+
+  it("sums n_cells over several keys (a multi-pick zone place)", () => {
+    expect(zoneNCellsFor(REAL_V7_BOOT, "programarea", ["ALA", "ALB"])).toBe(45790 + 10272);
+  });
+
+  it("is null for a key the release doesn't publish, or a boot with no zones at all", () => {
+    expect(zoneNCellsFor(REAL_V7_BOOT, "programarea", ["ZZZ"])).toBeNull();
+    expect(zoneNCellsFor(null, "programarea", ["ALA"])).toBeNull();
+  });
+
+  it("skips an unknown key but still sums the known ones", () => {
+    expect(zoneNCellsFor(REAL_V7_BOOT, "programarea", ["ALA", "ZZZ"])).toBe(45790);
+  });
+});
+
+describe("zoneComponentScores (Q3 item 1: the results panel's component table)", () => {
+  it("keeps every published component metric_key, labelled the SAME way the flower would", () => {
+    expect(zoneComponentScores(REAL_V7_BOOT, "programarea", "ALA")).toEqual([
+      { metric_key: "extrisk_bird_ecoregion_rescaled", component: "bird", score: 42.3898340211856 },
+    ]);
+  });
+
+  it("a second zone reads its OWN metrics, not the first's", () => {
+    expect(zoneComponentScores(REAL_V7_BOOT, "programarea", "ALB")).toEqual([]); // ALB's fixture
+    // row carries no `extrisk_bird_ecoregion_rescaled` key -- the released, unrescaled `extrisk_bird`
+    // does not match `componentMetricKeys()`'s own `_ecoregion_rescaled$` pattern, so this is
+    // correctly empty, not a bug in the fixture.
+  });
+
+  it("[] for an unknown zone/key or a boot with no zones at all (never a throw)", () => {
+    expect(zoneComponentScores(REAL_V7_BOOT, "programarea", "ZZZ")).toEqual([]);
+    expect(zoneComponentScores(null, "programarea", "ALA")).toEqual([]);
+    expect(zoneComponentScores({}, "programarea", "ALA")).toEqual([]);
+  });
+
+  // seeded fault (places-zone-components-collapsed): a component reader that ONLY ever looked at
+  // the release's composite metric_key (instead of every `componentMetricKeys()` entry) would
+  // return [] here too, indistinguishable from "no component data published" -- this fixture has
+  // a real component, so a regression to that shape goes red.
+  it("does not collapse to [] when a real component metric IS published", () => {
+    expect(zoneComponentScores(REAL_V7_BOOT, "programarea", "ALA").length).toBeGreaterThan(0);
+  });
+});
+
+describe("zoneCellsAvailable / ZONE_CELLS_UNAVAILABLE_REASON (Q3 item 1: 'Show analysis cells' for a zone)", () => {
+  it("is false today -- no zone_cell data path exists yet -- for any boot", () => {
+    expect(zoneCellsAvailable(REAL_V7_BOOT)).toBe(false);
+    expect(zoneCellsAvailable(null)).toBe(false);
+    expect(zoneCellsAvailable({})).toBe(false);
+  });
+
+  it("the reason names Program Areas, not a generic refusal", () => {
+    expect(ZONE_CELLS_UNAVAILABLE_REASON).toMatch(/Program Area/);
+    expect(ZONE_CELLS_UNAVAILABLE_REASON.length).toBeGreaterThan(20);
   });
 });
