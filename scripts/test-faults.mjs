@@ -761,6 +761,60 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4375" },
   },
+  {
+    id: "legend-fixed-corner",
+    patch: "tests/faults/legend-fixed-corner.patch",
+    describe:
+      "ScoresLegend.svelte drops its dock=right override -- the legend sits back under the " +
+      "default right-docked panel (D1's real defect, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.legend-position.spec.ts",
+      "-g",
+      "dock=right \\(the default\\)",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4379" },
+  },
+  {
+    id: "select-width-removed",
+    patch: "tests/faults/select-width-removed.patch",
+    describe:
+      "Select.svelte's .select loses width:100% -- the box shrinks to its text again while the " +
+      "chevron floats past its right edge (D2's real defect, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/layers.select-style.spec.ts",
+      "-g",
+      "the box spans to the chevron",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4379" },
+  },
+  {
+    id: "phone-search-button-removed",
+    patch: "tests/faults/phone-search-button-removed.patch",
+    describe:
+      "Shell.svelte drops the phone-only search button -- no search or species picker is reachable " +
+      "on the phone again (P1's real defect, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.phone-search.spec.ts",
+      "-g",
+      "the button exists",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4379" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

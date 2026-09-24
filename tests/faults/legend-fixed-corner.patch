@@ -1,0 +1,22 @@
+diff --git a/src/lens/scores/ScoresLegend.svelte b/src/lens/scores/ScoresLegend.svelte
+index c72870c..c8fb5c5 100644
+--- a/src/lens/scores/ScoresLegend.svelte
++++ b/src/lens/scores/ScoresLegend.svelte
+@@ -74,17 +74,6 @@
+      read here so the legend always floats over FREE map, never under the panel, at any dock side.
+      Dock=left is left alone (the default bottom-right corner above is already clear of a
+      left-docked panel, and of the rail, which is always top-left on desktop). */
+-  :global(.stage[data-panel-dock="right"]) .scores-legend {
+-    /* the panel takes the whole right-side strip top-to-bottom; the rail sits top-LEFT
+-       (shell.css's `.rail-region`), so bottom-left is the one corner nothing else claims --
+-       EXCEPT the map-attribution chip (shell.css's `.map-attribution`: `left: var(--space-2)`,
+-       `bottom: var(--space-2)`, ~18px tall), which already sits in that same corner. Red-first
+-       caught the two overlapping (measured 14px of shared height) once this moved the legend
+-       here -- `bottom` clears the chip's own height plus a matching gap, on top of its offset. */
+-    right: auto;
+-    left: var(--space-3);
+-    bottom: calc(var(--space-2) + 22px + var(--space-2));
+-  }
+   :global(.stage[data-panel-dock="bottom"]) .scores-legend {
+     /* the panel spans the full width at the bottom -- stay bottom-right, but clear ITS height
+        (plus a gutter) instead of the stage's own bottom edge. `--panel-size` is inherited from

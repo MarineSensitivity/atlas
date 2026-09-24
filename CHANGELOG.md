@@ -1,3 +1,26 @@
+# atlas 0.10.44
+
+**P5 — shell defects from the Opus 5.5 eyes-on assessment (2026-09-24):**
+
+- **Fixed: the desktop legend was invisible.** `ScoresLegend.svelte`/`SpeciesLegend.svelte` were
+  pinned bottom-right at a fixed z-index below the default right-docked panel, which fully covered
+  that corner — every desktop map showed color with no key. The legend now reads the panel's live
+  dock/maximized state (mirrored onto `.stage` by `Shell.svelte`) and repositions to stay clear of
+  it at any dock side, and hides while the panel is maximized.
+- **Fixed: two broken select styles in the Layers panel.** `lib/ui/Select.svelte`'s box used to
+  shrink to its label text while its chevron floated at the far right of the field, at both
+  desktop and phone widths — it now spans its container with the chevron inside the box. The
+  native Layer `<select>` (`lens/scores/LayersPanel.svelte`) no longer clips a long layer name
+  mid-word with no ellipsis.
+- **Added: search is reachable on the phone.** The topbar search field (which also hosts the
+  species picker) was desktop-only, so a phone visitor could not search a place or change species
+  at all. A new search button beside the ⋯ menu opens the same search content as a focused,
+  near-full-width modal.
+- **Fixed: minor top-bar/menu inconsistencies.** "Feedback" no longer renders underlined next to
+  its button-styled neighbours; the version chip's chevron now sits after "v7", matching every
+  other select-like control. The phone ⋯ menu's "Take a tour" now has its own icon, distinct from
+  "Docs".
+
 # atlas 0.10.43
 
 P4 (Ben, phone, "Report" tool, live 0.10.37): the Report map was duplicated and seemingly empty

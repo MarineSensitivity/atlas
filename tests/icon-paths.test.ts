@@ -59,6 +59,7 @@ const SPEC_ICON_NAMES = [
   "restore",
   "more",
   "feedback",
+  "tour",
 ];
 
 // SVG path command characters and allowed symbols (see tests/glyphs.test.ts for a real parser;

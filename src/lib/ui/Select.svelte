@@ -56,6 +56,14 @@
     position: relative;
     display: inline-flex;
     align-items: center;
+    /* D2 (Opus eyes-on assessment, 2026-09-24): every caller (LayersPanel's Study area/Spatial
+       units/Color palette, ReportTool's zone picker) places this in a container that gives it a
+       definite width -- a flex-column field or row -- but `inline-flex` on its own only ever
+       shrink-wraps to content, so the visible box ended at the label text while the chevron
+       (positioned against THIS element, below) floated wherever an ambient parent `stretch`
+       happened to push it. Spanning the container explicitly removes that dependency; see
+       `.select`'s own `width: 100%` below for the other half of the fix. */
+    width: 100%;
   }
 
   .select {
@@ -69,6 +77,12 @@
     font-size: var(--text-sm);
     appearance: none;
     cursor: pointer;
+    /* D2: a horizontal flex child does not stretch along the MAIN axis on its own (`align-items:
+       stretch` only affects the CROSS axis) -- without this the select's own border-box stayed
+       content-sized even once `.select-wrap` above spanned the full field, which is exactly what
+       let the chevron (absolutely positioned against the now-wide wrapper) drift away from the
+       box it is meant to sit inside. */
+    width: 100%;
   }
 
   .select:focus-visible {

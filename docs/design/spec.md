@@ -232,6 +232,7 @@ generator must follow:
 | `restore`      | `mdiFullscreenExit`      | panel header control (R1, restore from maximize)                                                        |
 | `more`         | `mdiDotsHorizontal`      | phone top-bar overflow (⋯) menu (R2)                                                                    |
 | `feedback`     | `mdiMessageAlertOutline` | top bar "Feedback" (R2)                                                                                 |
+| `tour`         | `mdiCompassOutline`      | phone ⋯ menu "Take a tour" (P5) — distinct from `help`, which "Docs" beside it still uses               |
 | `copy`         | `mdiContentCopy`         | copy the scientific / common name                                                                       |
 | `check`        | `mdiCheck`               | merged-model pill, selected row                                                                         |
 | `alert`        | `mdiAlertCircleOutline`  | a denied release, a failed upload                                                                       |
