@@ -66,17 +66,14 @@
     box-shadow: var(--elev-2);
   }
 
-  /* the phone viewport has no room for this beside the bottom rail (centered, also anchored at
-     `bottom: var(--space-3)`) and the bottom sheet -- the SAME "no room" trade-off Shell.svelte's
-     on-map About card already makes at this breakpoint (shell.css's own `.about-region { display:
-     none }`, cited there as an open item, not blocking, docs/design/spec.md §14); the species
-     lens' own floating legend takes the identical exception, for the identical reason (see its own
-     header comment). */
-  @media (max-width: 899px) {
-    .scores-legend {
-      display: none;
-    }
-  }
+  /* P1 fix (Ben's phone report, 2026-09-24): a `display:none` used to live HERE for "no room
+     beside the sheet" below 900px -- but Shell.svelte reuses this exact component's markup inside
+     LegendChip.svelte's phone modal (the SAME `<Comp {legend} />`), so this rule also blanked the
+     modal's body on the phone (the bug: tapping the chip opened a dialog titled "Legend" with
+     nothing under it). The desktop floating placement's "no room on the phone" hiding now lives in
+     shell.css's `.lens-legend-region` instead, a wrapper class Shell.svelte itself owns around the
+     desktop-only branch -- this component no longer decides by viewport at all, only by `isPhone`
+     (via which slot Shell.svelte mounts it into). */
 
   .scores-legend--note {
     max-width: 240px;
