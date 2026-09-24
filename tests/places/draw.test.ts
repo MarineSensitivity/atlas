@@ -7,8 +7,14 @@ import type { AreaGeometry } from "../../src/lib/geo/types";
  * about the WIRING (mode construction, finish -> onFinish, setMode/clear/stop delegation), not
  * terra-draw's own internals, so it never loads the real (heavy) library.
  */
+/** terra-draw's own `OnFinishContext` shape ({@link https://terradraw.io} 1.35) -- `action` is
+ * `"draw"` for a fresh shape and one of `"dragCoordinate"`/`"dragCoordinateResize"`/`"dragFeature"`/
+ * `"insertMidpoint"`/`"deleteCoordinate"` for an edit of a feature that already exists (P9: the
+ * "editing a drawn shape duplicates it" bug -- see `draw.ts`'s own `onFinish` comment). */
+type FakeFinishContext = { mode: string; action: string };
+
 function fakeModules() {
-  const listeners = new Map<string, (id: string) => void>();
+  const listeners = new Map<string, (id: string, context: FakeFinishContext) => void>();
   const calls: { setMode: string[]; clear: number; stop: number } = {
     setMode: [],
     clear: 0,
@@ -44,7 +50,7 @@ function fakeModules() {
     setMode(mode: string) {
       calls.setMode.push(mode);
     }
-    on(event: string, cb: (id: string) => void) {
+    on(event: string, cb: (id: string, context: FakeFinishContext) => void) {
       listeners.set(event, cb);
     }
     off(event: string) {
@@ -68,9 +74,9 @@ function fakeModules() {
 
   return {
     modules: { core, adapter } as TerraDrawModules,
-    fireFinish: (id: string, geometry: AreaGeometry) => {
+    fireFinish: (id: string, geometry: AreaGeometry, action = "draw") => {
       snapshot.set(id, { geometry });
-      listeners.get("finish")?.(id);
+      listeners.get("finish")?.(id, { mode: "polygon", action });
     },
     calls,
     adapterConfigs,
@@ -105,12 +111,30 @@ describe("createDrawSession", () => {
     expect(f.circleOptions[0]).toMatchObject({ segments: CIRCLE_SEGMENTS });
   });
 
-  it("calls onFinish with the finished feature's geometry", () => {
+  it("calls onFinish with the finished feature's id, geometry, and isNewFeature=true for a fresh draw", () => {
     const f = fakeModules();
     const onFinish = vi.fn();
     createDrawSession({ map: {}, onFinish }, f.modules);
-    f.fireFinish("feature-1", POLYGON);
-    expect(onFinish).toHaveBeenCalledWith(POLYGON);
+    f.fireFinish("feature-1", POLYGON, "draw");
+    expect(onFinish).toHaveBeenCalledWith("feature-1", POLYGON, true);
+  });
+
+  // P9 (the "editing a drawn shape duplicates it" bug): terra-draw fires the SAME `finish` event
+  // for an edit of an EXISTING feature (drag a corner, resize, drag the whole shape, add/remove a
+  // midpoint) -- `isNewFeature` must be false so the caller updates that feature's own place
+  // instead of appending a duplicate.
+  it.each([
+    "dragCoordinate",
+    "dragCoordinateResize",
+    "dragFeature",
+    "insertMidpoint",
+    "deleteCoordinate",
+  ])("calls onFinish with isNewFeature=false for a %s edit of an existing feature", (action) => {
+    const f = fakeModules();
+    const onFinish = vi.fn();
+    createDrawSession({ map: {}, onFinish }, f.modules);
+    f.fireFinish("feature-1", POLYGON, action);
+    expect(onFinish).toHaveBeenCalledWith("feature-1", POLYGON, false);
   });
 
   it("does NOT call onFinish for a non-area geometry (e.g. a point mode somehow finishing)", () => {

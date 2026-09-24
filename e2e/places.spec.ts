@@ -833,6 +833,65 @@ test.describe("P7: places drawn in sequence stay on the map, survive a reload, a
     await doneAgain.click();
     await expect(doneAgain).toHaveCount(0);
   });
+
+  // P9 (Opus docs re-check appendix finding A1, live-verified on 0.10.48): terra-draw fires its
+  // `finish` event on a SELECT-MODE EDIT too (drag a corner), not only on a fresh draw -- the app
+  // used to treat every finish as a new shape, so dragging a just-drawn rectangle's corner turned
+  // one row ("Drawn place 1") into two ("Drawn place 1" unchanged + "Drawn place 2", the edit).
+  // Fixed by keying finishes to terra-draw's own feature id (`drawFeatures.ts`): an edit of a
+  // feature this session already drew now updates that SAME row instead.
+  test("dragging a drawn shape's corner UPDATES the place -- never adds a duplicate", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await gotoWideDrawSession(page);
+
+    // a real rectangle: click-move-click at opposite corners (terra-draw's default "click-move"
+    // gesture, the same shape drawCircleAt already uses for circle mode).
+    const CORNER_A: [number, number] = [-150, 52];
+    const CORNER_B: [number, number] = [-140, 44];
+    await page.getByRole("button", { name: "Rectangle" }).click();
+    await page.waitForTimeout(300);
+    const cornerA = await mapPoint(page, CORNER_A);
+    const cornerB = await mapPoint(page, CORNER_B);
+    await page.mouse.move(cornerA.x, cornerA.y, { steps: 5 });
+    await page.mouse.click(cornerA.x, cornerA.y);
+    await page.waitForTimeout(300);
+    await page.mouse.move(cornerB.x, cornerB.y, { steps: 8 });
+    await page.waitForTimeout(200);
+    await page.mouse.click(cornerB.x, cornerB.y);
+    await page.waitForTimeout(1500); // finish -> writePlaces -> select-mode settle
+
+    await expect(page.locator(".place-row")).toHaveCount(1);
+    await expect(page.locator(".place-row .row-name").first()).toHaveValue("Drawn place 1");
+    const hashBefore = await page.evaluate(() => location.hash);
+    const areaBefore = await page.locator(".place-row .row-stat").first().innerText();
+
+    // select the just-drawn shape (terra-draw's select mode needs a click on the feature body,
+    // not just `setMode("select")`, to actually select it for editing -- live-verified: "click
+    // inside it" is the reviewer's own repro step) -- the screen-space midpoint of the two clicked
+    // corners is guaranteed inside the rectangle regardless of Mercator distortion.
+    const center = { x: (cornerA.x + cornerB.x) / 2, y: (cornerA.y + cornerB.y) / 2 };
+    await page.mouse.move(center.x, center.y, { steps: 5 });
+    await page.mouse.click(center.x, center.y);
+    await page.waitForTimeout(300);
+
+    // drag corner A outward with REAL pointer events (mousedown/move/up, not a synthetic map.fire).
+    await page.mouse.move(cornerA.x, cornerA.y, { steps: 5 });
+    await page.mouse.down();
+    await page.mouse.move(cornerA.x - 60, cornerA.y - 60, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(1000); // finish -> writePlaces settle
+
+    // ONE row still, not two -- the bug this test catches appended "Drawn place 2" here.
+    await expect(page.locator(".place-row")).toHaveCount(1);
+    await expect(page.locator(".place-row .row-name").first()).toHaveValue("Drawn place 1");
+
+    const hashAfter = await page.evaluate(() => location.hash);
+    expect(hashAfter).not.toBe(hashBefore); // the SAME row's own geometry moved
+    const areaAfter = await page.locator(".place-row .row-stat").first().innerText();
+    expect(areaAfter).not.toBe(areaBefore); // the visible area actually changed
+  });
 });
 
 // Rule 2 ("a newly drawn/added place is analysed automatically, so its row shows numbers, not

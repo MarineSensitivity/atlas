@@ -1,3 +1,17 @@
+# atlas 0.10.49
+
+P9 (two live bugs found by the Opus 5.5 docs re-check appendix, dark theme):
+
+- **Fixed: dragging a drawn shape's corner added a duplicate place.** terra-draw fires its "finish"
+  event on a select-mode edit too, not only on a fresh draw; the app treated every finish as a new
+  shape. A finish for a feature this session already turned into a place now updates that place's
+  geometry in place (same row, same name, re-analysed); only a genuinely new feature adds a row.
+- **Fixed: the phone's first view showed Canada and the Great Lakes, with no scored cells in
+  frame.** The previous fix (0.10.45) boosted the zoom of the same point the desktop camera uses —
+  `FALLBACK_FULL_STUDY_AREA`'s own centroid, central North Dakota, nowhere near the ocean. The
+  phone's default view now fits a real Gulf-of-Mexico/south-east-U.S.-coast bounding box into the
+  free area instead, live-verified to show real scored cells and a recognisable coastline.
+
 # atlas 0.10.48
 
 CI fix round (first completed three-engine run since the P round, 35971206753): two reds, one

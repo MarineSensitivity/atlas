@@ -214,6 +214,56 @@ export function paddedStudyAreaCenter(
   return shiftForPadding(center, zoom, padding.left - padding.right, padding.top - padding.bottom);
 }
 
+/**
+ * P9 (Opus docs re-check appendix finding A2, live-verified on 0.10.48): {@link
+ * PHONE_STUDY_AREA_ZOOM_BOOST} boosts the zoom of the SAME point the desktop camera uses --
+ * `FALLBACK_FULL_STUDY_AREA`'s own centroid, `(-101.304, 46.9)`, central North Dakota, chosen as a
+ * geometric middle of the WHOLE study area (Alaska through the Caribbean) for a near-whole-globe
+ * desktop view. That point is on land, nowhere near a scored ocean cell. Boosting *its* zoom just
+ * crops down to a smaller patch of the SAME wrong place: measured live (production, 390x844,
+ * `?tour=off`, no other change), the boosted camera is `lon -101.304, lat 33.509, zoom 3.01` and
+ * the ENTIRE free area (top bar to sheet top) shows Canada/the Great Lakes -- 0% scored cells, 0%
+ * recognisable U.S. coast. No shift or boost of that SAME point fixes it, because the point itself,
+ * not the zoom, is wrong.
+ *
+ * The fix is a DIFFERENT anchor: fit a real, hand-picked bbox over the northern Gulf of Mexico /
+ * south-east U.S. shelf (Louisiana through the Florida Panhandle/Georgia coast -- real geography,
+ * not invented, the same "pick a genuine, densely-scored region" approach `raster/bounds.ts`'s
+ * `CANDIDATE_LONS` already takes for the same reason) into the free area with {@link
+ * boundsToCameraView}, which chooses whatever zoom actually fills the free area's width -- measured
+ * ~4.9-5.2 on a typical phone detent, comfortably above the ~3 floor where MapLibre's globe
+ * projection stops rendering the whole sphere (so this never reintroduces the "empty sky" gap P6
+ * fixed). Verified live (production build, same method): the free area shows real coloured scored
+ * cells across the Gulf shelf with "New Orleans"/"Mississippi"/"Alabama" labelled on the coastline
+ * -- both "contains scored cells" and "a recognisable piece of the U.S. coast" (the rule this
+ * function exists to satisfy), where the boosted-centroid approach had neither.
+ *
+ * Deliberately NOT the whole study area's own bbox (Alaska through the Caribbean, ~114 degrees of
+ * longitude): fit into a phone's free area, that bbox's own width-limited zoom computes to ~1.27 --
+ * back in the globe-renders-the-whole-sphere regime this function exists to stay out of. A small
+ * globe that "fills the free area's width" only in FLAT Mercator math would still show mostly empty
+ * sky in MapLibre's actual (spherical) render, the same gap P6 already fixed once. A tighter,
+ * genuinely representative slice of the study area is the honest trade: less of the country in
+ * frame, but everything in frame is real, scored, and recognisable.
+ *
+ * Scoped to the DEFAULT first view only (`Shell.svelte`'s two call sites already gate on
+ * `sel.area === DEFAULT_SEL.area`/no `sel.map`) -- an explicit `?area=`/`?map=` is never
+ * second-guessed, and desktop is untouched (its free area is tall enough that the unboosted FULL
+ * centroid already keeps real coastline in frame at the study-area preset's own zoom).
+ */
+export const PHONE_DEFAULT_BOUNDS: CameraBoundsInput = [
+  [-92, 24],
+  [-84, 31],
+];
+
+/** the phone's DEFAULT first-view camera -- see {@link PHONE_DEFAULT_BOUNDS}'s own header. */
+export function phoneDefaultCamera(
+  viewport: Viewport,
+  padding: ChromePadding,
+): { center: [number, number]; zoom: number } {
+  return boundsToCameraView(PHONE_DEFAULT_BOUNDS, viewport, { padding });
+}
+
 // --- sel.area -> camera, the fly-on-load/fly-on-change decision -------------------------------
 //
 // The defect this fixes (owner report, 2026-09-24, live v7): `?area=AK` rendered the DEFAULT

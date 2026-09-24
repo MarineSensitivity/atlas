@@ -17,8 +17,17 @@ import type { AreaGeometry } from "../lib/geo/types";
 import type { TerraDrawEventListeners } from "terra-draw";
 
 /** terra-draw's `FeatureId` is not re-exported at the package's top level (only used internally
- * and inside `TerraDrawEventListeners`'s own signatures) -- derived rather than duplicated. */
-type FeatureId = Parameters<TerraDrawEventListeners["finish"]>[0];
+ * and inside `TerraDrawEventListeners`'s own signatures) -- derived rather than duplicated.
+ * Exported so a caller (Places.svelte) can key its own feature-id -> place-index map on it. */
+export type FeatureId = Parameters<TerraDrawEventListeners["finish"]>[0];
+
+/** same derivation, same reason: terra-draw's `OnFinishContext` (`{ mode, action }`) is not
+ * re-exported at the package's top level either. `action` is what distinguishes a FRESH draw
+ * (`"draw"`) from every EDIT of a feature that already exists (`"dragCoordinate"`,
+ * `"dragCoordinateResize"`, `"dragFeature"`, `"insertMidpoint"`, `"deleteCoordinate"`) -- terra-draw
+ * fires the SAME `finish` event for both (P9, the "editing a drawn shape duplicates it" bug; see
+ * `onFinish`'s own comment below). */
+type OnFinishContext = Parameters<TerraDrawEventListeners["finish"]>[1];
 
 export type DrawShape = "polygon" | "rectangle" | "circle";
 
@@ -45,12 +54,17 @@ export interface DrawSessionOptions {
   /**
    * Fires once per finished polygon (Deliverable 3: "on finish the outline is redrawn from the
    * decoded geometry"), and once per finished EDIT too -- terra-draw's `finish` event covers both a
-   * fresh draw and leaving select/edit mode on an existing feature, and Deliverable 3 asks for the
-   * same redraw-from-decoded rule either way. The geometry handed back is the RAW drawn shape,
-   * unnormalized; the caller runs it through `analysis/place.ts`'s `analysisGeometry()` before
-   * doing anything else with it (never analyse what terra-draw drew directly).
+   * fresh draw and leaving select/edit mode on an existing feature (drag a corner, resize, drag the
+   * whole shape, add/remove a midpoint), and Deliverable 3 asks for the same redraw-from-decoded
+   * rule either way. `featureId` is the SAME id across a feature's fresh draw and every later edit
+   * of it (terra-draw's own identity, stable for the store's lifetime), and `isNewFeature` is true
+   * only when this finish IS the fresh draw (`action === "draw"`) -- the caller MUST NOT treat an
+   * edit finish as a new shape (P9: that duplicated a place on every corner drag). The geometry
+   * handed back is the RAW drawn/edited shape, unnormalized; the caller runs it through
+   * `analysis/place.ts`'s `analysisGeometry()` before doing anything else with it (never analyse
+   * what terra-draw drew directly).
    */
-  onFinish: (geometry: AreaGeometry) => void;
+  onFinish: (featureId: FeatureId, geometry: AreaGeometry, isNewFeature: boolean) => void;
 }
 
 export interface DrawSession {
@@ -104,9 +118,11 @@ export function createDrawSession(
   });
   draw.start();
 
-  const onFinish = (id: FeatureId) => {
+  const onFinish = (id: FeatureId, context: OnFinishContext) => {
     const feature = draw.getSnapshotFeature(id);
-    if (feature && isAreaGeometry(feature.geometry)) opts.onFinish(feature.geometry);
+    if (feature && isAreaGeometry(feature.geometry)) {
+      opts.onFinish(id, feature.geometry, context.action === "draw");
+    }
   };
   draw.on("finish", onFinish);
 

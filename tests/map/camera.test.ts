@@ -4,10 +4,12 @@ import {
   CAMERA_WRITE_DELAY_MS,
   INITIAL_AREA_CAMERA_STATE,
   NO_PADDING,
+  PHONE_DEFAULT_BOUNDS,
   boundsToCameraView,
   cameraEqual,
   createCameraWriter,
   paddedStudyAreaCenter,
+  phoneDefaultCamera,
   roundCamera,
   shouldFlyToArea,
   type AreaCameraState,
@@ -328,6 +330,111 @@ describe("paddedStudyAreaCenter", () => {
     const out = paddedStudyAreaCenter(CENTER, 0, { ...NO_PADDING, right: 380, bottom: 200 });
     expect(Number.isFinite(out.lon)).toBe(true);
     expect(Number.isFinite(out.lat)).toBe(true);
+  });
+});
+
+// P9 (Opus docs re-check appendix finding A2, live-verified on 0.10.48): boosting the zoom of
+// `FALLBACK_FULL_STUDY_AREA`'s own centroid (central North Dakota, on the Canada border) and
+// shifting it for chrome still crops down to that SAME wrong neighbourhood -- live-measured on
+// production, the free area showed Canada/the Great Lakes, 0% scored cells. `phoneDefaultCamera`
+// fits a real, hand-picked Gulf-of-Mexico/south-east-coast bbox instead -- see its own header in
+// camera.ts for the full measurement (both broken and fixed) and why the WHOLE study area's own
+// bbox (Alaska through the Caribbean) is not the fit target either (its own width-limited zoom is
+// ~1.27 -- back in the globe-renders-the-whole-sphere regime this exists to stay out of).
+describe("phoneDefaultCamera / PHONE_DEFAULT_BOUNDS — the phone's DEFAULT first view", () => {
+  // a realistic phone viewport + the SAME "half" detent padding chromePadding.ts's own tests use
+  // (topbar 48, bottom = 46% of 844 + the rail row).
+  const PHONE_VIEWPORT = { width: 390, height: 844 };
+  const PHONE_HALF_PADDING = { top: 48, right: 0, bottom: 452, left: 0 };
+
+  it("PHONE_DEFAULT_BOUNDS is real Gulf-of-Mexico/south-east-coast geography, not the whole study area", () => {
+    const [[west, south], [east, north]] = PHONE_DEFAULT_BOUNDS;
+    // west of Florida, east of Texas, comfortably inside the continental U.S. Gulf coast band --
+    // a regression here (e.g. widened back toward the full Alaska-Caribbean extent) is caught by
+    // the zoom-floor assertion below, but this pins the REGION too.
+    expect(west).toBeGreaterThan(-100);
+    expect(east).toBeLessThan(-70);
+    expect(south).toBeGreaterThan(15);
+    expect(north).toBeLessThan(40);
+  });
+
+  it("computes a center near PHONE_DEFAULT_BOUNDS, nowhere near the old FALLBACK centroid (-101.3, 46.9)", () => {
+    const fit = phoneDefaultCamera(PHONE_VIEWPORT, PHONE_HALF_PADDING);
+    const [[west, south], [east, north]] = PHONE_DEFAULT_BOUNDS;
+    // longitude: no left/right padding on phone, so the raw bbox midpoint is untouched.
+    expect(fit.center[0]).toBeGreaterThanOrEqual(west);
+    expect(fit.center[0]).toBeLessThanOrEqual(east);
+    // latitude: `paddedStudyAreaCenter`'s own shift (folded into `boundsToCameraView` here) moves
+    // the center SOUTH of the bbox's own midpoint on purpose -- a bottom-heavy sheet reservation
+    // means the geographic content must sit in the visually SMALLER top portion, so the underlying
+    // camera center is pushed toward (and, for a tall bottom reservation, past) the free area's own
+    // south edge. A generous band, not the bbox's own bounds, is the honest invariant here.
+    expect(fit.center[1]).toBeGreaterThan(south - 10);
+    expect(fit.center[1]).toBeLessThan(north);
+    // the OLD (broken) mechanism's own center, for contrast -- this must not be anywhere close.
+    expect(Math.abs(fit.center[0] - -101.304)).toBeGreaterThan(5);
+    expect(Math.abs(fit.center[1] - 46.9)).toBeGreaterThan(10);
+  });
+
+  // the ~3 floor is where MapLibre's globe projection stops rendering the whole sphere
+  // (`PHONE_STUDY_AREA_ZOOM_BOOST`'s own header/P2's measurement) -- a fit that computed a LOWER
+  // zoom here would reintroduce the "empty sky" gap P6 fixed, even though flat Mercator math would
+  // call it "filling the free area's width".
+  it("computes a zoom well above the globe-sky floor (~3), matching the live-measured ~4.9", () => {
+    const fit = phoneDefaultCamera(PHONE_VIEWPORT, PHONE_HALF_PADDING);
+    expect(fit.zoom).toBeGreaterThan(3.5);
+  });
+
+  it("is just boundsToCameraView(PHONE_DEFAULT_BOUNDS, ...) -- no separate math to drift out of sync", () => {
+    const viaFn = phoneDefaultCamera(PHONE_VIEWPORT, PHONE_HALF_PADDING);
+    const direct = boundsToCameraView(PHONE_DEFAULT_BOUNDS, PHONE_VIEWPORT, {
+      padding: PHONE_HALF_PADDING,
+    });
+    expect(viaFn).toEqual(direct);
+  });
+
+  // the geometric claim the docs review asked for, checked directly rather than through
+  // `boundsToCameraView` a second time: project the bbox's SOUTH edge (the side closer to the
+  // sheet, since the sheet eats the BOTTOM of the viewport) under the fit's own {center, zoom} with
+  // the same plain Web-Mercator formula `map.project()` uses at this zoom (>3, so flat Mercator and
+  // MapLibre's globe projection agree — camera.ts's own header), and assert it lands above where
+  // the padding says the sheet starts. RED on the old mechanism: projecting the SAME south edge
+  // under `boostedForPhone`'s camera (center -101.304, lat 33.509, zoom 3.01 — the live-measured
+  // broken values) lands it far below the free area, off the bottom of the whole viewport.
+  function projectY(
+    center: [number, number],
+    zoom: number,
+    lat: number,
+    viewportHeight: number,
+  ): number {
+    const worldPx = 512 * 2 ** zoom;
+    const latY = (y: number) =>
+      0.5 - Math.log((1 + Math.sin(y)) / (1 - Math.sin(y))) / (4 * Math.PI);
+    const rad = (deg: number) => (deg * Math.PI) / 180;
+    const centerY = latY(rad(center[1])) * worldPx;
+    const pointY = latY(rad(lat)) * worldPx;
+    return viewportHeight / 2 + (pointY - centerY);
+  }
+
+  it("the bbox's south edge projects ABOVE the sheet top (inside the free area)", () => {
+    const fit = phoneDefaultCamera(PHONE_VIEWPORT, PHONE_HALF_PADDING);
+    const southLat = PHONE_DEFAULT_BOUNDS[0][1];
+    const y = projectY(fit.center, fit.zoom, southLat, PHONE_VIEWPORT.height);
+    const sheetTop = PHONE_VIEWPORT.height - PHONE_HALF_PADDING.bottom;
+    expect(y).toBeGreaterThan(PHONE_HALF_PADDING.top); // below the top bar
+    // a fit constrained by HEIGHT (this bbox/padding combination is) lands the south edge exactly
+    // at the free area's own bottom by construction -- boundsToCameraView's whole contract, not
+    // slack this test should demand. A 1px allowance is float rounding, never real overshoot.
+    expect(y).toBeLessThanOrEqual(sheetTop + 1);
+  });
+
+  it("SEEDED-FAULT SHAPE: the OLD broken camera (measured live, 0.10.48) projects the SAME south edge below the sheet, off-frame", () => {
+    const brokenCenter: [number, number] = [-101.304, 33.509];
+    const brokenZoom = 3.01;
+    const southLat = PHONE_DEFAULT_BOUNDS[0][1];
+    const y = projectY(brokenCenter, brokenZoom, southLat, PHONE_VIEWPORT.height);
+    const sheetTop = PHONE_VIEWPORT.height - PHONE_HALF_PADDING.bottom;
+    expect(y).toBeGreaterThan(sheetTop); // off the bottom of the free area -- the bug this fixes
   });
 });
 
