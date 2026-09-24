@@ -1345,6 +1345,33 @@ const FAULTS = [
       "resolves to its local table label",
     ],
   },
+  {
+    id: "health-5xx-treated-as-empty",
+    patch: "tests/faults/health-5xx-treated-as-empty.patch",
+    describe:
+      "classifyMapTileError folds any status >= 500 into the 403/404 'empty' (missing-tile) " +
+      "branch -- a real titiler-v8 outage would be silently ignored the same way a normal " +
+      "release-side gap already is, instead of raising the health banner",
+    gate: ["npx", "vitest", "run", "tests/health/mapError.test.ts"],
+  },
+  {
+    id: "health-banner-never-shown",
+    patch: "tests/faults/health-banner-never-shown.patch",
+    describe:
+      "HealthBanner.svelte's own `visible` derived is forced to `false` unconditionally -- the " +
+      "health store correctly knows the tiler is down, but nothing ever appears on screen",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.health-banner.spec.ts",
+      "-g",
+      "boot-time probe",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4451" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

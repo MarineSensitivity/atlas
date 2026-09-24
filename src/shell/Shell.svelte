@@ -31,6 +31,13 @@
   import Honeycomb from "../lib/ui/Honeycomb.svelte";
   import LegendChip from "../lib/ui/LegendChip.svelte";
   import { announce } from "../lib/ui/announcer";
+  // V3 (Ben's report, 2026-09-24): titiler-v8/the API going dark for an hour with a perfectly
+  // normal-looking, raster-less map -- src/lib/health/* is the probe state machine (Svelte-free,
+  // per tests/state/invariants.test.ts's gate); createHealthStore is this file's own reactive
+  // wrapper around it (co-located here, not under src/lib, for the same reason
+  // src/lens/species/state.svelte.ts is co-located with its lens).
+  import HealthBanner from "../lib/ui/HealthBanner.svelte";
+  import { createHealthStore } from "./health.svelte";
   // R2 (docs/usability.md §7): About + Feedback + the phone ⋯ menu -- a NEW component, so this
   // file's own change is one mount line (see the template below) while U5/U6 touch the rail and
   // the Report/Help/theme controls in parallel. See TopBarActions.svelte's own header.
@@ -126,6 +133,11 @@
 
   const selStore = createSelStore(location);
   const sel = selStore.sel;
+
+  // V3: created once, up front -- trigger (a) (boot) fires from the `early.version` onMount below,
+  // trigger (b) (a real tile failure) from the map's own onMount, trigger (c) from the banner's
+  // Retry. It never polls on its own (brief: "Do not poll continuously while everything is fine").
+  const health = createHealthStore();
 
   // a minimal Analytics instance (analytics.ts's own header: the GA4 `<script>` LOADER tag is a
   // later phase's job; `track()` calls made before it lands simply queue into `dataLayer` the way
@@ -460,7 +472,16 @@
   let denied = $state<{ ver: string; reason: string } | null>(null);
   onMount(() => {
     const early = (window as unknown as { __early?: Early }).__early;
-    early?.version.then((v) => (earlyVersion = v)).catch(() => {});
+    // V3 trigger (a), tiler half: the titiler origin is a fixed constant -- no need to wait on
+    // anything resolving first.
+    health.probeTiler();
+    early?.version
+      .then((v) => {
+        earlyVersion = v;
+        // V3 trigger (a), data half: only once the release itself is known.
+        if (v) health.probeData(v);
+      })
+      .catch(() => {});
     // boot.json is the map's only data source at this step (Tier 0, plan D3): the zone units and
     // their PMTiles archives. A missing/404 boot (no release has published app/boot.json until
     // atlas-1) leaves `boot` null and the map paints basemap-only -- never an error.
@@ -728,6 +749,14 @@
     mapHandle = handle;
     const handleMapIdle = () => onMapIdle(handle.map);
     handle.map.on("idle", handleMapIdle);
+    // V3 trigger (b): a raster tile load failure. `health.reportMapError` classifies it itself --
+    // a 403/404 (a release-side "no data here" gap, same convention as
+    // `analysis/sources.ts#isMissingTileStatus`) is a no-op; anything else (5xx, a network error, a
+    // timeout) is a real failure and kicks a backoff-gated re-probe of the tiler service. Every
+    // failing tile fires this (dozens at once when the whole host is down), which is exactly why
+    // the backoff/single-flight guard lives in the store, not here.
+    const onMapError = (e: { error: unknown }) => health.reportMapError(e.error);
+    handle.map.on("error", onMapError);
     const loaderTimeout = window.setTimeout(hideMapLoader, MAP_LOADING_TIMEOUT_MS);
     // atlas-5 §6.5: the species click. The shared map's raw click event -- never a second map
     // instance, never a second `on("click")` owner; a non-species lens ignores its own clicks
@@ -788,6 +817,7 @@
       delete (window as unknown as { __atlasSpecies?: unknown }).__atlasSpecies;
       handle.map.off("click", onMapClick);
       handle.map.off("idle", handleMapIdle);
+      handle.map.off("error", onMapError);
       window.clearTimeout(loaderTimeout);
       handle.destroy();
       mapHandle = undefined;
@@ -1261,6 +1291,14 @@
      fires before ANYONE has subscribed at all. -->
 <Announcer />
 
+<!-- V3 (Ben's report, 2026-09-24): titiler-v8 was down for an hour and the map stayed silent --
+     `position: fixed` (HealthBanner.svelte's own header), so its order here does not matter for
+     layout; placed beside Announcer as the shell's other always-mounted, no-lens-required chrome. -->
+<HealthBanner
+  banner={health.banner}
+  onretry={() => health.banner && health.retry(health.banner.def.id)}
+/>
+
 <header class="topbar" data-tour="topbar">
   <span data-tour="brand" style="display:flex;align-items:center;gap:var(--space-2)">
     <WaveHexMark size={28} />
@@ -1593,10 +1631,10 @@
       <LegendChip title={phoneLegend.title}>
         {#if sel.lens === "species" && SpeciesLegendComp}
           {@const Comp = SpeciesLegendComp}
-          <Comp legend={phoneLegend} />
+          <Comp legend={phoneLegend} tilesDown={health.isDown("tiler")} />
         {:else if sel.lens === "scores" && ScoresLegendComp}
           {@const Comp = ScoresLegendComp}
-          <Comp legend={phoneLegend} />
+          <Comp legend={phoneLegend} tilesDown={health.isDown("tiler")} />
         {/if}
       </LegendChip>
     {/if}
@@ -1713,12 +1751,12 @@
   {:else if sel.lens === "species" && SpeciesLegendComp}
     {@const Comp = SpeciesLegendComp}
     <div class="lens-legend-region">
-      <Comp legend={speciesLens.mapInputs.legend} />
+      <Comp legend={speciesLens.mapInputs.legend} tilesDown={health.isDown("tiler")} />
     </div>
   {:else if sel.lens === "scores" && ScoresLegendComp}
     {@const Comp = ScoresLegendComp}
     <div class="lens-legend-region">
-      <Comp legend={scoresLens?.mapExtra.legend ?? null} />
+      <Comp legend={scoresLens?.mapExtra.legend ?? null} tilesDown={health.isDown("tiler")} />
     </div>
   {/if}
 </main>

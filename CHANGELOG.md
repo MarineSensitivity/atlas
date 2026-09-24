@@ -1,3 +1,17 @@
+# atlas 0.10.58
+
+Round 2, V3: titiler-v8 (every score/species map tile) and the API were unreachable for an hour
+tonight, and the live app kept rendering a perfectly normal-looking map with no raster and no word
+to anyone.
+
+- **Added: service-health detection with a visible banner.** The app now checks the map tile
+  server and the release data origin at boot, and again whenever a map tile actually fails to load
+  for a real reason (a 5xx, a network error, or a timeout — never a normal "this release has no
+  data here" 403/404). When one is down, a dismissible top banner names the failing host, what it
+  breaks, and what still works, with a Retry; the legend shows a compact "tiles unavailable" state
+  instead of a bare ramp. It never polls in the background — only at boot, on a real failure, or on
+  a manual Retry.
+
 # atlas 0.10.57
 
 Round 2, V2: report flower colours/centring, raw category keys cleaned up, and the eyes-on
