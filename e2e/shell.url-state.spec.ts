@@ -102,7 +102,12 @@ test("a full interaction walk never calls history.pushState, and never grows his
   const panel = page.locator("#panel-region");
   await panel.locator('[data-panel-control="collapse"]').click();
   await panel.locator("button.panel-pill").click();
-  await page.getByLabel("Search species and places").click();
+  // U1c fix round (CI run 35956406448/107495562810): `getByLabel` now matches TWO elements
+  // sharing this accessible name -- the desktop `<input type="search">` (this test's real
+  // target, at this default desktop viewport) and P5's phone-search trigger `<button>`
+  // (`topbar-phone-only`, CSS-hidden here but still present in the DOM and still matched by
+  // accessible name, same as a real AT would). Disambiguate by role.
+  await page.getByRole("searchbox", { name: "Search species and places" }).click();
   await page.keyboard.type("leatherback");
 
   const pushStateCalls = await page.evaluate(

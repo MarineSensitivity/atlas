@@ -343,7 +343,11 @@ test.describe("keyboard", () => {
     await expect(flower).toHaveAttribute("tabindex", "0");
 
     await page.keyboard.press("Enter");
-    await expect(page.locator('[role="status"]')).toContainText("Flower plot — Scores only");
+    // U1c fix round (CI run 35956406448/107495562810): `[role="status"]` alone now matches TWO
+    // regions after the map-loading live region landed -- the shared Announcer (this assertion's
+    // target) and Shell.svelte's dedicated `[data-testid="map-loading-status"]`. Scope to the
+    // shared region's own stable class, same as the "exactly one live region" test just above.
+    await expect(page.locator(".announcer")).toContainText("Flower plot — Scores only");
   });
 
   test("Esc collapses the panel and moves focus to its pill; expanding returns focus to control 1", async ({
