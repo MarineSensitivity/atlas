@@ -1,3 +1,24 @@
+# atlas 0.10.41
+
+P2 (owner finding on live 0.10.37, phone/dark theme, Scores lens, Flower plot tool): the flower
+plot sat left of centre in its panel, tabbing to or tapping a petal drew a stray focus rectangle
+around it, petal values never showed on tap/hover, and the values under the plot were a prose
+paragraph instead of a list.
+
+- **Centred.** The flower figure is centred in its panel, and its SVG is centred within its own
+  wrapper, instead of sitting flush left with empty space on the right.
+- **No more stray outline rectangle.** `outline` on an SVG petal always painted the element's
+  bounding box, not its actual wedge shape — replaced with a purpose-drawn stroke highlight that
+  follows the petal's own geometry, shown only on a real tap/click or keyboard focus (never on a
+  bounding-box rectangle).
+- **Tap (or hover, on desktop) a petal to see its value.** A small label with the component's name
+  and its score (one decimal) appears near the hub; tapping the same petal again, or elsewhere,
+  dismisses it; desktop hovering shows the same label without a click.
+- **Values are a table now, not a paragraph.** Component swatch, name and score are listed under
+  the plot as a real table, ordered as the petals are, with the composite mean as the last row; the
+  prose summary sentence is now a screen-reader-only alternative rather than a second, visible copy
+  of the same "Cell ID … (x, y)" line the panel's own header already shows once.
+
 # atlas 0.10.40
 
 P1, round 2 (owner finding on the LIVE app, 390x844, dark, v7, Scores lens, 2026-09-24): the

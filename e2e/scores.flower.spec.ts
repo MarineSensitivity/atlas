@@ -192,3 +192,154 @@ test.describe("scores lens flower plot — every real category label, never a si
     }
   });
 });
+
+// atlas-4 fix round 3 (owner, phone/dark theme/Scores lens/Flower plot tool, cell 3092526,
+// 2026-09-24): "The flower plot should be centered", a stray focus rectangle around the last-
+// tapped petal, no petal values on tap/hover, and the values under the plot in a prose paragraph
+// instead of a list/table.
+test.describe("fix round 3: the flower is centred in its panel (phone, 390x844)", () => {
+  test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+
+  test("the flower SVG's bounding-box centre is within 2px of its panel's centre, at half and full sheet detent", async ({
+    page,
+  }) => {
+    await gotoScoresMap(page, "v7");
+    await openFlower(page);
+
+    for (const detentLabel of ["Half height", "Full height"]) {
+      await page.getByRole("button", { name: detentLabel }).click();
+      const svgBox = await page.locator(".flower-svg").boundingBox();
+      const panelBox = await page.locator(".flower-panel").boundingBox();
+      expect(svgBox, `detent "${detentLabel}": .flower-svg has no bounding box`).not.toBeNull();
+      expect(panelBox, `detent "${detentLabel}": .flower-panel has no bounding box`).not.toBeNull();
+      const svgCentre = svgBox!.x + svgBox!.width / 2;
+      const panelCentre = panelBox!.x + panelBox!.width / 2;
+      expect(
+        Math.abs(svgCentre - panelCentre),
+        `detent "${detentLabel}": svg centre ${svgCentre.toFixed(1)}px vs panel centre ` +
+          `${panelCentre.toFixed(1)}px (svg box ${JSON.stringify(svgBox)}, panel box ${JSON.stringify(panelBox)})`,
+      ).toBeLessThanOrEqual(2);
+    }
+  });
+});
+
+test.describe("fix round 3: no stray UA outline rectangle -- a purpose-drawn indicator follows the petal's own shape", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test("after clicking a petal: every element in the flower computes outline-style 'none', and the .active indicator is present", async ({
+    page,
+  }) => {
+    await gotoScoresMap(page, "v7");
+    await openFlower(page);
+
+    const petal = page.locator(".flower-svg .petal").first();
+    await petal.click();
+    await expect(petal).toBeFocused();
+    await expect(
+      petal,
+      "the custom selection indicator (a purpose-drawn class) is missing",
+    ).toHaveClass(/\bactive\b/);
+
+    // the seeded-fault case this closes: `outline` on an SVG <path> always paints the element's
+    // BOUNDING BOX, not its actual annular-sector shape -- "a solid blue rectangle" around the
+    // last-tapped petal. Checked across every element in the figure, not just the focused one, so
+    // a stray outline on an ancestor/sibling cannot hide behind a narrower assertion.
+    const outlineStyles = await page
+      .locator(".flower, .flower *")
+      .evaluateAll((els) => els.map((el) => getComputedStyle(el).outlineStyle));
+    expect(
+      outlineStyles.every((s) => s === "none"),
+      `outline-styles seen in the flower: ${JSON.stringify(outlineStyles)}`,
+    ).toBe(true);
+
+    // the REPLACEMENT indicator: a thicker stroke, which (unlike `outline`) follows the path's own
+    // geometry rather than its bounding box.
+    const strokeWidth = await petal.evaluate((el) => getComputedStyle(el).strokeWidth);
+    expect(strokeWidth, "the active petal's stroke must visibly thicken").toBe("3px");
+  });
+});
+
+test.describe("fix round 3: tapping a petal shows its name and score (phone, 390x844)", () => {
+  test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+
+  test("tap shows a label with the SAME text as the petal's accessible name, one decimal only; tapping elsewhere dismisses it", async ({
+    page,
+  }) => {
+    await gotoScoresMap(page, "v7");
+    await openFlower(page);
+
+    const petal = page.locator(".flower-svg .petal").first();
+    const expectedLabel = await petal.getAttribute("aria-label");
+    expect(expectedLabel).toMatch(/^.+: \d+\.\d$/); // "Bird: 56.8" -- one decimal, never a raw double
+
+    const label = page.locator(".petal-label");
+    await expect(label).toHaveCount(0);
+    await petal.click();
+    await expect(label).toBeVisible();
+    await expect(label).toHaveText(expectedLabel!);
+
+    // "tapping elsewhere ... dismisses" -- a tap on a non-petal part of the figure.
+    await page.locator(".flower-title").click();
+    await expect(label).toHaveCount(0);
+
+    // "tapping ... again dismisses" -- the persistent (pinned) selection itself is cleared, i.e.
+    // the purpose-drawn .active indicator comes off; asserted on the indicator rather than the
+    // label's visibility, which (correctly) can also keep showing via hover on a real mouse still
+    // resting over the shape -- fix round 3's own header note on desktop hover being a separate,
+    // transient signal from a tap/click selection.
+    await petal.click();
+    await expect(petal).toHaveClass(/\bactive\b/);
+    await petal.click();
+    await expect(petal).not.toHaveClass(/\bactive\b/);
+  });
+});
+
+test.describe("fix round 3: hovering a petal shows its name and score (desktop, 1280x800)", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test("hover reveals the same label a tap would, with no click, and clears when the pointer leaves", async ({
+    page,
+  }) => {
+    await gotoScoresMap(page, "v7");
+    await openFlower(page);
+
+    const petal = page.locator(".flower-svg .petal").nth(1);
+    const expectedLabel = await petal.getAttribute("aria-label");
+    const label = page.locator(".petal-label");
+
+    await expect(label).toHaveCount(0);
+    await petal.hover();
+    await expect(label).toBeVisible();
+    await expect(label).toHaveText(expectedLabel!);
+
+    await page.locator(".flower-title").hover();
+    await expect(label).toHaveCount(0);
+  });
+});
+
+test.describe("fix round 3: the values under the plot are a table, not a prose paragraph", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test("one visible table row per component (plus the composite), and the duplicate prose header is screen-reader only", async ({
+    page,
+  }) => {
+    await gotoScoresMap(page, "v7");
+    await openFlower(page);
+
+    const table = page.locator(".flower-table");
+    await expect(table).toBeVisible();
+    const petalCount = await page.locator(".flower-svg .petal").count();
+    await expect(table.locator("tbody tr:not(.mean-row)")).toHaveCount(petalCount);
+    await expect(table.locator("tbody tr.mean-row")).toHaveCount(1);
+    // every data row carries a colour swatch alongside the component name and score.
+    await expect(table.locator("tbody tr:not(.mean-row) .swatch")).toHaveCount(petalCount);
+
+    // the owner's "x/y header duplicates the line already shown above 'Show table'": the
+    // figcaption states the cell/zone/study-area title once, visibly; the prose sentence that used
+    // to repeat it (and the table's own caption, which repeats it again) are screen-reader only,
+    // never a second on-screen copy of the same line.
+    await expect(page.locator(".flower-title")).toBeVisible();
+    await expect(page.locator(".summary")).toHaveClass(/\bsr-only\b/);
+    await expect(table.locator("caption")).toHaveClass(/\bsr-only\b/);
+  });
+});

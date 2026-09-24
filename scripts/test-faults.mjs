@@ -23,6 +23,7 @@
 //
 // Usage: npm run test:faults  (needs $TMPDIR exported, and a clean `git status` for HEAD to be
 // meaningful -- it worktrees off HEAD, not the working tree, on purpose: see each patch's header).
+// `node scripts/test-faults.mjs --only <id>` runs a single entry by its `id` field.
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -599,10 +600,68 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4388" },
   },
-  // P1 (Ben's phone report, 390x844, dark, v7, Scores lens, 2026-09-24): the legend chip overlapped
-  // the bottom sheet at every detent, and the legend it opened was blank. Two independent bugs, two
-  // faults -- reusing the SAME port (4371) is safe because faults run sequentially (runOne), never
-  // in parallel.
+  // atlas-4 fix round 3 (owner, phone/dark/Scores/Flower, cell 3092526, 2026-09-24): three faults
+  // for the three bugs the round fixed, each a one-line mutation reverting exactly one piece of
+  // Flower.svelte's fix (see that file's own header). All three share PW_PORT 4373 (the round's
+  // assigned port) -- test-faults.mjs runs the FAULTS array sequentially (`runOne` is spawnSync,
+  // never parallel), so reusing a port across entries here is the same safe pattern several
+  // earlier entries already use (e.g. 4397 above, three times).
+  {
+    id: "flower-not-centred",
+    patch: "tests/faults/flower-not-centred.patch",
+    describe:
+      "Flower.svelte's `.flower` loses its `margin: 0 auto` -- the figure sits flush left in a " +
+      "panel wider than its 320px cap again (owner: 'Flower plot should be centered')",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.flower.spec.ts",
+      "-g",
+      "the flower SVG's bounding-box centre is within 2px",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4373" },
+  },
+  {
+    id: "flower-ua-outline-restored",
+    patch: "tests/faults/flower-ua-outline-restored.patch",
+    describe:
+      "Flower.svelte's `.petal` loses its unconditional `outline: none` -- the browser's default " +
+      "focus outline (a rectangle around the petal's BOUNDING BOX, never its annular-sector shape) " +
+      "reappears on the last-tapped petal",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.flower.spec.ts",
+      "-g",
+      "after clicking a petal: every element in the flower computes outline-style",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4373" },
+  },
+  {
+    id: "flower-tap-handler-dropped",
+    patch: "tests/faults/flower-tap-handler-dropped.patch",
+    describe:
+      "Flower.svelte's petal `<path>` loses its `onclick` handler -- a second tap/click on the " +
+      "already-active petal no longer dismisses it (native focus-on-click still shows the value " +
+      "the first time, so only the dismiss half of 'tapping ... again dismisses' breaks)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.flower.spec.ts",
+      "-g",
+      "tap shows a label with the SAME text",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4373" },
+  },
   {
     id: "legend-chip-modal-blank",
     patch: "tests/faults/legend-chip-modal-blank.patch",
@@ -737,6 +796,27 @@ function runOne(fault) {
   }
 }
 
+// atlas-4 fix round 3: `--only <id>` runs a single named entry (its `id` field) instead of the
+// whole manifest -- a fix round that adds one or two faults should be able to prove just those
+// without paying for the other ~25 (a real browser build each), the same way a fresh round would
+// want to verify its own work in isolation. `<id>` must be an exact match against a real entry;
+// an unknown one fails loudly rather than silently running everything (a typo here would
+// otherwise "pass" by running the wrong thing).
+function faultsToRun() {
+  const onlyIdx = process.argv.indexOf("--only");
+  if (onlyIdx === -1) return FAULTS;
+  const id = process.argv[onlyIdx + 1];
+  const match = FAULTS.filter((f) => f.id === id);
+  if (match.length === 0) {
+    process.stderr.write(
+      `test-faults: --only ${id ?? "<missing>"} matches no entry in FAULTS (known ids: ` +
+        `${FAULTS.map((f) => f.id).join(", ")})\n`,
+    );
+    process.exit(1);
+  }
+  return match;
+}
+
 function main() {
   if (!process.env.TMPDIR) {
     process.stderr.write(
@@ -746,15 +826,16 @@ function main() {
     process.exit(1);
   }
 
+  const faults = faultsToRun();
   const head = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
     cwd: ROOT,
     encoding: "utf8",
   }).trim();
-  process.stdout.write(`test-faults: ${FAULTS.length} fault(s), worktreed off HEAD (${head})\n\n`);
+  process.stdout.write(`test-faults: ${faults.length} fault(s), worktreed off HEAD (${head})\n\n`);
 
   const rows = [];
   let failed = false;
-  for (const fault of FAULTS) {
+  for (const fault of faults) {
     const result = runOne(fault);
     rows.push(result);
     if (result.ok) {
