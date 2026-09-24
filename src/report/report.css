@@ -51,6 +51,17 @@ th.num {
   text-align: right;
 }
 
+/* P4 follow-up (owner report, 0.10.43): a footnote's <sup> marker (Report.svelte's Table of
+   Scores cell: `{score} {#each cell.footnotes...}<sup>{id}</sup>{/each}`) sat one whitespace text
+   node away from the score, so in a narrow numeric column the browser could break the line right
+   at that space -- the marker then rendered on its OWN line beneath the number ("21" then "3"
+   stacked, Ben's own phone screenshot). `td.num` only, never `th.num`: a couple of header labels
+   ("Study-area share") are real prose that may still need to wrap at 390px, and headers never
+   carry a footnote marker. */
+td.num {
+  white-space: nowrap;
+}
+
 caption {
   text-align: left;
   font-size: 0.85em;

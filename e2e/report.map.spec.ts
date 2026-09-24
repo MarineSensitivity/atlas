@@ -68,6 +68,28 @@ const BOOT = {
   ],
 };
 
+// P4 follow-up (owner report, 0.10.43): Ben's own phone screenshot showed a footnote marker
+// wrapping onto its OWN line under the score ("21" then "3" stacked) in the narrow "fish" column
+// -- this repo's own p4-report-phone-scores-footnotes.png shot reproduced it exactly ("20" then
+// "1"). BOOT_WRAP carries a SECOND component (fish) at ~88 % coverage specifically to trigger a
+// footnote marker (BOOT above stays footnote-free on purpose, to prove the OTHER half of the
+// original bug -- see its own header) -- this is the narrow-column, footnoted-cell fixture.
+const BOOT_WRAP = {
+  ...BOOT,
+  zones: {
+    programarea: [
+      {
+        ...BOOT.zones.programarea[0],
+        metrics: {
+          ...BOOT.zones.programarea[0].metrics,
+          extrisk_fish_ecoregion_rescaled: 20,
+          extrisk_fish_ecoregion_rescaled_prepctareaweighting: 22.66, // coverage ~= 88.3%
+        },
+      },
+    ],
+  },
+};
+
 // the map's public test/automation seam (Report.svelte's own header comment, mirroring
 // Shell.svelte's `window.__atlasMap` -- e2e/map.spec.ts's OWN `declare global` for that, repeated
 // verbatim per-file per this repo's convention, see e2e/scores-hermetic.ts's note on why).
@@ -89,9 +111,9 @@ declare global {
   }
 }
 
-async function gotoZoneReport(page: Page) {
+async function gotoZoneReport(page: Page, boot: object = BOOT) {
   await blockWasm(page);
-  await routeBucket(page, "v9", BOOT);
+  await routeBucket(page, "v9", boot);
   await routeSession(page, { preview: true, ver: "v9" });
   await routeSealFixture(page);
   await routeVariedBasemapStyle(page);
@@ -162,6 +184,44 @@ for (const viewport of [
       // marker anywhere, no footnote list at all (the OLD "< ~100 %" rule would have printed one).
       await expect(page.locator(".footnotes")).toHaveCount(0);
       await expect(page.locator('table[aria-describedby="scores-summary"] sup')).toHaveCount(0);
+    });
+
+    // P4 follow-up (owner report, 0.10.43): the score + its footnote marker must stay ONE inline
+    // unit, never wrapping the marker onto its own line beneath the number in a narrow column.
+    //
+    // NOT a cell-height/boundingBox comparison: an HTML table row stretches EVERY cell to the
+    // height of its tallest cell, so a wrapped cell's height is indistinguishable from its
+    // neighbours' (measured directly -- a same-row "reference cell" comparison passed even against
+    // the unfixed CSS, because every td.num in the row reports the SAME stretched height
+    // regardless of whether ITS OWN content wrapped). What actually distinguishes "one line" from
+    // "two lines" is `Range.getClientRects()` over the cell's own content: a `<sup>` sits a few px
+    // HIGHER than its surrounding text even on the SAME line (`vertical-align: super`, measured
+    // directly: a ~4-5px gap on both a genuinely one-line phone AND desktop cell) -- so the bar
+    // is not "every rect shares one top" but "the SPREAD between the highest and lowest rect is
+    // within a normal same-line offset". A real wrap (measured against the unfixed CSS before this
+    // patch) put the marker a full line-height lower: an 18px gap at 390px, easily past this floor.
+    const SAME_LINE_TOP_SPREAD_MAX_PX = 10;
+    test("the footnote marker never wraps onto its own line under the score", async ({ page }) => {
+      await gotoZoneReport(page, BOOT_WRAP);
+      await expect(page.locator(".progress-line")).toContainText("Done");
+      await waitForMapCapture(page);
+
+      const table = page.locator('table[aria-describedby="scores-summary"]');
+      const footnotedCell = table.locator("td.num", { has: page.locator("sup") }).first();
+      await expect(footnotedCell).toBeVisible();
+      await expect(footnotedCell.locator("sup")).toHaveCount(1);
+
+      const rectTops = await footnotedCell.evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return Array.from(range.getClientRects()).map((r) => Math.round(r.top));
+      });
+      const spread = Math.max(...rectTops) - Math.min(...rectTops);
+      expect(
+        spread,
+        `cell content's line-box tops span ${spread}px (tops: ${rectTops.join(", ")}) -- the ` +
+          `score and its footnote marker must render on ONE line, not the marker wrapped beneath it`,
+      ).toBeLessThan(SAME_LINE_TOP_SPREAD_MAX_PX);
     });
   });
 }
