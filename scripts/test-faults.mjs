@@ -796,6 +796,44 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4393" },
   },
+  {
+    id: "bounds-narrow-longitude-skipped",
+    patch: "tests/faults/bounds-narrow-longitude-skipped.patch",
+    describe:
+      "createTitilerBoundsSource()'s narrowLongitude() call is skipped -- a degenerate " +
+      "whole-360-degree-longitude /cog/info bbox (the real walrus v7 case) is handed straight to " +
+      "the camera instead of narrowed by point-probe (D8 round 2's real-build defect: /cog/bounds " +
+      "404s live, /cog/info's own bounds are honest but globe-wide)",
+    gate: ["npx", "vitest", "run", "tests/raster/bounds.test.ts"],
+  },
+  {
+    id: "zoom-to-layer-bounds-fallback-skipped",
+    patch: "tests/faults/zoom-to-layer-bounds-fallback-skipped.patch",
+    describe:
+      "zoomToLayer()'s own COG-bounds follow-up never runs -- the manual re-fit action stops at " +
+      "the loose study-area view for a taxon with no published bbox anywhere, even though the " +
+      "automatic species-change effect still reaches the same fallback",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/species.camera.spec.ts",
+      "-g",
+      "zoomToLayer",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4391" },
+  },
+  {
+    id: "species-popup-no-value-cellid",
+    patch: "tests/faults/species-popup-no-value-cellid.patch",
+    describe:
+      "the species lens' popupHtml() shows 'Cell ID: ...' again for kind 'no-value' -- the D3 " +
+      "fold-in regression (an internal id beside 'No scored cell here' reads as a lookup bug, not " +
+      "'no data here')",
+    gate: ["npx", "vitest", "run", "tests/lens/species/popup.test.ts"],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
