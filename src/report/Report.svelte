@@ -17,6 +17,7 @@
   import { nextRovingIndex } from "../lib/ui/roving";
   import { agencyDisplayName, shouldShowSeal } from "../lib/ui/sealVisibility";
   import { createAnalytics } from "../lib/analytics/analytics";
+  import { analyticsLogUrl } from "../lib/analytics/logUrl";
   import { parseSel } from "../lib/state/codec";
   import { decodePlaces, type Place } from "../lib/geo/placeCodec";
   import {
@@ -87,7 +88,13 @@
   // phase's job to close" -- the GA4 loader tag itself is not wired app-wide yet either): the
   // component's OWN `preview` state (below) still drives the document's watermark/banner, which
   // is the thing that actually matters for a restricted release.
-  const analytics = createAnalytics({ appVersion: __APP_VERSION__, preview: false });
+  // round 2, Q7 fix: `logUrl` was never passed here either -- see Shell.svelte's own comment and
+  // src/lib/analytics/logUrl.ts.
+  const analytics = createAnalytics({
+    appVersion: __APP_VERSION__,
+    preview: false,
+    logUrl: analyticsLogUrl(),
+  });
 
   // ---- progressive data load --------------------------------------------------------------
   let placeInputs = $state<ReportPlaceInput[] | null>(null);
