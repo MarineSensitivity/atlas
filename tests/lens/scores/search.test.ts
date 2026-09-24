@@ -66,6 +66,59 @@ describe("matchZones", () => {
     ]);
   });
 
+  // V6 fix (owner-reported, 2026-09-24): the V1 fix above only proved the OPTION LABEL resolves
+  // the PROGRAM_AREA_NAMES fallback -- its query ("ala") is itself an exact KEY match, so it never
+  // exercised matching against the fallback NAME text. On the real release (no published
+  // `zones.programarea[*].name`), typing the full name Ben sees in the dropdown ("Aleutian",
+  // "Gulf of Alaska") found "No matches"; only the bare acronym worked. `matchRank` must rank
+  // against the SAME resolved label `paLabel` shows, not the bundle's raw (absent) `name`.
+  it("matches the app-side fallback NAME text itself, not just the bare key", () => {
+    const boot = {
+      zones: {
+        programarea: [
+          { key: "ALA", metrics: {} }, // no `name` -- the real v7/v9 shape
+          { key: "GOA", metrics: {} },
+        ],
+      },
+      units: [{ fld: "programarea_key", pmtiles: "x", source_layer: "programarea" }],
+    };
+    expect(matchZones(boot, "Aleutian")).toEqual([
+      { kind: "zone", unit: "programarea", key: "ALA", label: "Aleutian Arc (ALA)" },
+    ]);
+    // case-insensitive, and matches on the fallback's full multi-word name.
+    expect(matchZones(boot, "gulf of alaska")).toEqual([
+      { kind: "zone", unit: "programarea", key: "GOA", label: "Gulf of Alaska (GOA)" },
+    ]);
+  });
+
+  it("a published name is preferred over the fallback for MATCHING too, not just the label", () => {
+    const boot = {
+      zones: { programarea: [{ key: "ALA", name: "Custom Published Name", metrics: {} }] },
+      units: [{ fld: "programarea_key", pmtiles: "x", source_layer: "programarea" }],
+    };
+    // the fallback text no longer applies once a real name is published for this row...
+    expect(matchZones(boot, "aleutian")).toEqual([]);
+    // ...and the published name itself matches.
+    expect(matchZones(boot, "custom published")).toEqual([
+      { kind: "zone", unit: "programarea", key: "ALA", label: "Custom Published Name (ALA)" },
+    ]);
+  });
+
+  it("subregion/ecoregion units never borrow the Program Area fallback name for a same-spelled key", () => {
+    const boot = {
+      zones: {
+        programarea: [{ key: "GOA", metrics: {} }],
+        subregion: [{ key: "GOA", metrics: {} }], // same key, no name -- must NOT match "gulf..."
+        ecoregion: [{ key: "GOA", metrics: {} }], // same key, no name -- must NOT match "gulf..."
+      },
+      units: [{ fld: "programarea_key", pmtiles: "x", source_layer: "programarea" }],
+    };
+    const m = matchZones(boot, "gulf of alaska");
+    expect(m).toEqual([
+      { kind: "zone", unit: "programarea", key: "GOA", label: "Gulf of Alaska (GOA)" },
+    ]);
+  });
+
   it("an unpublished unit / no match: [], never a throw", () => {
     expect(matchZones(BOOT_V7, "nonexistent-place")).toEqual([]);
     expect(matchZones(null, "GAA")).toEqual([]);

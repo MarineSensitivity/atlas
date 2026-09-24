@@ -192,13 +192,32 @@ export function summarizeZoneStats(stats: readonly ZoneStat[]): {
  * caller in this app only ever deals in Program Areas (the release's one selectable unit, D17), so
  * omitting `unit` still resolves the table -- unchanged for every existing call site.
  */
-export function paLabel(key: string, name: string | null | undefined, unit?: string): string {
-  if (name && name !== key) return `${name} (${key})`;
+/**
+ * The resolved NAME alone (no "(KEY)" suffix) — bundle `name` first, else the app-side
+ * `PROGRAM_AREA_NAMES` fallback (unit-scoped exactly as {@link paLabel} scopes it), else
+ * `undefined` when nothing resolves (the caller falls back to the bare key). Split out of
+ * `paLabel` (V6 fix, owner-reported, 2026-09-24) so `lens/scores/search.ts#matchZones` can rank a
+ * query against the SAME text the option label shows, instead of only the bundle's raw (usually
+ * absent) `name` — on a real release, which publishes no `zones.programarea[*].name` at all,
+ * typing a Program Area's full name ("Aleutian") found nothing; only its bare key ("ALA") worked,
+ * even though the option itself already read "Aleutian Arc (ALA)" via this same fallback table.
+ */
+export function resolvedZoneName(
+  key: string,
+  name: string | null | undefined,
+  unit?: string,
+): string | undefined {
+  if (name && name !== key) return name;
   if (unit === undefined || unit === "programarea") {
     const fallback = PROGRAM_AREA_NAMES[key];
-    if (fallback && fallback !== key) return `${fallback} (${key})`;
+    if (fallback && fallback !== key) return fallback;
   }
-  return key;
+  return undefined;
+}
+
+export function paLabel(key: string, name: string | null | undefined, unit?: string): string {
+  const resolved = resolvedZoneName(key, name, unit);
+  return resolved ? `${resolved} (${key})` : key;
 }
 
 /** the display name for a zone place's row: every resolved "Name (KEY)" label (`paLabel`, above),

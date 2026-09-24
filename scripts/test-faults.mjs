@@ -1481,6 +1481,17 @@ const FAULTS = [
       "title-cases the Category fact",
     ],
   },
+  {
+    id: "scores-search-name-fallback-lost",
+    patch: "tests/faults/scores-search-name-fallback-lost.patch",
+    describe:
+      "matchZones()'s rank call reverts to the bundle's raw z.name, dropping resolvedZoneName()'s " +
+      "PROGRAM_AREA_NAMES fallback -- on a real release (no published zones.programarea[*].name), " +
+      'typing a Program Area\'s full name ("Aleutian", "Gulf of Alaska") finds nothing again, ' +
+      'even though the dropdown\'s own option still reads "Aleutian Arc (ALA)" (V6 round, ' +
+      "owner-reported: found while shooting the Program Area harness state)",
+    gate: ["npx", "vitest", "run", "tests/lens/scores/search.test.ts"],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
