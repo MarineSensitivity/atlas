@@ -533,7 +533,17 @@ test("P8 item 7: dropping a GeoPackage shows an honest 'not supported yet' refus
 // when the selection changed mid-load -- `toggleAnalysisCells()` (Places.svelte) snapshotted the
 // place before its two `await`s and applied whatever came back unconditionally. `cellsToken` now
 // keys the load on the place and drops a late result once the selection has moved on.
-test("'show analysis cells' drops a late result once the selection moves to a different place (item 3b)", async ({
+//
+// FIXME (P9, orchestrator-requested, 2026-09-24): this test cannot force the race it claims to --
+// investigated with millisecond-timestamped network/worker instrumentation, not guessed at:
+// the ONE shared `cell/tile=0` fetch both places need completes ~1.5s before any `page.route()`
+// registered at this test's own call site (after both places exist) can possibly hold it.
+// The fixed 2.5s route delay only shifts UNRELATED scheduling -- it does not force the overlap --
+// and against the current (correctly guarded) code, 4 of 6 repeat runs fail on BOTH chromium and
+// webkit, not just webkit (measured: `--repeat-each=3` on each engine).
+// A real fix needs a test-only hook into `toggleAnalysisCells()`'s own async gap (or a component-
+// test harness this repo doesn't have yet), not another network/worker timing trick -- follow-up.
+test.fixme("'show analysis cells' drops a late result once the selection moves to a different place (item 3b)", async ({
   page,
 }) => {
   test.setTimeout(60_000);
