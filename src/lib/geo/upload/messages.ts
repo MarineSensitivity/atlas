@@ -218,12 +218,30 @@ export const geopackageUnavailable = (fileName: string, detail: string): Refusal
     "Convert the layer to GeoJSON or FlatGeobuf and drop that instead — it needs no download — or retry on a network that allows extensions.duckdb.org.",
   );
 
+// Q2, 0.10.52: `runtime` used to be hardcoded `null` by the ONE caller (`UploadPanel.svelte`), so
+// this refusal fired for EVERY `.gpkg`, unconditionally — no amount of waiting could ever change
+// the outcome, which made the previous copy ("wait for the map's numbers to appear and drop the
+// file again") actively misleading. Now that `UploadPanel.svelte` wires a real runtime
+// (`lib/geo/upload/engineRuntime.ts`), this only fires in the brief, real window before a release
+// version is resolved — so the fix is stated as what actually unblocks it, never "wait".
 export const geopackageNoRuntime = (fileName: string): Refusal =>
   R(
     "geopackageNoRuntime",
-    `${fileName} needs the data engine, which is not running in this tab yet.`,
-    "GeoPackage is read through the same DuckDB engine the scores come from, and it has not finished starting.",
-    "Wait for the map's numbers to appear and drop the file again, or convert the layer to GeoJSON and drop that.",
+    `${fileName} needs this tab's data engine, and no release is resolved to boot it against yet.`,
+    "GeoPackage is read through the same DuckDB engine the scores come from, and that engine boots against a release version — this file reached the upload panel before one was known.",
+    "Convert the layer to GeoJSON or FlatGeobuf in your GIS and drop that instead — it needs no engine at all — or drop the GeoPackage again once the map has loaded a version.",
+  );
+
+/** a GeoPackage read cleanly (past `INSTALL`/`LOAD spatial` and the consent) but its own catalogue
+ * table lists no vector layer at all — a raster-tile or attribute-only GeoPackage, distinct from
+ * `noFeatures` (rule 2's "parsed, but the ONE layer read back empty"), which never applies here
+ * because there is no layer to read in the first place. */
+export const geopackageNoFeatureTable = (fileName: string): Refusal =>
+  R(
+    "geopackageNoFeatureTable",
+    `${fileName} is a GeoPackage, but its own catalogue (gpkg_contents) lists no feature table.`,
+    "A GeoPackage can also hold raster tiles or plain attribute tables with no geometry at all — this one has none of the vector kind this app reads.",
+    "Export the vector layer you want from your GIS as its own GeoPackage, or convert it to GeoJSON or FlatGeobuf and drop that instead.",
   );
 
 /**
@@ -255,5 +273,6 @@ export function allRefusalSamples(): Refusal[] {
     geopackageDeclined("place.gpkg"),
     geopackageUnavailable("place.gpkg", "Failed to execute 'send' on 'XMLHttpRequest'"),
     geopackageNoRuntime("place.gpkg"),
+    geopackageNoFeatureTable("place.gpkg"),
   ];
 }

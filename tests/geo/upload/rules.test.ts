@@ -14,6 +14,7 @@ import {
   MAX_ZIP_ENTRIES,
   MAX_ZIP_UNCOMPRESSED_BYTES,
   checkSize,
+  detectNameProperty,
   normalizeParsed,
   normalizeUpload,
   plainText,
@@ -509,6 +510,74 @@ describe("rule 9 · one place per feature, or one union", () => {
     expect(places).toHaveLength(1);
     expect(places[0].geometry.type).toBe("MultiPolygon");
     expect(places[0].sourceIndex).toBe(-1);
+  });
+});
+
+// ---- feature name attribute: auto-detected when not specified (Q2 fix) ------------------------------
+//
+// docs/upload.md documented `nameProperty: "NAME", // chosen by the person from the file's property
+// list` as a naming option, but the ONE caller (UploadPanel.svelte) never passed it -- every upload
+// was named from the file, numbered, regardless of what the file itself said about its own
+// features. `detectNameProperty()` (normalize.ts) is the fix: when the option is left out
+// altogether, it auto-picks the first of name/title/label (case-insensitive) the FIRST feature
+// carries a non-empty value for.
+
+describe("feature name attribute: auto-detected when nameProperty is not specified (Q2 fix)", () => {
+  const geomA = () => JSON.parse(box(-93, 26, -91, 28)).features[0].geometry;
+
+  it("picks up a 'name' property with no nameProperty option at all", async () => {
+    const places = placesOf(await geo(fc(geomA(), { name: "Point Arena Box" }), "f.geojson"));
+    expect(places[0].name).toBe("Point Arena Box");
+  });
+
+  it("matches case-insensitively -- KML's own <name>, and a shapefile's NAME field, both count", async () => {
+    const places = placesOf(await geo(fc(geomA(), { NAME: "Upper Case" }), "f.geojson"));
+    expect(places[0].name).toBe("Upper Case");
+  });
+
+  it("prefers name over title over label, in that priority order", async () => {
+    const allThree = placesOf(
+      await geo(fc(geomA(), { label: "L", title: "T", name: "N" }), "f.geojson"),
+    );
+    expect(allThree[0].name).toBe("N");
+    const titleOnly = placesOf(await geo(fc(geomA(), { label: "L", title: "T" }), "f.geojson"));
+    expect(titleOnly[0].name).toBe("T");
+  });
+
+  it("falls through to the file-derived name when none of the candidate keys are present", async () => {
+    const places = placesOf(await geo(fc(geomA(), { id: 1 }), "my_place.geojson"));
+    expect(places[0].name).toBe("my_place");
+  });
+
+  it("falls through when the candidate key's own value is empty", async () => {
+    const places = placesOf(await geo(fc(geomA(), { name: "   " }), "my_place.geojson"));
+    expect(places[0].name).toBe("my_place");
+  });
+
+  it("an explicit nameProperty: null forces the file name even when a name property exists", async () => {
+    const places = placesOf(
+      await geo(fc(geomA(), { name: "Ignored" }), "my_place.geojson", { nameProperty: null }),
+    );
+    expect(places[0].name).toBe("my_place");
+  });
+
+  it("an explicit nameProperty still wins over auto-detection", async () => {
+    const places = placesOf(
+      await geo(fc(geomA(), { name: "Auto", label: "Explicit" }), "f.geojson", {
+        nameProperty: "label",
+      }),
+    );
+    expect(places[0].name).toBe("Explicit");
+  });
+
+  // detectNameProperty() directly -- the function the tests above exercise end to end.
+  it("detectNameProperty(): returns the KEY (not the value), and null on no candidate/no properties", () => {
+    expect(detectNameProperty({ NAME: "x" })).toBe("NAME");
+    expect(detectNameProperty({ id: 1 })).toBeNull();
+    expect(detectNameProperty({})).toBeNull();
+    expect(detectNameProperty(undefined)).toBeNull();
+    expect(detectNameProperty({ name: "" })).toBeNull(); // empty value: not a usable candidate
+    expect(detectNameProperty({ name: 42 })).toBe("name"); // coerced by plainText, same as nameOf()
   });
 });
 

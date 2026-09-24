@@ -93,7 +93,9 @@ export type StudyAreaCheck = (places: NormalizedPlace[]) => Refusal | null;
 export interface NormalizeOptions {
   /** what a multi-feature file becomes. The panel ASKS once; this module never decides. */
   multiFeature?: "perFeature" | "union";
-  /** which property the name is taken from. `null`/absent -> the file name. */
+  /** which property the name is taken from. A string forces that ONE property; an explicit `null`
+   * forces the file name; LEFT OUT altogether (the default) auto-detects a well-known name-like
+   * property instead — see `detectNameProperty()`. */
   nameProperty?: string | null;
   /** used when the property is missing, empty, or the source is a union. */
   fallbackName?: string;
@@ -249,6 +251,14 @@ export function normalizeParsed(
   // --- rule 9: one place per feature, or one union ------------------------------------------------
   const mode = options.multiFeature ?? "perFeature";
   const fallback = options.fallbackName ?? baseName(file);
+  // "feature name attribute" (docs/upload.md's naming options, Q2): an explicit string forces that
+  // ONE property; an explicit `null` forces the file name; leaving the option out altogether
+  // (`undefined`, the common case -- no caller here ever asked for a property before Q2)
+  // auto-detects it instead of silently never using it. See `detectNameProperty()` below.
+  const nameProperty =
+    options.nameProperty !== undefined
+      ? options.nameProperty
+      : detectNameProperty(areas[0]?.properties);
   if (mode === "union") {
     const parts = geometries.flatMap((g) => polygonsOf(g));
     return done(
@@ -261,7 +271,7 @@ export function normalizeParsed(
   }
   const places = geometries.map((geometry, i) =>
     place(
-      nameOf(areas[i].properties, options.nameProperty, fallback, i, geometries.length),
+      nameOf(areas[i].properties, nameProperty, fallback, i, geometries.length),
       geometry,
       areas[i].index,
     ),
@@ -455,6 +465,30 @@ function nameOf(
   const picked = property ? plainText(properties[property]) : "";
   if (picked) return picked;
   return total > 1 ? `${fallback} ${index + 1}` : fallback;
+}
+
+/** the well-known "name" keys {@link detectNameProperty} looks for, in priority order, matched
+ * case-insensitively so "NAME"/"Name"/"name" all count (KML's `<name>` comes back as `name` via
+ * `@tmcw/togeojson`; a shapefile's DBF field is commonly `NAME`; docs/upload.md's own example
+ * uses `"NAME"`). */
+export const NAME_PROPERTY_CANDIDATES = ["name", "title", "label"];
+
+/**
+ * "Feature name attribute" (docs/upload.md's naming options), auto-detected when the caller does
+ * not name a property explicitly: the first candidate the FIRST feature carries with a non-empty
+ * value, used as the property for every feature in the file. Checking only the first feature is
+ * enough — a real export's field names are consistent across its own rows — and a file with none
+ * of these keys, or an empty value on the first feature, returns `null`, so every place falls
+ * through to the file-derived name + numbering exactly as it did before this existed.
+ */
+export function detectNameProperty(properties: Record<string, unknown> | undefined): string | null {
+  if (!properties) return null;
+  const keys = Object.keys(properties);
+  for (const candidate of NAME_PROPERTY_CANDIDATES) {
+    const key = keys.find((k) => k.toLowerCase() === candidate);
+    if (key && plainText(properties[key])) return key;
+  }
+  return null;
 }
 
 const baseName = (fileName: string): string => plainText(fileName.replace(/\.[A-Za-z0-9]+$/, ""));

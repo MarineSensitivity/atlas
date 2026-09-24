@@ -499,34 +499,42 @@ test("P8 item 4: 'Export CSV' on the place results' Components table actually do
   expect(download.suggestedFilename()).toMatch(/_components_\d{4}-\d{2}-\d{2}\.csv$/);
 });
 
-// P8 item 7 (Opus docs review, app findings #2/#25): `UploadPanel.svelte` always constructs its
-// GeoPackage dependency with `runtime: null` (a documented limitation), so `parseGeoPackage`
-// throws `geopackageNoRuntime` for EVERY `.gpkg` -- but that refusal's own catalogue text (out of
-// this round's file scope, `lib/geo/upload/messages.ts`) says "not running in this tab yet" /
-// "wait... and drop the file again", which can never succeed. `honestRefusal()`
-// (`UploadPanel.svelte`) substitutes the plain, correct sentence at the one place this app
-// actually renders it.
-test("P8 item 7: dropping a GeoPackage shows an honest 'not supported yet' refusal, never a wait-and-retry one", async ({
+// P8 item 7, UPDATED for Q2 (0.10.52): this test used to assert that `UploadPanel.svelte`
+// hardcoded its GeoPackage dependency's `runtime` to `null`, so every `.gpkg` was refused with a
+// substitute "not supported yet" sentence, unconditionally -- the honest thing to say when
+// `parseGeoPackage` could never actually read one. Q2 wired a REAL `GeoPackageRuntime` (the same
+// DuckDB-WASM engine the scores boot, `lib/geo/upload/engineRuntime.ts`), so a `.gpkg` now
+// genuinely reads and that assertion is now false: dropping one no longer says "not supported".
+// This test now asserts the NEW truth instead of the old one -- a point-only GeoPackage is read
+// successfully and refused by rule 3 (polygons only), the same as any other point-only file would
+// be, never by the old, now-permanently-wrong "not supported"/"wait and retry" text. A polygon
+// GeoPackage producing a real place + composite is proven end to end in Q2's own spec,
+// `e2e/places.upload-geopackage.spec.ts` ("a real .gpkg is read end to end: polygon in, place +
+// computed composite out") -- not duplicated here. Needs a REAL working engine to reach rule 3 at
+// all (a real `INSTALL`/`LOAD spatial`), so this test uses `gotoPlacesWithRoundtripRelease`
+// (below) rather than the plain hermetic `openPlaces`.
+test("P8 item 7, updated for Q2: a real .gpkg reads -- a point-only one is refused by rule 3, never 'not supported yet'", async ({
   page,
 }) => {
-  await openPlaces(page);
-  // "SQLite format 3\0" is the one signature detect.ts sniffs for -- a GeoPackage IS a SQLite 3
-  // database (module header) -- padded so the file is a plausible non-trivial size.
-  const gpkgBytes = Buffer.concat([Buffer.from("SQLite format 3\0", "ascii"), Buffer.alloc(64)]);
-  await page.locator(".upload input[type='file']").setInputFiles({
-    name: "place.gpkg",
-    mimeType: "application/geopackage+sqlite3",
-    buffer: gpkgBytes,
-  });
+  test.setTimeout(120_000); // a real DuckDB-WASM cold boot AND a real ~23 MB third-party fetch
+  page.on("dialog", (d) => d.accept()); // the GeoPackage consent prompt (window.confirm)
+
+  await gotoPlacesWithRoundtripRelease(page);
+  await page
+    .locator(".upload input[type='file']")
+    .setInputFiles(
+      fileURLToPath(new URL("../tests/fixtures/upload/gpkg_point.gpkg", import.meta.url)),
+    );
 
   const refusalPanel = page.locator(".upload .refusal");
-  await expect(refusalPanel).toBeVisible();
-  await expect(refusalPanel).toContainText("GeoPackage is not supported yet");
-  // the OLD text this replaces -- must be gone, not merely joined by the new sentence.
+  await expect(refusalPanel).toBeVisible({ timeout: 30_000 });
+  await expect(refusalPanel).toContainText("a Point"); // notPolygon, rule 3
+  // the OLD text this replaces -- must be gone, never merely joined by the new sentence.
+  await expect(refusalPanel).not.toContainText("not supported yet");
   await expect(refusalPanel).not.toContainText("not running in this tab yet");
   await expect(refusalPanel).not.toContainText("Wait for the map's numbers");
-  // the drop-zone's own accepted-format hint no longer implies GeoPackage just works today.
-  await expect(page.locator(".dropzone")).toContainText("GeoPackage (not yet)");
+  // the drop-zone's own accepted-format hint no longer claims GeoPackage doesn't work.
+  await expect(page.locator(".dropzone")).not.toContainText("(not yet)");
 });
 
 // item 3b (atlas-8 review round 2): "Show analysis cells" could paint the PREVIOUS place's cells

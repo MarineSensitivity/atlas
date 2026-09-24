@@ -1,0 +1,16 @@
+diff --git a/src/lib/geo/upload/normalize.ts b/src/lib/geo/upload/normalize.ts
+index 8da21aa..12f277c 100644
+--- a/src/lib/geo/upload/normalize.ts
++++ b/src/lib/geo/upload/normalize.ts
+@@ -255,10 +255,7 @@ export function normalizeParsed(
+   // ONE property; an explicit `null` forces the file name; leaving the option out altogether
+   // (`undefined`, the common case -- no caller here ever asked for a property before Q2)
+   // auto-detects it instead of silently never using it. See `detectNameProperty()` below.
+-  const nameProperty =
+-    options.nameProperty !== undefined
+-      ? options.nameProperty
+-      : detectNameProperty(areas[0]?.properties);
++  const nameProperty = options.nameProperty;
+   if (mode === "union") {
+     const parts = geometries.flatMap((g) => polygonsOf(g));
+     return done(

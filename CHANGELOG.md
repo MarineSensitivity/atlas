@@ -16,7 +16,6 @@ Round 2, Q4: the feedback endpoint and preview-host link flags.
   and every restricted row in the release list. Flipping the flag to `1` (once atlas-9 ships)
   restores today's direct link with no code change.
 
-
 # atlas 0.10.53
 
 Places: choosing a Program Area now opens the same results panel a drawn or uploaded place gets --
@@ -27,6 +26,30 @@ per-zone cell data is published to the app yet) and now says so plainly instead 
 disabled button with a misleading reason. Also: fixed a rare race where "Show analysis cells"
 could paint the wrong place's cells if the selection moved while a load was in flight.
 =======
+
+# atlas 0.10.52
+
+Q2: GeoPackage upload actually reads, and uploads honour the documented naming options.
+
+- **Fixed: every `.gpkg` drop was refused, unconditionally, since 0.10.47.** The reader
+  (`parseGeoPackage`) has needed a real `GeoPackageRuntime` all along, but `UploadPanel.svelte`
+  hardcoded `runtime: null` no matter what — so "GeoPackage is not supported yet" never depended on
+  anything, and retrying could never have worked. A `.gpkg` is now read through the SAME DuckDB-WASM
+  engine the scores boot (its `spatial` extension fetched live, with consent, from
+  `extensions.duckdb.org` — the one deliberately non-mirrored third-party download, ~23 MB); the
+  drop-zone hint drops its "(not yet)".
+- **New refusal: a GeoPackage with no vector layer** (raster tiles, or a plain attribute table) is
+  now named by `geopackageNoFeatureTable` rather than surfacing `ST_Read`'s raw SQL error.
+- **`geopackageNoRuntime`'s copy no longer tells you to wait and retry** — that only ever applied
+  during the brief window before a release version resolves, and even then the fix it now states
+  (convert to GeoJSON/FlatGeobuf) is the one that is actually guaranteed to work.
+- **Fixed: a feature's own name (KML's `<name>`, a GeoJSON/shapefile `name`/`title`/`label`
+  property) was never used.** `docs/upload.md` documented this as a naming option
+  (`nameProperty`) since it was written, but the one caller never passed it, so every upload was
+  named from the file, numbered — regardless of what the file itself said about its own features.
+  Leaving `nameProperty` out (the default) now auto-detects the first of `name`/`title`/`label`
+  (case-insensitive) the file's first feature carries a non-empty value for; an explicit property
+  still forces that one, and an explicit `null` still forces the file name.
 
 # atlas 0.10.51
 
