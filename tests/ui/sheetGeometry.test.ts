@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SHEET_DETENT,
+  legendChipMode,
   loadSheetDetent,
   saveSheetDetent,
   sheetStorageKey,
@@ -48,5 +49,19 @@ describe("sheet detent persistence (peek / half / full, no viewport bucket neede
       },
     };
     expect(() => saveSheetDetent(throwing, "place", "full")).not.toThrow();
+  });
+});
+
+describe("legendChipMode (P1: the phone legend chip's placement rule)", () => {
+  it("floats above the sheet at peek", () => {
+    expect(legendChipMode("peek")).toBe("floating");
+  });
+
+  it("floats above the sheet at half", () => {
+    expect(legendChipMode("half")).toBe("floating");
+  });
+
+  it("moves inside the sheet's own header block at full -- no room to float above it", () => {
+    expect(legendChipMode("full")).toBe("inline");
   });
 });
