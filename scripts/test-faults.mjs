@@ -345,8 +345,29 @@ const FAULTS = [
   // (`duckdbExt`: copied from this checkout's `public/duckdb-ext/`, else fetched + sha-verified by
   // `scripts/fetch-duckdb-extensions.mjs` -- the CI job has no fetch step of its own). And a
   // missing mirror, or any other boot failure, would ALSO turn it red, for the wrong reason: so
-  // `redMatches` requires the SOLO baseline test to have passed (the engine worked) and a
-  // concurrency test to have failed. `--reporter=list` pins the output those patterns read.
+  // `redMatches` requires ONE test to have passed (the engine/harness genuinely ran, not a crashed
+  // webServer/build) and named concurrency tests to have failed. `--reporter=list` pins the output
+  // those patterns read.
+  //
+  // P8b (CI run 35982505817): the ORIGINAL canary here was "solo baselines" passing -- valid when
+  // this entry was written (0.10.25), but P7 (0.10.46) added `Places.svelte`'s own list-level
+  // effect that auto-analyses EVERY geom place the moment it exists, alongside
+  // `ResultsPanel.svelte`'s own per-selection effect for whichever place is currently selected.
+  // Adding a place by coordinates auto-selects it, so BOTH effects call `computeScoreResults` for
+  // the SAME just-added place -- a second, independent `exclusive()` caller that "solo baselines"
+  // itself now exercises even with no deliberately forced overlap, no upload, nothing "back to
+  // back" at all. Under this fault that pair genuinely races and "solo baselines" reads a doubled
+  // coverage (measured: "137.5 % ... (308 of 224 cells)" against the correct "68.8 % ... (154 of
+  // 224 cells)") -- so it is NO LONGER a valid "the fault broke nothing outside what it's supposed
+  // to" canary; it now fails for the SAME real reason the fault exists to catch, just via a path
+  // (auto-select's own double effect) this file's design never anticipated. Re-verified 3/3 runs:
+  // "scores and Show analysis cells for the SAME place at once" reliably PASSES under this fault
+  // (P8's own rewrite of that test resolves place A's engine round trip in full before ever
+  // clicking the toggle, so by the time it clicks there is nothing left in flight to race) while
+  // still requiring a real browser + a real DuckDB boot to reach that assertion at all -- so it
+  // takes over "solo baselines"'s role as the crash-vs-corruption canary. "two places back to
+  // back" and "an upload refused mid-analysis" both failed 3/3 runs for the genuine reason (wrong
+  // numbers / a missing refusal caused by corrupted shared state), so both are required directly.
   {
     id: "places-analysis-shared-tables",
     patch: "tests/faults/places-analysis-shared-tables.patch",
@@ -365,8 +386,9 @@ const FAULTS = [
     env: { PW_PORT: "4397" },
     duckdbExt: true,
     redMatches: [
-      /✓\s+\d+ \[chromium\] › e2e\/places\.concurrency\.spec\.ts:\d+:\d+ › solo baselines/u,
-      /✘\s+\d+ \[chromium\] › e2e\/places\.concurrency\.spec\.ts/u,
+      /✓\s+\d+ \[chromium\] › e2e\/places\.concurrency\.spec\.ts:\d+:\d+ › scores and Show analysis cells for the SAME place at once/u,
+      /✘\s+\d+ \[chromium\] › e2e\/places\.concurrency\.spec\.ts:\d+:\d+ › two places back to back/u,
+      /✘\s+\d+ \[chromium\] › e2e\/places\.concurrency\.spec\.ts:\d+:\d+ › an upload refused mid-analysis/u,
     ],
   },
   // 0.10.22's own defect, replayed: `styleQueue.ts` settled an issued style only on `"idle"` (or
