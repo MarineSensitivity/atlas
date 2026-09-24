@@ -66,6 +66,22 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+    /* gallery axe ceilings fix (390/320 CSS px): `.col` is itself a flex ITEM of
+       `.gallery-stage` (App.svelte), and a flex item's default `min-width: auto` floors its
+       shrink at its own min-content size -- which `.cat-table-scroll`'s unbreakable `<code>`
+       tokens push well past the viewport. `max-width: 100%` on the scroll wrapper (below) cannot
+       break that: percentages are indeterminate during intrinsic-size computation, so the
+       wrapper's contribution reverts to the table's full, un-scrolled width. Without this, `.col`
+       (and the "primary spelling" paragraph sharing its width) grew past the section's right
+       edge; `#gallery-main`'s own `overflow-y: auto` computes `overflow-x: auto` too (the CSS
+       Overflow spec's either-axis-non-visible rule), which silently absorbed the overflow by
+       making the WHOLE gallery body sideways-scrollable instead of just the table -- the
+       intended containment (`.cat-table-scroll` alone scrolls) never engaged, and part of the
+       table + the paragraph was clipped, unreachable, with no per-section scrollbar (axe:
+       color-contrast "incomplete" x6, elmPartiallyObscured, at 320 CSS px). `min-width: 0`
+       overrides the default so `.col` actually shrinks to the section's width, and
+       `.cat-table-scroll` becomes the one thing that scrolls, as already documented above. */
+    min-width: 0;
   }
 
   .cat-table-scroll {
