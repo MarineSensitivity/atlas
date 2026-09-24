@@ -394,6 +394,12 @@ button.chip {
   font: inherit;
   font-size: var(--text-sm);
   cursor: pointer;
+  /* D13 (Opus eyes-on assessment, 2026-09-24): this class styles BOTH real `<button>`s (Share,
+     Report, Help, theme) and one real `<a>` (Feedback, TopBarActions.svelte) -- without this, the
+     browser's own UA-stylesheet underline survived on the link alone, so it read as a differently-
+     styled control next to its button neighbours. `.help-menu-item` (below) already carries the
+     identical reset for the same reason. */
+  text-decoration: none;
 }
 .tool:hover {
   background: var(--fill-control);
@@ -406,7 +412,9 @@ button.chip {
 }
 
 /* R2: the inverse of `.topbar-desktop-only` (below, in the phone media query) -- the ⋯ overflow
-   trigger (TopBarActions.svelte) is the one topbar control that exists ONLY on the phone. */
+   trigger (TopBarActions.svelte) is the one topbar control that exists ONLY on the phone. P1
+   (Opus eyes-on assessment, 2026-09-24): the phone search button (Shell.svelte) carries this same
+   class, for the identical reason. */
 .topbar-phone-only {
   display: none;
 }
@@ -414,6 +422,51 @@ button.chip {
   .topbar-phone-only {
     display: inline-flex;
   }
+}
+
+/* P1: the row INSIDE the phone-only search modal (Shell.svelte's `phoneSearchOpen`) -- NOT
+   `.search-field` above (that one is `topbar-desktop-only`, a fixed 32px pill sized for the
+   topbar) -- full width of the modal body. Reuses the SAME SpeciesPicker instance the desktop
+   field mounts (its own `.species-picker`/`.picker-input` styling, untouched, fills
+   `.search-field-phone-control` below); `.search-field-phone-input` styles only the plain stub
+   input shown outside the species lens, at a real touch height unlike the desktop pill. */
+.search-field-phone {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  color: var(--text-secondary);
+}
+/* P1 fix round 2 (eyes-on evidence, a real screenshot): SpeciesPicker's own results list is
+   `position: absolute` (`.picker-dropdown`), so it contributes NOTHING to this row's natural
+   content height -- the dialog auto-sized to the search row alone (~50px) and
+   Modal.svelte's `.modal-body { overflow: auto }` then clipped the dropdown past that box's
+   bottom edge, invisible without knowing to scroll a box that already looked full-height. `align-
+   items: flex-start` (not the default `center` above) keeps the icon pinned to the INPUT row
+   instead of drifting to the middle of this now-tall box; `min-height` reserves room for the
+   dropdown's own fixed 320px list plus its "US only" header (Shell.svelte's own comment explains
+   why this is not a dead gap: opening this modal focuses the field, which opens the dropdown). */
+.search-field-phone--species {
+  align-items: flex-start;
+  min-height: 420px;
+}
+.search-field-phone-control {
+  flex: 1;
+  min-width: 0;
+}
+.search-field-phone-input {
+  width: 100%;
+  height: var(--size-touch);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+.search-field-phone-input::placeholder {
+  color: var(--text-secondary);
 }
 
 /* SKELETON-ONLY decorative icon placeholders. Deliberately NOT named `.icon`: src/lib/ui/Icon.svelte

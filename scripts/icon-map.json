@@ -33,5 +33,6 @@
   "maximize": "mdiFullscreen",
   "restore": "mdiFullscreenExit",
   "more": "mdiDotsHorizontal",
-  "feedback": "mdiMessageAlertOutline"
+  "feedback": "mdiMessageAlertOutline",
+  "tour": "mdiCompassOutline"
 }

@@ -481,6 +481,19 @@
         ></span>
 
         <!--
+          P5 (Opus eyes-on assessment, 2026-09-24): the phone-only search button (Shell.svelte,
+          right before its <TopBarActions> mount line) -- same skeleton convention as the ⋯
+          trigger below (`tool topbar-phone-only`, an 18x18 `sk-icon-tool` placeholder).
+        -->
+        <span
+          class="tool topbar-phone-only"
+          aria-hidden="true"
+          data-tour="search-phone"
+          data-control="search-phone"
+          ><span class="sk-icon-tool"></span
+        ></span>
+
+        <!--
           R2: About/Feedback moved off the map into the top bar (TopBarActions.svelte) -- plain
           `.tool` spans, same convention as the four above (a dedicated skeleton class here once
           gave one its OWN `display`, which -- tied in specificity -- landed LATER than

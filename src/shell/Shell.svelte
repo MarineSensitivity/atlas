@@ -13,7 +13,7 @@
   // there is exactly one source for every geometry value the CLS gate depends on. The real
   // src/lib/ui/* components below (Rail, Panel, Sheet, Segmented, About, VersionBadge, Announcer)
   // bring their own scoped styles and are used only by import, per this step's instructions.
-  import { onMount, type Component } from "svelte";
+  import { onMount, tick, type Component } from "svelte";
   import "./shell.css";
   import { buildRailItems, TOOL_BODY, TOOL_LABEL, type ToolName } from "./tools";
   // R5: the wave-in-hexagon mark replaces the old two-file "wave in a circle" pair
@@ -946,6 +946,14 @@
   let VersionPickerModalComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let WelcomeModalComp = $state<Component<any> | null>(null);
+  // P1 (Opus eyes-on assessment, 2026-09-24): the phone-only search modal's own lazy chunk --
+  // loaded on first tap of the phone search button (below), the same "load on first open" idiom
+  // PlacesComp/ReportToolComp already use, rather than a preemptive `$effect` -- a phone visitor
+  // who never opens search never pays for it.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let ModalComp = $state<Component<any> | null>(null);
+  let phoneSearchOpen = $state(false);
+  let phoneSearchBodyEl: HTMLDivElement | undefined = $state();
 
   // item m5 (atlas-8 review round 2): none of the dynamic imports below had a `.catch` -- a chunk
   // -load failure (a flaky network, an ad blocker, a stale service worker) left the promise
@@ -959,6 +967,35 @@
   // effect's own trigger).
   function announceChunkFailure(what: string): void {
     announce(`Couldn't load ${what}. Try switching tools again.`);
+  }
+
+  // P1 (Opus eyes-on assessment, 2026-09-24): the topbar `.search-field` -- which also hosts the
+  // species picker while the species lens is active -- is `topbar-desktop-only` (shell.css), and
+  // the ⋯ menu had nothing in its place: a phone visitor could not search a place at all, and in
+  // the species lens could not change species either. This opens the SAME content the desktop
+  // field renders, as a near-full-width modal, focused on open. Modal.svelte's native <dialog>
+  // `showModal()` only auto-focuses a descendant carrying `autofocus`, which neither the
+  // SpeciesPicker's own input nor the plain stub one below sets -- so focus is moved by hand,
+  // after `tick()` flushes both this component's OWN re-render (the lazy `ModalComp` arriving)
+  // and Modal.svelte's own mount effect that calls `showModal()`.
+  async function openPhoneSearch(): Promise<void> {
+    phoneSearchOpen = true;
+    if (!ModalComp) {
+      try {
+        const mod = await import("../lib/ui/Modal.svelte");
+        ModalComp = mod.default;
+      } catch {
+        announceChunkFailure("search");
+        phoneSearchOpen = false;
+        return;
+      }
+    }
+    await tick();
+    phoneSearchBodyEl?.querySelector<HTMLInputElement>("input")?.focus();
+  }
+
+  function closePhoneSearch(): void {
+    phoneSearchOpen = false;
   }
 
   $effect(() => {
@@ -1082,8 +1119,14 @@
     aria-haspopup="dialog"
     onclick={onVersionClick}
   >
-    <Icon name="version" size={14} />
+    <!-- D13 (Opus eyes-on assessment, 2026-09-24): the chevron ("version" -> mdiChevronDown, an
+         alias, icon-paths.ts) used to render FIRST, so it sat to the LEFT of "v7" -- every other
+         select-like control in the app (Select.svelte, the native Layer select) puts its chevron
+         AFTER the value, on the right. Text first, chevron last matches that convention; the
+         accessible name (this button's flattened text content, including the visually-hidden span
+         below) is unaffected by visual order. -->
     <VersionBadge />
+    <Icon name="version" size={14} />
     <span class="visually-hidden">Change release version</span>
   </button>
 
@@ -1201,6 +1244,24 @@
       </a>
     </div>
   </span>
+  <!-- P1 (Opus eyes-on assessment, 2026-09-24): the desktop `.search-field` above is
+       `topbar-desktop-only`, and nothing replaced it in the ⋯ menu -- a phone visitor could not
+       search a place, nor (in the species lens) change species, at all. This phone-only button
+       sits right beside the ⋯ trigger below (Feedback/About, TopBarActions.svelte's own first two
+       controls, are themselves `topbar-desktop-only`, so nothing else renders between them at
+       this width) and opens the SAME search content in a modal -- see `openPhoneSearch`'s own
+       header comment. Desktop never renders this (`topbar-phone-only`, the same class the ⋯
+       trigger itself carries). -->
+  <button
+    type="button"
+    class="tool topbar-phone-only"
+    data-tour="search-phone"
+    data-control="search-phone"
+    aria-label="Search species and places"
+    onclick={openPhoneSearch}
+  >
+    <Icon name="search" size={18} />
+  </button>
   <!-- R2 (docs/usability.md §7): About + Feedback + the phone ⋯ menu -- ONE mount line, per this
        round's own instructions (U5/U6 touch the rail and Report/Help/theme in parallel; see
        TopBarActions.svelte's header for why this stays a separate component). Its "Docs" item
@@ -1241,7 +1302,19 @@
   </button>
 </header>
 
-<main class="stage" id="stage">
+<main
+  class="stage"
+  id="stage"
+  data-panel-dock={isPhone ? undefined : panelGeom.dock}
+  data-panel-maximized={isPhone ? undefined : panelGeom.maximized}
+  style={isPhone ? undefined : `--panel-size: ${panelGeom.size}px`}
+>
+  <!-- D1 (Opus eyes-on assessment, 2026-09-24): `data-panel-dock`/`data-panel-maximized`/
+       `--panel-size` above mirror `panelGeom` the SAME way `#panel-region` itself already does
+       (its own comment just below) -- ScoresLegend.svelte/SpeciesLegend.svelte read them off THIS
+       ancestor (`.stage`, their own positioned parent) to keep the floating legend clear of
+       whichever corner the docked panel currently fills; see those two files' own header comments
+       for why the legend used to render invisibly under it. -->
   <div
     bind:this={mapEl}
     id="map"
@@ -1482,4 +1555,56 @@
 {#if WelcomeModalComp}
   {@const Comp = WelcomeModalComp}
   <Comp tour={sel.tour} onTakeTour={() => void beginTour()} />
+{/if}
+
+<!-- P1 (Opus eyes-on assessment, 2026-09-24): the phone-only search modal -- see
+     `openPhoneSearch`'s own header comment above. Content mirrors the desktop `.search-field`
+     exactly (same SpeciesPickerComp instance/props in the species lens, the same plain stub input
+     otherwise), just laid out for the modal's own width/touch target (`.search-field-phone` /
+     `.search-field-phone-input`, shell.css) instead of the topbar's fixed 32px pill.
+
+     `search-field-phone--species` (species lens only): eyes-on evidence caught Modal.svelte's
+     `.modal-body { overflow: auto }` -- entirely reasonable for ordinary text content -- clipping
+     SpeciesPicker's own results list, which is `position: absolute` (so it contributes NOTHING to
+     the dialog's natural, content-driven height): the dialog shrank to the search row's own ~50px
+     and the dropdown rendered past that box's bottom edge, invisible without first discovering you
+     could scroll a box that LOOKED fully sized already. The species branch reserves enough
+     min-height for the dropdown's own (fixed 320px list + its "US only" header) so the dialog's
+     real height includes it -- opening this modal focuses the field immediately (`openPhoneSearch`),
+     which itself opens the dropdown, so this space is essentially always in use, not a dead gap. -->
+{#if ModalComp}
+  {@const ModalC = ModalComp}
+  <ModalC open={phoneSearchOpen} title="Search" onclose={closePhoneSearch}>
+    <div
+      class="search-field-phone"
+      class:search-field-phone--species={sel.lens === "species"}
+      bind:this={phoneSearchBodyEl}
+    >
+      <Icon name="search" size={16} />
+      <div class="search-field-phone-control">
+        {#if sel.lens === "species" && SpeciesPickerComp}
+          {@const PickerComp = SpeciesPickerComp}
+          <PickerComp
+            index={speciesLens.taxaIndex}
+            selected={sel.sp}
+            usOnly={sel.us}
+            onSelect={(key: string) => {
+              speciesLens.selectSpecies(key);
+              closePhoneSearch();
+            }}
+            onSetUsOnly={(enabled: boolean) => speciesLens.setUsOnly(enabled)}
+            onSearchLogged={(query: string) => analytics.track("search_species", { query })}
+            onFocusIndex={() => speciesLens.ensureTaxaIndex()}
+          />
+        {:else}
+          <input
+            type="search"
+            class="search-field-phone-input"
+            aria-label="Search species and places"
+            placeholder="Search species and places"
+          />
+        {/if}
+      </div>
+    </div>
+  </ModalC>
 {/if}

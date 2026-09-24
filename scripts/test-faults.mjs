@@ -23,6 +23,9 @@
 //
 // Usage: npm run test:faults  (needs $TMPDIR exported, and a clean `git status` for HEAD to be
 // meaningful -- it worktrees off HEAD, not the working tree, on purpose: see each patch's header).
+// `node scripts/test-faults.mjs --only=id1,id2` runs a comma-separated subset of FAULTS below
+// (unknown ids exit 1 immediately) -- a round adding one or two entries need not re-verify every
+// prior one every time (see `selectFaults`'s own header).
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -599,6 +602,75 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4388" },
   },
+  // --- P5 (Opus 5.5 eyes-on assessment, 2026-09-24, plans_todo/atlas-refs/) -----------------------
+  // D1: the desktop legend sat FIXED bottom-right (ScoresLegend.svelte/SpeciesLegend.svelte) while
+  // the default right-docked panel fills that exact corner top-to-bottom -- invisible under the
+  // panel's glass on every desktop map. This patch drops the `data-panel-dock="right"` override
+  // (the fix's own "float clear of the panel" rule) and must turn the new
+  // e2e/shell.legend-position.spec.ts red on exactly the default-dock case.
+  {
+    id: "legend-fixed-corner",
+    patch: "tests/faults/legend-fixed-corner.patch",
+    describe:
+      "ScoresLegend.svelte drops its dock=right override -- the legend sits back under the " +
+      "default right-docked panel (D1's real defect, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.legend-position.spec.ts",
+      "-g",
+      "dock=right \\(the default\\)",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4379" },
+  },
+  // D2/P3: `lib/ui/Select.svelte`'s `.select` box shrank to its own text inside a STRETCHED
+  // `.select-wrap` -- the visible box ended at the label while the chevron (positioned against the
+  // now-wide wrapper) floated alone at the field's far right edge. This patch drops `.select`'s own
+  // `width: 100%` and must turn e2e/layers.select-style.spec.ts red on the chevron-containment
+  // assertion.
+  {
+    id: "select-width-removed",
+    patch: "tests/faults/select-width-removed.patch",
+    describe:
+      "Select.svelte's .select loses width:100% -- the box shrinks to its text again while the " +
+      "chevron floats past its right edge (D2's real defect, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/layers.select-style.spec.ts",
+      "-g",
+      "the box spans to the chevron",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4379" },
+  },
+  // P1: the topbar `.search-field` (which also hosts the species picker) is `topbar-desktop-only`
+  // and the ⋯ menu had no Search item -- a phone visitor could not search a place, nor change
+  // species in the species lens, at all. This patch removes the phone search button and must turn
+  // e2e/shell.phone-search.spec.ts red on its own existence check.
+  {
+    id: "phone-search-button-removed",
+    patch: "tests/faults/phone-search-button-removed.patch",
+    describe:
+      "Shell.svelte drops the phone-only search button -- no search or species picker is reachable " +
+      "on the phone again (P1's real defect, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.phone-search.spec.ts",
+      "-g",
+      "the button exists",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4379" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
@@ -695,6 +767,25 @@ function runOne(fault) {
   }
 }
 
+/** `--only=id1,id2` (a P-round fix agent's own request, common-p.md's dispatch brief): every
+ * FAULTS entry runs its own throwaway worktree + build + gate, so a full run costs a full
+ * `npm run build` PER entry (~1 minute each) -- ~20+ minutes for this manifest's current size. A
+ * round adding one or two new entries needs to prove only THOSE turn red, not re-verify every
+ * fault every other round already landed (doubly so on a shared laptop with sibling agents
+ * running their own worktrees concurrently). Omitted, this runs every fault, unchanged. */
+function selectFaults(argv) {
+  const arg = argv.find((a) => a.startsWith("--only="));
+  if (!arg) return FAULTS;
+  const ids = new Set(arg.slice("--only=".length).split(","));
+  const selected = FAULTS.filter((f) => ids.has(f.id));
+  const missing = [...ids].filter((id) => !selected.some((f) => f.id === id));
+  if (missing.length > 0) {
+    process.stderr.write(`test-faults: --only named unknown fault id(s): ${missing.join(", ")}\n`);
+    process.exit(1);
+  }
+  return selected;
+}
+
 function main() {
   if (!process.env.TMPDIR) {
     process.stderr.write(
@@ -704,15 +795,18 @@ function main() {
     process.exit(1);
   }
 
+  const faultsToRun = selectFaults(process.argv.slice(2));
   const head = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
     cwd: ROOT,
     encoding: "utf8",
   }).trim();
-  process.stdout.write(`test-faults: ${FAULTS.length} fault(s), worktreed off HEAD (${head})\n\n`);
+  process.stdout.write(
+    `test-faults: ${faultsToRun.length}/${FAULTS.length} fault(s) selected, worktreed off HEAD (${head})\n\n`,
+  );
 
   const rows = [];
   let failed = false;
-  for (const fault of FAULTS) {
+  for (const fault of faultsToRun) {
     const result = runOne(fault);
     rows.push(result);
     if (result.ok) {

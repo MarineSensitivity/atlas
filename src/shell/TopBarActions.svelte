@@ -112,7 +112,7 @@
 
   interface MoreItem {
     label: string;
-    icon: "share" | "report" | "feedback" | "info" | "help";
+    icon: "share" | "report" | "feedback" | "info" | "help" | "tour";
     run: (e: MouseEvent) => void;
     href?: string;
   }
@@ -126,10 +126,12 @@
     { label: "Feedback", icon: "feedback", run: handleFeedback, href: feedbackHref },
     { label: "About this release", icon: "info", run: () => (aboutOpen = true) },
     // `run` (not `href`): starts the tour directly, same as the desktop Help menu's own button --
-    // never a link, so no `<a>`/no-op split like Docs below. Icon "help" (not a new one): the
-    // desktop Help trigger already uses this same glyph for the whole tour+shortcuts+Docs
-    // disclosure this item and the one below together replace here.
-    { label: "Take a tour", icon: "help", run: () => onTakeTour() },
+    // never a link, so no `<a>`/no-op split like Docs below.
+    // P7 (Opus eyes-on assessment, 2026-09-24): this used to reuse the "help" (?) glyph, so "Take
+    // a tour" and "Docs" (below) were visually identical rows in this menu -- its own `icon` name
+    // (icon-map.json's `mdiCompassOutline`, added by this fix via
+    // `scripts/build-icon-paths.mjs`), distinct from Docs' "help" glyph just below.
+    { label: "Take a tour", icon: "tour", run: () => onTakeTour() },
     // a real <a>, same as Feedback above -- opens the SAME docs link the desktop Help menu's own
     // "Docs" item does (Shell.svelte's `docsHref`), rather than toggling that disclosure itself
     // (invisible at the width this ⋯ menu only exists at -- see helpDocsHref's own doc comment).
