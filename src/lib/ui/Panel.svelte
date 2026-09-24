@@ -476,9 +476,20 @@
 
   /* R1 maximize: the panel fills the whole stage. shell.css positions `.panel-region` itself
      (dock/size); this rule only needs to override the CONTENT box, since `.panel-region` already
-     switches to `inset: 0` at this state (see shell.css's own `[data-maximized]` rule). */
+     switches to `inset: 0` at this state (see shell.css's own `[data-maximized]` rule).
+     `z-index: 31` (U1 fix round, CI run 35956406448 on 0.10.39): shell.css's `#panel-region
+     [data-maximized="true"]` z-index (40) only orders `#panel-region` against ITS OWN SIBLINGS
+     (the rail region, the legend-chip region) -- it does nothing for the stacking order BETWEEN
+     `.panel-surface` and `.panel-backdrop` below, which are both `#panel-region`'s own CHILDREN,
+     compared in their OWN local stacking context. `.panel-backdrop` carries an explicit z-index
+     (30); `.panel-surface` did not, so its effective z-index was `auto` -- and an explicit
+     z-index beats `auto` regardless of DOM order, so the backdrop painted (and intercepted
+     clicks) OVER the panel's own header controls the whole time this comment claimed the
+     opposite. Caught by e2e/shell.url-state.spec.ts's interaction walk: `locator.click` on
+     "Restore" timed out with "panel-backdrop intercepts pointer events", on three engines. */
   .panel-surface--maximized {
     border-radius: 0;
+    z-index: 31;
   }
 
   .panel-backdrop {

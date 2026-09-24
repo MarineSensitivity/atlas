@@ -70,9 +70,19 @@ test("opening every rail tool and every panel-size control never touches the URL
   expect(urlTail(page)).toBe("");
   await panel.locator("button.panel-pill").click(); // restore
   expect(urlTail(page)).toBe("");
-  await panel.getByRole("button", { name: "Full height" }).click();
+  // U1 (R1): "Full height"/"Half height" (the old collapse/half/full model) no longer exist --
+  // this test predates the dockable panel (docs/usability.md §7). Walk R1's own control set
+  // instead: dock left/bottom/right, maximize (Full screen), restore -- CI run 35956406448 caught
+  // the stale locators as a `locator.click: Test timeout`, never finding either button.
+  await panel.getByRole("button", { name: "Dock left" }).click();
   expect(urlTail(page)).toBe("");
-  await panel.getByRole("button", { name: "Half height" }).click();
+  await panel.getByRole("button", { name: "Dock bottom" }).click();
+  expect(urlTail(page)).toBe("");
+  await panel.getByRole("button", { name: "Dock right" }).click();
+  expect(urlTail(page)).toBe("");
+  await panel.getByRole("button", { name: "Full screen" }).click();
+  expect(urlTail(page)).toBe("");
+  await panel.getByRole("button", { name: "Restore" }).click();
   expect(urlTail(page)).toBe("");
 });
 

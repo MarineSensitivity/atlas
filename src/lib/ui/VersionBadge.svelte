@@ -12,18 +12,35 @@
 
   let label = $state("");
   let preview = $state(false);
+  // R2/U1 fix (owner decision, then CI run 35956406448): at <= 380px (the same breakpoint the
+  // brand mark hides at) the full "PREVIEW" text no longer fits the 320px topbar alongside a v9
+  // preview session's wider chip (verify.mjs: 17 species-lens phoneNarrow states off-screen).
+  // FIRST attempt kept both "PREVIEW" and "PRE" always in the DOM (one hidden via a CSS media
+  // query) -- visually correct, but `.textContent` (what `toHaveText`/a screen scraper reads)
+  // concatenates BOTH regardless of `display: none`, so every text-content assertion against the
+  // badge read "PREVIEW PRE" on the clean CI runner (e2e/shell.smoke.spec.ts, three engines).
+  // Fixed the honest way instead: exactly ONE text value in the DOM at a time, tracked the SAME
+  // `matchMedia` way `isPhone` already is in Shell.svelte, so `textContent` and the accessible
+  // name always agree with what is actually rendered.
+  let compact = $state(false);
 
   onMount(() => {
     const early = (window as unknown as { __early?: Early }).__early;
-    if (!early) return;
+    if (early) {
+      Promise.all([
+        early.version.catch(() => null),
+        early.session.catch(() => ({ preview: false })),
+      ]).then(([version, session]) => {
+        label = version ?? "";
+        preview = !!session?.preview;
+      });
+    }
 
-    Promise.all([
-      early.version.catch(() => null),
-      early.session.catch(() => ({ preview: false })),
-    ]).then(([version, session]) => {
-      label = version ?? "";
-      preview = !!session?.preview;
-    });
+    const mql = matchMedia("(max-width: 380px)");
+    compact = mql.matches;
+    const onChange = (e: MediaQueryListEvent) => (compact = e.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
   });
 </script>
 
@@ -31,15 +48,5 @@
   <span class="ms-version">{label}</span>
 {/if}
 {#if preview}
-  <!-- R2/U1 fix (owner decision): at <= 380px (the same breakpoint the brand mark hides at) the
-       full "PREVIEW" text no longer fits the 320px topbar alongside a v9 preview session's wider
-       chip (verify.mjs: 17 species-lens phoneNarrow states off-screen). Never hidden and never
-       dropped from the accessibility tree -- both forms are always in the DOM, `aria-label` fixes
-       the accessible name regardless of which is visually shown (shell.css's own media query
-       swaps `display`, never `{#if}`, so this is a pure CSS reflow with no extra JS/state), and
-       `title` gives a sighted mouse user the same full word on hover for the compact form. -->
-  <span class="ms-preview-badge" aria-label="Preview release" title="Preview release">
-    <span class="ms-preview-badge-full" aria-hidden="true">PREVIEW</span>
-    <span class="ms-preview-badge-short" aria-hidden="true">PRE</span>
-  </span>
+  <span class="ms-preview-badge">{compact ? "PRE" : "PREVIEW"}</span>
 {/if}

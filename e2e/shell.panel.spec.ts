@@ -205,7 +205,14 @@ test.describe("R1: maximize", () => {
   test("clicking the backdrop also restores", async ({ page }) => {
     await gotoTable(page);
     await panelSurface(page).getByRole("button", { name: "Full screen" }).click();
-    await page.locator(".panel-backdrop").click();
+    // U1 fix round (CI run 35956406448): `.panel-surface--maximized` now paints ABOVE the
+    // backdrop (z-index 31 vs 30, see Panel.svelte's own header on that fix) so the panel's OWN
+    // controls are clickable while maximized -- a real bug the backdrop's previously-higher
+    // z-index caused. Maximized, the panel fills the whole `.stage`, so the backdrop's only
+    // still-reachable area is the 48px topbar strip above it (`.topbar`'s own z-index, 20, stays
+    // lower than the backdrop's 30, unchanged by this fix) -- click there, not the element's
+    // default center (which now lands on the panel's own content).
+    await page.locator(".panel-backdrop").click({ position: { x: 10, y: 10 } });
     await expect(page.locator("#panel-region")).toHaveAttribute("data-maximized", "false");
   });
 });

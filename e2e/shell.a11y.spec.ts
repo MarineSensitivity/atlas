@@ -390,17 +390,27 @@ test.describe("keyboard", () => {
     await expect(layersBtn).toBeFocused();
   });
 
-  // atlas-3 step 3 fix round 2 / SC 4.1.3: exactly ONE live region, for real -- src/lib/ui's
-  // Announcer.svelte is the ONLY thing that may render one; this shell must mount it exactly once
-  // and never keep its OWN temporary shim alongside it. A full interaction walk (every control
-  // that calls `announce()`) is what a stray SECOND region would most plausibly reveal, since some
-  // components only render their live region lazily/on first use.
+  // atlas-3 step 3 fix round 2 / SC 4.1.3: exactly ONE live region for the SHARED announcer, for
+  // real -- src/lib/ui's Announcer.svelte is the ONLY thing that may render one for `announce()`
+  // callers; this shell must mount it exactly once and never keep its OWN temporary shim alongside
+  // it. A full interaction walk (every control that calls `announce()`) is what a stray SECOND
+  // region would most plausibly reveal, since some components only render their live region
+  // lazily/on first use.
+  //
+  // U1 fix round (CI run 35956406448): the count is now 2, on purpose -- Shell.svelte's own
+  // persistent map-loading status (`[data-testid="map-loading-status"]`) is a SEPARATE, dedicated
+  // region precisely so its "Map ready" (which can fire at any later, unpredictable moment) never
+  // shares a region with -- and so can never clobber -- an unrelated feature's own announcement
+  // through the SHARED one (three real specs, scores.popup/species-popup/shell.chunk-error, hit
+  // exactly that race). It announces DISJOINT content from the shared region (never the same text
+  // at the same time), so the invariant this test guards against -- two regions racing to announce
+  // the SAME thing -- still holds; only the region COUNT changed, deliberately.
   test("exactly one live region exists, before and after a full interaction walk", async ({
     page,
   }) => {
     await gotoShell(page, "navy");
     const liveRegions = () => page.locator('[aria-live], [role="status"]');
-    await expect(liveRegions()).toHaveCount(1);
+    await expect(liveRegions()).toHaveCount(2);
 
     await page.locator(".topbar").getByRole("button", { name: "Species" }).click();
     await page.locator(".topbar").getByRole("button", { name: "Scores" }).click();
@@ -414,7 +424,7 @@ test.describe("keyboard", () => {
     await panel.locator('[data-panel-control="collapse"]').click();
     await panel.locator("button.panel-pill").click();
 
-    await expect(liveRegions()).toHaveCount(1);
+    await expect(liveRegions()).toHaveCount(2);
   });
 
   // atlas-8 phase review M8 (SC 2.4.1 Bypass Blocks): keyboard-walk.spec.ts already proves the
