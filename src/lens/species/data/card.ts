@@ -12,6 +12,7 @@
 //
 // Outbound links: WoRMS only, and only when `taxon_authority == "worms"` (a BirdLife `botw` id is
 // not an AphiaID and the link would 404).
+import { categoryLabel } from "../../../lib/ui/categories";
 import { datasetLabel, type DatasetIndex } from "./layerBar";
 import { MERGED_IN } from "./resolve";
 import { MERGED_DS_KEY, type TaxonCard } from "./shards";
@@ -110,7 +111,10 @@ export function speciesCard(card: TaxonCard, opts: CardOptions): SpeciesCard {
   const hasIucn = card.inputs.some((i) => i.dsKey === IUCN_DS_KEY);
   const facts: CardFact[] = [];
   if (card.common) facts.push({ label: "Common name", value: card.common });
-  facts.push({ label: "Category", value: card.spCat });
+  // P round V5 fix (Opus eyes-on: desktop-17/18 "Category: turtle"/"mammal" lowercase in the
+  // species lens sidebar) -- the DISPLAY value goes through categoryLabel(); card.spCat itself
+  // (used elsewhere for filtering/matching) stays the raw taxonomy string.
+  facts.push({ label: "Category", value: categoryLabel(card.spCat) });
   const esa = esaListing(card.esa?.code ?? null, card.esa?.source ?? null);
   if (esa) facts.push({ label: "ESA Listing", value: esa });
   if (card.rl) facts.push({ label: "IUCN RedList", value: card.rl });

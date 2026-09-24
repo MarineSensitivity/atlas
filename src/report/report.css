@@ -50,9 +50,46 @@ table {
    `overflow: visible` below) -- pagination, not a scroll container, is how a printed table too
    wide for one page is meant to read. */
 .table-scroll {
+  position: relative;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   margin-bottom: 0.5rem;
+}
+
+/* V5 fix (Opus eyes-on, 2026-09-24, phone-15/desktop-14): the species counts table hid 6 of its 8
+   extinction-risk columns inside this same `.table-scroll` box with NO cue that more existed, and
+   the cut happened to fall exactly on a column edge -- "Total 25 / 11" under a caption saying
+   "5,861 species" looked like a complete table, not a truncated one. `report/Report.svelte`'s
+   `scrollAffordance` action (`lib/ui/scrollAffordance.ts`) sets `data-scrollable` on a
+   `.table-scroll` from its real `scrollWidth`, so this fade -- and the text hint below -- appear
+   ONLY when there is genuinely more to scroll to, never as a false affordance on a table that
+   already fits. The fade is a fixed overlay pinned to the scrollport's own right edge (a sibling
+   of the scrolling content, not inside it), so it stays put as the table scrolls underneath it. */
+.table-scroll[data-scrollable="true"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1.75rem;
+  background: linear-gradient(to right, transparent, var(--surface-page, #f4f6f8));
+  pointer-events: none;
+}
+
+.scroll-hint {
+  display: none;
+  font-size: 0.8em;
+  color: var(--text-secondary, #55606f);
+  margin: -0.15rem 0 0.5rem;
+}
+
+/* the hint is prose clutter on a desktop-width report (a partially-cut header column is already
+   its own cue there, per the eyes-on review) -- narrow screens are where the cut column edge reads
+   as a complete table, so this is scoped to the same width `report.css`'s own phone fixes use. */
+@media (max-width: 480px) {
+  .table-scroll[data-scrollable="true"] + .scroll-hint {
+    display: block;
+  }
 }
 
 th,
@@ -413,6 +450,13 @@ figure {
   .table-scroll {
     overflow: visible;
     margin-bottom: 0;
+  }
+
+  /* V5 fix: the printed table is never clipped (overflow: visible above), so the on-screen-only
+     scroll fade/hint would be pure noise on a printed page. */
+  .table-scroll::after,
+  .scroll-hint {
+    display: none !important;
   }
 
   .disclosure-body[hidden] {

@@ -18,7 +18,9 @@ describe("the facts list", () => {
     expect(card.sci).toBe("Odobenus rosmarus");
     expect(card.facts).toEqual([
       { label: "Common name", value: "Walrus" },
-      { label: "Category", value: "mammal" },
+      // P round V5 fix: the facts list shows the DISPLAY category ("Mammal"), not the raw sp_cat
+      // string categoryLabel() cleans up (Opus eyes-on desktop-18: "Category: mammal" lowercase).
+      { label: "Category", value: "Mammal" },
       { label: "ESA Listing", value: "NMFS:LC" },
       { label: "IUCN RedList", value: "VU" },
       {
@@ -28,6 +30,11 @@ describe("the facts list", () => {
       },
       { label: "MMPA", value: "Protected (20)" },
     ]);
+  });
+
+  it("title-cases the Category fact for every sp_cat (Opus eyes-on desktop-17: 'Category: turtle')", () => {
+    const leatherback = speciesCard(CARDS.leatherback(), v9());
+    expect(leatherback.facts).toContainEqual({ label: "Category", value: "Turtle" });
   });
 
   it("MBTA appears for a bird, and a botw authority gets NO WoRMS link", () => {

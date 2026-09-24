@@ -80,6 +80,16 @@ export function utcStamp(now: Date): string {
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
 }
 
+/** sentence-cases a source common name for DISPLAY only (P round V5 fix, Opus eyes-on desktop-15:
+ * "lowercase 'great hammerhead shark' and 'sicklefin devil ray'" in the Top-20 table) -- first
+ * letter up, the rest untouched (never a per-word title-case, which would wrongly capitalize
+ * "hammerhead"/"shark"/"devil"/"ray"). `sp_common` itself, and every href built from `mdl_key`,
+ * stay the release's raw string; only the rendered table cell goes through this. */
+export function formatCommonName(name: string): string {
+  const trimmed = name.trim();
+  return trimmed ? trimmed[0].toUpperCase() + trimmed.slice(1) : trimmed;
+}
+
 /** `MarineSensitivity_{slug}_{ver}_{YYYY-MM-DD}` -- the export file stem (atlas-7 export 2). */
 export function slugify(s: string): string {
   return (

@@ -479,7 +479,9 @@ function describeMap(places: readonly ReportMapPlace[], domain: [number, number]
   const hi = sorted[0];
   const lo = sorted[sorted.length - 1];
   return (
-    `Map: ${places.length} place${places.length === 1 ? "" : "s"} coloured by mean score, ` +
+    // P round V5 fix (Opus eyes-on: phone-14's caption spelled "coloured", desktop-13's map intro
+    // spelled "colored", in the SAME report) -- American English throughout, matching the docs book.
+    `Map: ${places.length} place${places.length === 1 ? "" : "s"} colored by mean score, ` +
     `ramp ${formatScore0(domain[0])} to ${formatScore0(domain[1])} (red = high); ` +
     `highest ${hi.name} ${formatScore0(hi.score)}, lowest ${lo.name} ${formatScore0(lo.score)}.`
   );
@@ -487,7 +489,12 @@ function describeMap(places: readonly ReportMapPlace[], domain: [number, number]
 
 function describeCounts(name: string, counts: SpeciesCounts): string {
   const byTotal = [...counts.rows].sort((a, b) => b.total - a.total);
-  const top = byTotal.slice(0, 3).map((r) => `${r.category} ${formatCount(r.total)}`);
+  // P round V5 fix (Opus eyes-on: raw lowercase sp_cat leaking into report prose, same class of
+  // bug V2 fixed for the flower narrative) -- `r.category` is the raw sp_cat (er.ts's own comment:
+  // "categories.ts supplies the display label"); this sentence reads it through categoryLabel().
+  const top = byTotal
+    .slice(0, 3)
+    .map((r) => `${categoryLabel(r.category)} ${formatCount(r.total)}`);
   return (
     `${name}: ${formatCount(counts.nSpecies)} species across ${counts.rows.length} ` +
     `categor${counts.rows.length === 1 ? "y" : "ies"} and ${counts.columns.length} ` +

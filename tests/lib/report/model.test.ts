@@ -203,6 +203,40 @@ describe("intro and in-app links are RELATIVE (CLAUDE.md's relative-base rule)",
   });
 });
 
+describe(
+  "species counts summary -- Opus eyes-on desktop-17/18: 'Category: turtle'/'mammal' " +
+    "lowercase; describeCounts() has the same raw-sp_cat bug V2 fixed for the flower narrative",
+  () => {
+    it("names the largest category through categoryLabel(), not the raw sp_cat", () => {
+      const species = [
+        {
+          sp_cat: "turtle",
+          sp_common: "Leatherback",
+          sp_scientific: "Dermochelys coriacea",
+          taxon_id: "1",
+          taxon_authority: "worms",
+          er_code: "IUCN:CR",
+          er_score: 0.5,
+          is_mmpa: false,
+          is_mbta: false,
+          mdl_key: "ms_merge|WORMS:1",
+          area_km2: 1,
+          avg_suit: 0.5,
+          suit_er: 0.5,
+          suit_er_area: 0.5,
+          cat_suit_er_area: 0.5,
+          pct_cat: 1,
+        } as SpeciesRow,
+      ];
+      const m = build({
+        places: [{ place: SQUARE, token: "t", name: "My box", scores: null, species }],
+      });
+      expect(m.species[0].summary).toContain("Turtle 1");
+      expect(m.species[0].summary).not.toContain("turtle 1");
+    });
+  },
+);
+
 describe("parameters", () => {
   it("a custom place reports its vertex count, bbox, area, N cells and token", () => {
     const p = build().parameters[0];
@@ -289,6 +323,16 @@ describe("map", () => {
   it("the legend is the old report's own title", () => {
     expect(build().map.legendTitle).toBe("Mean score");
   });
+
+  it(
+    "the summary spells 'colored' (American), matching the static map narrative -- Opus eyes-on: " +
+      "the caption spelled 'coloured' while the desktop map intro spelled 'colored' in the same report",
+    () => {
+      expect(build().map.summary).toContain("colored by mean score");
+      expect(build().map.summary).not.toContain("coloured");
+      expect(build().map.narrative).toContain("colored by mean sensitivity score");
+    },
+  );
 });
 
 describe("flowers", () => {

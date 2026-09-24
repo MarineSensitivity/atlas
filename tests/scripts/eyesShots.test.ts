@@ -60,19 +60,81 @@ describe("scripts/eyes-shots.mjs: the third-pass fixes stay in place", () => {
     expect(src).toContain("Collapse to a pill");
   });
 
-  it("(d) the phone tap points sit higher in the map (away from the legend chip's band) than the old ones", () => {
-    // the phone branch's own three points -- x=75/60/90 are stable identifiers (unchanged by this
-    // fix), so matching on them pins the search to the RIGHT array without fragile line-slicing.
-    const m = src.match(/\[75,\s*(\d+)\][\s\S]{0,40}\[60,\s*(\d+)\][\s\S]{0,40}\[90,\s*(\d+)\]/);
-    expect(
-      m,
-      "could not find the phone tapScoredCell points [75,y]/[60,y]/[90,y] in the source",
-    ).not.toBeNull();
-    const ys = (m as RegExpMatchArray).slice(1).map(Number);
-    // the OLD points were 320/200/230 -- every new point must sit at or above the old MINIMUM (200),
-    // and the new set must not be identical to the old one.
-    for (const y of ys) expect(y).toBeLessThanOrEqual(200);
-    expect(ys).not.toEqual([320, 200, 230]);
+  // (d) V5 fix (2026-09-25): the third pass's fixed pixel points -- phone [75,y]/[60,y]/[90,y] AND
+  // the desktop (335,400)/(490,585)/(600,520) this same test block used to pin -- are GONE. Both
+  // viewports now tap via `screenPointFor`'s `map.project()`, so there is no longer a per-viewport
+  // pixel literal to assert on; the V5 describe block below covers the replacement directly.
+  it("keeps the documented CLI contract (ATLAS_URL, OUT, ONLY) unchanged", () => {
+    expect(src).toContain("process.env.ATLAS_URL");
+    expect(src).toContain("process.env.OUT");
+    expect(src).toContain("process.env.ONLY");
+    expect(src).toMatch(
+      /ATLAS_URL=http:\/\/localhost:\d+ OUT=\.tmp\/eyes \[ONLY=map,layers\] node scripts\/eyes-shots\.mjs/,
+    );
+  });
+});
+
+// P round V5 fix (Opus eyes-on review of 0.10.59, 2026-09-25): the third pass's FIXED desktop pixel
+// points ((335,400)/(490,585)/(600,520)) all sampled land for the current globe camera, so states
+// 06/07/09/10 silently shot the full study area on desktop and the "stop at first real popup" loop
+// (kept from the third pass) exited with no warning at all. A hand-picked pixel is only ever right
+// for ONE camera; this asserts the harness now taps by PROJECTING known real lon/lat points instead,
+// warns explicitly when every candidate misses, and marks the shot filename `-MISSED` when it does --
+// plus the new "programarea" state that makes Program Area name routing screenshot-able at all.
+describe("scripts/eyes-shots.mjs: the V5 fixes stay in place (fourth pass)", () => {
+  it("drops the old FIXED desktop pixel points entirely -- no more per-camera pixel guesses", () => {
+    expect(src).not.toContain("[335, 400]");
+    expect(src).not.toContain("[490, 585]");
+    expect(src).not.toContain("[600, 520]");
+  });
+
+  it("taps by PROJECTING known real-world scored lon/lat points, not a pixel literal", () => {
+    expect(src).toContain("KNOWN_SCORED_POINTS");
+    // the three points the brief names -- northern Gulf of Mexico, Gulf of Alaska, mid-Atlantic
+    // shelf -- as real lon/lat pairs, not screen pixels.
+    expect(src).toContain("-90.55");
+    expect(src).toContain("28.6");
+    expect(src).toMatch(/Gulf of Alaska/);
+    expect(src).toMatch(/mid-Atlantic shelf/);
+  });
+
+  it("projects with the live map's own map.project(), the same technique places.pick.spec.ts uses", () => {
+    // scoped to the FUNCTION BODY, not the file's prose -- the header comment names
+    // `window.__atlasMap`/`map.project()` too, so a fault that guts the function but leaves the
+    // comment untouched must still be caught (a check against the whole file's text is not one).
+    const start = src.indexOf("async function screenPointFor");
+    expect(start, "screenPointFor is not defined").toBeGreaterThanOrEqual(0);
+    const body = src.slice(start, src.indexOf("\n}\n", start));
+    expect(body).toContain("window.__atlasMap");
+    expect(body).toContain("map.project(");
+    // canvas-relative -> viewport-absolute, or every click lands offset from the intended cell.
+    expect(body).toContain("getBoundingClientRect()");
+  });
+
+  it("WARNs explicitly when every candidate point misses, rather than exiting silently", () => {
+    expect(src).toMatch(/log\(`WARN tapScoredCell: every candidate point missed/);
+  });
+
+  it("marks the shot filename with -MISSED when tapScoredCell found no scored cell", () => {
+    expect(src).toMatch(/const missed = hit \? "" : "-MISSED";/);
+    expect(src).toContain("06-flower-half${missed}");
+    expect(src).toContain("07-flower-petal${missed}");
+    expect(src).toContain("08-flower-full${missed}");
+    expect(src).toContain("09-table-half${missed}");
+    expect(src).toContain("10-table-full${missed}");
+  });
+
+  it("adds a 'programarea' state that selects a Program Area through the Scores-lens search field", () => {
+    expect(src).toContain('id: "programarea"');
+    expect(src).toContain("selectProgramArea");
+    expect(src).toContain("Search Program Areas or coordinates");
+    expect(src).toContain("Gulf of America");
+    // shoots BOTH the flower and the table for the selected Program Area, on both viewports (no
+    // `if (vp !== "phone") return` guard the way the phone-only "legend"/"more" states have).
+    const paState = src.slice(src.indexOf('id: "programarea"'));
+    expect(paState).toContain("Flower plot");
+    expect(paState).toContain("Table");
+    expect(paState).not.toMatch(/if \(vp !== "phone"\) return;/);
   });
 
   it("keeps the documented CLI contract (ATLAS_URL, OUT, ONLY) unchanged", () => {

@@ -558,6 +558,70 @@ test.describe("engine-backed paths (real DuckDB-WASM, real Parquet fixtures, fix
   });
 });
 
+test.describe(
+  "V5 fix: the species counts table gives a scroll cue when it genuinely overflows " +
+    "(Opus eyes-on, phone-15/desktop-14 -- the cut fell exactly on a column edge, so the table " +
+    "looked complete)",
+  () => {
+    test.use({ viewport: { width: 390, height: 844 } });
+
+    test("GAA's real 8-ER-category table shows the scroll hint, and every risk header still exists in the DOM", async ({
+      page,
+    }) => {
+      // GAA's zone_taxon rows (generate.sql) span all 8 `ER_CAT_ORDER` categories -- Category + 8 ER
+      // columns + Total = 10 columns, genuinely wider than 390px, the same shape a real release's
+      // counts table overflowed at (Opus eyes-on: "Total 25 / 11" under an 8-column header).
+      await gotoEngineReport(page, "z.pa.GAA");
+      await expect(page.locator(".progress-line").first()).toContainText("Done", {
+        timeout: ENGINE_DONE_TIMEOUT_MS,
+      });
+
+      const scroller = page
+        .locator(".table-scroll")
+        .filter({ has: page.locator("th", { hasText: "USA:EN" }) });
+      await expect(scroller).toHaveAttribute("data-scrollable", "true");
+
+      // every one of the 8 ER-category headers is present in the DOM (a scroll cue is meaningless if
+      // the columns it points at do not actually exist) -- accessible even though only some are
+      // within the visible 390px window, since aria-labelledby/the table's own markup never changes.
+      for (const col of [
+        "USA:EN(100)",
+        "USA:TN(50)",
+        "USA:LC(1)",
+        "IUCN:CR(50)",
+        "IUCN:EN(25)",
+        "IUCN:VU(5)",
+        "IUCN:NT(2)",
+        "other(1)",
+      ]) {
+        await expect(scroller.locator("th", { hasText: col })).toHaveCount(1);
+      }
+
+      // the hint text itself is on screen (not just present-but-hidden) at this narrow width.
+      const hint = page
+        .locator(".scroll-hint")
+        .filter({ hasText: "Scroll right for more columns" });
+      await expect(hint).toBeVisible();
+    });
+
+    test("a place with NO species (a zone key with no zone_taxon rows) shows no scroll hint at all", async ({
+      page,
+    }) => {
+      // Z3 (generate.sql's header: "Z3..Z20 do not carry real zone_taxon rows") never renders a
+      // counts table -- a genuine negative for the hint, not merely "we didn't check".
+      await gotoEngineReport(page, "z.pa.Z3");
+      await expect(page.locator(".progress-line").first()).toContainText("Done", {
+        timeout: ENGINE_DONE_TIMEOUT_MS,
+      });
+      await expect(page.getByText("No species found for this area.")).toBeVisible();
+      // scoped to the species section -- the Table of Scores above has its OWN, unconditional
+      // `.table-scroll` (a wide component table), which is not what this test is about.
+      await expect(page.locator(".species-section .table-scroll")).toHaveCount(0);
+      await expect(page.locator(".scroll-hint")).toHaveCount(0);
+    });
+  },
+);
+
 // =====================================================================================
 // fix round 1, item 2c: Chromium page.pdf() -> pdf-parse. Uses the blockWasm zone fixtures
 // (BOOT_V9/BOOT_V7): place labels and table row labels are the place NAMES, which need no
