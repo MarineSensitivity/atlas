@@ -14,6 +14,7 @@
   import Announcer from "../lib/ui/Announcer.svelte";
   import { announce } from "../lib/ui/announcer";
   import Legend from "../lib/ui/Legend.svelte";
+  import { categoryLabel } from "../lib/ui/categories";
   import { nextRovingIndex } from "../lib/ui/roving";
   import { agencyDisplayName, shouldShowSeal } from "../lib/ui/sealVisibility";
   import { createAnalytics } from "../lib/analytics/analytics";
@@ -644,14 +645,21 @@
                  for the live app, `src/lib/ui/flowerGeometry.ts`'s header), never a pie slice from
                  the true centre -- this file used to draw a hub circle of a hardcoded `r="24"` ON
                  TOP of full pie slices, which covered any component scoring <= 24 exactly the way
-                 the live app's own bug did. `opacity="0.5"` matches the ported app's own
-                 `geom_rect_interactive(..., alpha = 0.5)` (msens viz.R) --
-                 docs/parity/checklists/atlas-7-report.md:24. -->
+                 the live app's own bug did.
+                 P round V2 fix (Opus eyes-on, 2026-09-24, phone/desktop-14-report-scrolled):
+                 `opacity="0.5"` (the ported app's `geom_rect_interactive(..., alpha = 0.5)`,
+                 docs/parity/checklists/atlas-7-report.md:24) painted these petals visibly PALER than
+                 the full-opacity `.flower-legend .swatch` swatches a few lines below, which read the
+                 SAME `--cat-*` token at opacity 1 -- one document, two different renderings of the
+                 identical color. `Flower.svelte`'s own `.petal` rule already made this exact call for
+                 the live app ("full opacity: scripts/contrast.mjs measures each --cat-* token AS
+                 COMMITTED in tokens.css -- compositing at less than that would ship a color the gate
+                 never actually checked. Ship the measured color.") -- this file now follows the same
+                 rule, so the report's petals and its own legend agree. -->
             {#each f.geometry.petals as p (p.key)}
               <path
                 d={p.path}
                 style={`fill: var(${p.category.color})`}
-                opacity="0.5"
                 stroke="white"
                 stroke-width="1"
               >
@@ -700,7 +708,10 @@
           <th scope="col">Area</th>
           <th scope="col" class="num">N cells</th>
           {#each model.scores.components as c (c)}
-            <th scope="col" class="num">{c}</th>
+            <!-- P round V2 fix (Opus eyes-on: "the raw key 'primprod' appears" / "'primprod' header"):
+                 `c` stays the raw component key (row/cell matching, e.g. `cell.component`, keys on
+                 it below) -- only the DISPLAYED text goes through `categoryLabel()`. -->
+            <th scope="col" class="num">{categoryLabel(c)}</th>
           {/each}
           <th scope="col" class="num">Overall</th>
         </tr>
@@ -756,7 +767,10 @@
             <tbody>
               {#each species.counts.rows as row (row.category)}
                 <tr>
-                  <th scope="row">{row.category}</th>
+                  <!-- P round V2 fix: `row.category` is the raw `sp_cat` value ("mammal",
+                       "primprod") -- er.ts's own header says "categories.ts supplies the display
+                       label", which this call is. -->
+                  <th scope="row">{categoryLabel(row.category)}</th>
                   {#each row.counts as c, j (j)}
                     <td class="num">{formatCount(c)}</td>
                   {/each}

@@ -6,6 +6,21 @@
 // 2026-09-24 second pass (Opus review of the first set): welcome needs a BARE url (any query counts as a
 // deep link and suppresses the modal); the desktop maximize button is "Full screen"; one browser context
 // per state (the sheet detent persists in localStorage); the report opens in a NEW TAB; taps on ocean.
+// 2026-09-24 third pass (Opus review, "process" finding #5 -- 3 false results in the second-pass set):
+// (a) the flower-petal selector (`svg path` nth(3)) never hit a real petal -- petals are `path.petal`,
+// and a real petal can be a zero-score DEGENERATE path (`d=""`, flowerGeometry.ts) that a click cannot
+// land on, so the selector also skips those; the step now waits for the tap/hover label
+// (`.petal-label`) to actually appear before shooting, and WARNs (never throws) if it does not.
+// (b) "Loading species..." takes ~7s cold (real DuckDB-WASM query) -- the table step used to shoot 3-5s
+// in, catching the loading text mid-flight; it now waits (bounded 30s) for that text to clear AND a
+// real `.species-table` row to render, and WARNs rather than failing outright if neither happens in time
+// (a place with genuinely no species would otherwise hang the whole harness for 30s every run).
+// (c) Layers is the DEFAULT open tool at its DEFAULT "half" detent (Shell.svelte's `activeTool` state /
+// Sheet.svelte's `DEFAULT_SHEET_DETENT`), so 02 (map, no tool click) and 03 (layers, explicit click)
+// used to shoot the SAME panel state byte-for-byte -- 02 now collapses the sheet/panel first ("Collapse
+// to a peek" on phone, "Collapse to a pill" on desktop) so it shows a clean map, distinct from 03.
+// (d) the phone tap points sat low enough in the map area that a resulting popup could land partly under
+// the legend chip -- moved higher into the free map area, above the chip's own band.
 import { chromium } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 const BASE = process.env.ATLAS_URL ?? "http://localhost:4380/atlas";
@@ -51,14 +66,33 @@ async function sheet(page, name) {
     }
   }
 }
+// third pass (c): collapses the default-open Layers panel/sheet down to its smallest detent, so the
+// "map" state (02) shows a clean map instead of Layers at its default "half" detent -- byte-identical
+// to what "layers" (03) shoots on purpose. phone: "Collapse to a peek" (Sheet.svelte); desktop (R1
+// panel): "Collapse to a pill" (Panel.svelte). Best-effort: a release with no default tool open (none
+// today) simply finds neither button and leaves the map as-is.
+async function collapseSheet(page) {
+  for (const n of ["Collapse to a peek", "Collapse to a pill"]) {
+    const b = page.getByRole("button", { name: n, exact: true }).first();
+    if (await b.count()) {
+      await b.click({ timeout: 10_000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      return;
+    }
+  }
+}
 async function tapScoredCell(page, vp) {
-  // a point in the Gulf of Alaska / California Current after the padded first view; try a few
+  // a point in the Gulf of Alaska / California Current after the padded first view; try a few.
+  // third pass (d): the phone points sit HIGHER in the map's free area than before -- a point low in
+  // the map (closer to the bottom sheet's own band) put the resulting popup partly under the legend
+  // chip (Opus re-shot finding); these stay well above where either the chip or a peek-detent sheet
+  // sits.
   const pts =
     vp === "phone"
       ? [
-          [75, 320],
-          [60, 200],
-          [90, 230],
+          [75, 170],
+          [60, 140],
+          [90, 200],
         ]
       : [
           [335, 400],
@@ -68,6 +102,35 @@ async function tapScoredCell(page, vp) {
   for (const [x, y] of pts) {
     await page.mouse.click(x, y);
     await page.waitForTimeout(2500);
+  }
+}
+// third pass (b): "Loading species..." (TablePanel.svelte) takes ~7s on a cold DuckDB-WASM query --
+// waits (bounded, never longer than timeoutMs total) for that text to clear AND a real
+// `.species-table` row to render before the caller shoots, so the PNG shows the loaded table rather
+// than a mid-flight loading state. A place with genuinely no species (or a load slower than the
+// budget) never gets a data row -- this WARNs and returns rather than throwing, so the harness still
+// shoots SOMETHING and the orchestrator can see the warning in the log.
+async function waitForSpeciesLoaded(page, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  const loadingGone = await page
+    .getByText("Loading species…", { exact: true })
+    .first()
+    .waitFor({ state: "hidden", timeout: timeoutMs })
+    .then(() => true)
+    .catch(() => false);
+  const remaining = Math.max(0, deadline - Date.now());
+  const gotRow = await page
+    .locator(".species-table tbody tr")
+    .first()
+    .waitFor({ state: "visible", timeout: remaining })
+    .then(() => true)
+    .catch(() => false);
+  if (!loadingGone || !gotRow) {
+    log(
+      "WARN species table did not finish loading within",
+      timeoutMs,
+      `ms (loadingGone=${loadingGone}, gotRow=${gotRow})`,
+    );
   }
 }
 async function shot(page, vp, name) {
@@ -88,6 +151,9 @@ const STATES = [
     run: async (p, vp) => {
       await go(p, "?ver=v7&theme=dark");
       await explore(p);
+      // third pass (c): Layers is the default open tool at its default "half" detent -- without
+      // this, 02 shoots the identical panel state "layers" (03) shoots on purpose.
+      await collapseSheet(p);
       await shot(p, vp, "02-map");
     },
   },
@@ -124,9 +190,19 @@ const STATES = [
       await tapScoredCell(p, vp);
       await tool(p, "Flower plot");
       await shot(p, vp, "06-flower-half");
-      const petal = p.locator("svg path[role=button], svg [data-component], svg path").nth(3);
+      // third pass (a): petals are `path.petal` (Flower.svelte), never a bare `svg path` -- and a
+      // real petal can be a zero-score DEGENERATE path (`d=""`, flowerGeometry.ts) with no area to
+      // click, so this also skips those. Waits for the tap label (`.petal-label`) to actually show
+      // before shooting -- a click that lands on nothing must not silently "succeed".
+      const petal = p.locator('svg path.petal:not([d=""])').first();
       await petal.click({ timeout: 5000 }).catch(() => {});
-      await p.waitForTimeout(600);
+      const labelShown = await p
+        .locator(".petal-label")
+        .first()
+        .waitFor({ state: "visible", timeout: 5000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!labelShown) log("WARN flower petal tap produced no visible label");
       await shot(p, vp, "07-flower-petal");
       await sheet(p, "Full height");
       await shot(p, vp, "08-flower-full");
@@ -139,9 +215,12 @@ const STATES = [
       await explore(p);
       await tapScoredCell(p, vp);
       await tool(p, "Table");
+      // third pass (b): the per-cell species list takes ~7s cold -- wait for it rather than
+      // shooting mid-"Loading species…" (bounded; WARNs and shoots anyway if it never resolves).
+      await waitForSpeciesLoaded(p);
       await shot(p, vp, "09-table-half");
       await sheet(p, "Full height");
-      await p.waitForTimeout(1500);
+      await waitForSpeciesLoaded(p);
       await shot(p, vp, "10-table-full");
     },
   },

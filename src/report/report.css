@@ -224,6 +224,17 @@ figure {
   gap: 1.5rem;
 }
 
+/* P round V2 fix (Opus eyes-on, 2026-09-24, phone-14-report-scrolled: "the flower is left-aligned"):
+ * `figure.flower-panel` has no `text-align`, and an `<svg>` is `display: inline` by default -- so the
+ * fixed 200x200 flower sat flush at the LEFT edge of its figure instead of centred in it, most visible
+ * on a phone where one panel fills nearly the full content width. `display: block` + `margin: 0 auto`
+ * is the same fix `Flower.svelte`'s own `.flower-body { align-items: center }` makes for the live app's
+ * flower -- this is report.html's version of it. */
+.flower-panel svg {
+  display: block;
+  margin: 0 auto;
+}
+
 /* atlas-4 fix round 2 / docs/parity/checklists/atlas-7-report.md:24 ("legend beneath"): a printed
  * page and the exported docx/HTML snapshot show neither hover state nor JS, so the petals'
  * `<title>` tooltip is never reachable there -- this is the ONLY text equivalent for "which color
