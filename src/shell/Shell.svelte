@@ -443,9 +443,8 @@
     released?: string;
   }
   let earlyVersion = $state<string | null>(null);
-  // U6 (round 2): the Help menu's Docs link -- the same `https://marinesensitivity.org/docs/{ver}/`
-  // shape src/lib/report/model.ts's own `docsHref` already uses, keyed on THIS release.
-  const docsHref = $derived(`https://marinesensitivity.org/docs/${earlyVersion ?? "latest"}/`);
+  // P10: docsHref moved below `releaseRestricted` -- it now needs to know the release's access
+  // level, which that derived value (and `currentVersionRow`) computes.
   let boot = $state<unknown>(null);
   let manifest = $state<unknown>(null);
   let versions = $state<EarlyVersionRow[] | null>(null);
@@ -913,6 +912,28 @@
   // the same fail-closed rule that module's own `accessOf` follows.
   const currentVersionRow = $derived(versions?.find((v) => v.ver === earlyVersion) ?? null);
   const releaseRestricted = $derived(currentVersionRow?.access !== "public");
+
+  // P10: the Help menu's Docs link now points at THIS release's ATLAS CHAPTER of the docs book,
+  // not the book root -- Ben's Help > Docs on the live v7 app opened the book's Preface, not the
+  // Atlas guide he was looking for. `docs/apps/atlas.qmd` now exists and the docs CI publishes it
+  // per release as `apps/atlas.html` inside that release's own book directory: PUBLIC releases to
+  // `marinesensitivity.org/docs/{ver}/`, RESTRICTED ones only to the signed-in preview host (the
+  // `publish` job never stages a restricted book onto the public branch at all -- see
+  // `src/lib/release/docsUrl.ts`'s header). A release absent from `versions` (no matching row, or
+  // `earlyVersion` not yet resolved) falls back to the book's ROOT rather than guessing a
+  // `{ver}/apps/atlas.html` path that build may never have published.
+  //
+  // Structurally identical to `src/lib/release/docsUrl.ts`'s tested `atlasDocsUrl()` -- NOT
+  // imported from it: this file must never import src/lib/release (tests/shell/shell-invariants
+  // .test.ts's source-scan guard; see `releaseRestricted` just above for the same rule applied to
+  // access itself).
+  const docsHref = $derived(
+    !earlyVersion || !currentVersionRow
+      ? "https://marinesensitivity.org/docs/"
+      : releaseRestricted
+        ? `https://preview.marinesensitivity.org/docs/${earlyVersion}/apps/atlas.html`
+        : `https://marinesensitivity.org/docs/${earlyVersion}/apps/atlas.html`,
+  );
 
   // --- Deliverable 4: "Report a problem" -> a prefilled GitHub issue, zero backend --------------
   // `viewport` is the one field with no existing reactive source (unlike lens/ver/theme, all read

@@ -65,6 +65,17 @@ const FAULTS = [
       "than a minute, and the property under test is a pure function.",
     gate: ["npx", "vitest", "run", "tests/feedback/noHash.test.ts"],
   },
+  {
+    id: "docsurl-always-root",
+    patch: "tests/faults/docsurl-always-root.patch",
+    describe:
+      "atlasDocsUrl() reverts to unconditionally returning DOCS_ROOT (P10: Help > Docs used to " +
+      "open the book's Preface instead of the release's Atlas chapter) -- a pure function, so " +
+      "this is a plain vitest gate like rmod-guard-drop above; the real-browser property (the " +
+      "rendered Shell.svelte href) is covered separately by e2e/shell.chrome.spec.ts's " +
+      "'P10: Help > Docs' block, proven red-first by hand against the pre-fix Shell.svelte.",
+    gate: ["npx", "vitest", "run", "tests/release/docsUrl.test.ts"],
+  },
   // --- atlas-8 step 3: the two accessibility faults the plan's pyramid row names ------------------
   // These are the first PLAYWRIGHT gates in this manifest. They need a real browser against a real
   // build of the PATCHED tree, so each runs on its own `PW_PORT` (playwright.config.ts honours it
@@ -996,6 +1007,18 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4402" },
   },
+  // gallery axe ceilings round follow-up (CI run 35982505817): this gate originally drove
+  // e2e/gallery.spec.ts's real Playwright/axe render at 320 CSS px -- but "does the min-width:0
+  // fix keep .col from overflowing" bottoms out in FONT METRICS (whether `.cat-table-scroll`'s
+  // unbreakable `<code>` tokens are wide enough to push `.col` past 288px), and linux Chromium's
+  // `<code>` glyphs render narrower than macOS's. The fault stayed GREEN on the linux CI runner:
+  // dropping `min-width: 0` there never actually pushed `.col` past its section, so axe's
+  // color-contrast incomplete count never moved and the gate saw nothing wrong. `min-width: 0` is
+  // a CSS DECLARATION, not a pixel measurement, so the platform-independent form of this rule is
+  // a source-scan of it -- retargeted at tests/ui/categoriesOverflow.test.ts's own assertion
+  // (plain regex over the `.col` rule, comments stripped first so its OWN prose describing the
+  // fix can't false-match), which is deterministic on every platform because it never renders
+  // anything.
   {
     id: "gallery-categories-min-width-dropped",
     patch: "tests/faults/gallery-categories-min-width-dropped.patch",
@@ -1005,15 +1028,12 @@ const FAULTS = [
       "px with no per-section way to reach it (the gallery axe ceilings round's real bug, replayed)",
     gate: [
       "npx",
-      "playwright",
-      "test",
-      "--config=playwright.gallery.config.ts",
-      "e2e/gallery.spec.ts",
-      "-g",
-      "finding triaged, both themes, both widths.*phoneNarrow",
-      "--workers=1",
+      "vitest",
+      "run",
+      "tests/ui/categoriesOverflow.test.ts",
+      "-t",
+      "carries min-width: 0",
     ],
-    env: { PW_PORT: "4407" },
   },
 ];
 

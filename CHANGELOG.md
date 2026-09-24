@@ -1,3 +1,11 @@
+# atlas 0.10.50
+
+P10: Help ▸ Docs (desktop Help menu and the phone ⋯ menu) now opens the current release's **Atlas
+chapter** of the documentation book (`…/docs/{ver}/apps/atlas.html`), not the book's Preface. A
+restricted release's link now points at the signed-in preview host instead of the public book,
+which never publishes a restricted release's pages at all; an unresolved/unknown release falls back
+to the book's root rather than guessing a chapter path that may not exist.
+
 # atlas 0.10.48
 
 CI fix round (first completed three-engine run since the P round, 35971206753): two reds, one
