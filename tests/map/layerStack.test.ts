@@ -12,9 +12,74 @@ import {
   isLayerGroupId,
   moveLayerStackEntry,
   parseLayerStack,
+  scaleOpacity,
   type LayerStackEntry,
   type StyleLikeLayer,
 } from "../../src/lib/map/layerStack";
+
+// B1 (blocker, Opus 5.5 review): `applyLayerGroupStyling` used to REPLACE a layer's existing
+// opacity paint value with the stack's own opacity, instead of scaling it -- painting every zone's
+// invisible `fill-opacity: 0` query fill (B3, 0.10.26) visible at any dimmed opacity, collapsing a
+// per-cell `["get","opacity"]` selection expression to one flat number, and making the raster
+// non-monotonic (0.6 at 100% opacity, but 0.95 at a 95% SLIDER value). One fixture per shape
+// `scaleOpacity` must handle, per the review's own enumeration.
+describe("scaleOpacity (B1 fix)", () => {
+  it("k=1 is a pure no-op — returns the SAME reference, not just an equal value", () => {
+    const expr = ["interpolate", ["linear"], ["zoom"], 0, 0.2, 10, 0.8];
+    expect(scaleOpacity(undefined, 1)).toBeUndefined();
+    expect(scaleOpacity(0.6, 1)).toBe(0.6);
+    expect(scaleOpacity(expr, 1)).toBe(expr); // reference-equal
+  });
+
+  it("undefined (no existing opacity key) scales to exactly k — MapLibre's own default is 1", () => {
+    expect(scaleOpacity(undefined, 0.5)).toBe(0.5);
+    expect(scaleOpacity(undefined, 0.25)).toBe(0.25);
+  });
+
+  it("a plain number multiplies", () => {
+    expect(scaleOpacity(0.6, 0.25)).toBeCloseTo(0.15);
+    expect(scaleOpacity(0.9, 0.3)).toBeCloseTo(0.27);
+    expect(scaleOpacity(0, 0.5)).toBe(0); // B1's own query-fill regression: 0 x k stays 0
+  });
+
+  it("a {stops} legacy style function scales every stop's value, keeping the zoom breakpoints", () => {
+    expect(
+      scaleOpacity(
+        {
+          stops: [
+            [0, 0.2],
+            [10, 1],
+          ],
+        },
+        0.5,
+      ),
+    ).toEqual({
+      stops: [
+        [0, 0.1],
+        [10, 0.5],
+      ],
+    });
+  });
+
+  it("an interpolate expression scales every OUTPUT, leaving the interpolation/input/stops alone", () => {
+    const expr = ["interpolate", ["linear"], ["zoom"], 0, 0.2, 10, 0.8];
+    expect(scaleOpacity(expr, 0.5)).toEqual(["interpolate", ["linear"], ["zoom"], 0, 0.1, 10, 0.4]);
+  });
+
+  it("a step expression scales every output INCLUDING the base (output0), leaving stops alone", () => {
+    const expr = ["step", ["zoom"], 0.2, 5, 0.6, 10, 1];
+    expect(scaleOpacity(expr, 0.5)).toEqual(["step", ["zoom"], 0.1, 5, 0.3, 10, 0.5]);
+  });
+
+  it('any other expression is wrapped as ["*", existing, k] — MapLibre\'s own runtime multiply', () => {
+    expect(scaleOpacity(["get", "opacity"], 0.5)).toEqual(["*", ["get", "opacity"], 0.5]);
+    expect(scaleOpacity(["case", ["==", ["get", "x"], 1], 0.8, 0.2], 0.4)).toEqual([
+      "*",
+      ["case", ["==", ["get", "x"], 1], 0.8, 0.2],
+      0.4,
+    ]);
+  });
+});
 
 describe("defaultLayerStackEntries / isDefaultLayerStack", () => {
   it("every group appears exactly once, all visible at full opacity", () => {
@@ -149,12 +214,15 @@ describe("applyLayerGroupStyling", () => {
     });
   });
 
-  it("existing paint keys survive an opacity override (only the opacity key(s) are added/replaced)", () => {
+  // B1 fix (Opus 5.5 review): the group opacity SCALES the layer's own existing opacity key, it
+  // never REPLACES it — 0.9 (existing) x 0.3 (stack) = 0.27, never the bare 0.3 the old (replacing)
+  // behaviour produced. `fill-color` (a non-opacity key) survives untouched either way.
+  it("existing paint keys survive an opacity override, and the opacity key is SCALED, not replaced (0.9 x 0.3 = 0.27)", () => {
     const out = applyLayerGroupStyling(
       layer("fill", { paint: { "fill-color": "#112233", "fill-opacity": 0.9 } }),
       { visible: true, opacity: 0.3 },
     );
-    expect(out.paint).toEqual({ "fill-color": "#112233", "fill-opacity": 0.3 });
+    expect(out.paint).toEqual({ "fill-color": "#112233", "fill-opacity": 0.27 });
   });
 
   it("hidden AND dimmed: both applied together", () => {
@@ -243,12 +311,38 @@ describe("parseLayerStack / formatLayerStack (layers= round trip)", () => {
     expect(parsed.find((e) => e.id === "data-raster")?.opacity).toBe(0.5);
   });
 
-  it("a KNOWN group missing from the token is appended at its default relative position (forward-compat: an old link naming only some groups still names every group once a new one ships)", () => {
+  // M2 fix (Opus 5.5 review): a partial token used to bury its own named group at the very BOTTOM
+  // of the stack (array index 0), with every OTHER group appended ABOVE it -- so naming only
+  // `data-raster` put it UNDER every basemap group, including the opaque land fill, making the
+  // raster invisible. The fix inserts each missing id right after its own nearest earlier DEFAULT
+  // predecessor, so a partial token reconstructs the FULL default order around the one entry it
+  // customizes -- `data-raster` keeps its OWN default position (after all five basemap groups),
+  // not the front of the array.
+  it("a KNOWN group missing from the token is inserted at its OWN default relative position, not appended at the array's end", () => {
     const parsed = parseLayerStack("data-raster:o50")!;
-    expect(parsed[0]).toEqual({ id: "data-raster", visible: true, opacity: 0.5 });
-    // every OTHER group present, in DEFAULT_LAYER_STACK's own relative order
-    const rest = parsed.slice(1).map((e) => e.id);
-    expect(rest).toEqual(DEFAULT_LAYER_STACK.filter((id) => id !== "data-raster"));
+    expect(parsed.map((e) => e.id)).toEqual(DEFAULT_LAYER_STACK);
+    expect(parsed.find((e) => e.id === "data-raster")).toEqual({
+      id: "data-raster",
+      visible: true,
+      opacity: 0.5,
+    });
+  });
+
+  it("a partial token naming a LATE group still reconstructs every earlier default id in order", () => {
+    // only "data-places" is named -- every basemap group AND data-raster/data-zones must land
+    // BEFORE it, in their own default order, not all piled after it.
+    const parsed = parseLayerStack("data-places:h")!;
+    expect(parsed.map((e) => e.id)).toEqual(DEFAULT_LAYER_STACK);
+    expect(parsed.find((e) => e.id === "data-places")?.visible).toBe(false);
+  });
+
+  it("two non-adjacent named groups: the ones between them still land in default order", () => {
+    // basemap-land and data-zones named, in DEFAULT order already -- everything else (bathymetry,
+    // boundaries, roads, labels, data-raster, data-places) must reconstruct around them correctly.
+    const parsed = parseLayerStack("basemap-land:o80,data-zones:h")!;
+    expect(parsed.map((e) => e.id)).toEqual(DEFAULT_LAYER_STACK);
+    expect(parsed.find((e) => e.id === "basemap-land")?.opacity).toBe(0.8);
+    expect(parsed.find((e) => e.id === "data-zones")?.visible).toBe(false);
   });
 
   it("a garbage opacity flag is ignored (falls back to 1), never thrown", () => {
@@ -275,25 +369,24 @@ describe("parseLayerStack / formatLayerStack (layers= round trip)", () => {
 describe("moveLayerStackEntry", () => {
   const ids = (e: readonly LayerStackEntry[]) => e.map((x) => x.id);
 
-  it("moves one entry, leaving the rest in relative order", () => {
+  it("moves one (non-data-places) entry, leaving the rest in relative order", () => {
     const entries = defaultLayerStackEntries();
-    const moved = moveLayerStackEntry(entries, 7, 0); // data-places to the very bottom
+    const moved = moveLayerStackEntry(entries, 0, 4); // basemap-land above basemap-labels
     expect(ids(moved)).toEqual([
-      "data-places",
-      "basemap-land",
       "basemap-bathymetry",
       "basemap-boundaries",
       "basemap-roads",
       "basemap-labels",
+      "basemap-land",
       "data-raster",
       "data-zones",
+      "data-places",
     ]);
   });
 
   it("clamps an out-of-range destination instead of throwing", () => {
     const entries = defaultLayerStackEntries();
     expect(() => moveLayerStackEntry(entries, 0, 999)).not.toThrow();
-    expect(ids(moveLayerStackEntry(entries, 0, 999))[entries.length - 1]).toBe("basemap-land");
     expect(() => moveLayerStackEntry(entries, 0, -50)).not.toThrow();
     expect(ids(moveLayerStackEntry(entries, 0, -50))[0]).toBe("basemap-land");
   });
@@ -301,5 +394,47 @@ describe("moveLayerStackEntry", () => {
   it("an out-of-range `from` returns a copy, unchanged", () => {
     const entries = defaultLayerStackEntries();
     expect(moveLayerStackEntry(entries, 99, 0)).toEqual(entries);
+  });
+
+  // --- M7 fix (Opus 5.5 review): data-places pinned, data-raster<data-zones<data-places fixed ----
+
+  it("data-places can never be moved — any attempt to move IT returns entries unchanged", () => {
+    const entries = defaultLayerStackEntries();
+    const placesIdx = entries.findIndex((e) => e.id === "data-places");
+    expect(moveLayerStackEntry(entries, placesIdx, 0)).toEqual(entries);
+    expect(moveLayerStackEntry(entries, placesIdx, 3)).toEqual(entries);
+  });
+
+  it("nothing else can move TO OR PAST data-places' own position — it stays topmost", () => {
+    const entries = defaultLayerStackEntries();
+    // try to move basemap-land (index 0) all the way to the top (past data-places) --
+    // clamped to just BELOW data-places, never past it.
+    const moved = moveLayerStackEntry(entries, 0, 999);
+    expect(ids(moved)[ids(moved).length - 1]).toBe("data-places");
+    expect(ids(moved)[ids(moved).length - 2]).toBe("basemap-land");
+  });
+
+  it("a move that would invert data-raster/data-zones' relative order is rejected outright", () => {
+    const entries = defaultLayerStackEntries();
+    const zonesIdx = entries.findIndex((e) => e.id === "data-zones");
+    const rasterIdx = entries.findIndex((e) => e.id === "data-raster");
+    // move data-zones to BEFORE data-raster's own position -- would invert the fixed pair.
+    expect(moveLayerStackEntry(entries, zonesIdx, rasterIdx - 1)).toEqual(entries);
+  });
+
+  it("basemap groups can still move freely relative to data-raster/data-zones (only DATA-vs-DATA is fixed)", () => {
+    const entries = defaultLayerStackEntries();
+    // basemap-labels (index 4) above data-raster (index 5) -- Ben's own example move, still legal.
+    const moved = moveLayerStackEntry(entries, 4, 5);
+    expect(ids(moved)).toEqual([
+      "basemap-land",
+      "basemap-bathymetry",
+      "basemap-boundaries",
+      "basemap-roads",
+      "data-raster",
+      "basemap-labels",
+      "data-zones",
+      "data-places",
+    ]);
   });
 });

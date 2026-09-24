@@ -63,7 +63,13 @@ export const LAYER_GROUP_LABEL: Record<LayerGroupId, string> = {
   "basemap-roads": "Roads & buildings",
   "basemap-labels": "Place labels",
   "data-raster": "Data",
-  "data-zones": "Program Areas",
+  // "Zone outlines," not "Program Areas" (M5 fix, Opus 5.5 review): a REAL choropleth (computed
+  // values) now classifies as role "choropleth" -> group `data-raster` (`style.ts`'s own M5
+  // comment) — this group only ever holds the OUTLINE (`zone-line`) + the invisible B3 query-fill
+  // placeholder + the zone name labels, never the visible data itself, so a label naming the one
+  // release-specific unit ("Program Areas") would be wrong the moment a release publishes a
+  // DIFFERENT outline-only unit.
+  "data-zones": "Zone outlines",
   // "Selection", never a label containing the word "Places" -- the tool rail already has a
   // button named exactly "Places" (`src/shell/tools.ts`), and this row's own move buttons carry
   // its label INSIDE their aria-label ("Move {label} up/down…"); a label containing "Places" made
@@ -196,6 +202,82 @@ export interface StyleLikeLayer {
   paint?: unknown;
 }
 
+/** a legacy MapLibre/Mapbox "stops" style FUNCTION: `{stops: [[zoom, value], ...], base?}`. */
+interface StopsFunction {
+  stops: Array<[number, unknown]>;
+  [key: string]: unknown;
+}
+
+function isStopsFunction(v: unknown): v is StopsFunction {
+  return (
+    !!v && typeof v === "object" && !Array.isArray(v) && Array.isArray((v as StopsFunction).stops)
+  );
+}
+
+function isExpression(v: unknown): v is [string, ...unknown[]] {
+  return Array.isArray(v) && v.length > 0 && typeof v[0] === "string";
+}
+
+/**
+ * Multiplies an existing opacity-like paint value by `k` — **B1 fix (Opus 5.5 review)**: the
+ * group's opacity slider SCALES whatever the layer already had, it never REPLACES it. Before this
+ * fix, dimming "Program Areas" to k painted every Program Area a near-black `QUERY_FILL_COLOR` at
+ * opacity k (every zone unit carries an invisible query fill at `fill-opacity: 0`, B3 0.10.26 —
+ * replacing 0 with k makes it visible); the score raster read 0.6 at 100% opacity but 0.95 (its
+ * OWN default) at a 95%-opacity slider, non-monotonic; the selection ring's per-cell `["get","opacity"]` expression
+ * (places/cellSquares.ts) was overwritten outright; every CARTO zoom-`interpolate` opacity was
+ * flattened to a constant. `k=1` is a pure no-op: returns `existing` UNCHANGED (not even a
+ * same-value copy), so `applyLayerGroupStyling`'s own "opacity 1 never touches paint" guarantee
+ * survives calling this directly too.
+ *
+ * - `existing === undefined` -> `k` (a paint property with no entry defaults to MapLibre's own 1,
+ *   so "no existing opacity key" scales to exactly `k`).
+ * - a plain `number` -> `existing * k`.
+ * - a `{stops: [[zoom, value], ...]}` legacy style FUNCTION -> every stop's value ×k (recursively,
+ *   so a stop value that is itself an expression is still handled), `base`/other keys kept as-is.
+ * - a zoom `interpolate`/`step` EXPRESSION -> every OUTPUT value ×k, the stops/input untouched.
+ * - anything else (`["get", ...]`, `["case", ...]`, `["match", ...]`, …) -> wrapped as
+ *   `["*", existing, k]`, MapLibre's own runtime multiplication — never guessed apart.
+ */
+export function scaleOpacity(existing: unknown, k: number): unknown {
+  if (k === 1) return existing;
+  if (existing === undefined) return k;
+  if (typeof existing === "number") return existing * k;
+  if (isStopsFunction(existing)) {
+    return {
+      ...existing,
+      stops: existing.stops.map(
+        ([zoom, value]) => [zoom, scaleOpacity(value, k)] as [number, unknown],
+      ),
+    };
+  }
+  if (isExpression(existing)) {
+    const [op, ...args] = existing;
+    if (op === "interpolate" && args.length >= 2) {
+      // ["interpolate", interpolation, input, stop1, output1, stop2, output2, ...]
+      const [interpolation, input, ...pairs] = args;
+      const scaledPairs: unknown[] = [];
+      for (let i = 0; i < pairs.length; i += 2) {
+        scaledPairs.push(pairs[i], scaleOpacity(pairs[i + 1], k));
+      }
+      return ["interpolate", interpolation, input, ...scaledPairs];
+    }
+    if (op === "step" && args.length >= 1) {
+      // ["step", input, output0, stop1, output1, stop2, output2, ...]
+      const [input, output0, ...pairs] = args;
+      const scaledPairs: unknown[] = [scaleOpacity(output0, k)];
+      for (let i = 0; i < pairs.length; i += 2) {
+        scaledPairs.push(pairs[i], scaleOpacity(pairs[i + 1], k));
+      }
+      return ["step", input, ...scaledPairs];
+    }
+    return ["*", existing, k];
+  }
+  // an unrecognized shape (should not happen for a real opacity paint value) -- wrap defensively,
+  // the same fallback every other expression case uses, rather than silently dropping the scale.
+  return ["*", existing, k];
+}
+
 /**
  * Applies one stack entry's `visible`/`opacity` onto one already-built layer — never by removing it
  * or by calling `setLayoutProperty` after the fact (CLAUDE.md: "one composed style"; the SAME
@@ -203,10 +285,11 @@ export interface StyleLikeLayer {
  * returns a new object, never mutates `layer`.
  *
  * `entry.visible === false` sets `layout.visibility: "none"` regardless of type (every MapLibre
- * layer type honours it). `entry.opacity !== 1` overrides that type's opacity paint key(s) — a type
- * this table does not name (there is none among what this app composes today) is left untouched
- * rather than throwing: an opacity slider that silently does nothing for a layer type nobody has
- * added yet is a smaller failure than a group row that crashes the map.
+ * layer type honours it). `entry.opacity !== 1` SCALES (`scaleOpacity`, B1 fix — never replaces)
+ * that type's opacity paint key(s) — a type this table does not name (there is none among what this
+ * app composes today) is left untouched rather than throwing: an opacity slider that silently does
+ * nothing for a layer type nobody has added yet is a smaller failure than a group row that crashes
+ * the map.
  */
 export function applyLayerGroupStyling<L extends StyleLikeLayer>(
   layer: L,
@@ -225,7 +308,7 @@ export function applyLayerGroupStyling<L extends StyleLikeLayer>(
       const paint: Record<string, unknown> = {
         ...(out.paint as Record<string, unknown> | undefined),
       };
-      for (const k of keys) paint[k] = entry.opacity;
+      for (const k of keys) paint[k] = scaleOpacity(paint[k], entry.opacity);
       out = { ...out, paint };
     }
   }
@@ -266,10 +349,19 @@ function parseOneToken(token: string): { id: string; visible: boolean; opacity: 
 
 /**
  * `layers=` -> `LayerStackEntry[]`, or `null` (the default stack) for an absent/empty/fully-default
- * value. Never throws: an unknown group id is dropped, a KNOWN group missing from the token is
- * appended at the end in `DEFAULT_LAYER_STACK`'s own relative order among the missing ones (so a
- * link written before a new group existed still names every group once that group ships), and a
- * garbage flag is ignored on that one entry rather than failing the whole parse.
+ * value. Never throws: an unknown group id is dropped, and a garbage flag is ignored on that one
+ * entry rather than failing the whole parse.
+ *
+ * **M2 fix (Opus 5.5 review)**: a KNOWN group missing from the token is inserted right after the
+ * NEAREST EARLIER `DEFAULT_LAYER_STACK` id that IS present in the token — never appended at the
+ * array's end (the TOP of the stack), which used to bury a partial token's own data under an opaque
+ * land fill: `?layers=data-raster:o50` named only the raster, and every OTHER group (including
+ * every basemap one) landed ABOVE it, making the raster invisible. Walking `DEFAULT_LAYER_STACK` in
+ * order and inserting each missing id right after whichever of its own default PREDECESSORS already
+ * landed in `out` reconstructs the token's intended position for it — a link naming only one group
+ * still gets every other group in ITS OWN default relative position, forward-compatible with a
+ * future group the same way (an id later than everything named still lands at the default's own
+ * tail, exactly as before).
  */
 export function parseLayerStack(v: string | null): LayerStackEntry[] | null {
   if (v === null || v.trim() === "") return null;
@@ -282,7 +374,18 @@ export function parseLayerStack(v: string | null): LayerStackEntry[] | null {
     out.push({ id: parsed.id, visible: parsed.visible, opacity: parsed.opacity });
   }
   for (const id of DEFAULT_LAYER_STACK) {
-    if (!seen.has(id)) out.push({ id, visible: true, opacity: 1 });
+    if (seen.has(id)) continue;
+    const defaultIdx = DEFAULT_LAYER_STACK.indexOf(id);
+    let insertAt = 0;
+    for (let i = defaultIdx - 1; i >= 0; i--) {
+      const pos = out.findIndex((e) => e.id === DEFAULT_LAYER_STACK[i]);
+      if (pos !== -1) {
+        insertAt = pos + 1;
+        break;
+      }
+    }
+    out.splice(insertAt, 0, { id, visible: true, opacity: 1 });
+    seen.add(id);
   }
   if (out.length === 0) return null;
   return isDefaultLayerStack(out) ? null : out;
@@ -310,17 +413,45 @@ export function formatLayerStack(
 
 // --- reordering (the panel's ▲▼ / drag) -----------------------------------------------------------
 
+/** the three DATA groups' own fixed relative order — see `moveLayerStackEntry`'s header (M7). */
+const DATA_RELATIVE_ORDER: readonly DataGroupId[] = ["data-raster", "data-zones", "data-places"];
+
 /** move the entry at `from` to `to` (clamped), returning a NEW array — the panel's ▲/▼ buttons and
- * drag-reorder both funnel through this one function, so there is exactly one reorder rule to test. */
+ * drag-reorder both funnel through this one function, so there is exactly one reorder rule to test.
+ *
+ * **M7 fix (Opus 5.5 review)**: the three DATA groups keep a FIXED relative order
+ * (`data-raster < data-zones < data-places`) no matter what `from`/`to` asks for — before this fix,
+ * "Selection" (`data-places`) could end up BELOW a basemap group (e.g. "Land & water"), breaking
+ * the exact property R3 exists to guarantee: "the selection ring is never hidden by the layer it
+ * selects" (`style.ts#LAYER_ORDER`'s own header). `data-places` is additionally PINNED: it can
+ * never be `from` (an attempt to move IT returns `entries` unchanged) and nothing else can move to
+ * or past its own position (so it stays the topmost entry structurally, not merely by convention).
+ * Basemap groups, and `data-raster`/`data-zones` relative to basemap groups, still move freely —
+ * only the DATA-vs-DATA relative order is fixed. An attempted move that would invert
+ * `data-raster`/`data-zones` anyway (both still strictly below `data-places`) is rejected outright
+ * (returns `entries` unchanged) rather than silently clamped to some other position — a caller
+ * (the panel) is expected to disable the button that would produce it in the first place.
+ */
 export function moveLayerStackEntry(
   entries: readonly LayerStackEntry[],
   from: number,
   to: number,
 ): LayerStackEntry[] {
   if (from < 0 || from >= entries.length) return [...entries];
-  const clampedTo = Math.min(Math.max(to, 0), entries.length - 1);
+  if (entries[from].id === "data-places") return [...entries]; // pinned — never moves
+  const placesIdx = entries.findIndex((e) => e.id === "data-places");
+  // never move AT OR PAST data-places' own position -- it stays the topmost entry.
+  const maxTo = placesIdx === -1 ? entries.length - 1 : placesIdx - 1;
+  const clampedTo = Math.min(Math.max(to, 0), Math.min(entries.length - 1, maxTo));
   const out = [...entries];
   const [moved] = out.splice(from, 1);
   out.splice(clampedTo, 0, moved);
+  // reject a move that inverts data-raster/data-zones' own relative order (the one pair the
+  // data-places pin above does not already rule out).
+  const wantOrder = DATA_RELATIVE_ORDER.filter((id) => out.some((e) => e.id === id));
+  const gotOrder = out
+    .map((e) => e.id)
+    .filter((id): id is DataGroupId => (DATA_RELATIVE_ORDER as readonly string[]).includes(id));
+  if (gotOrder.join(",") !== wantOrder.join(",")) return [...entries];
   return out;
 }

@@ -305,6 +305,41 @@ function zoneVectorProbe() {
   };
 }
 
+// M3 (Opus 5.5 review): "the Program Areas eye is proven only at the panel-click e2e level, not in
+// the state matrix" -- `data-zones:h` used to assert only that the RASTER still painted
+// (`scoresRasterProbe()`), never that hiding the group actually zeroed the zone outline's rendered
+// features. `layout.visibility: "none"` (CLAUDE.md: never removed, so the layer/source still exist
+// and `zoneFeatureCount` never reads a false `-1`) is the whole point of B1/M3 -- this asserts the
+// COUNT, not just "the map still shows something."
+function zoneHiddenProbe(layerId = "programarea_ln") {
+  return async (page) => {
+    await page
+      .waitForFunction(() => !!window.__atlasMap?.handle.map.getLayer("r_lyr"), undefined, {
+        timeout: 15_000,
+      })
+      .catch(() => {});
+    let count = -1;
+    for (let i = 0; i < 10; i++) {
+      count = await zoneFeatureCount(page, "programarea_src", layerId);
+      if (count === 0) break;
+      await page.waitForTimeout(300);
+    }
+    return count === 0
+      ? []
+      : [`${layerId} expected HIDDEN (data-zones:h) but rendered ${count} feature(s)`];
+  };
+}
+
+/** runs several `assert` probes and concatenates their problems -- for a state that must satisfy
+ * more than one independent property (e.g. "the raster still paints" AND "the zones are hidden"). */
+function combinedProbe(...probes) {
+  return async (page) => {
+    const problems = [];
+    for (const probe of probes) problems.push(...(await probe(page)));
+    return problems;
+  };
+}
+
 // ---- M6 (atlas-8 review round 2): the 22 layout-only states get real assertions -----------------
 // `verify.mjs` used to check LAYOUT for 22 states (17 species, 3 shell, 2 `scores sel=cell:*`) and
 // nothing else -- a 404'd species raster, an empty selection layer, or a `sel=zone:*` state that
@@ -634,11 +669,14 @@ const SCORES_STATES = [
   // colour-affecting group): `scoresRasterProbe()`'s expected blend assumes the DEFAULT basemap/
   // raster colours, so a state that also dimmed a colour group would need its own bespoke expected
   // blend -- out of scope for "one state added to the matrix," not a limitation of the stack itself.
+  // M3 fix (Opus 5.5 review): `combinedProbe` also asserts `zoneFeatureCount === 0` for
+  // `programarea_ln` -- the raster painting normally is necessary but not SUFFICIENT proof that the
+  // eye actually hid the zone outline.
   {
     name: "scores layers=data-zones:h (Program Areas hidden)",
     kind: "scores",
     path: "/?layers=basemap-land,basemap-bathymetry,basemap-boundaries,basemap-roads,basemap-labels,data-raster,data-zones:h,data-places",
-    assert: scoresRasterProbe(),
+    assert: combinedProbe(scoresRasterProbe(), zoneHiddenProbe()),
   },
 ];
 

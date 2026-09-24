@@ -121,6 +121,13 @@ export const LAYER_ORDER = [
   "raster",
   "range",
   "overlay",
+  // M5 fix (Opus 5.5 review): a zone's CHOROPLETH fill (real computed values, `zoneFillLayer(u)`
+  // when `u.fill.stops.length > 0`) belongs to `data-raster` ("the lens's data"), not `data-zones`
+  // (the outline) — in zone/choropleth mode (`unit=programarea`) the raster is `null` and the
+  // choropleth IS the visible data the "Data" row's eye/opacity must control, exactly like the
+  // raster does in cell mode. The invisible B3 query-fill placeholder (`stops: []`, every unit
+  // always carries one for pick-mode) stays `zone-fill`/`data-zones` — it is not real data.
+  "choropleth",
   "zone-fill",
   "zone-line",
   "zone-label",
@@ -148,6 +155,7 @@ const ROLE_GROUP: Partial<Record<LayerRole, LayerGroupId>> = {
   raster: "data-raster",
   range: "data-raster",
   overlay: "data-raster",
+  choropleth: "data-raster",
   "zone-fill": "data-zones",
   "zone-line": "data-zones",
   "zone-label": "data-zones",
@@ -164,18 +172,54 @@ const GROUP_ROLES: Record<LayerGroupId, readonly LayerRole[]> = {
   "basemap-boundaries": ["basemap-boundaries"],
   "basemap-roads": ["basemap-roads"],
   "basemap-labels": ["basemap-labels"],
-  "data-raster": ["raster", "range", "overlay"],
+  "data-raster": ["raster", "range", "overlay", "choropleth"],
   "data-zones": ["zone-fill", "zone-line", "zone-label"],
   "data-places": ["selection-fill", "selection-line"],
 };
 
 /**
- * Expands a group-level stack order into the flat `LayerRole` order `orderLayers()` ranks against —
- * `"background"` is always first, unconditionally (it is not part of the user-facing stack: the
+ * Expands a group-level stack order into the `LayerRole` -> rank map `orderLayers()` sorts against.
+ * `"background"` is always rank 0, unconditionally (it is not part of the user-facing stack: the
  * theme's flat fallback colour must always be the bottom of everything, stack or no stack).
+ *
+ * **M1 fix (Opus 5.5 review)**: a contiguous RUN of adjacent basemap groups shares ONE rank, not
+ * one rank per group. Before this fix, every CARTO layer classified as "basemap-land" sorted
+ * before every layer classified "basemap-boundaries" — full stop — even though CARTO's OWN
+ * dark-matter/positron style.json interleaves them (`water`/`water_shadow` UNDER
+ * `boundary_county`/`boundary_state`, country boundaries under roads/buildings; verified live
+ * against both real styles). A stable sort by (rank, ORIGINAL CARTO INDEX) inside one shared-rank
+ * run reproduces CARTO's own order regardless of which of the 5 sub-roles each layer classified
+ * into — `composeStyle()`'s merge loop pushes CARTO layers in their own style.json order, so
+ * "same rank" IS "sort by original index only" for every layer in that run.
+ *
+ * This has a documented, DELIBERATE consequence: **basemap rows only move relative to a DATA
+ * row.** Moving one basemap group past another basemap group that stays adjacent to it (e.g.
+ * "Roads" above "Land & water," both still under "Data") is a no-op — they still share one run and
+ * still resolve to CARTO's own order. A basemap group only visibly moves when a DATA row is
+ * interposed on one side or the other of it, splitting the run (Ben's own example — "Place labels"
+ * above "Data" — does exactly this: it separates "Place labels" from the other four basemap groups,
+ * so it gets its OWN rank instead of sharing theirs).
  */
-export function rankForStack(stack: readonly LayerGroupId[] = DEFAULT_LAYER_STACK): LayerRole[] {
-  return ["background", ...stack.flatMap((g) => GROUP_ROLES[g] ?? [])];
+export function rankForStack(
+  stack: readonly LayerGroupId[] = DEFAULT_LAYER_STACK,
+): Map<LayerRole, number> {
+  const rank = new Map<LayerRole, number>();
+  rank.set("background", 0);
+  let next = 1;
+  let i = 0;
+  while (i < stack.length) {
+    if (stack[i].startsWith("basemap-")) {
+      const runRank = next++;
+      while (i < stack.length && stack[i].startsWith("basemap-")) {
+        for (const role of GROUP_ROLES[stack[i]] ?? []) rank.set(role, runRank);
+        i++;
+      }
+    } else {
+      for (const role of GROUP_ROLES[stack[i]] ?? []) rank.set(role, next++);
+      i++;
+    }
+  }
+  return rank;
 }
 
 /** the selection highlight's colour (atlas-4 §6.6/§7.1-7.3), from the module's one colour file. */
@@ -211,26 +255,27 @@ export interface ComposeStyleInput {
 }
 
 /**
- * Sort tagged layers into `order` (default: {@link LAYER_ORDER}), stably within a role (so two
- * units' outlines keep boot's own order: Program Areas first, then finest first).
+ * Sort tagged layers into `rank` (default: {@link rankForStack} of the default stack), stably
+ * within a rank (so two units' outlines keep boot's own order: Program Areas first, then finest
+ * first — and so a shared-rank basemap RUN, M1, sorts by original CARTO index).
  *
- * @throws if a layer carries a role `order` does not name — the seeded fault for "a layer order
+ * @throws if a layer carries a role `rank` does not name — the seeded fault for "a layer order
  * that would cascade" (originally about the fixed `LAYER_ORDER` table; R3 generalizes it to any
- * order a `layerStack` input expands to, via {@link rankForStack} — a group id that is not a real
+ * rank a `layerStack` input expands to, via {@link rankForStack} — a group id that is not a real
  * `LayerGroupId` expands to nothing, so a layer tagged with the role that WOULD have named it still
  * throws here, never silently vanishing). Silently appending an unknown role would reintroduce
  * exactly the failure this table exists to prevent.
  */
 export function orderLayers(
   roled: readonly RoledLayer[],
-  order: readonly LayerRole[] = LAYER_ORDER,
+  rank: ReadonlyMap<LayerRole, number> = rankForStack(),
 ): LayerSpecification[] {
-  const rank = new Map<string, number>(order.map((r, i) => [r, i]));
   for (const { role, layer } of roled) {
     if (!rank.has(role)) {
       throw new Error(
         `map/style: layer "${layer.id}" has role "${role}", which is not in the declared stack ` +
-          `order (${order.join(", ")}) — add it to LAYER_ORDER/layerStack.ts, never append it blindly`,
+          `order (${[...rank.keys()].join(", ")}) — add it to LAYER_ORDER/layerStack.ts, never ` +
+          `append it blindly`,
       );
     }
   }
@@ -350,7 +395,14 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
   Object.assign(sources, zoneSources(zones));
   for (const u of zones) {
     const fill = zoneFillLayer(u);
-    if (fill) roled.push({ role: "zone-fill", layer: fill });
+    // M5 fix: a REAL choropleth (computed values, `stops.length > 0`) is "the lens's data," role
+    // "choropleth" (group `data-raster`) — the invisible B3 query-fill placeholder every unit
+    // always carries (`stops: []`, pick-mode's own interior hit-test) stays "zone-fill"
+    // (`data-zones`, the outline group), since it is not real data a viewer would dim/hide.
+    if (fill) {
+      const role = (u.fill?.stops.length ?? 0) > 0 ? "choropleth" : "zone-fill";
+      roled.push({ role, layer: fill });
+    }
     roled.push({ role: "zone-line", layer: zoneLineLayer(u) });
   }
   for (const u of zones) {

@@ -21,10 +21,11 @@ import {
   mergeCartoStyle,
   orderLayers,
   rankForStack,
+  type LayerRole,
   type RoledLayer,
 } from "../../src/lib/map/style";
 import type { CartoStyleLike } from "../../src/lib/map/layers/basemap";
-import { zoneUnitsWithOutline } from "../../src/lib/map/layers/zones";
+import { zoneUnitsFromBoot, zoneUnitsWithOutline } from "../../src/lib/map/layers/zones";
 import {
   OUTSIDE_PRA_COLORMAP,
   titilerMaskTileTemplate,
@@ -569,6 +570,52 @@ describe("composeStyle + layerStack (R3: the layer stack model)", () => {
     ],
   };
 
+  // M1 fix (Opus 5.5 review): CARTO's OWN dark-matter/positron style.json interleaves its layer
+  // TYPES (a boundary line sits between two land/water fills, a country boundary sits between a
+  // road layer and a label layer) rather than grouping them by our 5 sub-roles — verified live
+  // against both real styles (dark-matter: water/water_shadow under boundary_county/boundary_state
+  // and country boundaries under roads; positron: waterway_label over tunnels). A bucketed sort
+  // (one rank per SUB-ROLE) would hoist every "land" layer before every "boundaries" layer
+  // regardless of this real interleaving; the shared-run rank (`rankForStack`) instead reproduces
+  // CARTO's own order exactly, because every layer in one contiguous basemap run shares ONE rank
+  // and the stable sort falls through to original insertion index — this fixture is the review's
+  // own literal example.
+  it("M1: a real CARTO-shaped interleaving is UNCHANGED, with or without an explicit default layerStack", () => {
+    const cartoInterleaved: CartoStyleLike = {
+      sources: { carto: { type: "vector", url: "https://tiles.example/tiles.json" } },
+      layers: [
+        { id: "background", type: "background", paint: {} },
+        { id: "boundary_state", type: "line", source: "carto", "source-layer": "boundary" },
+        { id: "water", type: "fill", source: "carto", "source-layer": "water" },
+        { id: "road", type: "line", source: "carto", "source-layer": "road" },
+        { id: "boundary_country", type: "line", source: "carto", "source-layer": "boundary" },
+        { id: "place_label", type: "symbol", source: "carto", "source-layer": "place" },
+      ],
+    };
+    // OUR own synthetic "background" layer is always first, unconditionally; then every CARTO
+    // layer in EXACTLY its own original order (the review's own fixture) — never regrouped by
+    // sub-role.
+    const expected = [
+      "background",
+      `${BASEMAP_LAYER_PREFIX}background`,
+      `${BASEMAP_LAYER_PREFIX}boundary_state`,
+      `${BASEMAP_LAYER_PREFIX}water`,
+      `${BASEMAP_LAYER_PREFIX}road`,
+      `${BASEMAP_LAYER_PREFIX}boundary_country`,
+      `${BASEMAP_LAYER_PREFIX}place_label`,
+    ];
+
+    const withoutStack = composeStyle({ theme: "navy", basemapStyle: cartoInterleaved });
+    expect(withoutStack.layers.map((l) => l.id)).toEqual(expected);
+
+    const withDefaultStack = composeStyle({
+      theme: "navy",
+      basemapStyle: cartoInterleaved,
+      layerStack: defaultLayerStackEntries(),
+    });
+    expect(withDefaultStack.layers.map((l) => l.id)).toEqual(expected);
+  });
+
   it("no `layerStack` input: byte-identical to the pre-R3 default (backward compatible)", () => {
     const withDefault = composeStyle({
       theme: "navy",
@@ -624,16 +671,26 @@ describe("composeStyle + layerStack (R3: the layer stack model)", () => {
     expect(label && "layout" in label ? label.layout : null).toMatchObject({ visibility: "none" });
   });
 
-  it("dimming the data-raster group overrides raster-opacity, replacing the raster spec's own opacity", () => {
+  // B1 fix (Opus 5.5 review): the group's opacity SCALES the layer's own existing opacity, it never
+  // REPLACES it — SCORE's own `opacity: SCORE_RASTER_OPACITY` (0.6) at a 0.25 stack opacity is
+  // 0.6 * 0.25 = 0.15, never the bare 0.25 the old (replacing) behaviour produced. A replacing
+  // implementation would also be non-monotonic (raster-opacity 0.6 at 100% stack opacity but a
+  // LARGER 0.95 at a 95% stack opacity) — this fixture's own math is the regression test for that.
+  it("dimming the data-raster group SCALES raster-opacity (0.6 spec x 0.25 stack = 0.15), never replaces it", () => {
     const stack = defaultLayerStackEntries().map((e) =>
       e.id === "data-raster" ? { ...e, opacity: 0.25 } : e,
     );
     const s = composeStyle({ theme: "navy", basemap: null, raster: SCORE, layerStack: stack });
     const r = s.layers.find((l) => l.id === "r_lyr");
-    expect(r && "paint" in r ? r.paint : null).toMatchObject({ "raster-opacity": 0.25 });
+    expect(r && "paint" in r ? r.paint : null).toMatchObject({ "raster-opacity": 0.15 });
   });
 
-  it("dimming data-zones affects fill AND line, each by its own paint key", () => {
+  // M5 fix (Opus 5.5 review): a REAL choropleth fill (`stops.length > 0`) classifies as role
+  // "choropleth" -> group `data-raster` ("the lens's data"), NOT `data-zones` (the outline) — in
+  // zone/choropleth mode the choropleth IS the visible data, and the "Data" row must control it
+  // exactly like it controls the raster in cell mode. `data-zones` now only ever holds the
+  // OUTLINE/labels/query-fill-placeholder, so dimming it scales the LINE alone.
+  it("M5: dimming data-zones scales the outline LINE only — a real choropleth fill is data-raster's concern now", () => {
     const stack = defaultLayerStackEntries().map((e) =>
       e.id === "data-zones" ? { ...e, opacity: 0.4 } : e,
     );
@@ -656,23 +713,158 @@ describe("composeStyle + layerStack (R3: the layer stack model)", () => {
     });
     const fill = s.layers.find((l) => l.id === "programarea_fill");
     const line = s.layers.find((l) => l.id === "programarea_ln");
-    expect(fill && "paint" in fill ? fill.paint : null).toMatchObject({ "fill-opacity": 0.4 });
-    expect(line && "paint" in line ? line.paint : null).toMatchObject({ "line-opacity": 0.4 });
+    const fillPaint = fill && "paint" in fill ? (fill.paint as Record<string, number>) : null;
+    const linePaint = line && "paint" in line ? (line.paint as Record<string, number>) : null;
+    // the choropleth fill is UNTOUCHED by data-zones' opacity (it belongs to data-raster now,
+    // still at its own default 1 in this test) -- its own spec opacity (0.7) survives unscaled.
+    expect(fillPaint?.["fill-opacity"]).toBe(0.7);
+    // the line's own opacity for "programarea" is 1 (ZONE_LINE_STYLE.programarea), so 1 x 0.4 = 0.4.
+    expect(linePaint?.["line-opacity"]).toBeCloseTo(0.4);
+  });
+
+  it("M5: a real choropleth fill IS scaled by dimming data-raster (the Data row), not data-zones", () => {
+    const stack = defaultLayerStackEntries().map((e) =>
+      e.id === "data-raster" ? { ...e, opacity: 0.4 } : e,
+    );
+    const s = composeStyle({
+      theme: "navy",
+      basemap: null,
+      layerStack: stack,
+      zones: [
+        {
+          ...PRA,
+          fill: {
+            keyProperty: "programarea_key",
+            stops: [{ key: "GAA", color: "#111111" }],
+            defaultColor: "lightgrey",
+            opacity: 0.7,
+            outlineColor: "white",
+          },
+        },
+      ],
+    });
+    const fill = s.layers.find((l) => l.id === "programarea_fill");
+    const line = s.layers.find((l) => l.id === "programarea_ln");
+    const fillPaint = fill && "paint" in fill ? (fill.paint as Record<string, number>) : null;
+    const linePaint = line && "paint" in line ? (line.paint as Record<string, number>) : null;
+    // toBeCloseTo, not toBe: 0.7 * 0.4 floats to 0.27999999999999997 in JS, and the property under
+    // test is "scaled, not replaced" -- not byte-exact float reproduction.
+    expect(fillPaint?.["fill-opacity"]).toBeCloseTo(0.28);
+    // the outline LINE is untouched (data-zones stays at its own default opacity 1 here).
+    expect(linePaint?.["line-opacity"]).toBe(1);
+  });
+
+  it("M5: the INVISIBLE query-fill placeholder (no real fill spec) stays zone-fill/data-zones, unlike a real choropleth", () => {
+    const stack = defaultLayerStackEntries().map((e) =>
+      e.id === "data-zones" ? { ...e, opacity: 0.5 } : e,
+    );
+    const queryFillUnit = zoneUnitsFromBoot({
+      units: [{ fld: "programarea_key", pmtiles: PRA.pmtiles, source_layer: "programarea" }],
+    })[0];
+    const s = composeStyle({
+      theme: "navy",
+      basemap: null,
+      layerStack: stack,
+      zones: [queryFillUnit],
+    });
+    const fill = s.layers.find((l) => l.id === "programarea_fill");
+    // fill-opacity 0 x 0.5 = 0 -- scaled by data-zones (its own group), proving the placeholder is
+    // classified "zone-fill", not "choropleth".
+    expect(fill && "paint" in fill ? fill.paint : null).toMatchObject({ "fill-opacity": 0 });
+  });
+
+  // B1 fix, the exact regression the review names: EVERY zone unit (including one with no `fill`
+  // spec at all) carries an INVISIBLE query fill (`layers/zones.ts#queryFillFor`, B3 0.10.26:
+  // `fill-opacity: 0`, `defaultColor: QUERY_FILL_COLOR` -- a near-black placeholder so pick-mode can
+  // query a zone's interior). A REPLACING opacity implementation turns that `0` into the stack's own
+  // opacity, painting every such zone visibly in `QUERY_FILL_COLOR` -- this asserts it stays 0 at any
+  // stack opacity, using `zoneUnitsFromBoot`'s own placeholder (no explicit `fill` spec passed in).
+  it("B1 regression: a zone's own INVISIBLE query fill (fill-opacity 0) stays 0 at any data-zones opacity — never painted visible", () => {
+    const stack = defaultLayerStackEntries().map((e) =>
+      e.id === "data-zones" ? { ...e, opacity: 0.5 } : e,
+    );
+    const queryFillUnit = zoneUnitsFromBoot({
+      units: [{ fld: "programarea_key", pmtiles: PRA.pmtiles, source_layer: "programarea" }],
+    })[0];
+    expect(queryFillUnit.fill?.opacity).toBe(0); // sanity: the placeholder really is invisible
+    const s = composeStyle({
+      theme: "navy",
+      basemap: null,
+      layerStack: stack,
+      zones: [queryFillUnit],
+    });
+    const fill = s.layers.find((l) => l.id === "programarea_fill");
+    expect(fill && "paint" in fill ? fill.paint : null).toMatchObject({ "fill-opacity": 0 });
+  });
+
+  // B1 fix: the selection ring's per-CELL `["get","opacity"]` expression (places/cellSquares.ts's
+  // "show analysis cells" toggle, atlas-6 Deliverable 2) must still be evaluated PER FEATURE after
+  // dimming — a replacing implementation collapses it to a single flat number, losing the per-cell
+  // coverage-weighted opacity entirely.
+  it("B1 regression: dimming data-places wraps the per-cell cellOpacity expression, never replaces it", () => {
+    const stack = defaultLayerStackEntries().map((e) =>
+      e.id === "data-places" ? { ...e, opacity: 0.5 } : e,
+    );
+    const s = composeStyle({
+      theme: "navy",
+      basemap: null,
+      layerStack: stack,
+      selection: { features: { type: "FeatureCollection", features: [] }, cellOpacity: true },
+    });
+    const fill = s.layers.find((l) => l.id === "selection-fill");
+    expect(fill && "paint" in fill ? fill.paint : null).toMatchObject({
+      "fill-opacity": ["*", ["get", "opacity"], 0.5],
+    });
   });
 });
 
 describe("rankForStack", () => {
-  it("defaults to the flat LAYER_ORDER", () => {
-    expect(rankForStack()).toEqual([...LAYER_ORDER]);
+  it("defaults to a rank consistent with the flat LAYER_ORDER's relative order", () => {
+    const rank = rankForStack();
+    expect(rank.get("background")).toBe(0);
+    for (let i = 1; i < LAYER_ORDER.length; i++) {
+      expect(rank.get(LAYER_ORDER[i])!).toBeGreaterThanOrEqual(rank.get(LAYER_ORDER[i - 1])!);
+    }
+    // every role is present.
+    expect(new Set(rank.keys())).toEqual(new Set(LAYER_ORDER));
   });
 
-  it("expands a custom group order into the SAME set of fine roles, reordered", () => {
+  // M1 fix (Opus 5.5 review): the five DEFAULT basemap sub-roles are one contiguous run, so they
+  // all share ONE rank -- exactly the property `orderLayers`'s stable sort then uses to reproduce
+  // CARTO's own original layer order within that run (see `composeStyle`'s own M1 test below).
+  it("the five basemap sub-roles share ONE rank in the default stack (one contiguous run)", () => {
+    const rank = rankForStack();
+    const basemapRoles: LayerRole[] = [
+      "basemap-land",
+      "basemap-bathymetry",
+      "basemap-boundaries",
+      "basemap-roads",
+      "basemap-labels",
+    ];
+    const ranks = new Set(basemapRoles.map((r) => rank.get(r)));
+    expect(ranks.size).toBe(1);
+  });
+
+  it("moving basemap-labels above data-raster SPLITS the run: labels get their OWN rank, after raster's", () => {
     const custom = moveLayerStackEntry(defaultLayerStackEntries(), 4, 5).map((e) => e.id);
-    const roles = rankForStack(custom);
-    expect(roles.indexOf("basemap-labels")).toBeGreaterThan(roles.indexOf("raster"));
-    // every fine role still appears exactly once — no role gained or lost by the reorder.
-    expect(roles).toHaveLength(LAYER_ORDER.length);
-    expect(new Set(roles)).toEqual(new Set(LAYER_ORDER));
+    const rank = rankForStack(custom);
+    expect(rank.get("basemap-labels")!).toBeGreaterThan(rank.get("raster")!);
+    // the OTHER four basemap sub-roles still share one rank with each other (still one run)...
+    const stillTogether: LayerRole[] = [
+      "basemap-land",
+      "basemap-bathymetry",
+      "basemap-boundaries",
+      "basemap-roads",
+    ];
+    expect(new Set(stillTogether.map((r) => rank.get(r))).size).toBe(1);
+    // ...distinct from basemap-labels' own, now-separate rank.
+    expect(rank.get("basemap-land")).not.toBe(rank.get("basemap-labels"));
+  });
+
+  it("every role from the custom stack is present, none gained or lost", () => {
+    const custom = moveLayerStackEntry(defaultLayerStackEntries(), 4, 5).map((e) => e.id);
+    const rank = rankForStack(custom);
+    expect(new Set(rank.keys())).toEqual(new Set(LAYER_ORDER));
   });
 });
 
