@@ -914,6 +914,34 @@ const FAULTS = [
       "'no data here')",
     gate: ["npx", "vitest", "run", "tests/lens/species/popup.test.ts"],
   },
+  // gallery axe ceilings round (r2-gax): Categories.svelte's `.col` (a flex item of
+  // `.gallery-stage`) had no explicit `min-width`, so its default `auto` floored its shrink at
+  // `.cat-table-scroll`'s unbreakable `<code>` tokens -- pushing `.col` (and a sibling paragraph
+  // sharing its width) past the section's right edge at 320 CSS px, silently absorbed into a
+  // whole-gallery-body sideways scroll instead of the section's own intended containment (real
+  // content loss: the "primary_producer" paragraph was genuinely clipped, unreachable). This
+  // patch drops the fix's `min-width: 0` and must turn e2e/gallery.spec.ts's own axe gate red at
+  // 320 CSS px (color-contrast incomplete count back to 68, one past the pinned ceiling of 67),
+  // in BOTH themes.
+  {
+    id: "gallery-categories-min-width-dropped",
+    patch: "tests/faults/gallery-categories-min-width-dropped.patch",
+    describe:
+      "Categories.svelte's `.col` loses `min-width: 0` -- the flex item's default auto floor " +
+      "widens it past the section again, clipping the 'primary spelling' paragraph at 320 CSS " +
+      "px with no per-section way to reach it (the gallery axe ceilings round's real bug, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--config=playwright.gallery.config.ts",
+      "e2e/gallery.spec.ts",
+      "-g",
+      "finding triaged, both themes, both widths.*phoneNarrow",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4407" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
