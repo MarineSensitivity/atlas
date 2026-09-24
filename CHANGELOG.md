@@ -1,3 +1,16 @@
+# atlas 0.10.37
+
+R2, round 2 (owner finding on live 0.10.36 at 390x844): once the welcome modal is dismissed, the
+guided tour was reachable ONLY through the desktop (?) Help menu (`topbar-desktop-only`), so a
+phone visitor had no way to start it at all.
+
+- The phone ⋯ overflow menu's "Help" item is split into **"Take a tour"** (runs the SAME tour
+  start the desktop Help menu's own button uses) and **"Docs"** (unchanged, still a plain link).
+  Final item order: Share, Report, Feedback, About this release, Take a tour, Docs.
+- The item labelled **"Send feedback" is renamed to "Feedback"**, matching the desktop top-bar
+  control's own label one-for-one; its no-JS `href` fallback is unchanged.
+- The desktop (?) Help menu is unchanged.
+
 # atlas 0.10.36
 
 U1 (docs/usability.md §7, owner decisions 2026-09-24): the shell's panel model and chrome

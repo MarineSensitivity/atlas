@@ -4,6 +4,13 @@
 // under one ⋯ overflow menu (`role="menu"`, arrow keys, Esc). HERMETIC, same convention as
 // e2e/shell.a11y.spec.ts.
 //
+// R2, round 2 (owner finding on live 0.10.36 at 390x844): the guided tour was reachable ONLY
+// through the desktop (?) Help menu, so a phone visitor had no way to start it at all. The ⋯
+// menu's "Help" item is now two items -- "Take a tour" (the same tour start the desktop Help
+// menu's own button uses, see e2e/tour.spec.ts for the full step-by-step walk) and "Docs"
+// (unchanged) -- and "Send feedback" is renamed to exactly "Feedback" (owner decision R2),
+// matching the desktop top-bar control's own label.
+//
 // Also covers the map-chrome parity audit (2026-09-24): MapLibre + CARTO/OSM attribution, visible
 // with no interaction at both viewports -- a labelled region OUTSIDE `#map` (never a MapLibre-
 // injected in-map control), since `#map` carries `role="img"` and ARIA forbids a role=img element
@@ -11,6 +18,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession, waitForHydration } from "./hermetic";
+import { SCORES_TOUR_STEPS } from "../src/shell/tour";
 
 async function gotoShell(page: Page, viewport: { width: number; height: number }) {
   await routeBucket(page, "v7");
@@ -103,7 +111,9 @@ test.describe("R2: Send feedback", () => {
     await gotoShell(page, PHONE);
     await page.locator('[data-control="more-menu"]').click();
     const menu = page.getByRole("menu", { name: "More" });
-    await menu.getByRole("menuitem", { name: "Send feedback" }).click();
+    // R2 round 2: "Send feedback" -> exactly "Feedback" (owner decision), matching the desktop
+    // top-bar control's own label.
+    await menu.getByRole("menuitem", { name: "Feedback" }).click();
     const dialog = page.locator("dialog[open]");
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole("heading", { name: "Feedback" })).toBeVisible();
@@ -111,7 +121,7 @@ test.describe("R2: Send feedback", () => {
 });
 
 test.describe("R2: phone ⋯ overflow menu", () => {
-  test("at 390x844, the ⋯ trigger opens a role=menu with Share/Report/Feedback/About/Help", async ({
+  test("at 390x844, the ⋯ trigger opens a role=menu with Share/Report/Feedback/About/Take a tour/Docs", async ({
     page,
   }) => {
     await gotoShell(page, PHONE);
@@ -124,9 +134,18 @@ test.describe("R2: phone ⋯ overflow menu", () => {
     const menu = page.getByRole("menu", { name: "More" });
     await expect(menu).toBeVisible();
     const items = menu.getByRole("menuitem");
-    await expect(items).toHaveCount(5);
+    // R2 round 2: "Help" split into "Take a tour" + "Docs" (the tour was unreachable on the phone
+    // otherwise), "Send feedback" renamed to "Feedback" -- final order below.
+    await expect(items).toHaveCount(6);
     const labels = await items.evaluateAll((els) => els.map((e) => e.textContent?.trim()));
-    expect(labels).toEqual(["Share", "Report", "Send feedback", "About this release", "Help"]);
+    expect(labels).toEqual([
+      "Share",
+      "Report",
+      "Feedback",
+      "About this release",
+      "Take a tour",
+      "Docs",
+    ]);
 
     // opening the menu moves focus to its first item.
     await expect(items.first()).toBeFocused();
@@ -164,6 +183,34 @@ test.describe("R2: phone ⋯ overflow menu", () => {
     await page.locator('[data-control="more-menu"]').click();
     await page.getByRole("menuitem", { name: "About this release" }).click();
     await expect(page.getByRole("dialog", { name: "About this release" })).toBeVisible();
+  });
+
+  // R2 round 2 (owner finding, live 0.10.36 at 390x844): the tour was unreachable on the phone
+  // once the welcome modal was dismissed -- "Take a tour" now runs the SAME tour start the desktop
+  // Help menu's own button uses (Shell.svelte's `onHelpTakeTour`). The full step-by-step walk
+  // (every anchor resolves, keyboard trap, axe) is e2e/tour.spec.ts's job on the desktop viewport;
+  // this only proves the phone trigger reaches it and Esc leaves the shell exactly as it found it.
+  test("selecting 'Take a tour' starts the SAME tour the desktop Help menu uses; Esc restores the URL", async ({
+    page,
+  }) => {
+    await gotoShell(page, PHONE);
+    const before = page.url();
+
+    await page.locator('[data-control="more-menu"]').click();
+    await page.getByRole("menuitem", { name: "Take a tour" }).click();
+
+    // the ⋯ menu closes before the tour starts (onMoreItemClick calls closeMore() first).
+    await expect(page.getByRole("menu", { name: "More" })).toHaveCount(0);
+
+    const popover = page.locator(".driver-popover");
+    await expect(popover).toBeVisible({ timeout: 10_000 });
+    // the default lens on load is "scores" (no `sp` in the URL, defaultLens()), so the first step
+    // is SCORES_TOUR_STEPS[0] ("map") -- an anchor that exists at every viewport, phone included.
+    await expect(page.locator(".driver-popover-title")).toHaveText(SCORES_TOUR_STEPS[0].title);
+
+    await page.keyboard.press("Escape");
+    await expect(popover).toHaveCount(0);
+    expect(page.url()).toBe(before);
   });
 
   test("desktop shows no ⋯ trigger; phone shows no direct Feedback/About buttons", async ({

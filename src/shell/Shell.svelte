@@ -1163,10 +1163,13 @@
   </span>
   <!-- R2 (docs/usability.md §7): About + Feedback + the phone ⋯ menu -- ONE mount line, per this
        round's own instructions (U5/U6 touch the rail and Report/Help/theme in parallel; see
-       TopBarActions.svelte's header for why this stays a separate component). Its "Help" overflow
-       item opens `docsHref` directly (`helpDocsHref`) rather than toggling the desktop Help
-       disclosure just above, which is `topbar-desktop-only` and so invisible at the width the ⋯
-       menu itself only exists at -- see that disclosure's own comment. -->
+       TopBarActions.svelte's header for why this stays a separate component). Its "Docs" item
+       opens `docsHref` directly (`helpDocsHref`) rather than toggling the desktop Help disclosure
+       just above, which is `topbar-desktop-only` and so invisible at the width the ⋯ menu itself
+       only exists at -- see that disclosure's own comment. R2 round 2: its "Take a tour" item runs
+       the SAME `onHelpTakeTour` the desktop Help menu's own button does (below) -- `closeHelp(false)`
+       is a no-op when the desktop disclosure was never open, so this reuses that one function
+       unchanged rather than wrapping it. -->
   <TopBarActions
     {earlyVersion}
     restricted={releaseRestricted}
@@ -1178,6 +1181,7 @@
     {onShare}
     onReportTop={onReport}
     helpDocsHref={docsHref}
+    onTakeTour={onHelpTakeTour}
   />
   <!-- U2a (round 2): sun/moon, CalCOFI's convention (src/App.tsx's `.cc-theme-toggle`) -- the
        icon shown is the DESTINATION theme (a sun while dark invites switching to light, a moon

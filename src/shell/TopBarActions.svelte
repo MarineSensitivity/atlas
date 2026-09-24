@@ -20,6 +20,15 @@
   // navigating the tab to the GitHub fallback link in the background -- everything else here is
   // unchanged, exactly the "this file never has to change for that" promise.
   //
+  // R2, round 2 (owner finding on live 0.10.36 at 390x844): once the welcome modal is dismissed,
+  // the guided tour was reachable ONLY through the desktop (?) Help menu (`topbar-desktop-only`),
+  // so a phone visitor had no way to start it at all. The ⋯ menu now carries the SAME "Take a
+  // tour" action Shell.svelte's Help menu uses (`onTakeTour`, its `onHelpTakeTour` passed through
+  // verbatim -- this file never imports `./tourRuntime`/driver.js itself, keeping that dynamic
+  // import's lazy-loading boundary exactly where U6 put it) beside "Docs" (`helpDocsHref`, now its
+  // own item rather than one "Help" item covering both). "Send feedback" is renamed to "Feedback"
+  // (owner decision R2) to match the desktop control's own label one-for-one.
+  //
   // tests/shell/shell-invariants.test.ts scans this file (alongside Shell.svelte) for its
   // data-control/data-tour anchors and the same "no src/lib/release, no history.pushState"
   // invariants -- this file reads only plain props, never `src/lib/release` or `window.__early`
@@ -46,9 +55,13 @@
     onShare: () => void;
     onReportTop: () => void;
     /** the Help menu's own "Docs" destination (Shell.svelte's `docsHref`) -- the phone ⋯ menu's
-     * "Help" item opens this directly rather than toggling Shell.svelte's Help disclosure, which
+     * "Docs" item opens this directly rather than toggling Shell.svelte's Help disclosure, which
      * is `topbar-desktop-only` and so invisible at the width the ⋯ menu itself only exists at. */
     helpDocsHref: string;
+    /** starts the SAME guided tour the desktop Help menu's "Take a tour" item starts
+     * (Shell.svelte's `onHelpTakeTour`, passed through verbatim) -- the phone ⋯ menu's own
+     * "Take a tour" item. */
+    onTakeTour: () => void;
     sealFlag?: string;
     agency?: string;
     sealUrl?: string;
@@ -65,6 +78,7 @@
     onShare,
     onReportTop,
     helpDocsHref,
+    onTakeTour,
     sealFlag = import.meta.env.VITE_SEAL,
     agency = import.meta.env.VITE_AGENCY,
     sealUrl = import.meta.env.VITE_SEAL_URL || DEFAULT_SEAL_URL,
@@ -102,16 +116,25 @@
     run: (e: MouseEvent) => void;
     href?: string;
   }
+  // R2, round 2: "Help" split into its two destinations ("Take a tour" / "Docs") so the tour is
+  // actually reachable on the phone -- see this file's header comment. Order: Share, Report,
+  // Feedback, About this release, Take a tour, Docs -- e2e/shell.chrome.spec.ts asserts this exact
+  // item-name list.
   const moreItems = $derived<MoreItem[]>([
     { label: "Share", icon: "share", run: () => onShare() },
     { label: "Report", icon: "report", run: () => onReportTop() },
-    { label: "Send feedback", icon: "feedback", run: handleFeedback, href: feedbackHref },
+    { label: "Feedback", icon: "feedback", run: handleFeedback, href: feedbackHref },
     { label: "About this release", icon: "info", run: () => (aboutOpen = true) },
+    // `run` (not `href`): starts the tour directly, same as the desktop Help menu's own button --
+    // never a link, so no `<a>`/no-op split like Docs below. Icon "help" (not a new one): the
+    // desktop Help trigger already uses this same glyph for the whole tour+shortcuts+Docs
+    // disclosure this item and the one below together replace here.
+    { label: "Take a tour", icon: "help", run: () => onTakeTour() },
     // a real <a>, same as Feedback above -- opens the SAME docs link the desktop Help menu's own
     // "Docs" item does (Shell.svelte's `docsHref`), rather than toggling that disclosure itself
     // (invisible at the width this ⋯ menu only exists at -- see helpDocsHref's own doc comment).
     // `run` is a no-op: the `<a href target="_blank">` below does the whole job on its own.
-    { label: "Help", icon: "help", run: () => {}, href: helpDocsHref },
+    { label: "Docs", icon: "help", run: () => {}, href: helpDocsHref },
   ]);
 
   async function openMore() {
@@ -191,7 +214,7 @@
   class="tool topbar-phone-only"
   data-tour="more"
   data-control="more-menu"
-  aria-label="More: Share, Report, Send feedback, About, Help"
+  aria-label="More: Share, Report, Feedback, About, Take a tour, Docs"
   aria-haspopup="menu"
   aria-expanded={moreOpen}
   bind:this={moreTriggerEl}
