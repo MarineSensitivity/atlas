@@ -67,3 +67,36 @@ export function phonePadding(detent: SheetDetent, viewportHeightPx: number): Chr
 export function phonePaddingFromMeasured(sheetHeightPx: number): ChromePadding {
   return { ...NO_PADDING, top: TOPBAR_HEIGHT_PX, bottom: sheetHeightPx + PHONE_RAIL_ROW_PX };
 }
+
+/** the floating legend chip's own approximate height (`.legend-chip-region`, shell.css) -- the
+ * same kind of cheap, estimate-not-measured slack {@link PHONE_RAIL_ROW_PX}/{@link
+ * TOPBAR_HEIGHT_PX} already are; a second real `ongeometry` wire for a small pill was not worth
+ * it (see {@link phoneLiveChromePadding}'s own header). */
+export const LEGEND_CHIP_HEIGHT_PX = 56;
+
+/**
+ * V1 fix (Opus eyes-on review, 2026-09-24): "the walrus model view sits under the legend chip and
+ * the sheet" -- the species camera's model-bounds fit (`state.svelte.ts#applyCamera`) used to pass
+ * a flat `DEFAULT_CAMERA_PADDING` (40px, every edge) to `flyToBounds`, blind to the sheet (and,
+ * when it floats, the legend chip above it) actually covering the bottom of the map RIGHT NOW.
+ * This is the LIVE counterpart of {@link phonePadding}/{@link phonePaddingFromMeasured} above
+ * (both of which only ever run ONCE, before Sheet.svelte has mounted, for the very first camera):
+ * `sheetHeightPx > 0` once Sheet.svelte has reported its own real `ongeometry` measurement (the
+ * same upgrade {@link phonePaddingFromMeasured} makes for the first-view camera), the estimate
+ * (`phonePadding`) applies before that, and `chipShowing` adds the chip's own height on top when
+ * `legendChipMode(detent) === "floating"` AND the lens actually has a legend to show (Shell.svelte
+ * computes both -- this module never imports `sheetGeometry.ts` to stay dependency-light, so the
+ * caller passes the already-resolved boolean).
+ */
+export function phoneLiveChromePadding(
+  sheetHeightPx: number,
+  detent: SheetDetent,
+  viewportHeightPx: number,
+  chipShowing: boolean,
+): ChromePadding {
+  const base =
+    sheetHeightPx > 0
+      ? phonePaddingFromMeasured(sheetHeightPx)
+      : phonePadding(detent, viewportHeightPx);
+  return chipShowing ? { ...base, bottom: base.bottom + LEGEND_CHIP_HEIGHT_PX } : base;
+}

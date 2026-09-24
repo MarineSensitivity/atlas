@@ -212,3 +212,90 @@ test.describe("D8: selecting a model frames its extent, not the default study ar
     expect(camera.center.lat).toBeLessThan(70);
   });
 });
+
+// V1 fix (Opus eyes-on review, 2026-09-24): "the walrus model view sits under the legend chip and
+// the sheet" -- on the phone, `applyCamera()` (state.svelte.ts) used to pass `cameraFor()`'s own
+// flat `DEFAULT_CAMERA_PADDING` (40px, every edge) to `flyToBounds`, blind to the bottom sheet
+// (DEFAULT_SHEET_DETENT = "half", ~46% of the viewport) sitting over the map. `boundsToCameraView`
+// (camera.ts) shifts the fitted center toward the FREE area's own middle when given an asymmetric
+// `ChromePadding` (its own header: "P6/D8 ... a model fit is not centred behind the very chrome
+// that is hiding half of it") -- with a UNIFORM padding (the bug), that shift is always zero, so
+// the fitted bbox's own geographic center projects to exactly the CONTAINER's geometric vertical
+// centre; with the fix, it projects measurably ABOVE that (inside the visible free area, above the
+// sheet's top edge). Uses `window.__atlasMap` (`handle.map.project`/`getCenter`) -- the app's own
+// existing test/automation seam (Shell.svelte's own header: "exposes nothing a viewer could not
+// already read off the page"), never a raw new hook into MapLibre internals.
+test.describe("V1 fix: the species camera pads for the phone sheet (and legend chip), not a flat 40px", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("the fitted model's own centre projects INSIDE the free area, above the sheet -- not at the container's raw geometric centre", async ({
+    page,
+  }) => {
+    // same v9 `am` walrus fixture as the desktop "sibling" test above -- ax sibling bbox
+    // [-177.7, 60.65, -139.15, 79] -> centre (-158.425, 69.825). DEFAULT_SHEET_DETENT is "half"
+    // (sheetGeometry.ts), so no localStorage setup is needed to reproduce the bug's own starting
+    // state -- a fresh phone load already opens with the sheet at "half".
+    await gotoSpecies(page, `/?mdl_key=${WALRUS_AM_MDL_KEY}&ver=v9`);
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Odobenus rosmarus");
+
+    // NOT a zoom-ceiling poll (the desktop tests above use one; it does not transfer here): the
+    // SAME bbox fit to a 390px-wide viewport legitimately settles at a LOWER zoom than an
+    // identical fit at 1280px does (fewer px per degree needed to fit the same span in a
+    // narrower box) -- measured, this is ~1.56, not a "never fitted" value. Longitude is the
+    // reliable proxy that the fit actually ran: the ax sibling bbox's own centre longitude
+    // (-158.425) is exact once `boundsToCameraView` has been called with it, regardless of the
+    // viewport-dependent zoom/latitude shift the fix itself introduces. Generous, CI/loaded-
+    // laptop-safe timeout, same reasoning as this file's own zoomToLayer() test above.
+    await expect
+      .poll(async () => (await readCamera(page)).center.lng, {
+        message: "camera never fitted the model's own extent",
+        timeout: 15_000,
+      })
+      .toBeCloseTo(-158.425, 0);
+
+    // `map.getCenter()` trivially always projects to the container's own geometric middle (that
+    // is what "the map's centre" MEANS to MapLibre) -- it proves nothing about padding. What the
+    // fix actually moves is WHERE ON SCREEN the fitted CONTENT's own raw geographic centre lands:
+    // pre-fix (uniform padding), the ax sibling bbox's own centre — (-158.425, 69.825), this
+    // file's own header/the desktop test above — projects to the exact container midpoint (zero
+    // shift); post-fix, the asymmetric bottom padding shifts the CAMERA so that point instead
+    // lands at the FREE AREA's own middle, well above the sheet's real top edge.
+    const BBOX_CENTER: [number, number] = [-158.425, 69.825];
+    const { projectedY, sheetTopRelative, containerHeight } = await page.evaluate((center) => {
+      const w = window as unknown as {
+        __atlasMap: {
+          handle: {
+            map: {
+              project(lngLat: [number, number]): { x: number; y: number };
+              getContainer(): HTMLElement;
+            };
+          };
+        };
+      };
+      const map = w.__atlasMap.handle.map;
+      const containerRect = map.getContainer().getBoundingClientRect();
+      const p = map.project(center);
+      const sheetEl = document.querySelector(".sheet");
+      const sheetTop = sheetEl ? sheetEl.getBoundingClientRect().top : null;
+      return {
+        projectedY: p.y,
+        containerHeight: containerRect.height,
+        // relative to the MAP CONTAINER's own top -- the same coordinate space `project()` uses.
+        sheetTopRelative: sheetTop === null ? null : sheetTop - containerRect.top,
+      };
+    }, BBOX_CENTER);
+
+    // the sheet must actually be occupying real screen space for this test to mean anything.
+    expect(
+      sheetTopRelative,
+      "the phone sheet is not on screen -- this test cannot exercise the bug",
+    ).not.toBeNull();
+
+    expect(
+      projectedY,
+      `the model's own bbox centre projected to y=${projectedY} of a ${containerHeight}px map, ` +
+        `sheet top at y=${sheetTopRelative} -- expected the fitted centre well above the sheet's ` +
+        `own top edge (inside the free area), not at/behind it`,
+    ).toBeLessThan(sheetTopRelative! * 0.85);
+  });
+});

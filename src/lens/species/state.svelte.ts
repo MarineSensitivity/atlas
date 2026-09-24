@@ -13,7 +13,7 @@ import { untrack } from "svelte";
 import type { Popup } from "maplibre-gl";
 import { gridFromBoot } from "../../lib/grid/grid";
 import type { MapHandle } from "../../lib/map/map";
-import type { CameraBoundsInput } from "../../lib/map/camera";
+import type { CameraBoundsInput, ChromePadding } from "../../lib/map/camera";
 import { createPopup } from "../../lib/map/popup";
 import { announce } from "../../lib/ui/announcer";
 import { mapClick, type LngLat, type QueryableMap } from "../../lib/map/interaction";
@@ -79,6 +79,12 @@ export interface SpeciesLensDeps {
   /** D8's own last resort (`refineCameraFromCogBounds` below) — defaults to a real titiler
    * `/cog/bounds` fetch through `fetchJson`, same convention as `valueSource` above. */
   boundsSource?: BoundsSource;
+  /** V1 fix (Opus eyes-on review, 2026-09-24): the shell's CURRENT chrome geometry (docked panel
+   * on desktop; sheet detent + legend chip on the phone) — a getter, not a snapshot, so every
+   * re-fit (species change, "Zoom to layer") pads for whatever is covering the map RIGHT NOW, not
+   * whatever it was at mount. Optional: a caller that supplies none (a test, the gallery) keeps
+   * the old flat `DEFAULT_CAMERA_PADDING` behaviour via `applyCamera`'s own fallback below. */
+  chromePadding?: () => ChromePadding;
 }
 
 export interface SpeciesLens {
@@ -197,11 +203,19 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
   // read (atlas-1 has not shipped it) — every `cameraFor()` call below passes `fallbackBbox: null`;
   // the fallback chain still holds without it, ending at the study-area view.
 
+  // V1 fix (Opus eyes-on review, 2026-09-24): "the walrus model view sits under the legend chip
+  // and the sheet" — `cam.padding` (below) is `cameraFor()`'s own flat `DEFAULT_CAMERA_PADDING`
+  // number, which has no idea a phone sheet or a docked desktop panel is covering part of the
+  // map. `deps.chromePadding()`, when the shell supplies it, is the SAME asymmetric-padding path
+  // `boundsToCameraView` already shifts the fitted center for (P6/D8, camera.ts's own header) —
+  // this is the one place that padding actually reaches `flyToBounds`, so wiring it here is
+  // enough for every bounds fit (species-change re-fit AND "Zoom to layer" below both call this).
   function applyCamera(cam: Camera | null): void {
     const handle = deps.mapHandle();
     if (!handle || !cam) return;
     if (cam.kind === "bounds") {
-      handle.flyToBounds(boundsInputOf(cam)!, { padding: cam.padding });
+      const padding = deps.chromePadding ? deps.chromePadding() : cam.padding;
+      handle.flyToBounds(boundsInputOf(cam)!, { padding });
     } else {
       handle.flyTo({ key: cam.source, lon: cam.center[0], lat: cam.center[1], zoom: cam.zoom });
     }

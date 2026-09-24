@@ -5,7 +5,7 @@ import AxeBuilder from "@axe-core/playwright";
 import pdfParse from "pdf-parse";
 import { unzipSync } from "fflate";
 import { BUCKET, collectRequests, routeBucket, routeSealFixture, routeSession } from "./hermetic";
-import { blockWasm } from "./map-hermetic";
+import { blockWasm, routeVariedBasemapStyle } from "./map-hermetic";
 import { normalizePdfText } from "./pdfText";
 // `routeVariedBasemapStyle` moved with `gotoReport` into report-hermetic.ts (atlas-8 step 3); it is
 // no longer called from this file directly.
@@ -646,5 +646,116 @@ test.describe("page.pdf() (chromium): labels, table headers, watermark, map imag
         "modelled habitat suitability, the governing extinction-risk score and the overlapping " +
         "area.",
     );
+  });
+});
+
+// V1 fix (Opus eyes-on review, 2026-09-24): "the phone report page overflows sideways" -- at
+// 390px live it laid out 1,082px wide (URL line, a table's caption, an ER column all cut off).
+// Report.svelte's `<table>`s had no horizontal-scroll container of their own (report.css's
+// `table { width: 100% }` is only a PREFERRED width -- a table whose columns' own minimum content
+// widths exceed it still grows past its container) and the permalink line was one long unbroken
+// URL string with no wrap protection at all. Two independent overflow SOURCES, both fixed the same
+// way (report.css's `.table-scroll` + `#report-root a { overflow-wrap: anywhere }`) -- tested
+// separately so either regressing goes red on its own.
+test.describe("V1 fix: the phone report page never scrolls the document sideways (390px)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("a long permalink (many picked Program Areas in #pl=) does not widen the page", async ({
+    page,
+  }) => {
+    // the 20 real, published v7-v9 Program Area keys (workflows canonical geometry) -- picking all
+    // of them is exactly the "several places" case that blows the permalink line's own unbroken
+    // URL text past 390px on its own, no wide table involved.
+    const KEYS = [
+      "ALA",
+      "ALB",
+      "BFT",
+      "BOW",
+      "CEC",
+      "CHU",
+      "COK",
+      "GAA",
+      "GAB",
+      "GEO",
+      "GOA",
+      "HAR",
+      "HOP",
+      "KOD",
+      "MAT",
+      "NAV",
+      "NOC",
+      "NOR",
+      "SHU",
+      "SOC",
+    ];
+    await blockWasm(page);
+    await routeBucket(page, "v9", BOOT_V9);
+    await routeSession(page, { preview: true, ver: "v9" });
+    await routeSealFixture(page);
+    await routeVariedBasemapStyle(page);
+    await page.goto(`/report.html?ver=v9#pl=z.pa.${KEYS.join("%2C")}`);
+    await expect(page.locator(".progress-line").first()).toContainText("Done");
+
+    // sanity: this really did produce a long, unbroken permalink -- not a narrow test that would
+    // pass even without the bug.
+    const permalinkLen = await page.evaluate(
+      () => document.querySelector(".report-header a")?.textContent?.length ?? 0,
+    );
+    expect(permalinkLen).toBeGreaterThan(150);
+
+    const overflowPx = await page.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth,
+    );
+    expect(overflowPx).toBeLessThanOrEqual(0);
+  });
+
+  test("a place with many score components does not widen the page (Table of Scores)", async ({
+    page,
+  }) => {
+    // 9 real `*_ecoregion_rescaled` component keys (the full v8/v9 set, msens/docs) on ONE place --
+    // short single-word column headers, but nine of them is already wider than 390px unless the
+    // table itself scrolls rather than the page.
+    const boot = {
+      ...BOOT_V9,
+      zones: {
+        programarea: [
+          {
+            key: "GAA",
+            name: "Gulf of America",
+            label_pt: [-90, 25],
+            n_cells: 14238,
+            area_km2: 600000,
+            metrics: {
+              extrisk_bird_ecoregion_rescaled: 50,
+              extrisk_coral_ecoregion_rescaled: 12,
+              extrisk_fish_ecoregion_rescaled: 30,
+              extrisk_invertebrate_ecoregion_rescaled: 22,
+              extrisk_mammal_ecoregion_rescaled: 44,
+              extrisk_other_ecoregion_rescaled: 18,
+              extrisk_turtle_ecoregion_rescaled: 60,
+              extrisk_primary_producer_ecoregion_rescaled: 8,
+              primprod_ecoregion_rescaled: 5,
+            },
+          },
+        ],
+      },
+    };
+    await blockWasm(page);
+    await routeBucket(page, "v9", boot);
+    await routeSession(page, { preview: true, ver: "v9" });
+    await routeSealFixture(page);
+    await routeVariedBasemapStyle(page);
+    await page.goto("/report.html?ver=v9#pl=z.pa.GAA");
+    await expect(page.locator(".progress-line").first()).toContainText("Done");
+
+    // sanity: the Table of Scores really does carry all 9 component columns -- not a narrow test.
+    await expect(
+      page.locator("table", { hasText: "Mean component and overall scores" }).locator("thead th"),
+    ).toHaveCount(2 + 9 + 1); // Area, N cells, 9 components, Overall
+
+    const overflowPx = await page.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth,
+    );
+    expect(overflowPx).toBeLessThanOrEqual(0);
   });
 });

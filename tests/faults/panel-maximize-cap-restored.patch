@@ -1,0 +1,12 @@
+diff --git a/src/lib/ui/Panel.svelte b/src/lib/ui/Panel.svelte
+index 84eb105..4fc143c 100644
+--- a/src/lib/ui/Panel.svelte
++++ b/src/lib/ui/Panel.svelte
+@@ -441,7 +441,6 @@
+      the cap only while maximized keeps the 720px docked/half-width ceiling intact (this rule does
+      not touch `.panel--collapsed`, which sets its own `width: fit-content`). */
+   .panel--maximized {
+-    max-width: none;
+   }
+ 
+   /* usability M3: collapsed, `.panel` held its FULL width basis (`.panel-region`'s own width,

@@ -23,6 +23,31 @@ screenshot harness fixed (Opus eyes-on review of 0.10.55).
   longer byte-identical to the "layers" state; and the phone tap points moved higher in the map, off
   the legend chip's band.
 
+# atlas 0.10.56
+
+Round 2, V1: five defects an eyes-on review of the live phone build found that every automated
+gate had passed.
+
+- **Fixed: Program Area names were acronym-only everywhere** ("ALA" instead of "Aleutian Arc
+  (ALA)"), even after an earlier round's "Full Name (KEY)" formatting shipped — no published
+  release (v6 through v9) actually publishes a full name on its Program Area rows, so that
+  formatting had nothing to format. A new app-side name table (generated from the canonical
+  Program-Area geometry) now fills in for every real release, in the picker, the Places list, the
+  results panel, and the report.
+- **Fixed: the desktop panel's "Full screen" button did not actually reach full screen** — the
+  panel's own content box stayed capped at 720px wide even though its frame filled the whole
+  stage.
+- **Fixed: the report page overflowed sideways on a phone** — a wide table (many score components,
+  or a long species name) and the permalink line could each push the whole page wider than the
+  screen; both now stay inside the page, with tables scrolling within their own box.
+- **Fixed: selecting a species model on a phone could frame it partly under the bottom sheet (and
+  the floating legend chip)** — the camera fit now accounts for whatever chrome is actually
+  covering the map, on both phone and desktop.
+- **Fixed: the disabled "Show analysis cells" control gave no visible reason for why it was
+  disabled** — its reason previously showed only on hover, which is unreachable on a touch device
+  and could clip at a panel's edge on desktop. It now always shows as a short line of text next to
+  the control.
+
 # atlas 0.10.55
 
 Round 2, Q7: the Sheet-log beacon actually reaches the Sheet.

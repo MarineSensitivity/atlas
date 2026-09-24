@@ -12,6 +12,7 @@ import {
   zoneStatsFor,
   ZONE_CELLS_UNAVAILABLE_REASON,
 } from "../../src/places/zoneStats";
+import { PROGRAM_AREA_NAMES } from "../../src/lib/zones/programAreaNames";
 
 const BOOT = {
   zones: {
@@ -215,14 +216,82 @@ describe("paLabel (P3: 'Aleutian Arc (ALA)' style labels everywhere a Program Ar
     expect(paLabel("ALA", "Aleutian Arc")).toBe("Aleutian Arc (ALA)");
   });
 
-  it("falls back to the bare key when the bundle publishes no name", () => {
-    expect(paLabel("ALA", undefined)).toBe("ALA");
-    expect(paLabel("ALA", null)).toBe("ALA");
-    expect(paLabel("ALA", "")).toBe("ALA");
+  it("falls back to the bare key when neither the bundle nor PROGRAM_AREA_NAMES has a name", () => {
+    // V1 fix: "ALA" now resolves through the app-side table (see the dedicated describe block
+    // below), so this uses "ZZZ" -- a key that is genuinely nowhere -- to keep testing the
+    // true last-resort branch.
+    expect(paLabel("ZZZ", undefined)).toBe("ZZZ");
+    expect(paLabel("ZZZ", null)).toBe("ZZZ");
+    expect(paLabel("ZZZ", "")).toBe("ZZZ");
   });
 
-  it("falls back to the bare key rather than 'ALA (ALA)' when name already equals the key", () => {
-    expect(paLabel("ALA", "ALA")).toBe("ALA");
+  it("falls back to the bare key rather than 'ZZZ (ZZZ)' when name already equals the key", () => {
+    expect(paLabel("ZZZ", "ZZZ")).toBe("ZZZ");
+  });
+});
+
+// V1 fix (Opus eyes-on review, 2026-09-24): "Program Area picker and labels are acronym-only" --
+// the P3 formatting above never actually fired live, because NO published app bundle (v6-v9)
+// carries a `name` on its `zones.programarea` rows (REAL_V7_BOOT above IS that shape: `name` is
+// absent on every row). `PROGRAM_AREA_NAMES` (scripts/gen-program-area-names.mjs, generated from
+// the canonical Program-Area geometry) is the app-side fallback `paLabel` now consults.
+describe("paLabel PROGRAM_AREA_NAMES fallback (V1 fix)", () => {
+  it(
+    "every key in the v7 fixture boot.json's programarea list resolves to a non-key label -- " +
+      "the exact bug Ben saw live (a real bundle publishes no `name` at all)",
+    () => {
+      for (const row of REAL_V7_BOOT.zones.programarea) {
+        const label = paLabel(row.key, undefined);
+        expect(label).not.toBe(row.key);
+        expect(label).toBe(`${PROGRAM_AREA_NAMES[row.key]} (${row.key})`);
+      }
+    },
+  );
+
+  it("resolves every one of the 20 published Program Areas, not just the two in the fixture", () => {
+    for (const [key, name] of Object.entries(PROGRAM_AREA_NAMES)) {
+      expect(paLabel(key, undefined)).toBe(`${name} (${key})`);
+    }
+  });
+
+  it("precedence: a bundle-published name wins over the table", () => {
+    expect(paLabel("GEO", "Bundle's Own Name")).toBe("Bundle's Own Name (GEO)");
+  });
+
+  it("precedence: the table wins over the bare key when the bundle publishes none", () => {
+    expect(paLabel("GEO", undefined)).toBe("St. George Basin (GEO)");
+    expect(paLabel("GEO", null)).toBe("St. George Basin (GEO)");
+    expect(paLabel("GEO", "")).toBe("St. George Basin (GEO)");
+  });
+
+  it("precedence: the bare key is the last resort when neither publishes a name", () => {
+    expect(paLabel("ZZZ", undefined)).toBe("ZZZ");
+  });
+
+  it("'(KEY)' suffix format: always the acronym in parens after a single space", () => {
+    expect(paLabel("GEO", undefined)).toMatch(/^St\. George Basin \(GEO\)$/);
+  });
+
+  it("unit scoping: the table is skipped for a non-programarea unit, even on a colliding key", () => {
+    // "GEO" collides with a real Program Area key -- an ecoregion/subregion match must never
+    // borrow its name.
+    expect(paLabel("GEO", undefined, "ecoregion")).toBe("GEO");
+    expect(paLabel("GEO", undefined, "subregion")).toBe("GEO");
+  });
+
+  it("unit scoping: omitting `unit` (every in-app-only Program Area call site) still resolves it", () => {
+    expect(paLabel("GEO", undefined, undefined)).toBe("St. George Basin (GEO)");
+    expect(paLabel("GEO", undefined, "programarea")).toBe("St. George Basin (GEO)");
+  });
+});
+
+// zoneDisplayName is the function Places.svelte/ResultsPanel.svelte actually call for the list
+// row / results panel title -- proving the fallback flows all the way through, not just paLabel
+// in isolation.
+describe("zoneDisplayName over a REAL_V7_BOOT-shaped release (no published `name`, V1 fix)", () => {
+  it("shows the full name, not the bare key, for a real release's Program Area rows", () => {
+    const stats = zoneStatsFor(REAL_V7_BOOT, "programarea", ["ALA", "ALB"]);
+    expect(zoneDisplayName(stats)).toBe("Aleutian Arc (ALA), Aleutian Basin (ALB)");
   });
 });
 

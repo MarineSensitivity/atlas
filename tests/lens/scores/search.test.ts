@@ -47,6 +47,25 @@ describe("matchZones", () => {
     ]);
   });
 
+  // V1 fix (Opus eyes-on review, 2026-09-24): a real release publishes no `name` on its
+  // `zones.programarea` rows at all -- `matchZones` must still surface the full name (via the
+  // app-side PROGRAM_AREA_NAMES table, zoneStats.ts#paLabel), unit-scoped so a subregion row
+  // sharing the SAME key never borrows it.
+  it("resolves the app-side PROGRAM_AREA_NAMES fallback for an unnamed programarea row", () => {
+    const boot = {
+      zones: {
+        programarea: [{ key: "ALA", metrics: {} }], // no `name` -- the real v7 shape
+        subregion: [{ key: "ALA", metrics: {} }], // same key, different unit -- must NOT resolve
+      },
+      units: [{ fld: "programarea_key", pmtiles: "x", source_layer: "programarea" }],
+    };
+    const m = matchZones(boot, "ala");
+    expect(m).toEqual([
+      { kind: "zone", unit: "programarea", key: "ALA", label: "Aleutian Arc (ALA)" },
+      { kind: "zone", unit: "subregion", key: "ALA", label: "ALA" },
+    ]);
+  });
+
   it("an unpublished unit / no match: [], never a throw", () => {
     expect(matchZones(BOOT_V7, "nonexistent-place")).toEqual([]);
     expect(matchZones(null, "GAA")).toEqual([]);

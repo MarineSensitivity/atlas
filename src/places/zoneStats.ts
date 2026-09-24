@@ -26,6 +26,7 @@ import type { Point } from "geojson";
 import { zoneLabelsFromBoot } from "../lib/map/layers/zones";
 import { componentMetricKeys } from "../lib/analysis/queries";
 import { componentLabel } from "../lens/scores/flower";
+import { PROGRAM_AREA_NAMES } from "../lib/zones/programAreaNames";
 
 export interface ZoneStat {
   key: string;
@@ -177,10 +178,27 @@ export function summarizeZoneStats(stats: readonly ZoneStat[]): {
  * carries no `name` row -- `zoneStatFromBoot` above) -- when it is missing OR happens to equal the
  * key, this falls back to the bare key rather than printing "ALA (ALA)". URLs/state stay keyed by
  * the acronym; this is display text only.
+ *
+ * V1 fix (Opus eyes-on review, 2026-09-24): the P3 fix above never actually showed a full name
+ * live -- NO published app bundle (v6-v9) carries a `name` on its `zones.programarea` rows at all
+ * (verified against the real v7 `boot.json`: every row is `{key, n_cells, area_km2, n_taxa,
+ * metrics, coverage}`), so `name` was always `undefined` and every Program Area label was the bare
+ * acronym forever. `PROGRAM_AREA_NAMES` (generated from the canonical Program-Area geometry,
+ * `scripts/gen-program-area-names.mjs`) is a second, app-side fallback consulted when the bundle
+ * publishes nothing: bundle `name` first, then this table, then the bare key. `unit` scopes the
+ * table to Program Areas alone -- a caller searching/reporting across OTHER zone units
+ * (subregion/ecoregion/planarea, e.g. `lens/scores/search.ts`, `lib/report/model.ts`) passes its
+ * own `unit` so a same-named key in a different unit's namespace is never mislabeled; every other
+ * caller in this app only ever deals in Program Areas (the release's one selectable unit, D17), so
+ * omitting `unit` still resolves the table -- unchanged for every existing call site.
  */
-export function paLabel(key: string, name: string | null | undefined): string {
-  if (!name || name === key) return key;
-  return `${name} (${key})`;
+export function paLabel(key: string, name: string | null | undefined, unit?: string): string {
+  if (name && name !== key) return `${name} (${key})`;
+  if (unit === undefined || unit === "programarea") {
+    const fallback = PROGRAM_AREA_NAMES[key];
+    if (fallback && fallback !== key) return `${fallback} (${key})`;
+  }
+  return key;
 }
 
 /** the display name for a zone place's row: every resolved "Name (KEY)" label (`paLabel`, above),

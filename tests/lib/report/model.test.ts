@@ -254,6 +254,26 @@ describe("expandPlaces -- a multi-key zone place becomes one reported area per k
     expect(stubs[0].name).toBe("My box");
     expect(stubs[0].token.startsWith("g1.")).toBe(true);
   });
+
+  // V1 fix (Opus eyes-on review, 2026-09-24): a real release's boot publishes NO `name` on any
+  // `zones.programarea` row -- the report's place pill/lines/flower title must still show the
+  // full name via the app-side PROGRAM_AREA_NAMES fallback, unit-scoped so an er/sr place sharing
+  // the same key is unaffected.
+  it("falls back to PROGRAM_AREA_NAMES for a Program Area key boot doesn't publish a name for", () => {
+    const stubs = expandPlaces([{ kind: "zone", set: "pa", keys: ["ALA"] }], BOOT);
+    expect(stubs[0].name).toBe("Aleutian Arc (ALA)");
+  });
+
+  it("does not apply the Program Area table to a same-keyed subregion/ecoregion place", () => {
+    const stubs = expandPlaces(
+      [
+        { kind: "zone", set: "sr", keys: ["ALA"] },
+        { kind: "zone", set: "er", keys: ["ALA"] },
+      ],
+      BOOT,
+    );
+    expect(stubs.map((s) => s.name)).toEqual(["ALA", "ALA"]);
+  });
 });
 
 describe("map", () => {

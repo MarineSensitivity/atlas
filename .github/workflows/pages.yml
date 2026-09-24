@@ -7,6 +7,12 @@ name: Pages
 # commit).
 on:
   push:
+    # the feedback Apps Script (scripts/feedback/Code.gs) commits each report's screenshot to
+    # main under feedback/<id>.png; that commit changes nothing the build reads, and as a plain
+    # push it re-ran every job AND (via the per-ref concurrency group below) cancelled the
+    # in-flight three-engine + seeded-fault jobs of the real push before it (2026-09-24, #1).
+    paths-ignore:
+      - "feedback/**"
   pull_request:
 
 # scoped per ref, not a single global "pages" group: a global group would let any push to a

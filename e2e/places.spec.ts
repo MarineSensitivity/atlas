@@ -650,6 +650,50 @@ test("the 'Show analysis cells' toggle survives a tool switch + remount, matchin
   expect(await selectionLineFeatureCount(page)).toBeGreaterThan(0);
 });
 
+// V1 fix (Opus eyes-on review, 2026-09-24): "struck-through 'Show analysis cells' has no visible
+// reason" -- desktop's tooltip clipped at the panel edge; nothing appeared on a phone tap (no
+// hover, and the old mechanism was hover/focus-only). `Pill.svelte`'s `disabledReason` is now an
+// ALWAYS-RENDERED line of normal-flow text (never gated on interaction, never clippable the way
+// an absolutely-positioned tooltip is) -- proven on BOTH a desktop and a phone viewport, with NO
+// hover/focus/tap at all, since that is exactly the interaction (none) the bug reproduced under.
+// Two separate tests (not one page resized mid-test): each viewport gets its OWN fresh load, the
+// same convention e2e/shell.panel.spec.ts / species.camera.spec.ts use for a phone-only case --
+// a live cross-breakpoint resize remounts the shell's rail/panel into a different layout entirely
+// (Sheet vs Panel) and is not what either bug report actually described.
+async function assertReasonVisibleAndUnclipped(page: Page, viewportWidth: number) {
+  await openPlaces(page); // no place selected -- the pill's own default disabled state
+  const cellsPill = page.getByRole("button", { name: "Show analysis cells" });
+  await expect(cellsPill).toHaveAttribute("aria-disabled", "true");
+
+  // visible with ZERO interaction -- never hovered, focused, or tapped.
+  const reason = page.getByText("Select a drawn or uploaded place first.");
+  await expect(reason).toBeVisible();
+
+  // not clipped: the reason's own box is fully within the viewport, not cropped by an ancestor's
+  // `overflow` (the old absolutely-positioned tooltip's own failure mode).
+  const box = await reason.boundingBox();
+  expect(box, "reason has no box at all").not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewportWidth);
+}
+
+test("desktop: the disabled 'Show analysis cells' pill shows its reason as visible text AT REST, no hover needed", async ({
+  page,
+}) => {
+  await assertReasonVisibleAndUnclipped(page, page.viewportSize()!.width);
+});
+
+test.describe("phone: the disabled 'Show analysis cells' pill shows its reason with no tap at all", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("the reason renders visible and unclipped at 390px -- the exact case that reported nothing on a tap", async ({
+    page,
+  }) => {
+    await assertReasonVisibleAndUnclipped(page, 390);
+  });
+});
+
 // --- P7 ("drawn places vanish from the map after the second draw, and are 'not analysed yet'") ---
 //
 // Root cause 1 (Rule 1, "every place is drawn at all times"): `placesMap.svelte.ts`'s baseline

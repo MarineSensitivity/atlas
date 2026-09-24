@@ -11,10 +11,10 @@
   // `window.__early`, exactly like Shell.svelte does, so a restricted release is refused here in
   // the same place it is refused there: before this component's own script ever runs.
   import { onMount } from "svelte";
+  import { categoryLabel } from "../lib/ui/categories";
   import Announcer from "../lib/ui/Announcer.svelte";
   import { announce } from "../lib/ui/announcer";
   import Legend from "../lib/ui/Legend.svelte";
-  import { categoryLabel } from "../lib/ui/categories";
   import { nextRovingIndex } from "../lib/ui/roving";
   import { agencyDisplayName, shouldShowSeal } from "../lib/ui/sealVisibility";
   import { createAnalytics } from "../lib/analytics/analytics";
@@ -521,35 +521,39 @@
       </button>
     </h2>
     <div class="disclosure-body" hidden={!parametersOpen}>
-      <table>
-        <caption>Report parameters, per place.</caption>
-        <thead>
-          <tr>
-            <th scope="col">Place</th>
-            <th scope="col">Kind</th>
-            <th scope="col">Zone keys / vertices</th>
-            <th scope="col" class="num">Area (km²)</th>
-            <th scope="col" class="num">N cells</th>
-            <th scope="col" class="num">Study-area share</th>
-            <th scope="col">Token</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each model.parameters as p (p.token)}
+      <!-- V1 fix (Opus eyes-on review, 2026-09-24, phone 390px): wraps every table in its own
+           horizontal scroll container -- see report.css's `.table-scroll` header for why. -->
+      <div class="table-scroll">
+        <table>
+          <caption>Report parameters, per place.</caption>
+          <thead>
             <tr>
-              <td>{p.name}</td>
-              <td>{p.kind}</td>
-              <td>{p.zoneKeys ? p.zoneKeys.join(", ") : (p.vertexCount ?? "—")}</td>
-              <td class="num">{p.areaKm2 === null ? "—" : formatCount(p.areaKm2)}</td>
-              <td class="num">{formatCount(p.nCells)}</td>
-              <td class="num"
-                >{p.studyAreaPct === null ? "—" : formatCoveragePct(p.studyAreaPct / 100)}</td
-              >
-              <td><code>{p.token}</code></td>
+              <th scope="col">Place</th>
+              <th scope="col">Kind</th>
+              <th scope="col">Zone keys / vertices</th>
+              <th scope="col" class="num">Area (km²)</th>
+              <th scope="col" class="num">N cells</th>
+              <th scope="col" class="num">Study-area share</th>
+              <th scope="col">Token</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each model.parameters as p (p.token)}
+              <tr>
+                <td>{p.name}</td>
+                <td>{p.kind}</td>
+                <td>{p.zoneKeys ? p.zoneKeys.join(", ") : (p.vertexCount ?? "—")}</td>
+                <td class="num">{p.areaKm2 === null ? "—" : formatCount(p.areaKm2)}</td>
+                <td class="num">{formatCount(p.nCells)}</td>
+                <td class="num"
+                  >{p.studyAreaPct === null ? "—" : formatCoveragePct(p.studyAreaPct / 100)}</td
+                >
+                <td><code>{p.token}</code></td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
       <!-- fix round 2, item 2: D7b's own disclosure, per drawn place -- a zone place has none
            (d7bNote is null: a published zone IS the study area, nothing to disclose). -->
       {#each model.parameters as p (p.token)}
@@ -645,17 +649,9 @@
                  for the live app, `src/lib/ui/flowerGeometry.ts`'s header), never a pie slice from
                  the true centre -- this file used to draw a hub circle of a hardcoded `r="24"` ON
                  TOP of full pie slices, which covered any component scoring <= 24 exactly the way
-                 the live app's own bug did.
-                 P round V2 fix (Opus eyes-on, 2026-09-24, phone/desktop-14-report-scrolled):
-                 `opacity="0.5"` (the ported app's `geom_rect_interactive(..., alpha = 0.5)`,
-                 docs/parity/checklists/atlas-7-report.md:24) painted these petals visibly PALER than
-                 the full-opacity `.flower-legend .swatch` swatches a few lines below, which read the
-                 SAME `--cat-*` token at opacity 1 -- one document, two different renderings of the
-                 identical color. `Flower.svelte`'s own `.petal` rule already made this exact call for
-                 the live app ("full opacity: scripts/contrast.mjs measures each --cat-* token AS
-                 COMMITTED in tokens.css -- compositing at less than that would ship a color the gate
-                 never actually checked. Ship the measured color.") -- this file now follows the same
-                 rule, so the report's petals and its own legend agree. -->
+                 the live app's own bug did. V2 (2026-09-24 eyes-on): no `opacity="0.5"` --
+                 the petals must render the SAME `--cat-*` colour as the `.flower-legend .swatch`
+                 swatches below them (Flower.svelte's own full-opacity rule). -->
             {#each f.geometry.petals as p (p.key)}
               <path
                 d={p.path}
@@ -701,39 +697,38 @@
   <section aria-labelledby="s-scores">
     <h2 id="s-scores">Table of Scores</h2>
     <p class="narrative">{model.scores.narrative}</p>
-    <table aria-describedby="scores-summary">
-      <caption>Mean component and overall scores per area.</caption>
-      <thead>
-        <tr>
-          <th scope="col">Area</th>
-          <th scope="col" class="num">N cells</th>
-          {#each model.scores.components as c (c)}
-            <!-- P round V2 fix (Opus eyes-on: "the raw key 'primprod' appears" / "'primprod' header"):
-                 `c` stays the raw component key (row/cell matching, e.g. `cell.component`, keys on
-                 it below) -- only the DISPLAYED text goes through `categoryLabel()`. -->
-            <th scope="col" class="num">{categoryLabel(c)}</th>
-          {/each}
-          <th scope="col" class="num">Overall</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each model.scores.rows as row (row.name)}
+    <div class="table-scroll">
+      <table aria-describedby="scores-summary">
+        <caption>Mean component and overall scores per area.</caption>
+        <thead>
           <tr>
-            <th scope="row">{row.name}</th>
-            <td class="num">{formatCount(row.nCells)}</td>
-            {#each row.cells as cell (cell.component)}
-              <td class="num">
-                {cell.score === null ? "—" : formatScore0(cell.score)}
-                {#each cell.footnotes as id (id)}<sup>{id}</sup>{/each}
-              </td>
+            <th scope="col">Area</th>
+            <th scope="col" class="num">N cells</th>
+            {#each model.scores.components as c (c)}
+              <th scope="col" class="num">{categoryLabel(c)}</th>
             {/each}
-            <td class="num"
-              ><strong>{row.overall === null ? "—" : formatScore0(row.overall)}</strong></td
-            >
+            <th scope="col" class="num">Overall</th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each model.scores.rows as row (row.name)}
+            <tr>
+              <th scope="row">{row.name}</th>
+              <td class="num">{formatCount(row.nCells)}</td>
+              {#each row.cells as cell (cell.component)}
+                <td class="num">
+                  {cell.score === null ? "—" : formatScore0(cell.score)}
+                  {#each cell.footnotes as id (id)}<sup>{id}</sup>{/each}
+                </td>
+              {/each}
+              <td class="num"
+                ><strong>{row.overall === null ? "—" : formatScore0(row.overall)}</strong></td
+              >
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
     {#if model.scores.footnotes.length}
       <ol class="footnotes">
         {#each model.scores.footnotes as fn (fn.id)}
@@ -753,76 +748,77 @@
         {#if species.counts === null}
           <p>{species.empty ?? "Loading species…"}</p>
         {:else}
-          <table aria-describedby={`species-summary-${i}`}>
-            <caption>{species.caption}</caption>
-            <thead>
-              <tr>
-                <th scope="col">Category</th>
-                {#each species.counts.columns as col (col)}
-                  <th scope="col" class="num">{col}</th>
-                {/each}
-                <th scope="col" class="num">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each species.counts.rows as row (row.category)}
-                <tr>
-                  <!-- P round V2 fix: `row.category` is the raw `sp_cat` value ("mammal",
-                       "primprod") -- er.ts's own header says "categories.ts supplies the display
-                       label", which this call is. -->
-                  <th scope="row">{categoryLabel(row.category)}</th>
-                  {#each row.counts as c, j (j)}
-                    <td class="num">{formatCount(c)}</td>
-                  {/each}
-                  <td class="num">{formatCount(row.total)}</td>
-                </tr>
-              {/each}
-              <tr>
-                <th scope="row">Total</th>
-                {#each species.counts.totalRow.counts as c, j (j)}
-                  <td class="num">{formatCount(c)}</td>
-                {/each}
-                <td class="num">{formatCount(species.counts.totalRow.total)}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          {#if species.top}
-            <table>
-              <caption
-                >Top 20 highest-scoring species (by habitat-weighted extinction risk).</caption
-              >
+          <div class="table-scroll">
+            <table aria-describedby={`species-summary-${i}`}>
+              <caption>{species.caption}</caption>
               <thead>
                 <tr>
                   <th scope="col">Category</th>
-                  <th scope="col">Common</th>
-                  <th scope="col">Scientific</th>
-                  <th scope="col">ER code</th>
-                  <th scope="col" class="num">ER score</th>
-                  <th scope="col" class="num">Score</th>
+                  {#each species.counts.columns as col (col)}
+                    <th scope="col" class="num">{col}</th>
+                  {/each}
+                  <th scope="col" class="num">Total</th>
                 </tr>
               </thead>
               <tbody>
-                {#each species.top.rows as row, j (row.mdl_key)}
+                {#each species.counts.rows as row (row.category)}
                   <tr>
-                    <!-- P round V2 fix (found via eyes-on: the raw sp_cat also showed here,
-                         lowercase, beside the ALREADY-fixed Summary of Species table above it). -->
-                    <td>{categoryLabel(row.sp_cat)}</td>
-                    <td>
-                      {#if row.sp_common}
-                        <a href={species.top.hrefs[j]}>{row.sp_common}</a>
-                      {:else}
-                        —
-                      {/if}
-                    </td>
-                    <td><em>{row.sp_scientific}</em></td>
-                    <td>{row.er_code ?? "—"}</td>
-                    <td class="num">{row.er_score === null ? "—" : formatErScore(row.er_score)}</td>
-                    <td class="num">{formatCount(row.suit_er_area)}</td>
+                    <th scope="row">{categoryLabel(row.category)}</th>
+                    {#each row.counts as c, j (j)}
+                      <td class="num">{formatCount(c)}</td>
+                    {/each}
+                    <td class="num">{formatCount(row.total)}</td>
                   </tr>
                 {/each}
+                <tr>
+                  <th scope="row">Total</th>
+                  {#each species.counts.totalRow.counts as c, j (j)}
+                    <td class="num">{formatCount(c)}</td>
+                  {/each}
+                  <td class="num">{formatCount(species.counts.totalRow.total)}</td>
+                </tr>
               </tbody>
             </table>
+          </div>
+
+          {#if species.top}
+            <div class="table-scroll">
+              <table>
+                <caption
+                  >Top 20 highest-scoring species (by habitat-weighted extinction risk).</caption
+                >
+                <thead>
+                  <tr>
+                    <th scope="col">Category</th>
+                    <th scope="col">Common</th>
+                    <th scope="col">Scientific</th>
+                    <th scope="col">ER code</th>
+                    <th scope="col" class="num">ER score</th>
+                    <th scope="col" class="num">Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each species.top.rows as row, j (row.mdl_key)}
+                    <tr>
+                      <td>{categoryLabel(row.sp_cat)}</td>
+                      <td>
+                        {#if row.sp_common}
+                          <a href={species.top.hrefs[j]}>{row.sp_common}</a>
+                        {:else}
+                          —
+                        {/if}
+                      </td>
+                      <td><em>{row.sp_scientific}</em></td>
+                      <td>{row.er_code ?? "—"}</td>
+                      <td class="num"
+                        >{row.er_score === null ? "—" : formatErScore(row.er_score)}</td
+                      >
+                      <td class="num">{formatCount(row.suit_er_area)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
           {/if}
 
           <p>
@@ -874,23 +870,25 @@
         DuckDB-WASM
         {model.provenance.duckdbWasm ?? "—"}.
       </p>
-      <table>
-        <caption>Tables read.</caption>
-        <thead>
-          <tr>
-            <th scope="col">Table</th>
-            <th scope="col">Digest</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each model.provenance.tables as t (t.name)}
+      <div class="table-scroll">
+        <table>
+          <caption>Tables read.</caption>
+          <thead>
             <tr>
-              <td>{t.name}</td>
-              <td><code>{t.digest ?? "—"}</code></td>
+              <th scope="col">Table</th>
+              <th scope="col">Digest</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each model.provenance.tables as t (t.name)}
+              <tr>
+                <td>{t.name}</td>
+                <td><code>{t.digest ?? "—"}</code></td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
       {#each model.provenance.sql as run (run.name)}
         <details>
           <summary>{run.name}.sql</summary>

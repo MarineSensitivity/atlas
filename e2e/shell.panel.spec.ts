@@ -186,6 +186,28 @@ test.describe("R1: maximize", () => {
     expect(await urlSnapshot(page)).toEqual(before);
   });
 
+  // V1 fix (Opus eyes-on review, 2026-09-24, desktop 1280x800): "desktop Full screen panel is
+  // capped at 720px" -- `#panel-region[data-maximized="true"]` (shell.css) already spanned the
+  // whole stage, but Panel.svelte's OWN `.panel` element (the actual content box, one level
+  // further in) still carried its docked-width ceiling (`max-width: 720px`, R1's own docked/half
+  // limit) UNCONDITIONALLY -- so a maximized panel's box stayed 720px wide inside a full-width
+  // frame, above `region!.width` in the test above (which only checks the outer `#panel-region`
+  // and would not have caught this). `.rail-region` floats OVER the stage (`position: absolute`,
+  // not in flow), so it costs the panel no width -- the panel should reach very nearly the full
+  // stage width, not just >90% of it.
+  test("the panel's own content box (not just #panel-region) drops its 720px cap when maximized", async ({
+    page,
+  }) => {
+    await gotoTable(page);
+    await panelSurface(page).getByRole("button", { name: "Full screen" }).click();
+    await expect(page.locator("#panel-region")).toHaveAttribute("data-maximized", "true");
+    const panelBox = await page.locator(".panel").boundingBox();
+    const stageBox = await page.locator("#stage").boundingBox();
+    const railBox = await page.locator("#rail-region").boundingBox();
+    const railWidth = railBox?.width ?? 0;
+    expect(panelBox!.width).toBeGreaterThanOrEqual(stageBox!.width - railWidth - 2);
+  });
+
   test("focus is trapped inside the maximized panel (Tab wraps, never escapes to the rail)", async ({
     page,
   }) => {
