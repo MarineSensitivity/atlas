@@ -805,7 +805,9 @@
               <tbody>
                 {#each species.top.rows as row, j (row.mdl_key)}
                   <tr>
-                    <td>{row.sp_cat}</td>
+                    <!-- P round V2 fix (found via eyes-on: the raw sp_cat also showed here,
+                         lowercase, beside the ALREADY-fixed Summary of Species table above it). -->
+                    <td>{categoryLabel(row.sp_cat)}</td>
                     <td>
                       {#if row.sp_common}
                         <a href={species.top.hrefs[j]}>{row.sp_common}</a>
