@@ -44,11 +44,15 @@
 </button>
 
 <Modal {open} title="Legend" onclose={() => (open = false)}>
-  <!-- ScoresLegend.svelte/SpeciesLegend.svelte both position their root `position: absolute` (they
-       normally float directly over the map) -- `position: relative` here gives that absolute
-       positioning a LOCAL containing block instead of the viewport, and the min-height gives its
-       `bottom`/`right` offsets somewhere real to land (an absolutely-positioned child contributes
-       NO height of its own to an auto-height parent). -->
+  <!-- P1 fix: ScoresLegend.svelte/SpeciesLegend.svelte both position their root `position:
+       absolute; right: var(--space-3); bottom: var(--space-3)` -- their DESKTOP placement, sized
+       for a `right`/`bottom` offset against the whole map viewport. Reused verbatim here (never
+       forked) with that positioning left in place, the same fixed offset instead spilled the
+       ramp's 280px-wide box past this modal's own (much narrower) left edge -- invisible for as
+       long as the modal body was `display:none` (the OTHER P1 bug), so nobody had seen it render
+       until now. `:global()` neutralizes it to normal flow, using the component's own natural
+       width instead of the desktop offset; the min-height below is then unneeded for layout but
+       harmless to keep as a floor. -->
   <div class="legend-modal-body">
     {@render children()}
   </div>
@@ -106,5 +110,12 @@
   .legend-modal-body {
     position: relative;
     min-height: 140px;
+  }
+
+  /* P1 fix: see the template comment above `<Modal>` -- reaches into the reused child components'
+     own scoped root class to drop their desktop `position: absolute` placement inside this modal. */
+  .legend-modal-body :global(.scores-legend),
+  .legend-modal-body :global(.species-legend) {
+    position: static;
   }
 </style>

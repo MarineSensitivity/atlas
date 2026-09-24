@@ -15,7 +15,9 @@ phone legend chip overlapped the bottom sheet, and the legend it opened was blan
   desktop) — but the phone modal reuses that same component verbatim, so the same rule blanked the
   modal's body on the one viewport it was built to serve. The desktop-only hiding now lives in a
   wrapper class the shell owns (`shell.css`'s `.lens-legend-region`) instead of inside the
-  components themselves.
+  components themselves. Fixing that also exposed the legend's own desktop `position: absolute`
+  placement spilling its ramp past the (narrower) modal's edge — neutralized to normal flow inside
+  the modal so it now renders fully contained, ramp + both endpoint labels.
 - The chip's own label is now the short, fixed word **"Legend"**, with the metric name shown after
   it only as space allows (never wrapping to a second line); the full title is unaffected in the
   modal.
