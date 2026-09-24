@@ -186,7 +186,7 @@
   }
 
   // R1 "focus trapped in the panel while maximized": the same Tab-cycle trap Modal.svelte's native
-  // <dialog> gets for free -- a plain <section>, even one that fills the stage, has no such
+  // dialog element gets for free -- a plain section, even one that fills the stage, has no such
   // platform behaviour, so it is hand-rolled here, scoped to `geometry.maximized`.
   const FOCUSABLE_SELECTOR =
     "button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), " +

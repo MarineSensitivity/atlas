@@ -390,7 +390,9 @@
     if (isPhone) {
       return phonePadding(loadSheetDetent(storage(), "shell"), window.innerHeight);
     }
-    return desktopPanelPadding(loadPanelGeometry(storage(), "shell", viewportBucket(window.innerWidth)));
+    return desktopPanelPadding(
+      loadPanelGeometry(storage(), "shell", viewportBucket(window.innerWidth)),
+    );
   }
 
   function initialStudyArea(area: StudyArea): StudyArea {
@@ -904,7 +906,7 @@
     releaseDate={currentVersionRow?.released ?? null}
     appVersion={__APP_VERSION__}
     {feedbackHref}
-    onFeedbackClick={onFeedbackClick}
+    {onFeedbackClick}
     {onShare}
     onReportTop={onReport}
     {onHelp}
@@ -961,7 +963,12 @@
        `<div>` in `.stage`, always visible (no interaction needed, per the audit's own ask), keeps
        `#map` clean. `BASEMAP_ATTRIBUTION` is the SAME string composeStyle()'s own basemap input
        carries (layers/basemap.ts) -- never a second, hand-typed copy of the CARTO/OSM credit. -->
-  <div class="map-attribution" role="group" aria-label="Map data attribution" data-testid="map-attribution">
+  <div
+    class="map-attribution"
+    role="group"
+    aria-label="Map data attribution"
+    data-testid="map-attribution"
+  >
     <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre</a>
     <span aria-hidden="true">|</span>
     {BASEMAP_ATTRIBUTION}

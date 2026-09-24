@@ -64,9 +64,7 @@ test.describe("usability M4: default camera padded for the docked panel", () => 
     const pt = await projectFallback(page);
     const viewportWidth = 1280;
     expect(pt.x, "still on screen").toBeGreaterThan(0);
-    expect(pt.x, "shifted meaningfully left of canvas center").toBeLessThan(
-      viewportWidth / 2 - 50,
-    );
+    expect(pt.x, "shifted meaningfully left of canvas center").toBeLessThan(viewportWidth / 2 - 50);
   });
 
   test("an explicit ?map= matching the SAME point is never padded (a real camera is not second-guessed)", async ({

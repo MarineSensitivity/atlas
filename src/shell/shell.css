@@ -140,10 +140,17 @@ a {
    is the load-bearing rule (never blocks a click meant for the map beneath it, whether or not the
    loader has actually cleared yet in a given hermetic fixture); `position: absolute` keeps it out
    of `.stage`'s normal flow, so removing it never shifts `#rail-region`/`#panel-region`/etc. */
+/* z-index 1: strictly below the floating legend (z-index 5, ScoresLegend.svelte/SpeciesLegend.
+   svelte) and everything else in `.stage` -- ONLY above the plain `#map` canvas (no z-index of its
+   own, the default stacking order). Measured (axe, shell.a11y.spec.ts): at z-index 10 (above the
+   legend) this translucent overlay visually sat OVER the legend's own text while a hermetic
+   fixture's basemap fetch never actually resolves (no route for it in that spec), which is a
+   real, axe-caught "bgOverlap" -- two elements over one another with no way to resolve a single
+   contrast pair -- not a false positive to allow-list around. */
 .map-loading-overlay {
   position: absolute;
   inset: 0;
-  z-index: 10;
+  z-index: 1;
   display: grid;
   place-items: center;
   pointer-events: none;
@@ -154,12 +161,14 @@ a {
    (Shell.svelte's own header comment explains the role="group" OUTSIDE #map decision). Bottom-left
    -- the one corner no other floating region claims (rail is top-left/bottom-center, panel is
    top-right, the legend/legend-chip are bottom-right/bottom-center). Small and unobtrusive, the
-   same visual weight a basemap credit line conventionally has. */
+   same visual weight a basemap credit line conventionally has. Also kept below the legend (z-index
+   5) for the same reason as the loader above -- it never spatially overlaps it (bottom-left vs
+   bottom-right/bottom-center) but there is no reason for it to outrank chrome that does. */
 .map-attribution {
   position: absolute;
   left: var(--space-2);
   bottom: var(--space-2);
-  z-index: 11;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -549,10 +558,38 @@ button.chip {
    toggle's own min-content widths plus the default gap/padding still add up to ~356 px -- wider
    than the viewport. Nothing here is hidden (every remaining control is load-bearing), so the fix
    is to reclaim space from the topbar's own gap and padding rather than any control's content. */
-@media (max-width: 380px) {
+/* R2: was `max-width: 380px` (only the narrowest phones needed the reclaimed space) -- the ⋯
+   overflow trigger (`.topbar-phone-only`) adds a 6th persistent topbar control below 900px, and at
+   390px that alone pushed the theme toggle off-screen (verify.mjs's assertLayout, measured). Every
+   phone width needs the tighter gap/padding now, not just 320px; harmless at wider phone widths,
+   where there was already slack. */
+@media (max-width: 899px) {
   .topbar {
     gap: var(--space-1);
     padding: 0 var(--space-1);
+  }
+}
+
+/* the smallest viewport verify.mjs covers (320px): even with the tightened gap/padding above, the
+   fixed-content total (mark + version chip + lens switch + ⋯ + theme, no more slack to reclaim
+   from gap/padding alone -- measured, the "spacer" flex item bottoms out at 0px width first) still
+   exceeds 320px by ~34px once the ⋯ trigger is added. The brand MARK (not its name -- already
+   visually hidden here, `.brand-title`'s own rule above) is the one purely decorative control left:
+   hiding it reclaims its own width AND the gap beside it, the same "nothing here is hidden because
+   every remaining control is load-bearing" note the file already made about this breakpoint, minus
+   the one exception that is not load-bearing. */
+@media (max-width: 380px) {
+  .mark {
+    display: none;
+  }
+  /* the two remaining topbar tools at this width (⋯ and theme) are both icon-only -- a few px off
+   * `.tool`'s own padding closes the last of the ~34px deficit above (hiding the mark alone
+   * reclaimed all but ~2px). A real coarse-pointer device is unaffected: `@media (pointer:
+   * coarse) { .tool { min-width: var(--size-touch) } }` (above) still forces the full 44px touch
+   * target regardless of this padding -- measured here (viewport width alone, no `pointer:
+   * coarse`) is exactly the gap this closes. */
+  .tool {
+    padding: 0 var(--space-2);
   }
 }
 
@@ -716,10 +753,32 @@ button.chip {
   height: 32px;
   flex: none;
 }
-@media (pointer: coarse), (max-width: 899px) {
+@media (pointer: coarse) {
   .sk-panel-ctrl {
     width: var(--size-touch);
     height: var(--size-touch);
+  }
+}
+/* R1: Panel (and its 5 controls) never renders below 900px -- Sheet does, with its OWN unchanged
+   3-control model (`.sk-sheet-ctrl`, the mirror rule right below). Before R1 both real components
+   used the SAME 3-control order (collapse/half/full), so one shared skeleton position could stand
+   in for either; Panel's order and count diverged (dock left/bottom/right, maximize, collapse),
+   so this file now needs two disjoint placeholder sets, exactly like the real components. */
+@media (max-width: 899px) {
+  .sk-panel-ctrl {
+    display: none;
+  }
+}
+
+.sk-sheet-ctrl {
+  display: none;
+}
+@media (max-width: 899px) {
+  .sk-sheet-ctrl {
+    display: inline-grid;
+    width: var(--size-touch);
+    height: var(--size-touch);
+    flex: none;
   }
 }
 .sk-panel-body {
@@ -765,33 +824,12 @@ button.chip {
   flex: none;
 }
 
-/* R2: About + Feedback moved from the on-map bottom-left card into the top bar (a `.tool`/
-   `button.chip`-shaped control each, same box model as Share/Report/Help -- these two placeholders
-   reuse `.sk-icon-tool` the same way those three already do, so no NEW skeleton class is needed
-   for the icon itself). The ⋯ overflow trigger is phone-only, mirrored below. */
-.sk-feedback {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  height: 40px;
-  padding: 0 var(--space-3);
-}
-.sk-about-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-}
-.sk-more-btn {
-  display: none;
-}
-@media (max-width: 899px) {
-  .sk-more-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: var(--size-touch);
-    height: var(--size-touch);
-  }
-}
+/* R2: About + Feedback moved from the on-map bottom-left card into the top bar -- same `.tool`
+   box model as Share/Report/Help (reusing `.sk-icon-tool` for the icon, exactly as those three
+   already do), so NEITHER needs a skeleton class of its own: giving one its OWN `display`
+   (even an identical value) put it LATER than `.topbar-desktop-only`'s hide rule in source order,
+   which is what decides a tie in specificity -- the skeleton stayed visible at phone width while
+   the real button correctly hid (the geometry-equality gate's own "share.x drifted 2px" and
+   "theme.x drifted 159px" catches, atlas-8-style: measured, not assumed). The ⋯ overflow trigger
+   (phone-only) is `.tool.topbar-phone-only` for the identical reason -- see index.html's markup
+   for all three; nothing below this comment styles them specially any more. */

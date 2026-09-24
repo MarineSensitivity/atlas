@@ -17,7 +17,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession, waitForHydration } from "./hermetic";
 import { blockWasm, routeBasemapStyle, routeGlyphs } from "./map-hermetic";
-import { panelStorageKey, type PanelGeometry } from "../src/lib/ui/panelGeometry";
 
 test.describe.configure({ mode: "serial" });
 
@@ -88,10 +87,9 @@ test.describe("R1: dock left / right / bottom", () => {
       await panelSurface(page)
         .getByRole("button", { name: `Dock ${dock}` })
         .click();
-      await expect(panelSurface(page).getByRole("button", { name: `Dock ${dock}` })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
+      await expect(
+        panelSurface(page).getByRole("button", { name: `Dock ${dock}` }),
+      ).toHaveAttribute("aria-pressed", "true");
       await expect(page.locator("#panel-region")).toHaveAttribute("data-dock", dock);
       // R1: layout is chrome -- never the URL.
       expect(await urlSnapshot(page)).toEqual(before);
@@ -109,7 +107,9 @@ test.describe("R1: drag-resize and arrow-key resize on the map-facing edge", () 
     if (!box) throw new Error("resize handle has no box");
     const startX = box.x + box.width / 2;
     const startY = box.y + box.height / 2;
-    const before = await page.locator("#panel-region").evaluate((el) => el.style.getPropertyValue("--panel-size"));
+    const before = await page
+      .locator("#panel-region")
+      .evaluate((el) => el.style.getPropertyValue("--panel-size"));
 
     await page.mouse.move(startX, startY);
     await page.mouse.down();

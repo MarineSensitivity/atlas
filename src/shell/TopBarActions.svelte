@@ -126,12 +126,7 @@
     const items = moreMenuEl?.querySelectorAll<HTMLElement>('[role="menuitem"]');
     if (!items || items.length === 0) return;
     const current = [...items].indexOf(document.activeElement as HTMLElement);
-    const next = nextRovingIndex(
-      current === -1 ? 0 : current,
-      items.length,
-      event.key,
-      "vertical",
-    );
+    const next = nextRovingIndex(current === -1 ? 0 : current, items.length, event.key, "vertical");
     if (next === null) return;
     event.preventDefault();
     moreRovingIndex = next;
@@ -183,50 +178,53 @@
   aria-label="More: Share, Report, Send feedback, About, Help"
   aria-haspopup="menu"
   aria-expanded={moreOpen}
-  aria-controls={moreMenuId}
   bind:this={moreTriggerEl}
   onclick={() => (moreOpen ? closeMore() : openMore())}
 >
   <Icon name="more" size={18} />
 </button>
 
-{#if moreOpen}
-  <div
-    class="more-menu"
-    id={moreMenuId}
-    role="menu"
-    aria-label="More"
-    tabindex="-1"
-    bind:this={moreMenuEl}
-    onkeydown={onMenuKeydown}
-  >
-    {#each moreItems as item, i (item.label)}
-      {#if item.href}
-        <a
-          class="more-item"
-          role="menuitem"
-          tabindex={i === moreRovingIndex ? 0 : -1}
-          href={item.href}
-          target="_blank"
-          rel="noopener"
-          onclick={(e) => onMoreItemClick(item, e)}
-        >
-          <Icon name={item.icon} size={16} /><span>{item.label}</span>
-        </a>
-      {:else}
-        <button
-          type="button"
-          class="more-item"
-          role="menuitem"
-          tabindex={i === moreRovingIndex ? 0 : -1}
-          onclick={(e) => onMoreItemClick(item, e)}
-        >
-          <Icon name={item.icon} size={16} /><span>{item.label}</span>
-        </button>
-      {/if}
-    {/each}
-  </div>
-{/if}
+<!-- always rendered (never {#if moreOpen}), toggled with `hidden` -- `aria-controls` on the ⋯
+     trigger above must reference an element that actually EXISTS in the DOM at all times (SC
+     4.1.2); axe's `aria-valid-attr-value` rule flags exactly the {#if}-gated version (measured:
+     "Unable to determine if aria-controls referenced ID exists... while using aria-haspopup").
+     Same fix as Popover.svelte/Accordion.svelte's own identical rule. -->
+<div
+  class="more-menu"
+  id={moreMenuId}
+  role="menu"
+  aria-label="More"
+  tabindex="-1"
+  hidden={!moreOpen}
+  bind:this={moreMenuEl}
+  onkeydown={onMenuKeydown}
+>
+  {#each moreItems as item, i (item.label)}
+    {#if item.href}
+      <a
+        class="more-item"
+        role="menuitem"
+        tabindex={i === moreRovingIndex ? 0 : -1}
+        href={item.href}
+        target="_blank"
+        rel="noopener"
+        onclick={(e) => onMoreItemClick(item, e)}
+      >
+        <Icon name={item.icon} size={16} /><span>{item.label}</span>
+      </a>
+    {:else}
+      <button
+        type="button"
+        class="more-item"
+        role="menuitem"
+        tabindex={i === moreRovingIndex ? 0 : -1}
+        onclick={(e) => onMoreItemClick(item, e)}
+      >
+        <Icon name={item.icon} size={16} /><span>{item.label}</span>
+      </button>
+    {/if}
+  {/each}
+</div>
 
 <Modal open={aboutOpen} title="About this release" onclose={() => (aboutOpen = false)}>
   <dl class="meta">
@@ -322,6 +320,16 @@
   }
   .seal-plate img {
     display: block;
+  }
+
+  /* an explicit `[hidden]` override: this element sets its OWN `display` (flex, for the column
+     layout below), and an author style with higher specificity than the plain `.more-menu` rule
+     is needed to win over it -- the UA stylesheet's `[hidden] { display: none }` is lowest
+     priority regardless of specificity, so without this the menu would stay visible (`display:
+     flex`) even while `hidden` -- see this component's own header comment for why it is always
+     rendered, never `{#if moreOpen}`, and toggled with `hidden` instead. */
+  .more-menu[hidden] {
+    display: none;
   }
 
   .more-menu {

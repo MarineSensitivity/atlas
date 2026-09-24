@@ -411,6 +411,28 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4400" },
   },
+  // U1 (docs/usability.md §7, R1): the panel's dock/resize/maximize model. "Layout is chrome,
+  // never the URL" is the load-bearing rule the round's own e2e/shell.panel.spec.ts asserts on
+  // every dock/resize/maximize action (`location.search`/`hash` unchanged) -- this fault reinstates
+  // exactly the regression that rule exists to catch.
+  {
+    id: "panel-geometry-in-url",
+    patch: "tests/faults/panel-geometry-in-url.patch",
+    describe:
+      "Panel.svelte's persist() also writes the chosen dock into the URL (?panelDock=) -- R1's " +
+      "'layout is chrome, never the URL' rule, broken",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.panel.spec.ts",
+      "-g",
+      "dock left: the button is pressed, and #panel-region reports it",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4373" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
