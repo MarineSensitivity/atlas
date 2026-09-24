@@ -1,20 +1,17 @@
 diff --git a/src/places/zoneStats.ts b/src/places/zoneStats.ts
-index 5c637f1..f8fc620 100644
+index 839c7e8..ef56798 100644
 --- a/src/places/zoneStats.ts
 +++ b/src/places/zoneStats.ts
-@@ -193,12 +193,9 @@ export function summarizeZoneStats(stats: readonly ZoneStat[]): {
-  * omitting `unit` still resolves the table -- unchanged for every existing call site.
-  */
- export function paLabel(key: string, name: string | null | undefined, unit?: string): string {
--  if (name && name !== key) return `${name} (${key})`;
+@@ -207,11 +207,8 @@ export function resolvedZoneName(
+   name: string | null | undefined,
+   unit?: string,
+ ): string | undefined {
++  void unit;
+   if (name && name !== key) return name;
 -  if (unit === undefined || unit === "programarea") {
 -    const fallback = PROGRAM_AREA_NAMES[key];
--    if (fallback && fallback !== key) return `${fallback} (${key})`;
+-    if (fallback && fallback !== key) return fallback;
 -  }
--  return key;
-+  void unit;
-+  if (!name || name === key) return key;
-+  return `${name} (${key})`;
+   return undefined;
  }
  
- /** the display name for a zone place's row: every resolved "Name (KEY)" label (`paLabel`, above),
