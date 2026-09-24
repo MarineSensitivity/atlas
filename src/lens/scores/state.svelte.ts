@@ -208,6 +208,7 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     cellId: number,
     lngLat: { lng: number; lat: number },
     token: number,
+    prevSel: string | undefined,
   ): Promise<void> {
     const bootObj = deps.boot() as Record<string, unknown>;
     const ver = deps.ver();
@@ -218,8 +219,15 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
         const tile = tileOf(cellId, grid);
         const sources = await getAnalysisSources(ver, bootObj);
         value = await fetchCellValue(sources, { cellId, tile, metricKey: lyr });
+        console.log("DIAG2 value resolved:", value, "cellId", cellId, "lyr", lyr);
+      } else {
+        console.log("DIAG2 skipped: ver=", ver, "lyr=", lyr);
       }
-    } catch {
+    } catch (err) {
+      console.log(
+        "DIAG2 caught:",
+        err instanceof Error ? err.message + " " + err.stack : String(err),
+      );
       value = null; // no engine / no tile for this cell (off-grid, unscored) — "no value", not a throw
     }
     if (token !== popupToken) return; // a later click superseded this one
@@ -231,13 +239,29 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     // published a short name for this metric yet.
     const label = (lyr && metricLabels[lyr]) || layerByKey(bootObj, lyr)?.label || lyr || "value";
     const input = { cellId, lon: lngLat.lng, lat: lngLat.lat, layerLabel: label, value };
-    // D3(a) (Opus 5.5 eyes-on, 2026-09-24): a click with no value for the displayed layer (off-grid,
-    // unscored — e.g. land) never BECOMES the selection: `handleMapClick` below no longer writes
-    // `sel` for this click at all, so the cell the user was already looking at (or nothing) stays
-    // selected, and the popup itself carries no cell id/layer title for a no-value answer
-    // (`cellPopupText`'s own "No scored cell here" branch). Only a CONFIRMED scored cell is ever
-    // written to the URL/selStore.
-    if (value !== null) deps.selStore.set({ sel: formatCellToken(cellId) });
+    // D3(a) round 2 (orchestrator, 2026-09-24 -- fixes a regression the FIRST D3 fix introduced):
+    // `handleMapClick` below now writes `sel` EAGERLY, synchronously, on click -- exactly the
+    // pre-D3 behaviour -- so the URL/selection updates at once regardless of how long (or whether
+    // at all) this async value confirmation takes. Gating the WRITE itself on that confirmation
+    // (the original D3(a) design) coupled two different things that do not fail together: "is this
+    // click on a scored cell" (fast, should never depend on the analysis engine succeeding) and
+    // "what value does the popup show" (genuinely needs the engine). `e2e/scores.collapsed-panel.
+    // spec.ts`'s M1 tests click a genuinely scored ocean cell in a fixture that permanently blocks
+    // `.wasm` (no panel/engine can ever boot there) and still expect `sel=cell:` promptly -- the
+    // ORIGINAL design could never satisfy that, panel-mounted or not (verified: the same fixture's
+    // OTHER M1 variant, "Places tool open", failed identically, with no panel involved at all).
+    //
+    // The D3 UX contract survives via RETRACTION instead of a gated write: once the fetch
+    // genuinely CONFIRMS no value (resolves null, or throws -- a real, prompt answer either way),
+    // and nothing has changed the selection since this click's own eager write, roll `sel` back to
+    // whatever it was immediately before this click (`prevSel`) -- so a no-value click still never
+    // PERMANENTLY becomes the selection, matching `e2e/scores.popup.novalue.spec.ts`'s own
+    // "previously selected cell stays selected" / "nothing becomes selected" assertions (both read
+    // the URL only AFTER polling for the popup's own settled text, i.e. after this retraction has
+    // already run). A confirmed VALUE needs no action: the eager write was already correct.
+    if (value === null && deps.selStore.sel.sel === formatCellToken(cellId)) {
+      deps.selStore.set({ sel: prevSel });
+    }
     updatePopup(lngLat, cellPopupText(input), cellPopupAnnounceText(input));
   }
 
@@ -293,17 +317,22 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       clearPopup(); // closes on the next click, whatever it resolves to
       if (unit === "cell") {
         if (result.cellId !== null) {
-          // D3(a): the selection is NOT written here — `showCellPopup` (below) writes it only once
-          // the cell is confirmed to carry a value for the displayed layer, so a click outside the
-          // scored area (Utah, on the owner's screenshot) never replaces whatever WAS selected.
+          // D3(a) round 2 (orchestrator, 2026-09-24): `sel` is written EAGERLY here, before the
+          // click's value is even known — restored to the pre-D3 behaviour, and for the same
+          // reason: the URL/selection must never depend on the analysis engine settling (see
+          // `showCellPopup`'s own header for the regression this fixes and why). `prevSel` is
+          // captured first so `showCellPopup` can retract cleanly to exactly what was selected
+          // before, not just clear it, once it confirms this cell carries no value.
           // usability M9: open at once, never wait on the engine — showCellPopup replaces this in
           // place once it answers.
+          const prevSel = deps.selStore.sel.sel;
+          deps.selStore.set({ sel: formatCellToken(result.cellId) });
           showPopup(
             lngLat,
             cellPopupLoadingText({ cellId: result.cellId, lon: lngLat.lng, lat: lngLat.lat }),
             "Loading value…",
           );
-          void showCellPopup(result.cellId, lngLat, token);
+          void showCellPopup(result.cellId, lngLat, token, prevSel);
         }
       } else if (result.zone) {
         deps.selStore.set({ sel: formatZoneToken(result.zone.unit, result.zone.key) });

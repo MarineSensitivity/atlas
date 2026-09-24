@@ -35,23 +35,56 @@ function loadModules(): Promise<Modules> {
   return modulesPromise;
 }
 
-let sources: AnalysisSourcesType | null = null;
-let sourcesVer: string | null = null;
+// P6c (orchestrator, 2026-09-24): memoize the IN-FLIGHT PROMISE, not just its resolved value.
+// `sel` is now written EAGERLY on click (`state.svelte.ts#handleMapClick`'s own header has the
+// regression this fixes), which makes it routine for TWO callers to reach this function around the
+// same moment -- the click's own `showCellPopup` value fetch AND `ScoresLens.svelte`'s
+// `cellFlowerRows` effect, which reacts to `sel` changing to `kind: "cell"` the instant it is
+// written, not once a value has already resolved. The old code checked the RESOLVED `sources`
+// synchronously (`if (sources && sourcesVer === ver) return sources`) and awaited `loadModules()`
+// (itself correctly promise-memoized) before ever assigning `sources` -- so two concurrent callers
+// for the SAME `ver`, both arriving before the first had finished, each saw `sources` still `null`
+// and each built its OWN `new Engine()`, racing to install DuckDB-WASM's `parquet` extension
+// independently (observed failure: "Extension Autoloading Error ... parquet"). Memoizing the
+// PROMISE closes that gap: a second concurrent caller awaits the SAME in-flight boot instead of
+// starting a second one.
+let sourcesPromise: Promise<AnalysisSourcesType> | null = null;
+let sourcesPromiseVer: string | null = null;
 
 /**
  * The current release's `AnalysisSources`, booting the engine on first call and reusing it for
  * every later one AS LONG AS `ver` has not changed (a version switch tears down and rebuilds —
- * the old engine's registered tables belong to a different release's grid/schema).
+ * the old engine's registered tables belong to a different release's grid/schema). Safe to call
+ * concurrently: every caller for the same `ver` shares the SAME boot, never a second engine.
  */
-export async function getAnalysisSources(
+export function getAnalysisSources(
   ver: string,
   boot: Record<string, unknown>,
 ): Promise<AnalysisSourcesType> {
-  if (sources && sourcesVer === ver) return sources;
-  const { Engine, AnalysisSources, templates, dataUrl } = await loadModules();
-  if (sources && sourcesVer !== ver) await sources.engine.dispose().catch(() => {});
-  const engine = new Engine();
-  sources = new AnalysisSources(engine, { url: (path) => dataUrl(ver, path), boot, templates });
-  sourcesVer = ver;
-  return sources;
+  if (sourcesPromise && sourcesPromiseVer === ver) return sourcesPromise;
+  // the boot this call supersedes (a real version switch, or `null` on the very first call) —
+  // captured now, before `sourcesPromise` is overwritten below, and disposed only once the NEW
+  // boot has actually finished (never torn down while something might still be using it, and
+  // never awaited before returning — disposal is a fire-and-forget cleanup, not on the critical
+  // path of handing the caller its new sources).
+  const superseded = sourcesPromiseVer !== ver ? sourcesPromise : null;
+  const promise = (async () => {
+    const { Engine, AnalysisSources, templates, dataUrl } = await loadModules();
+    const engine = new Engine();
+    const next = new AnalysisSources(engine, {
+      url: (path) => dataUrl(ver, path),
+      boot,
+      templates,
+    });
+    if (superseded) {
+      void superseded.then(
+        (prev) => prev.engine.dispose().catch(() => {}),
+        () => {}, // the superseded boot never even finished -- nothing to dispose
+      );
+    }
+    return next;
+  })();
+  sourcesPromise = promise;
+  sourcesPromiseVer = ver;
+  return promise;
 }

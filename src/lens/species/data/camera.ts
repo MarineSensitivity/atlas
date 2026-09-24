@@ -166,18 +166,29 @@ export function inputBbox(card: TaxonCard, dsKey: string, rep?: string): Bbox | 
  * selecting the `am` layer used to fall all the way to the study area for want of a bbox that a
  * SIBLING of the very taxon on screen already has. The first input (in the card's own order) that
  * carries ANY bbox on ANY of its assets, `rep`-preferred the same way {@link inputBbox} is —
- * `undefined` (not `selectedInput` itself, already tried by the caller, and not filtered by
- * `is_mask`: a mask input's own footprint is still honestly this taxon's ground).
+ * `undefined` (not `selectedInput` itself, already tried by the caller).
  *
- * `cameraFor()` tries this AFTER the caller's own ecoregion fallback, not before: a critical-
- * habitat mask's bbox can be a small sliver of the taxon's real range (the leatherback's `ch_fws`
- * is 0.1 x 0.05 deg — a single reef, not the species) and the ecoregion extent the caller already
- * curated is the more representative fallback whenever one is supplied (`tests/lens/species/
- * camera.test.ts`'s existing leatherback/globe cases pin exactly this ordering). In PRACTICE
- * `state.svelte.ts` supplies no ecoregion bbox yet (its own header explains why), so this step is
- * where the walrus `am` case actually resolves today. */
+ * P6c (orchestrator, real-CI regression, 2026-09-24): MASK inputs (`isMask: true` — critical
+ * habitat, range/DPS masks) are now SKIPPED, reversing this function's own original design (see
+ * git history for the removed rationale). The original reasoning assumed a mask's narrow bbox
+ * would only be tried as a fallback BEHIND the caller's ecoregion extent, and only when NO
+ * ecoregion bbox is supplied would this step matter in practice — but `state.svelte.ts` never
+ * supplies one AT ALL (its own header explains why: atlas-1 has not shipped `er_bbox` yet), so this
+ * step is reached for EVERY taxon whose selected/merged input lacks a bbox, not just the ones this
+ * function's own header worried about. Measured regression: the leatherback (`WORMS:137209`,
+ * `merged.bbox: null`, `am`/`ax` also null) has a `ch_fws` critical-habitat mask whose bbox is
+ * `[-64.95, 17.65, -64.85, 17.7]` — 0.1 x 0.05 degrees, a single reef off Puerto Rico — which this
+ * function picked up FIRST (inputs are iterated in the card's own order, am/ax before ch_fws) and
+ * flew the WHOLE-SPECIES default camera to, stranding `e2e/species.smoke.spec.ts`'s "a range draws
+ * >= 1 rendered feature" gate (a Program-Area PMTiles fixture nowhere near that reef) on every
+ * engine in CI. A mask is a CONSTRAINT on where a distribution model applies, never a stand-in for
+ * "the species' own ground" — the walrus case this function exists for is unaffected (`ax` is a
+ * real alternate DISTRIBUTION model, `isMask: false`), and a taxon with ONLY mask bboxes now falls
+ * through to the study area (or, for a release with no bbox anywhere, `state.svelte.ts`'s COG-
+ * bounds last resort) exactly as a taxon with no bbox at all already did. */
 export function anyInputBbox(card: TaxonCard, rep?: string): Bbox | null {
   for (const input of card.inputs) {
+    if (input.isMask) continue;
     const preferred = rep ? input.assets.find((a) => a.rep === rep && a.bbox) : undefined;
     const bbox = (preferred ?? input.assets.find((a) => a.bbox))?.bbox;
     if (bbox) return bbox;
