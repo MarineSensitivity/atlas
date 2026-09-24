@@ -107,3 +107,41 @@ export function categoryFor(raw: string): Category {
   const key = categoryKeyFor(raw);
   return key ? BY_KEY.get(key)! : NO_DATA_CATEGORY;
 }
+
+/** P round V2 fix (Opus eyes-on, 2026-09-24: "the raw key 'primprod' appears" / "raw keys show in
+ * the UI: 'primprod', lowercase categories"): the report's Table of Scores header and Summary of
+ * Species Category column, and the live app's own component/species tables (`ResultsPanel.svelte`,
+ * `SpeciesTable.svelte`, `ZonesTable.svelte`), printed `componentLabel()`'s/`sp_cat`'s RAW string
+ * verbatim -- lowercase, underscore-stripped ("bird", "primprod", "primary producer"), the internal
+ * spelling `categoryKeyFor()`'s SYNONYMS table normalizes FROM, never a spelling meant for display.
+ *
+ * A caller with a release's `metric_key -> label` map (`lens/scores/boot.ts#metricLabelsFromManifest`,
+ * built from `manifest.metrics[]`) may pass it as `metricLabels`: this release's own wording for the
+ * category's extinction-risk metric (`extrisk_{categoryKey}`) wins when it publishes a non-blank one,
+ * so a release-specific label is never overridden by a hardcoded one. A raw string that resolves to
+ * one of the eight known categories, with no manifest override, falls back to this module's own small
+ * LOCAL table (`CATEGORIES`'s `.label`, already sentence case: "Bird", "Primary producer").
+ *
+ * A raw string `categoryKeyFor()` does NOT recognize -- a real, if legacy/compound, component label a
+ * release can publish (`extrisk_marine_mammal`/`extrisk_invertebrate_and_coral`/
+ * `extrisk_diving_seabird` -> "marine mammal"/"invertebrate and coral"/"diving seabird", none of
+ * which are one of the eight `SYNONYMS` keys -- see e2e/scores.table.spec.ts's own fixture) is
+ * DELIBERATELY NEVER routed through `categoryFor()`/`NO_DATA_CATEGORY` here: that would blank a real
+ * category's name to the literal string "No data", which is worse than the raw text this function
+ * exists to clean up. Unrecognized input is sentence-cased instead (first letter only, matching the
+ * local table's own convention) so it still reads as prose. */
+export function categoryLabel(
+  raw: string,
+  metricLabels?: Readonly<Record<string, string>> | null,
+): string {
+  const key = categoryKeyFor(raw);
+  if (key !== null) {
+    if (metricLabels) {
+      const fromManifest = metricLabels[`extrisk_${key}`];
+      if (typeof fromManifest === "string" && fromManifest.trim() !== "") return fromManifest;
+    }
+    return categoryFor(raw).label;
+  }
+  const trimmed = raw.trim();
+  return trimmed ? trimmed[0].toUpperCase() + trimmed.slice(1) : trimmed;
+}

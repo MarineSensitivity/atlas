@@ -13,6 +13,13 @@
 // mechanism behind the live "flower draws only ~4 of 8 petals" defect. Reading `geometry.innerRadius`
 // for the hub (rather than a hardcoded literal) means this export can never drift from the petals
 // drawn around it again.
+//
+// P round V2 fix (Opus eyes-on, 2026-09-24): `opacity="0.92"` here used to paint the exported
+// (DOCX/standalone-HTML) flower's petals slightly PALER than a full-opacity `--cat-*` swatch --
+// the same "petals pale, legend dark" mismatch `Report.svelte`'s own inline `<svg>` had at
+// `opacity="0.5"` (a worse case of the identical bug). Dropped: `resolveColor()` already reads the
+// measured, committed token, so the color it returns should be drawn as-is (see `Flower.svelte`'s
+// own ".petal" rule, which makes this same call for the live app).
 import type { FlowerGeometry } from "../lib/ui/flowerGeometry";
 import { formatScore } from "../lib/format";
 import {
@@ -45,7 +52,7 @@ export function flowerStandaloneSvg(
   const petals = geometry.petals
     .map(
       (p) =>
-        `<path d="${p.path}" fill="${opts.resolveColor(p.category.color)}" stroke="${REPORT_FLOWER_PETAL_STROKE}" stroke-width="1" opacity="0.92">` +
+        `<path d="${p.path}" fill="${opts.resolveColor(p.category.color)}" stroke="${REPORT_FLOWER_PETAL_STROKE}" stroke-width="1">` +
         `<title>${esc(p.category.label)}: ${formatScore(p.score)}</title></path>`,
     )
     .join("");

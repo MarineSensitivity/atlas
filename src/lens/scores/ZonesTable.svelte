@@ -5,6 +5,7 @@
   // SAME ranking as text, and clicking a row selects that zone exactly as clicking its polygon
   // would (`sel=zone:<unit>:<key>`).
   import { SvelteSet } from "svelte/reactivity";
+  import { categoryLabel } from "../../lib/ui/categories";
   import { columnWidthPx, totalTableWidthPx } from "../../lib/ui/dataTableCore";
   import { zonesTableRows, type ZonesTableRow } from "./zonesTable";
   import type { ZoneRow } from "./boot";
@@ -120,7 +121,10 @@
           <th scope="col" title={metricLabel} aria-label={`Score (${metricLabel})`}>Score</th>
           {#if rows[0]}
             {#each rows[0].components as c (c.label)}
-              <th scope="col">{c.label}</th>
+              <!-- P round V2 fix (Opus eyes-on: raw lowercase component labels show in the UI):
+                   `c.label` (the each-block KEY, matching `r.components` below positionally) stays
+                   RAW -- only the displayed text goes through `categoryLabel()`. -->
+              <th scope="col">{categoryLabel(c.label)}</th>
             {/each}
           {/if}
         </tr>
@@ -147,7 +151,7 @@
             </td>
             <td class="num" title={formatValue(r.value)}>{formatValue(r.value)}</td>
             {#each r.components as c (c.label)}
-              <td class="num" title={`${c.label}: ${formatValue(c.score)}`}
+              <td class="num" title={`${categoryLabel(c.label)}: ${formatValue(c.score)}`}
                 >{formatValue(c.score)}</td
               >
             {/each}

@@ -1,13 +1,29 @@
-diff --git a/src/lens/scores/search.ts b/src/lens/scores/search.ts
-index 03a0a12..89357ed 100644
---- a/src/lens/scores/search.ts
-+++ b/src/lens/scores/search.ts
-@@ -76,7 +76,7 @@ export function matchZones(boot: unknown, query: string, limit = MAX_RESULTS): Z
-   const ranked: Array<{ m: ZoneSearchMatch; rank: number; order: number }> = [];
-   let order = 0;
-   for (const unit of searchableZoneUnits(boot)) {
--    for (const z of zoneRows(boot, unit)) {
-+    for (const z of zoneRows(boot, "")) {
-       const rank = matchRank(q, z.key, z.name);
-       if (rank === null) continue;
-       ranked.push({
+diff --git a/src/places/zoneStats.ts b/src/places/zoneStats.ts
+index 5c637f1..294000e 100644
+--- a/src/places/zoneStats.ts
++++ b/src/places/zoneStats.ts
+@@ -192,6 +192,7 @@ export function summarizeZoneStats(stats: readonly ZoneStat[]): {
+  * caller in this app only ever deals in Program Areas (the release's one selectable unit, D17), so
+  * omitting `unit` still resolves the table -- unchanged for every existing call site.
+  */
++<<<<<<< ours
+ export function paLabel(key: string, name: string | null | undefined, unit?: string): string {
+   if (name && name !== key) return `${name} (${key})`;
+   if (unit === undefined || unit === "programarea") {
+@@ -199,6 +200,16 @@ export function paLabel(key: string, name: string | null | undefined, unit?: str
+     if (fallback && fallback !== key) return `${fallback} (${key})`;
+   }
+   return key;
++=======
++export function paLabel(
++  key: string,
++  name: string | null | undefined,
++  unit?: string,
++): string {
++  void unit;
++  if (!name || name === key) return key;
++  return `${name} (${key})`;
++>>>>>>> theirs
+ }
+ 
+ /** the display name for a zone place's row: every resolved "Name (KEY)" label (`paLabel`, above),

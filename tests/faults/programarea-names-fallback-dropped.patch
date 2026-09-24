@@ -1,11 +1,11 @@
 diff --git a/src/places/zoneStats.ts b/src/places/zoneStats.ts
-index 0c3e962..a9c0d26 100644
+index 5c637f1..f8fc620 100644
 --- a/src/places/zoneStats.ts
 +++ b/src/places/zoneStats.ts
-@@ -197,12 +197,9 @@ export function paLabel(
-   name: string | null | undefined,
-   unit?: string,
- ): string {
+@@ -193,12 +193,9 @@ export function summarizeZoneStats(stats: readonly ZoneStat[]): {
+  * omitting `unit` still resolves the table -- unchanged for every existing call site.
+  */
+ export function paLabel(key: string, name: string | null | undefined, unit?: string): string {
 -  if (name && name !== key) return `${name} (${key})`;
 -  if (unit === undefined || unit === "programarea") {
 -    const fallback = PROGRAM_AREA_NAMES[key];

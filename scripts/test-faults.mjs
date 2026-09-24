@@ -1301,10 +1301,50 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4436" },
   },
-  // --- V3 (P round, 2026-09-24, Ben's report: titiler-v8/the API down for an hour, live map --
-  // stayed silent) -- service-health detection. Two faults: one for the pure classifier (a real
-  // 5xx must never be treated as an empty/missing tile), one for the banner's own end-to-end
-  // wiring (the store can know a service is down and the banner still never render).
+  {
+    id: "eyes-shots-petal-selector-reverted",
+    patch: "tests/faults/eyes-shots-petal-selector-reverted.patch",
+    describe:
+      "scripts/eyes-shots.mjs's flower-petal locator reverts to the pre-fix 'svg path' nth(3), " +
+      "which never hits a real petal (petals are path.petal) -- a SOURCE-SCAN gate, since the " +
+      "harness itself drives a real browser against a real build, out of scope for vitest",
+    gate: ["npx", "vitest", "run", "tests/scripts/eyesShots.test.ts", "-t", "targets a real petal"],
+  },
+  {
+    id: "report-flower-petal-opacity-reverted",
+    patch: "tests/faults/report-flower-petal-opacity-reverted.patch",
+    describe:
+      "Report.svelte's flower petal regains opacity=\"0.5\" -- the report's own petals render " +
+      'paler than their SAME-token .flower-legend swatch again (Opus eyes-on: "petals are pale ' +
+      'while the legend swatches are dark")',
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.spec.ts",
+      "-g",
+      "opacity and resolved color",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4442" },
+  },
+  {
+    id: "category-label-raw-key-reverted",
+    patch: "tests/faults/category-label-raw-key-reverted.patch",
+    describe:
+      "categoryLabel()'s known-category branch reverts to returning the raw string verbatim -- " +
+      '"primprod"/"bird" show in the report\'s tables and the app\'s component/species tables ' +
+      'again instead of "Primary producer"/"Bird"',
+    gate: [
+      "npx",
+      "vitest",
+      "run",
+      "tests/ui/categories.test.ts",
+      "-t",
+      "resolves to its local table label",
+    ],
+  },
   {
     id: "health-5xx-treated-as-empty",
     patch: "tests/faults/health-5xx-treated-as-empty.patch",

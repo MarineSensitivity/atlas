@@ -9,6 +9,7 @@ import {
   CATEGORY_KEYS,
   categoryFor,
   categoryKeyFor,
+  categoryLabel,
   NO_DATA_CATEGORY,
   type CategoryKey,
 } from "../../src/lib/ui/categories";
@@ -116,5 +117,53 @@ describe("categoryKeyFor / categoryFor: the two primary-producer spellings", () 
   it("NO_DATA_CATEGORY uses the --cat-nodata token, distinct from every real category", () => {
     expect(NO_DATA_CATEGORY.color).toBe("--cat-nodata");
     expect(CATEGORIES.map((c) => c.color)).not.toContain(NO_DATA_CATEGORY.color);
+  });
+});
+
+// P round V2 fix (Opus eyes-on, 2026-09-24: "the raw key 'primprod' appears" / "raw keys show in
+// the UI: 'score', 'primprod', lowercase categories"). The seeded fault this gate exists to catch:
+// a known category's raw string (e.g. "primprod") printed VERBATIM instead of through this table's
+// own Title/sentence-case label.
+describe("categoryLabel: the report/panel DISPLAY text for a raw component/category key", () => {
+  it("a known category's raw string resolves to its local table label, never the raw spelling", () => {
+    expect(categoryLabel("primprod")).toBe("Primary producer");
+    expect(categoryLabel("bird")).toBe("Bird");
+    expect(categoryLabel("mammal")).toBe("Mammal");
+  });
+
+  it("every spelling of primary producer resolves to the SAME label as 'primprod'", () => {
+    expect(categoryLabel("primary producer")).toBe(categoryLabel("primprod"));
+    expect(categoryLabel("primary_producer")).toBe(categoryLabel("primprod"));
+  });
+
+  it("a manifest metric label wins when given and non-blank, for the category's OWN extrisk metric key", () => {
+    expect(categoryLabel("bird", { extrisk_bird: "bird: ext. risk" })).toBe("bird: ext. risk");
+    // a DIFFERENT category's manifest entry must never leak onto this one.
+    expect(categoryLabel("bird", { extrisk_fish: "fish: ext. risk" })).toBe("Bird");
+  });
+
+  it("a blank or missing manifest label falls back to the local table, never an empty string", () => {
+    expect(categoryLabel("bird", { extrisk_bird: "" })).toBe("Bird");
+    expect(categoryLabel("bird", { extrisk_bird: "   " })).toBe("Bird");
+    expect(categoryLabel("bird", {})).toBe("Bird");
+    expect(categoryLabel("bird", null)).toBe("Bird");
+    expect(categoryLabel("bird")).toBe("Bird");
+  });
+
+  it(
+    "an UNRECOGNIZED raw string is sentence-cased, never blanked to NO_DATA_CATEGORY's 'No data' " +
+      "(a real, if legacy/compound, component label -- e.g. a release's 'invertebrate and coral' or " +
+      "'marine mammal' -- must still read as prose, not disappear)",
+    () => {
+      expect(categoryLabel("invertebrate and coral")).toBe("Invertebrate and coral");
+      expect(categoryLabel("marine mammal")).toBe("Marine mammal");
+      expect(categoryLabel("diving seabird")).toBe("Diving seabird");
+      expect(categoryLabel("reptile")).not.toBe("No data");
+      expect(categoryLabel("reptile")).toBe("Reptile");
+    },
+  );
+
+  it("an empty string stays empty (nothing to sentence-case)", () => {
+    expect(categoryLabel("")).toBe("");
   });
 });

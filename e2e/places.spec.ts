@@ -1163,11 +1163,13 @@ for (const viewport of [
       await expect(results.locator(".composite-figure")).toContainText("25.0");
       await expect(results.locator(".composite-row svg").first()).toBeVisible();
 
-      // the component table -- real component rows, not an empty grid
+      // the component table -- real component rows, not an empty grid. P round V2 fix: the
+      // "Component" column now renders `categoryLabel()`'s Title Case text ("Bird"/"Mammal"), not
+      // the raw lowercase `componentLabel()` string the metric key stripped down to.
       const componentsGrid = results.getByRole("grid", { name: "Components" });
       await expect(componentsGrid).toBeVisible();
-      await expect(componentsGrid).toContainText("bird");
-      await expect(componentsGrid).toContainText("mammal");
+      await expect(componentsGrid).toContainText("Bird");
+      await expect(componentsGrid).toContainText("Mammal");
     });
   });
 }
