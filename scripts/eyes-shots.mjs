@@ -195,15 +195,27 @@ async function shot(page, vp, name) {
 // through the name table ... cannot be checked from these shots, because no state selects a
 // Program Area in the Scores lens"). Phone opens the search field inside its own modal first
 // (Shell.svelte's `openPhoneSearch`); desktop's field is already in the topbar.
+//
+// Shell.svelte mounts BOTH the desktop topbar field (`[data-control="search"]`) and the phone
+// modal's copy (inside its own `<dialog>`, role="dialog" name="Search") at once (same lazy
+// `ScoresSearchComp` load gates both `{:else if}` branches) -- `page.getByLabel(...)` alone
+// matched BOTH regardless of viewport, and `.waitFor()` on that 2-element locator failed
+// silently (`.catch(() => false)`) rather than picking either -- measured: this WARNed on every
+// phone run despite the modal genuinely being open and visible. Scoping to the ONE container
+// each viewport actually uses removes the ambiguity.
 async function selectProgramArea(page, vp) {
+  let container;
   if (vp === "phone") {
     const trigger = page.getByRole("button", { name: "Search species and places" });
     if (await trigger.count()) {
       await trigger.click({ timeout: 10_000 }).catch(() => {});
       await page.waitForTimeout(400);
     }
+    container = page.getByRole("dialog", { name: "Search" });
+  } else {
+    container = page.locator('[data-control="search"]');
   }
-  const input = page.getByLabel("Search Program Areas or coordinates");
+  const input = container.getByRole("combobox", { name: "Search Program Areas or coordinates" });
   const ok = await input
     .waitFor({ state: "visible", timeout: 10_000 })
     .then(() => true)
@@ -212,11 +224,18 @@ async function selectProgramArea(page, vp) {
     log(`WARN selectProgramArea: no search field found for ${vp}`);
     return false;
   }
-  await input.fill("Gulf of America");
+  // by KEY, not name: search.ts#matchZones matches only the release's own PUBLISHED zone `name`
+  // (never the app-side PROGRAM_AREA_NAMES fallback labels use) -- the real v7 release publishes
+  // no `name` at all for GAA (the same gap V1's fix documented for the report/flower/table
+  // labels), so "Gulf of America" gets "No matches" while the key still resolves every time. The
+  // rendered OPTION label still reads "Gulf of America (GAA)" via that same fallback, so this is
+  // a robust way to reach it, not a workaround that only proves something else. (The search-by-
+  // name gap itself is out of this round's scope -- reported, not fixed, in the hand-back.)
+  await input.fill("GAA");
   await page.waitForTimeout(500);
-  const option = page.getByRole("option", { name: /Gulf of America/i }).first();
+  const option = container.getByRole("option", { name: /Gulf of America|GAA/i }).first();
   if (!(await option.count())) {
-    log(`WARN selectProgramArea: no "Gulf of America" match for ${vp}`);
+    log(`WARN selectProgramArea: no GAA match for ${vp}`);
     return false;
   }
   await option.click({ timeout: 5000 }).catch(() => {});
