@@ -32,7 +32,17 @@ export const BOOT_V7 = {
   layers: [
     {
       metric_key: "primprod",
-      label: "Primary productivity",
+      // M6 (review round 1, corrected in round 2's re-check): v7's REAL LIVE long label -- the
+      // round-1 string was v8's `score_cell_metrics.qmd:141` paraphrase, not the actual text the
+      // release publishes. Fetched verbatim from the live `v7/app/boot.json` on
+      // `oceanmetrics.io-public` (2026-09-24) -- this is the exact text `LayersPanel.svelte`'s
+      // `currentLayerDescription` falls back to/compares against when the manifest publishes no
+      // short label of its own.
+      label:
+        "Primary productivity: Oregon State Vertically Generalized Production Model (VGPM) " +
+        "from Visible Infrared Imaging Radiometer Suite (VIIRS) satellite data (mg C / m^2 / day) " +
+        "from daily averages available as monthly averaged to annual and averaged to overall for " +
+        "the most recently available full years of data 2014 to 2023",
       category: "raw",
       order: 1,
       colormap: "spectral_r",
@@ -316,7 +326,13 @@ export const BOOT_V9 = {
     },
     {
       metric_key: "primprod",
-      label: "Primary productivity VGPM/VIIRS npp_avg (mg C/m2/day)",
+      // M6 re-check (round 2): v7's REAL LIVE long label, same string as BOOT_V7's own primprod
+      // row above -- fetched verbatim from the live `v7/app/boot.json`, not a shortened stand-in.
+      label:
+        "Primary productivity: Oregon State Vertically Generalized Production Model (VGPM) " +
+        "from Visible Infrared Imaging Radiometer Suite (VIIRS) satellite data (mg C / m^2 / day) " +
+        "from daily averages available as monthly averaged to annual and averaged to overall for " +
+        "the most recently available full years of data 2014 to 2023",
       category: "raw",
       order: 15,
       colormap: "spectral_r",

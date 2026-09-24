@@ -1,20 +1,26 @@
 <script lang="ts">
-  // atlas-4 step 1 — the Layers panel: study area, spatial unit, layer (grouped), palette,
-  // globe/mercator, and the "cells outside Program Areas" overlay switch. Every control writes
-  // through `selStore.set()` (URL-is-the-view) except the overlay switch, which is ephemeral
+  // atlas-4 step 1 — the scores lens' DATA-row content: study area, spatial unit, layer (grouped),
+  // palette, globe/mercator, and the "cells outside Program Areas" overlay switch. Every control
+  // writes through `selStore.set()` (URL-is-the-view) except the overlay switch, which is ephemeral
   // chrome (never a shared-link concern — parity doc §6.2 leaves it unchecked by default on every
   // load, so there is nothing for a link to reproduce). The legend used to render IN this panel
   // (only visible while the Layers tool was open, and never for the zone-choropleth branch) --
   // atlas-4 defect fix moved it to the shell's floating "lens legend" region (ScoresLegend.svelte),
   // the same slot the species lens' legend already used, per spec.md's "one legend on screen at a
   // time".
+  //
+  // R3 (round-2 plan §5 U4): this component is no longer the WHOLE "Layers" tool body — it renders
+  // inside the shared `src/lib/ui/LayersPanel.svelte`'s "Data" row, as that row's `dataControls`
+  // snippet (`ScoresLens.svelte` wires the two together). The old non-interactive "Layers on the
+  // map" bullet list is GONE from here: the shared stack component now IS that list, made real and
+  // interactive, so summarizing it a second time here would just repeat it less usefully.
   import Select from "../../lib/ui/Select.svelte";
   import Switch from "../../lib/ui/Switch.svelte";
   import { studyAreasFromBoot, type StudyArea } from "../../lib/map/interaction";
   import type { MapHandle } from "../../lib/map/map";
   import type { Sel } from "../../lib/state/types";
   import type { SelStore } from "../../lib/state/sel.svelte";
-  import { layerGroups, primaryUnitNote, unitOptions } from "./boot";
+  import { layerByKey, layerGroups, primaryUnitNote, unitOptions } from "./boot";
   import type { ManifestOverlayRow } from "./raster";
 
   interface Props {
@@ -22,6 +28,10 @@
     selStore: SelStore;
     boot: unknown;
     manifestOverlays: readonly ManifestOverlayRow[] | null;
+    /** R3 orchestrator audit item 3: `metric_key` -> the manifest's own SHORT label
+     * (`boot.ts#metricLabelsFromManifest`, `ScoresLens#metricLabels`) — the ported Shiny app's
+     * short names ("bird: ext. risk"), not `boot.layers[].label`'s long description text. */
+    metricLabels: Record<string, string>;
     ver: string | null;
     mapHandle: MapHandle | undefined;
     showOutsidePra: boolean;
@@ -40,6 +50,7 @@
     selStore,
     boot,
     manifestOverlays,
+    metricLabels,
     ver,
     mapHandle,
     showOutsidePra,
@@ -52,6 +63,24 @@
   const unitChoices = $derived(unitOptions(boot));
   const note = $derived(primaryUnitNote(boot, ver));
   const groups = $derived(layerGroups(boot));
+
+  function layerOptionLabel(l: { metric_key: string; label?: string }): string {
+    return metricLabels[l.metric_key] ?? l.label ?? l.metric_key;
+  }
+
+  /** the CURRENT layer's long description (`boot.layers[].label`) — "What is this layer?"
+   * (docs/usability.md §7 R3's own recommendation for the expanded Data row). `null` before a
+   * layer has resolved, for a `metric_key` the release does not publish, OR (M6, review round 1)
+   * when the manifest publishes no SHORT label of its own — `layerOptionLabel()` then falls back
+   * to this SAME `label` text for the option, and repeating it verbatim as a description under
+   * the dropdown is redundant, not informative (e.g. a release with no `manifest.metrics` row for
+   * a layer at all: both texts are `boot.layers[].label`). */
+  const currentLayerDescription = $derived.by(() => {
+    const l = layerByKey(boot, lyr);
+    const desc = l?.label ?? null;
+    if (desc === null) return null;
+    return desc === layerOptionLabel({ metric_key: l!.metric_key, label: l!.label }) ? null : desc;
+  });
 
   const PALETTE_OPTIONS = [
     { value: "spectral_r", label: "Spectral" },
@@ -126,13 +155,17 @@
         {#each groups as group (group.category)}
           <optgroup label={group.label}>
             {#each group.layers as l (l.metric_key)}
-              <option value={l.metric_key}>{l.label ?? l.metric_key}</option>
+              <option value={l.metric_key}>{layerOptionLabel(l)}</option>
             {/each}
           </optgroup>
         {/each}
       </select>
     </span>
   </label>
+
+  {#if currentLayerDescription}
+    <p class="note" data-testid="layer-description">{currentLayerDescription}</p>
+  {/if}
 
   <label class="field">
     <span class="field-label">Color palette</span>
@@ -163,26 +196,6 @@
       <span>Cells outside Program Areas</span>
     </div>
   {/if}
-
-  <!-- fix list #10 (SC 1.3.1): this used to be a `<section aria-label="Layers on the map">` -- a
-       SECOND `region` landmark nested directly inside Panel.svelte's own `<section
-       aria-labelledby>` (already named "Layers"), plus an `h3` that just repeated the panel's own
-       `h2` title. A plain `div` (never a landmark) with a heading that says something the panel's
-       own title does not fixes both: landmark navigation offers "Layers" once, not twice, and the
-       outline no longer reads two adjacent "Layers" entries. -->
-  <div class="layers-control">
-    <h3>Layers on the map</h3>
-    <ul>
-      {#if unit === "cell"}
-        <li>Raster cell values</li>
-        {#if hasOutsidePra}
-          <li>Cells outside Program Areas{showOutsidePra ? "" : " (off)"}</li>
-        {/if}
-      {:else}
-        <li>{unitChoices.find((u) => u.value === unit)?.label ?? unit} values</li>
-      {/if}
-    </ul>
-  </div>
 </div>
 
 <style>
@@ -213,17 +226,6 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: var(--text-sm);
-  }
-
-  .layers-control h3 {
-    font-size: var(--text-sm);
-    margin: 0 0 var(--space-1);
-  }
-
-  .layers-control ul {
-    margin: 0;
-    padding-left: var(--space-4);
     font-size: var(--text-sm);
   }
 

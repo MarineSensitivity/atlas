@@ -26,9 +26,14 @@
   import { exclusive } from "../../lib/analysis/exclusive";
   import { cellFlowerComponents, type CellComponentRow, type DedupResult } from "./flower";
   import { getAnalysisSources } from "./engine";
-  import LayersPanel from "./LayersPanel.svelte";
+  import ScoresLayersPanel from "./LayersPanel.svelte";
+  // R3 (round-2 plan §5 U4): the lens-independent stack shell — `docs/map.md`'s "the Layers panel
+  // IS the stack" (Ben's decision R3). `ScoresLayersPanel` above is now only its "Data" row's
+  // content, passed in as the `dataControls` snippet below.
+  import LibLayersPanel from "../../lib/ui/LayersPanel.svelte";
   import FlowerPanel from "./FlowerPanel.svelte";
   import TablePanel from "./TablePanel.svelte";
+  import type { LayerStackEntry } from "../../lib/state/types";
 
   interface Props {
     sel: Sel;
@@ -46,10 +51,26 @@
      * `unit`/`lyr`/`manifestOverlays`/`selection`/`mapSelection`/`showOutsidePra`/`mapExtra` all
      * come from here now, not recomputed a second time. */
     lens: ScoresLens;
+    /** R3: the resolved layer stack (`sel.layers ?? defaultLayerStackEntries()`) and its writer —
+     * both computed once by Shell.svelte (the SAME object `composeStyleInput` reads), so the panel
+     * and the map can never disagree about what the current stack is. */
+    layerStack: readonly LayerStackEntry[];
+    onLayerStackChange: (next: readonly LayerStackEntry[]) => void;
   }
 
-  let { sel, selStore, boot, manifest, ver, mapHandle, activeTool, fallbackBody, lens }: Props =
-    $props();
+  let {
+    sel,
+    selStore,
+    boot,
+    manifest,
+    ver,
+    mapHandle,
+    activeTool,
+    fallbackBody,
+    lens,
+    layerStack,
+    onLayerStackChange,
+  }: Props = $props();
 
   const unit = $derived(lens.unit);
   const lyr = $derived(lens.lyr);
@@ -128,18 +149,23 @@
 </script>
 
 {#if activeTool === "layers"}
-  <LayersPanel
-    {sel}
-    {selStore}
-    {boot}
-    {manifestOverlays}
-    {ver}
-    {mapHandle}
-    showOutsidePra={lens.showOutsidePra}
-    onShowOutsidePraChange={(v) => lens.setShowOutsidePra(v)}
-    {unit}
-    {lyr}
-  />
+  <LibLayersPanel stack={layerStack} onChange={onLayerStackChange}>
+    {#snippet dataControls()}
+      <ScoresLayersPanel
+        {sel}
+        {selStore}
+        {boot}
+        {manifestOverlays}
+        metricLabels={lens.metricLabels}
+        {ver}
+        {mapHandle}
+        showOutsidePra={lens.showOutsidePra}
+        onShowOutsidePraChange={(v) => lens.setShowOutsidePra(v)}
+        {unit}
+        {lyr}
+      />
+    {/snippet}
+  </LibLayersPanel>
 {:else if activeTool === "flower"}
   <FlowerPanel {boot} {selection} cellComponents={cellFlowerRows} {cellCoords} />
 {:else if activeTool === "table"}
