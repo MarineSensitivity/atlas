@@ -10,15 +10,29 @@
 
   interface Props {
     legend: SpeciesLegend;
+    /** V3 (Ben's report, 2026-09-24): the tiler service is confirmed down
+     * (src/shell/health.svelte.ts). Only the "continuous" (COG ramp) branch depends on titiler --
+     * "categorical" (a PMTiles range swatch) keeps working, so this never overrides it. */
+    tilesDown?: boolean;
   }
 
-  let { legend }: Props = $props();
+  let { legend, tilesDown = false }: Props = $props();
   // fix list #11 (SC 1.3.1): the categorical branch below renders its OWN h2, never through the
   // shared Legend.svelte -- same local region/aria-labelledby fix, per instance.
   const catTitleId = uid("species-legend-cat-title");
 </script>
 
-{#if legend?.kind === "continuous"}
+{#if legend?.kind === "continuous" && tilesDown}
+  <div
+    class="species-legend species-legend--categorical"
+    role="region"
+    aria-labelledby={catTitleId}
+    data-testid="species-legend"
+  >
+    <h2 id={catTitleId}>{legend.title}</h2>
+    <p>Map tiles unavailable -- ramp not shown.</p>
+  </div>
+{:else if legend?.kind === "continuous"}
   <div class="species-legend" data-testid="species-legend">
     <Legend
       title={legend.title}

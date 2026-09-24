@@ -14,16 +14,31 @@
 
   interface Props {
     legend: ScoresLegend;
+    /** V3 (Ben's report, 2026-09-24): the tiler service is confirmed down
+     * (src/shell/health.svelte.ts). Only the "raster" branch actually depends on a titiler COG --
+     * a zone choropleth is a vector fill from `cell_model` data and keeps working -- so this only
+     * overrides that one branch, never "zone"/"unavailable"/"empty". */
+    tilesDown?: boolean;
   }
 
-  let { legend }: Props = $props();
+  let { legend, tilesDown = false }: Props = $props();
   // fix list #11 (SC 1.3.1): the "not published yet"/"no zones" notes below render their OWN h2,
   // never through the shared Legend.svelte -- so they need the same region/aria-labelledby fix
   // applied locally, per instance (not a shared literal).
   const noteTitleId = uid("scores-legend-note-title");
 </script>
 
-{#if legend?.kind === "raster" || legend?.kind === "zone"}
+{#if legend?.kind === "raster" && tilesDown}
+  <div
+    class="scores-legend scores-legend--note"
+    role="region"
+    aria-labelledby={noteTitleId}
+    data-testid="scores-legend"
+  >
+    <h2 id={noteTitleId}>{legend.title}</h2>
+    <p>Map tiles unavailable -- ramp not shown.</p>
+  </div>
+{:else if legend?.kind === "raster" || legend?.kind === "zone"}
   <div class="scores-legend" data-testid="scores-legend">
     <Legend
       title={legend.title}

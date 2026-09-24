@@ -35,6 +35,26 @@ npm run dev        # http://localhost:5173
 
 See `CLAUDE.md` for what each of these actually enforces and why.
 
+## Runtime health detection
+
+The app depends on two external services it does not control: the titiler-v8 tile server (every
+score/species raster) and the S3 data origin each release's own files are fetched from. `src/lib/
+health/` probes both and `src/lib/ui/HealthBanner.svelte` shows a dismissible top banner naming the
+failing host, what it breaks and what still works, with a Retry — added 2026-09-24 after titiler-v8
+was down for an hour and the live map kept rendering normally with no raster and no word to anyone.
+
+**What it detects:** the tiler and data origin going unreachable or slow (checked once at boot, and
+again whenever a map tile actually fails to load with a real error — a 5xx, a network error, or a
+timeout; a 403/404 tile is a normal "this release has no data here" gap and is never reported). A
+manual Retry always re-checks immediately. It does not poll continuously while everything is fine.
+
+**What it does NOT detect:** a partial outage (some tiles/objects failing, others not — a further
+real request may still surface it), degraded-but-200 responses (a tile that loads but paints wrong
+data), or a preview session's own restricted data prefix (the probe always checks the public bucket
+origin, not a signed-in `session.data` override — see `src/lib/health/services.ts`'s own note). It
+also cannot detect a failure in anything it does not probe — DuckDB-WASM's own parquet fetches,
+PMTiles zone archives, and the basemap are outside this module's scope.
+
 ## Repo layout
 
 `index.html` (map) and `report.html` (print-first report) are the two build entries; `gallery.html`
