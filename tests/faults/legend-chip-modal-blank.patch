@@ -1,0 +1,20 @@
+diff --git a/src/lens/scores/ScoresLegend.svelte b/src/lens/scores/ScoresLegend.svelte
+index 8754f73..7892e2f 100644
+--- a/src/lens/scores/ScoresLegend.svelte
++++ b/src/lens/scores/ScoresLegend.svelte
+@@ -66,6 +66,15 @@
+     box-shadow: var(--elev-2);
+   }
+ 
++  /* SEEDED FAULT (tests/faults/legend-chip-modal-blank.patch): reinstates the viewport
++     `display:none` the P1 fix removed -- LegendChip.svelte's phone modal reuses this component
++     verbatim, so this also blanks the modal's body on the phone. */
++  @media (max-width: 899px) {
++    .scores-legend {
++      display: none;
++    }
++  }
++
+   /* P1 fix (Ben's phone report, 2026-09-24): a `display:none` used to live HERE for "no room
+      beside the sheet" below 900px -- but Shell.svelte reuses this exact component's markup inside
+      LegendChip.svelte's phone modal (the SAME `<Comp {legend} />`), so this rule also blanked the
