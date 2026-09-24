@@ -481,10 +481,14 @@ const FAULTS = [
   // U3 (round 2): the privacy rule behind "Send feedback"'s own checkbox -- `buildFeedbackPayload()`
   // must place the hash on `payload.url` ONLY when the reporter ticks "include my current view
   // link" (off by default). This patch makes it unconditional (see the patch's own comment) and
-  // must turn e2e/feedback.spec.ts's unticked-vs-ticked test red: the UNTICKED case starts finding
-  // a `#` fragment in the posted body it must never carry (tests/feedback/payload.test.ts's own
-  // pure-function assertions go red on the same patch too -- this entry drives the real, built,
-  // end-to-end leg, which is what a modified/replayed request would actually exploit).
+  // must turn e2e/feedback.spec.ts's dedicated "unticked (the default)" test red: it starts
+  // finding a `#` fragment (and a `url` field at all) in the posted body it must never carry
+  // (tests/feedback/payload.test.ts's own pure-function assertions go red on the same patch too --
+  // this entry drives the real, built, end-to-end leg, which is what a modified/replayed request
+  // would actually exploit). NOTE: an earlier version of this entry's `-g` matched the WRONG test
+  // (one named "...unticked never does" that only ever exercised the TICKED case) and stayed green
+  // under this exact patch -- proven by running it for real, not assumed; the spec was split into
+  // two single-purpose tests specifically so this gate has a fast, focused target.
   {
     id: "feedback-hash-leak",
     patch: "tests/faults/feedback-hash-leak.patch",
@@ -498,7 +502,7 @@ const FAULTS = [
       "--project=chromium",
       "e2e/feedback.spec.ts",
       "-g",
-      "unticked never does",
+      "unticked \\(the default\\)",
       "--workers=1",
     ],
     env: { PW_PORT: "4388" },

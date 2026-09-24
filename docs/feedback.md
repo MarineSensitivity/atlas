@@ -147,19 +147,24 @@ theme, user_agent, website, restricted, image_url, issue_url, status`).
 4. **Deploy → New deployment → type "Web app"** — execute as **Me**, who has access **Anyone**.
    Copy the `/exec` URL.
 5. **Give the app the URL**: set it as the repository variable `VITE_FEEDBACK_URL` in
-   `MarineSensitivity/atlas`'s GitHub Pages workflow so the built site picks it up. In
-   `.github/workflows/pages.yml`, the build step needs an env line naming it, e.g.:
+   `MarineSensitivity/atlas`'s GitHub Pages workflow so the built site picks it up.
+   `.github/workflows/pages.yml`'s `checks` job already builds with two env vars on its
+   `npx vite build` step (`VITE_SEAL`/`VITE_AGENCY`, plan D10) — add the new one alongside them,
+   exactly this shape:
 
    ```yaml
-   - name: Build
-     run: npm run build
+   - run: npx vite build
      env:
+       VITE_SEAL: "1"
+       VITE_AGENCY: MMA
        VITE_FEEDBACK_URL: ${{ vars.VITE_FEEDBACK_URL }}
    ```
 
    (Add `vars.VITE_FEEDBACK_URL` under **Settings → Secrets and variables → Actions → Variables**
-   with the `/exec` URL as its value.) This runbook does **not** edit `pages.yml` itself — that is
-   a separate change, reviewed like any other workflow edit.
+   with the `/exec` URL as its value — a plain repository *variable*, not a *secret*: it is an
+   endpoint URL that ships in the public bundle either way, the same category `VITE_AGENCY`
+   already is.) This runbook does **not** edit `pages.yml` itself — that is a separate change,
+   reviewed like any other workflow edit.
 
 6. **Re-paste `Code.gs`** after any change to this file (a Sheet's bound script is not "installed"
    from `main` automatically — there is no build step for Apps Script).

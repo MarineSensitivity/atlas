@@ -204,9 +204,29 @@ test.describe("Send feedback: the dialog (U3)", () => {
     await expect(dialog.getByText(/sent to the team/i)).toBeVisible();
   });
 
-  test('ticking "include my current view link" carries the hash; unticked never does', async ({
+  test('unticked (the default): sending never includes the hash, or any url field at all', async ({
     page,
   }) => {
+    await routeBucket(page);
+    await routeSession(page, null);
+    await routeSealFixture(page);
+    await seedFeedbackEndpoint(page);
+    const bodies = routeFakeFeedbackEndpoint(page);
+    await page.goto(`/?ver=v7&lens=species#pl=${SECRET_PLACE}`, { waitUntil: "networkidle" });
+
+    const dialog = await openFeedbackDialog(page);
+    await dialog.getByLabel(/what happened/i).fill("test");
+    // the checkbox starts UNCHECKED (the privacy rule) -- this test never touches it.
+    await expect(dialog.getByLabel(/include my current view link/i)).not.toBeChecked();
+    await dialog.getByRole("button", { name: "Send" }).click();
+
+    await expect.poll(() => bodies.length).toBe(1);
+    expect("url" in bodies[0]).toBe(false);
+    expect(JSON.stringify(bodies[0])).not.toContain("#");
+    expect(JSON.stringify(bodies[0])).not.toContain(SECRET_PLACE);
+  });
+
+  test('ticking "include my current view link" carries the hash', async ({ page }) => {
     await routeBucket(page);
     await routeSession(page, null);
     await routeSealFixture(page);

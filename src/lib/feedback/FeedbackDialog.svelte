@@ -373,10 +373,12 @@
         last mark; Clear removes them all. {shapes.length} mark{shapes.length === 1 ? "" : "s"} so far.
       </p>
       <div class="annot-tools">
-        <!-- the ids/colours below are literal, deliberately NOT imported from ./annotate (a value
+        <!-- the tool ids below are literal, deliberately NOT imported from ./annotate (a value
              import would make this .svelte file's own static graph pull the annotator module in --
-             tests/feedback/lazy.test.ts's whole point). ANNOTATE_TOOLS/ANNOTATE_COLORS there are
-             the same five ids and three hexes; keep them in sync by hand if either list changes. -->
+             tests/feedback/lazy.test.ts's whole point). ./annotate's own ANNOTATE_TOOLS is the
+             same five ids; keep them in sync by hand if the list changes. (The colour swatches
+             just below DO import ANNOTATE_COLORS -- from ./colors, a plain data file with no
+             heavy deps, never ./annotate itself.) -->
         <span class="seg-group" role="group" aria-label="Tool">
           {#each ["arrow", "circle", "rect", "pen", "text"] as t (t)}
             <button
