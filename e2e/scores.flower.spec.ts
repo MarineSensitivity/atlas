@@ -37,11 +37,16 @@ async function openFlower(page: Page) {
  * zone's polygon on the map would do (`ZonesTable.svelte`'s own header comment): sets the shared
  * `sel` state to `zone:<unit>:<key>`, which `FlowerPanel.svelte` reads the same way regardless of
  * which rail tool is open. Switches back to the Flower tool afterwards so the caller lands on the
- * panel this file actually asserts against. */
-async function selectZoneViaTable(page: Page, zoneName: string) {
+ * panel this file actually asserts against.
+ *
+ * V4 fix (CI run 36049515023, "V1's names table"): the row's own accessible name is now
+ * "Full Name (KEY)" (`paLabel()`, `zonesTable.ts`), not the bare key -- matches by KEY (the
+ * "(KEY)" suffix, anchored to the end) so this keeps working regardless of whether/what full name
+ * is attached to it. */
+async function selectZoneViaTable(page: Page, zoneKey: string) {
   await page.getByRole("button", { name: "Table", exact: true }).click();
   await page.getByRole("button", { name: "Zones", exact: true }).click();
-  await page.getByRole("button", { name: zoneName, exact: true }).click();
+  await page.getByRole("button", { name: new RegExp(`\\(${zoneKey}\\)$`) }).click();
   await openFlower(page);
 }
 
@@ -159,7 +164,10 @@ test.describe("scores lens flower plot — a SELECTED zone's own flower (v7, GAA
   test("every one of GAA's real 8 components draws a visible petal", async ({ page }) => {
     await gotoScoresMap(page, "v7");
     await selectZoneViaTable(page, "GAA");
-    await expect(page.locator(".flower-title")).toHaveText("GAA", { timeout: 10_000 });
+    // V4 fix (CI run 36049515023): the flower title now goes through `paLabel()` too (docs
+    // fact-check item 3, FlowerPanel.svelte's own `zoneName()`) -- "GOA Program Area A (GAA)", not
+    // the bare key. Matches by the "(KEY)" suffix, same reasoning as `selectZoneViaTable` above.
+    await expect(page.locator(".flower-title")).toContainText("(GAA)", { timeout: 10_000 });
 
     const bg = await backgroundish(page);
     const petals = await probePetals(page);

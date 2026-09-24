@@ -90,31 +90,35 @@ const ZONES: ZoneRow[] = [
 ];
 
 describe("zonePopupText", () => {
+  // V4 fix (owner phone report, 2026-09-24, docs fact-check item 3): both the has-value branch
+  // (via `zoneValuesFor`'s own `paLabel()` fix) and the no-value branch (this module's own
+  // `paLabel()` call) now show "Full Name (KEY)", the same label the Zones table already shows,
+  // instead of the bare published name.
   it("'{name}: {round(value)}' — parity doc §6.4, verbatim (half-to-even, 0 dp)", () => {
     expect(zonePopupText(ZONES, "score", { key: "GAA", name: "Gulf of America, Eastern" })).toBe(
-      "Gulf of America, Eastern: 33",
+      "Gulf of America, Eastern (GAA): 33",
     );
   });
 
-  it("falls back to the key when the zone carries no name", () => {
+  it("falls back to the key when the zone carries no name (and no PROGRAM_AREA_NAMES fallback)", () => {
     expect(zonePopupText(ZONES, "score", { key: "NONAME", name: "NONAME" })).toBe("NONAME: 10");
   });
 
-  it("no value for this layer -> '{name}: no value', never a throw", () => {
+  it("no value for this layer -> '{name} (KEY): no value', never a throw", () => {
     expect(zonePopupText(ZONES, "score", { key: "MDA", name: "Mid Atlantic" })).toBe(
-      "Mid Atlantic: no value",
+      "Mid Atlantic (MDA): no value",
     );
   });
 
   it("lyr === null (no boot.layers yet) -> 'no value' rather than guessing a metric", () => {
     expect(zonePopupText(ZONES, null, { key: "GAA", name: "Gulf of America, Eastern" })).toBe(
-      "Gulf of America, Eastern: no value",
+      "Gulf of America, Eastern (GAA): no value",
     );
   });
 
-  it("the zone's own name is escaped too", () => {
+  it("the zone's own name is escaped too (paLabel's parenthetical key is plain text, never escaped away)", () => {
     expect(zonePopupText([], "score", { key: "X", name: "<i>X</i>" })).toBe(
-      "&lt;i&gt;X&lt;/i&gt;: no value",
+      "&lt;i&gt;X&lt;/i&gt; (X): no value",
     );
   });
 });

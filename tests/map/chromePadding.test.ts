@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  DESKTOP_LEGEND_HEIGHT_PX,
+  DESKTOP_LEGEND_WIDTH_PX,
   desktopPanelPadding,
   LEGEND_CHIP_HEIGHT_PX,
   phoneLiveChromePadding,
@@ -57,6 +59,52 @@ describe("desktopPanelPadding (usability M4)", () => {
 
   it("maximized still reserves the top bar (the panel covers the rest of the stage -- no other 'visible remainder' to frame)", () => {
     expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, maximized: true })).toEqual({
+      top: TOPBAR,
+      right: 0,
+      bottom: 0,
+      left: 0,
+    });
+  });
+
+  // V4 fix (owner phone report, 2026-09-24, desktop-18): "the walrus model view's south-west
+  // corner sits under the legend card" -- desktopPanelPadding used to reserve the docked panel's
+  // own side only, blind to SpeciesLegend.svelte/ScoresLegend.svelte floating into the OPPOSITE
+  // corner (or, for a bottom-docked panel, just above it).
+  it("a legend showing at the default dock (right) also reserves bottom-LEFT for the legend card", () => {
+    expect(desktopPanelPadding(DEFAULT_PANEL_GEOMETRY, true)).toEqual({
+      top: TOPBAR,
+      right: 380,
+      bottom: DESKTOP_LEGEND_HEIGHT_PX,
+      left: DESKTOP_LEGEND_WIDTH_PX,
+    });
+  });
+
+  it("a legend showing with the panel docked left reserves bottom-RIGHT instead (the legend's own base corner)", () => {
+    expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, dock: "left" }, true)).toEqual({
+      top: TOPBAR,
+      right: DESKTOP_LEGEND_WIDTH_PX,
+      bottom: DESKTOP_LEGEND_HEIGHT_PX,
+      left: 380,
+    });
+  });
+
+  it("a legend showing with the panel docked bottom adds the legend's height ON TOP of the panel's", () => {
+    expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, dock: "bottom" }, true)).toEqual({
+      top: TOPBAR,
+      right: 0,
+      bottom: 380 + DESKTOP_LEGEND_HEIGHT_PX,
+      left: 0,
+    });
+  });
+
+  it("no legend showing never reserves the legend's footprint, at any dock (the default, unchanged)", () => {
+    expect(desktopPanelPadding(DEFAULT_PANEL_GEOMETRY, false)).toEqual(
+      desktopPanelPadding(DEFAULT_PANEL_GEOMETRY),
+    );
+  });
+
+  it("collapsed/maximized never reserves the legend's footprint either (it is hidden by the same CSS rule)", () => {
+    expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, maximized: true }, true)).toEqual({
       top: TOPBAR,
       right: 0,
       bottom: 0,

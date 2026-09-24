@@ -1,3 +1,37 @@
+# atlas 0.10.59
+
+Round 2, V4: the phone species camera squeezed a wide model's range into the bottom of the screen
+under globe projection; assorted docs/copy corrections found in the same review pass.
+
+- **Fixed: the species camera left most of the map empty instead of framing the model** (phone,
+  and to a lesser extent desktop). A wide species range — the default leatherback view, or a
+  walrus model whose fit needed a low zoom — computed its camera with flat-Mercator shift math
+  that does not land on the same screen pixels once MapLibre renders the GLOBE projection it
+  actually uses at that zoom: the range ended up bunched into a corner of the map, most of the
+  frame empty black space. The camera now asks MapLibre's own projection-aware `cameraForBounds()`
+  for the fit. Desktop: the floating species legend card (bottom-left) is now also accounted for,
+  so a model's own south-west corner is never drawn underneath it.
+- **Fixed: Program Area names were still a bare key ("GAA") in three places** — the Scores-lens map
+  hover/click tooltip, the Flower panel's title for a selected zone, and the Table tool's "Species
+  for Program Area: …" header — now show "Full Name (KEY)" the same way the Zones table and Places
+  panel already do.
+- **Fixed: the report page could break a common-name link mid-word** ("Leatherb|ack") — every link
+  in the document, not just the raw-URL ones, allowed a break at any character; now scoped to just
+  the permalink and citation links, which genuinely need it.
+- **Fixed: a report table's caption could be clipped by its own horizontal-scroll wrapper**
+  ("Top 20 highest-scoring species (by habitat-weighted exti…" cut off on phone) — captions now sit
+  above the scroll container, at the section's full width.
+- **Fixed: the species layer pill's "no surface" tooltip gave the wrong reason.** It now says a
+  model has no raster registered in this release's registry (the same lookup the Species Shiny app
+  makes), not that the release "publishes no surface for it."
+- **Fixed: the feedback dialog's privacy note was ambiguous about when a GitHub issue is filed.** It
+  now says the issue is filed either way on a public release, whether or not you give an email, and
+  that your email — if you give one — never appears in the issue itself.
+- **Fixed 1 false result in `scripts/eyes-shots.mjs`** (the eyes-on screenshot harness, dev-only):
+  the scored-cell tap now stops at the first point that actually produces a popup, instead of
+  clicking every candidate point regardless and letting a later land/ocean tap dismiss or replace
+  an earlier valid one.
+
 # atlas 0.10.58
 
 Round 2, V3: titiler-v8 (every score/species map tile) and the API were unreachable for an hour

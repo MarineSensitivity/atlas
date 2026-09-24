@@ -481,7 +481,12 @@
       <span class="report-chip">{model.header.releaseChip}</span>
       <div>Generated {model.header.generatedLabel}</div>
       <div>
-        <a href={model.header.permalink.href}>{model.header.permalink.href}</a>
+        <!-- V4 fix (owner phone report, 2026-09-24): `report.css`'s `overflow-wrap: anywhere` used
+             to apply to EVERY `<a>` in the report (`#report-root a`), so a short common-name link
+             ("Leatherback") could break mid-word for no reason -- `.report-url` scopes it to just
+             the links whose visible TEXT is the raw URL itself (this permalink line, and a
+             citation's own href below), the one case that genuinely needs it. -->
+        <a class="report-url" href={model.header.permalink.href}>{model.header.permalink.href}</a>
       </div>
     </div>
     {#if qrDataUrl}
@@ -522,10 +527,12 @@
     </h2>
     <div class="disclosure-body" hidden={!parametersOpen}>
       <!-- V1 fix (Opus eyes-on review, 2026-09-24, phone 390px): wraps every table in its own
-           horizontal scroll container -- see report.css's `.table-scroll` header for why. -->
+           horizontal scroll container -- see report.css's `.table-scroll` header for why.
+           V4 fix (owner phone report, 2026-09-24): the caption moved ABOVE the scroll container
+           (report.css's `.table-caption` header) -- see that header for why. -->
+      <p class="table-caption" id="parameters-caption">Report parameters, per place.</p>
       <div class="table-scroll">
-        <table>
-          <caption>Report parameters, per place.</caption>
+        <table aria-labelledby="parameters-caption">
           <thead>
             <tr>
               <th scope="col">Place</th>
@@ -697,9 +704,11 @@
   <section aria-labelledby="s-scores">
     <h2 id="s-scores">Table of Scores</h2>
     <p class="narrative">{model.scores.narrative}</p>
+    <!-- V4 fix (owner phone report, 2026-09-24): caption moved above the scroll container -- see
+         report.css's `.table-caption` header for why. -->
+    <p class="table-caption" id="scores-caption">Mean component and overall scores per area.</p>
     <div class="table-scroll">
-      <table aria-describedby="scores-summary">
-        <caption>Mean component and overall scores per area.</caption>
+      <table aria-labelledby="scores-caption" aria-describedby="scores-summary">
         <thead>
           <tr>
             <th scope="col">Area</th>
@@ -748,9 +757,14 @@
         {#if species.counts === null}
           <p>{species.empty ?? "Loading species…"}</p>
         {:else}
+          <!-- V4 fix (owner phone report, 2026-09-24): caption moved above the scroll container --
+               see report.css's `.table-caption` header for why. -->
+          <p class="table-caption" id={`species-counts-caption-${i}`}>{species.caption}</p>
           <div class="table-scroll">
-            <table aria-describedby={`species-summary-${i}`}>
-              <caption>{species.caption}</caption>
+            <table
+              aria-labelledby={`species-counts-caption-${i}`}
+              aria-describedby={`species-summary-${i}`}
+            >
               <thead>
                 <tr>
                   <th scope="col">Category</th>
@@ -782,11 +796,14 @@
           </div>
 
           {#if species.top}
+            <!-- V4 fix (owner phone report, 2026-09-24, phone-15): caption moved above the scroll
+                 container -- see report.css's `.table-caption` header for why (this is the exact
+                 caption that used to read "…habitat-weighted exti" clipped mid-word). -->
+            <p class="table-caption" id={`species-top-caption-${i}`}>
+              Top 20 highest-scoring species (by habitat-weighted extinction risk).
+            </p>
             <div class="table-scroll">
-              <table>
-                <caption
-                  >Top 20 highest-scoring species (by habitat-weighted extinction risk).</caption
-                >
+              <table aria-labelledby={`species-top-caption-${i}`}>
                 <thead>
                   <tr>
                     <th scope="col">Category</th>
@@ -846,7 +863,7 @@
         {#each model.sources.citations as c (c.dsKey)}
           <li>
             {c.label}: {c.citation}
-            {#if c.href}<a href={c.href}>({c.href})</a>{/if}
+            {#if c.href}<a class="report-url" href={c.href}>({c.href})</a>{/if}
           </li>
         {/each}
       </ul>
@@ -870,9 +887,11 @@
         DuckDB-WASM
         {model.provenance.duckdbWasm ?? "—"}.
       </p>
+      <!-- V4 fix (owner phone report, 2026-09-24): caption moved above the scroll container -- see
+           report.css's `.table-caption` header for why. -->
+      <p class="table-caption" id="provenance-tables-caption">Tables read.</p>
       <div class="table-scroll">
-        <table>
-          <caption>Tables read.</caption>
+        <table aria-labelledby="provenance-tables-caption">
           <thead>
             <tr>
               <th scope="col">Table</th>

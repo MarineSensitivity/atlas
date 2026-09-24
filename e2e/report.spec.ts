@@ -43,7 +43,10 @@ test.describe("report.html renders zone places from boot.json", () => {
 
     // the Table of Scores: one row per place, in submission order, Overall = plain mean of the
     // components PRESENT (model.ts's own rule -- GAA: (50+30+40)/3 = 40, ALA: (55+20)/2 = 37.5 -> 38).
-    const table = page.locator("table", { hasText: "Mean component and overall scores" });
+    // V4 fix (owner phone report, 2026-09-24): located by ARIA name, not `hasText` -- the caption
+    // moved OUT of `<table>` to a sibling `<p class="table-caption">` (report.css's own header),
+    // and `aria-labelledby` keeps the table's accessible name the same text that caption carries.
+    const table = page.getByRole("table", { name: "Mean component and overall scores" });
     const gaaRow = table.locator("tr", { hasText: "Gulf of America" });
     await expect(gaaRow).toContainText("40");
     const alaRow = table.locator("tr", { hasText: "Alaska" });
@@ -311,8 +314,10 @@ test.describe("exports", () => {
       // M4: the SELF-CONTAINED download's embedded PNG carries the real data too, not just a
       // visible <img> whose src happens to decode (see the live-page assertion above for why).
       expect(await mapPrintRampPixelCount(offlinePage)).toBeGreaterThan(0);
+      // V4 fix (owner phone report, 2026-09-24): ARIA name, not `hasText` -- see this file's
+      // earlier occurrence for why.
       await expect(
-        offlinePage.locator("table", { hasText: "Mean component and overall scores" }),
+        offlinePage.getByRole("table", { name: "Mean component and overall scores" }),
       ).toBeVisible();
       expect(networkRequests).toEqual([]);
       // a self-contained document ships no <script> at all, so there is nothing to error --
@@ -489,7 +494,9 @@ test.describe("engine-backed paths (real DuckDB-WASM, real Parquet fixtures, fix
     expect(Date.now() - start).toBeLessThan(15_000);
 
     // scores: every cell in the drawn box carries bird=50/fish=30 -> Overall 40.
-    const table = page.locator("table", { hasText: "Mean component and overall scores" });
+    // V4 fix (owner phone report, 2026-09-24): ARIA name, not `hasText` -- see this file's
+    // earlier occurrence for why.
+    const table = page.getByRole("table", { name: "Mean component and overall scores" });
     await expect(table.locator("tr", { hasText: "TestPlace" })).toContainText("40");
 
     // species: real rows combined across all four cell_model tiles (not "No species found").
@@ -655,8 +662,9 @@ test.describe("page.pdf() (chromium): labels, table headers, watermark, map imag
 // `table { width: 100% }` is only a PREFERRED width -- a table whose columns' own minimum content
 // widths exceed it still grows past its container) and the permalink line was one long unbroken
 // URL string with no wrap protection at all. Two independent overflow SOURCES, both fixed the same
-// way (report.css's `.table-scroll` + `#report-root a { overflow-wrap: anywhere }`) -- tested
-// separately so either regressing goes red on its own.
+// way (report.css's `.table-scroll` + `.report-url { overflow-wrap: anywhere }` -- V4 fix,
+// 2026-09-24, scoped this from every `<a>` in the document down to just the raw-URL links) --
+// tested separately so either regressing goes red on its own.
 test.describe("V1 fix: the phone report page never scrolls the document sideways (390px)", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
@@ -749,8 +757,10 @@ test.describe("V1 fix: the phone report page never scrolls the document sideways
     await expect(page.locator(".progress-line").first()).toContainText("Done");
 
     // sanity: the Table of Scores really does carry all 9 component columns -- not a narrow test.
+    // V4 fix (owner phone report, 2026-09-24): ARIA name, not `hasText` -- see this file's
+    // earlier occurrence for why.
     await expect(
-      page.locator("table", { hasText: "Mean component and overall scores" }).locator("thead th"),
+      page.getByRole("table", { name: "Mean component and overall scores" }).locator("thead th"),
     ).toHaveCount(2 + 9 + 1); // Area, N cells, 9 components, Overall
 
     const overflowPx = await page.evaluate(

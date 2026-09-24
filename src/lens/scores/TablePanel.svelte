@@ -30,6 +30,7 @@
   // atlas-7 step 4: "Report on selected" builds the SAME `z.<set>.<keys>` token the Places panel's
   // own zone places use (places/model.ts) -- never a second zone-place encoding.
   import { hashFromPlaces, zoneSetForUnit } from "../../places/model";
+  import { paLabel } from "../../places/zoneStats";
 
   // `Composition.svelte` is loaded via a DYNAMIC `import()`, never a static one, even though it
   // contains no forbidden-marker text itself: it is what dynamically imports `Treemap.svelte`, and
@@ -76,10 +77,21 @@
       ? zoneRows(boot, selection.unit).find((z) => z.key === selection.key)
       : undefined,
   );
+  // V4 fix (owner phone report, 2026-09-24, docs fact-check item 3): the table header for a
+  // CLICKED Program Area used to read `currentZone?.name` verbatim (== the bare key -- no
+  // published bundle carries a real name, zoneStats.ts's own header) instead of the SAME
+  // "Full Name (KEY)" label (`paLabel`, V1's names table) the Zones table already shows for that
+  // same zone. Filename stem below is left as the bare name/key on purpose -- a CSV filename is
+  // not the place for "(" ")" punctuation.
+  const currentZoneLabel = $derived(
+    currentZone && selection?.kind === "zone"
+      ? paLabel(currentZone.key, currentZone.name, selection.unit)
+      : undefined,
+  );
   const header = $derived(
     speciesHeader({
       selection,
-      zoneName: currentZone?.name,
+      zoneName: currentZoneLabel,
       unit: selection?.kind === "zone" ? selection.unit : unit,
       unitLabel: unitLabel ?? null,
       zoneAllKey: allKey,

@@ -83,18 +83,18 @@ export interface MapHandle {
   flyTo(area: StudyArea): void;
   /**
    * Fly to an EXTENT — atlas-5's species camera (`src/lens/species/data/camera.ts`'s
-   * `BoundsCamera`). `bounds[1][0]` (east) may exceed 180 (an unwrapped, re-expressed frame); this
-   * computes the equivalent center+zoom itself (`camera.ts`'s `boundsToCameraView`, plain linear
-   * Mercator math) rather than calling MapLibre's own bounds-fitting method, which re-wraps
-   * longitudes and inverts across the antimeridian — that native method is never called anywhere
-   * in this module (see docs/map.md).
+   * `BoundsCamera`). `bounds[1][0]` (east) may exceed 180 (an unwrapped, re-expressed frame).
    *
    * V1 fix (Opus eyes-on review, 2026-09-24): `padding` accepts an asymmetric {@link ChromePadding}
    * (a docked panel/phone sheet/legend chip occluding one side of the map), not just a uniform
-   * number — `boundsToCameraView` already shifts the fitted center toward the free area for this
-   * exact case (its own header: "P6/D8... a model fit is not centred behind the very chrome that
-   * is hiding half of it"); only this method's own type signature was still narrower than what it
-   * calls, so the species lens had no way to pass one through.
+   * number — this method's own type signature used to be narrower than what it needed to pass
+   * through, so the species lens had no way to hand one through.
+   *
+   * V4 fix (owner phone report, 2026-09-24): the implementation now calls MapLibre's OWN
+   * `cameraForBounds()` (see this file's own `flyToBounds` for why — the antimeridian rule this
+   * module exists for is preserved, `boundsToCameraView`'s hand math is kept as the fallback, and
+   * this is deliberately NOT `fitBounds` — see docs/map.md and no-fitbounds.test.ts's own header
+   * for why that native method is still never called).
    */
   flyToBounds(bounds: CameraBoundsInput, opts?: { padding?: number | ChromePadding }): void;
   /** the current camera, rounded for the URL. */
@@ -190,6 +190,36 @@ export function createMap(container: HTMLElement, opts: CreateMapOptions): MapHa
     },
     flyToBounds(bounds: CameraBoundsInput, opts?: { padding?: number | ChromePadding }) {
       writer?.cancel();
+      // V4 fix (owner phone report, 2026-09-24, phone-17/18): `boundsToCameraView`'s shift
+      // (camera.ts#shiftForPadding) is EXACT only for FLAT Mercator rendering. On the phone a wide
+      // species range fits at a low zoom (the sheet's own padding shrinks the "available" area
+      // further still) — exactly the ~<5 zoom band where MapLibre's GLOBE projection renders a
+      // true sphere (camera.ts's own PHONE_STUDY_AREA_ZOOM_BOOST header). The SAME center/zoom
+      // numbers, read by the globe renderer instead of a flat one, do not land on the same screen
+      // pixels the flat math predicted: content bunched near one edge of the frame, most of it
+      // empty space (measured live: the leatherback default view and the walrus model view both
+      // squeezed into the bottom of the free area). `map.cameraForBounds()` computes the camera
+      // through the SAME transform the renderer itself uses (mercator or globe, whichever is
+      // live), so it frames correctly under either — this is NOT `fitBounds` (see
+      // no-fitbounds.test.ts's own header: it only COMPUTES a camera, it never moves the map), and
+      // its own antimeridian handling (`adjustAntiMeridian`) re-wraps only when west > east
+      // numerically; this module's bounds are always re-expressed continuous
+      // (`data/camera.ts#minimalFrame`: west < east, east possibly > 180), so it is a no-op there
+      // and the antimeridian-safe frame this module exists for is preserved.
+      const mutableBounds: [[number, number], [number, number]] = [
+        [bounds[0][0], bounds[0][1]],
+        [bounds[1][0], bounds[1][1]],
+      ];
+      const native = map.cameraForBounds(
+        mutableBounds,
+        opts?.padding !== undefined ? { padding: opts.padding } : undefined,
+      );
+      if (native?.center !== undefined && native.zoom !== undefined) {
+        map.flyTo({ center: native.center, zoom: native.zoom }, { ...PROGRAMMATIC_EVENT_DATA });
+        return;
+      }
+      // fallback: a zero-size container (a test, a not-yet-laid-out map) is the one case
+      // `cameraForBounds` can return `undefined` for — the old hand math still holds for it.
       const rect = map.getContainer().getBoundingClientRect();
       const view = boundsToCameraView(
         bounds,

@@ -41,7 +41,15 @@ async function readCamera(page: Page): Promise<CameraState> {
 // the release's own default/study-area camera (FALLBACK_FULL_STUDY_AREA / boot.study_areas[FULL]
 // on this fixture — the exact camera the eyes-on review's "95% of the frame is empty continent"
 // describes staying parked at).
-const STUDY_AREA_ZOOM_CEILING = 3; // FULL is 2.16 on both v7 and v9 fixtures — well under this
+// V4 fix (owner phone report, 2026-09-24): lowered from 3 to 2.3. `map.ts#flyToBounds` now asks
+// MapLibre's OWN `cameraForBounds()` for the fit (projection-aware — see that file's own header),
+// which settles on a measurably LOWER zoom than the old hand-rolled flat-Mercator math did for
+// these two fixtures' bbox/viewport combinations (walrus desktop: 2.84 native vs previously > 3;
+// v9 am/ax-sibling desktop: 2.54 native) — a real, deterministic characteristic of the new fit, not
+// a flake (reproduced identically across repeated runs). 2.3 keeps a comfortable margin above the
+// study-area default's own 2.16 (still proves a species-specific fit ran) while sitting below every
+// native fit measured so far.
+const STUDY_AREA_ZOOM_CEILING = 2.3;
 
 /** the walrus v7 COG's own `/cog/info` + `/cog/point` narrowing mocks, shared by both v7 tests
  * below (the initial species-change effect AND `zoomToLayer()`'s own follow-up) — factored out so
@@ -297,5 +305,238 @@ test.describe("V1 fix: the species camera pads for the phone sheet (and legend c
         `sheet top at y=${sheetTopRelative} -- expected the fitted centre well above the sheet's ` +
         `own top edge (inside the free area), not at/behind it`,
     ).toBeLessThan(sheetTopRelative! * 0.85);
+  });
+});
+
+// V4 fix (owner phone report, 2026-09-24, phone-17/18): V1's own test just above only checks the
+// fitted bbox's CENTRE point -- which can project correctly while the bulk of a WIDE range still
+// bunches into one corner of the frame under GLOBE projection at low zoom (the exact bug: the
+// leatherback default view and the walrus model view both squeezed into the bottom of the free
+// area, most of the frame empty black space -- `map.ts#flyToBounds`'s own header has the root
+// cause). This samples a 5x5 grid across the model's own bbox (corners, edges, centre) with the
+// map's OWN `project()` (so it reflects whatever projection -- globe or mercator -- is actually
+// live) and requires most of them to land inside the FREE area: top bar to the sheet's own top
+// edge, full width, minus the floating legend chip's own band.
+test.describe("V4 fix: the species camera fills the free area under globe projection, not just a point behind it", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  interface FreeAreaSample {
+    x: number;
+    y: number;
+    inside: boolean;
+  }
+  interface FreeAreaResult {
+    insideFraction: number;
+    total: number;
+    inside: number;
+    sample: FreeAreaSample[];
+  }
+
+  /** samples a 5x5 grid across `bbox` (`[xmin,ymin,xmax,ymax]` -- `xmax` may exceed 180, the same
+   * re-expressed frame `data/camera.ts#minimalFrame` produces) and reports what fraction land
+   * inside the free area. The map CONTAINER's own top-left is already below the top bar (measured:
+   * `getBoundingClientRect().top === 48` in page space while the container's OWN coordinate space,
+   * what `project()` returns, starts at 0) -- so the free area's own top is simply 0, the same
+   * container-relative convention the V1 test above already uses for the sheet. */
+  async function freeAreaCoverage(
+    page: Page,
+    bbox: [number, number, number, number],
+  ): Promise<FreeAreaResult> {
+    return page.evaluate((bboxArg) => {
+      const [xmin, ymin, xmax, ymax] = bboxArg;
+      const w = window as unknown as {
+        __atlasMap: {
+          handle: {
+            map: {
+              project(lngLat: [number, number]): { x: number; y: number };
+              getContainer(): HTMLElement;
+            };
+          };
+        };
+      };
+      const map = w.__atlasMap.handle.map;
+      const containerRect = map.getContainer().getBoundingClientRect();
+      const sheetEl = document.querySelector(".sheet");
+      const sheetTop = sheetEl
+        ? sheetEl.getBoundingClientRect().top - containerRect.top
+        : containerRect.height;
+      const chipEl = document.querySelector(".legend-chip-region");
+      const chipRect = chipEl ? chipEl.getBoundingClientRect() : null;
+      const chipTop = chipRect ? chipRect.top - containerRect.top : null;
+      const chipBottom = chipRect ? chipRect.bottom - containerRect.top : null;
+
+      const fracs = [0, 0.25, 0.5, 0.75, 1];
+      const lons = fracs.map((f) => xmin + f * (xmax - xmin));
+      const lats = fracs.map((f) => ymin + f * (ymax - ymin));
+      const sample: { x: number; y: number; inside: boolean }[] = [];
+      for (const lon of lons) {
+        for (const lat of lats) {
+          const p = map.project([lon, lat]);
+          const inChip =
+            chipTop !== null && chipBottom !== null && p.y >= chipTop && p.y <= chipBottom;
+          const inside =
+            p.x >= 0 && p.x <= containerRect.width && p.y >= 0 && p.y < sheetTop && !inChip;
+          sample.push({ x: p.x, y: p.y, inside });
+        }
+      }
+      const inside = sample.filter((s) => s.inside).length;
+      return { insideFraction: inside / sample.length, total: sample.length, inside, sample };
+    }, bbox);
+  }
+
+  function assertMostlyInside(result: FreeAreaResult): void {
+    expect(
+      result.insideFraction,
+      `only ${result.inside}/${result.total} of the model's bbox grid points landed inside the ` +
+        `free area (top bar to sheet top, full width, minus the legend chip band) -- sample: ` +
+        JSON.stringify(result.sample),
+    ).toBeGreaterThanOrEqual(0.8);
+  }
+
+  /** waits for the flyTo animation to actually FINISH, not merely for the zoom to have crossed
+   * {@link STUDY_AREA_ZOOM_CEILING} once -- a fixed poll on zoom ALONE can catch a transient
+   * mid-flight frame (measured on this test's own first draft: the grid-coverage assertion ran
+   * while the page's own "Map loading" status was still visible, and `flyTo`'s easing curve is not
+   * guaranteed monotonic in zoom). Requires BOTH conditions at once so a walrus-style TWO-flight
+   * sequence (an initial center-only fallback, then a second flyToBounds once /cog/info answers)
+   * cannot be mistaken for "settled" during the brief gap between the two flights, when the map is
+   * genuinely not moving but still parked at the (low-zoom) study-area default. */
+  async function waitForCameraSettled(page: Page): Promise<void> {
+    await expect
+      .poll(
+        () =>
+          page.evaluate((ceiling) => {
+            const w = window as unknown as {
+              __atlasMap?: { handle: { map: { getZoom(): number; isMoving(): boolean } } };
+            };
+            const map = w.__atlasMap?.handle.map;
+            if (!map) return false;
+            return map.getZoom() > ceiling && !map.isMoving();
+          }, STUDY_AREA_ZOOM_CEILING),
+        { message: "camera flight never settled past the study-area default", timeout: 15_000 },
+      )
+      .toBe(true);
+  }
+
+  /** the single-flight counterpart to {@link waitForCameraSettled} above -- for a taxon whose
+   * `cameraFor()` bundle-only chain already returns a bounds camera synchronously (the leatherback
+   * fixture below: `card.merged.bbox` is non-null, no async `/cog/info` step needed), there is only
+   * ONE `flyTo` in play, so a zoom-ceiling proxy is unnecessary and, for a bbox this WIDE, actively
+   * unreliable (a 170deg-wide fit legitimately settles BELOW the study area's own 2.16 zoom on a
+   * narrow phone viewport -- width, not height, is the limiting scale here). Waits for movement to
+   * actually START first (proving the species-change effect's own `flyTo` has fired, not just the
+   * map's un-animated initial placement) and then to STOP. */
+  async function waitForSingleFlightSettled(page: Page): Promise<void> {
+    async function isMoving(): Promise<boolean> {
+      return page.evaluate(() => {
+        const w = window as unknown as {
+          __atlasMap?: { handle: { map: { isMoving(): boolean } } };
+        };
+        return !!w.__atlasMap?.handle.map.isMoving();
+      });
+    }
+    await expect
+      .poll(() => isMoving(), {
+        message: "the species camera never started flying",
+        timeout: 10_000,
+      })
+      .toBe(true);
+    await expect
+      .poll(() => isMoving(), {
+        message: "the species camera never stopped flying",
+        timeout: 15_000,
+      })
+      .toBe(false);
+  }
+
+  test("the leatherback's own (wide, real-published) range fills the free area", async ({
+    page,
+  }) => {
+    // ~100deg lon span, ~40deg lat span -- wide enough to reproduce the production defect (phone-17:
+    // OCEANIA + scattered range patches spread across most of the visible globe, squeezed into the
+    // bottom of the free area with the top half empty) and to legitimately fit at a low (globe-
+    // regime) zoom, without the aspect ratio being SO extreme (a first draft tried 170x75) that even
+    // a correct "contain" fit's own far corners graze the free area's edge under the curvature a
+    // rectangular lat/lon box takes on a real sphere. v7 itself publishes no bbox at all
+    // (data/camera.ts's own header) -- this fixture stands in for a release that does (v9 and
+    // later), which is exactly the shape a wide-range species' own published bbox takes.
+    const BBOX: [number, number, number, number] = [130, 5, 230, 45];
+    await blockWasm(page);
+    await routeBucket(page, "v7", bootFor("v7"));
+    await routeSpeciesShards(page);
+    // registered AFTER routeSpeciesShards, so it wins (newest-registered-first) -- overrides just
+    // this test's leatherback shard (tests/fixtures/species/v7/taxon/e1.json) with the SAME record
+    // plus a real, wide `merged.bbox` the on-disk fixture leaves `null`.
+    await page.route(
+      (url) => url.href.includes("/app/taxon/e1.json"),
+      (route: Route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            schema: 1,
+            ver: "v7",
+            shard: "e1",
+            taxa: {
+              "54241": {
+                key: "54241",
+                sci: "Dermochelys coriacea",
+                common: "Leatherback Turtle",
+                sp_cat: "turtle",
+                taxon_id: "137209",
+                taxon_authority: "worms",
+                rl: "EN",
+                esa: { code: "NMFS:EN", source: "ch_nmfs" },
+                mmpa: false,
+                mbta: false,
+                er_score: 100,
+                valid_usa: true,
+                valid_global: null,
+                merged: {
+                  type: "cog",
+                  url: "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/cog/usa05/9fe6f75498affae1.tif",
+                  rescale: [1, 100],
+                  colormap: "spectral_r",
+                  bbox: BBOX,
+                },
+                inputs: [],
+              },
+            },
+          }),
+        }),
+    );
+    await routeSession(page, null);
+    await routeSealFixture(page);
+    await routeGlyphs(page);
+    await routeTitilerTiles(page);
+    await page.goto("/?mdl_seq=54241&ver=v7");
+    await waitForHydration(page);
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Dermochelys coriacea");
+
+    await waitForSingleFlightSettled(page);
+    assertMostlyInside(await freeAreaCoverage(page, BBOX));
+  });
+
+  test("the walrus's real (COG-bounds-narrowed) range fills the free area", async ({ page }) => {
+    await blockWasm(page);
+    await routeBucket(page, "v7", bootFor("v7"));
+    await routeSpeciesShards(page);
+    await routeSession(page, null);
+    await routeSealFixture(page);
+    await routeGlyphs(page);
+    await routeTitilerTiles(page);
+    await routeWalrusCogBoundsFallback(page);
+    await page.goto("/?mdl_seq=54383&ver=v7");
+    await waitForHydration(page);
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Odobenus rosmarus");
+
+    // two flights in sequence (the initial study-area fallback, then the COG-bounds fit once
+    // /cog/info + the point-probe answer) -- waitForCameraSettled's own header explains why a
+    // plain zoom poll alone is not enough here.
+    await waitForCameraSettled(page);
+
+    // narrowed bbox: [-190, 53.15, -150, 73.75] -- same real value as the desktop D8 test above.
+    const NARROWED_BBOX: [number, number, number, number] = [-190, 53.15, -150, 73.75];
+    assertMostlyInside(await freeAreaCoverage(page, NARROWED_BBOX));
   });
 });

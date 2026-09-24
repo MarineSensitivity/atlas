@@ -104,6 +104,11 @@ const SHARD_FILES: Record<string, string> = {
   "v9/app/alias/9f.json": "v9/alias/9f.json",
   "v7/app/taxon/6f.json": "v7/taxon/6f.json",
   "v7/app/alias/6f.json": "v7/alias/6f.json",
+  // V4 fix (owner phone report, 2026-09-24): the leatherback fixture (54241, mdl_seq) was already
+  // on disk (`tests/fixtures/species/v7/{taxon,alias}/e1.json`) but never wired into this map --
+  // `e2e/species.camera.spec.ts`'s V4 free-area-coverage test is the first to need it.
+  "v7/app/taxon/e1.json": "v7/taxon/e1.json",
+  "v7/app/alias/e1.json": "v7/alias/e1.json",
 };
 
 /** exported so a spec that needs to compose its OWN route order (e.g. registering a hung titiler
