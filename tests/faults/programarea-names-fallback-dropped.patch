@@ -1,0 +1,20 @@
+diff --git a/src/places/zoneStats.ts b/src/places/zoneStats.ts
+index 0c3e962..a9c0d26 100644
+--- a/src/places/zoneStats.ts
++++ b/src/places/zoneStats.ts
+@@ -197,12 +197,9 @@ export function paLabel(
+   name: string | null | undefined,
+   unit?: string,
+ ): string {
+-  if (name && name !== key) return `${name} (${key})`;
+-  if (unit === undefined || unit === "programarea") {
+-    const fallback = PROGRAM_AREA_NAMES[key];
+-    if (fallback && fallback !== key) return `${fallback} (${key})`;
+-  }
+-  return key;
++  void unit;
++  if (!name || name === key) return key;
++  return `${name} (${key})`;
+ }
+ 
+ /** the display name for a zone place's row: every resolved "Name (KEY)" label (`paLabel`, above),

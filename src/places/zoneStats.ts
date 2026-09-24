@@ -192,11 +192,7 @@ export function summarizeZoneStats(stats: readonly ZoneStat[]): {
  * caller in this app only ever deals in Program Areas (the release's one selectable unit, D17), so
  * omitting `unit` still resolves the table -- unchanged for every existing call site.
  */
-export function paLabel(
-  key: string,
-  name: string | null | undefined,
-  unit?: string,
-): string {
+export function paLabel(key: string, name: string | null | undefined, unit?: string): string {
   if (name && name !== key) return `${name} (${key})`;
   if (unit === undefined || unit === "programarea") {
     const fallback = PROGRAM_AREA_NAMES[key];

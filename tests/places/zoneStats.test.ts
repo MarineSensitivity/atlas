@@ -236,14 +236,17 @@ describe("paLabel (P3: 'Aleutian Arc (ALA)' style labels everywhere a Program Ar
 // absent on every row). `PROGRAM_AREA_NAMES` (scripts/gen-program-area-names.mjs, generated from
 // the canonical Program-Area geometry) is the app-side fallback `paLabel` now consults.
 describe("paLabel PROGRAM_AREA_NAMES fallback (V1 fix)", () => {
-  it("every key in the v7 fixture boot.json's programarea list resolves to a non-key label -- "
-    + "the exact bug Ben saw live (a real bundle publishes no `name` at all)", () => {
-    for (const row of REAL_V7_BOOT.zones.programarea) {
-      const label = paLabel(row.key, undefined);
-      expect(label).not.toBe(row.key);
-      expect(label).toBe(`${PROGRAM_AREA_NAMES[row.key]} (${row.key})`);
-    }
-  });
+  it(
+    "every key in the v7 fixture boot.json's programarea list resolves to a non-key label -- " +
+      "the exact bug Ben saw live (a real bundle publishes no `name` at all)",
+    () => {
+      for (const row of REAL_V7_BOOT.zones.programarea) {
+        const label = paLabel(row.key, undefined);
+        expect(label).not.toBe(row.key);
+        expect(label).toBe(`${PROGRAM_AREA_NAMES[row.key]} (${row.key})`);
+      }
+    },
+  );
 
   it("resolves every one of the 20 published Program Areas, not just the two in the fixture", () => {
     for (const [key, name] of Object.entries(PROGRAM_AREA_NAMES)) {

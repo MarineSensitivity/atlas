@@ -618,7 +618,12 @@
   function currentChromePadding(): ChromePadding {
     if (isPhone) {
       const chipShowing = !!phoneLegend && legendChipMode(sheetGeom.detent) === "floating";
-      return phoneLiveChromePadding(sheetGeom.height, sheetGeom.detent, window.innerHeight, chipShowing);
+      return phoneLiveChromePadding(
+        sheetGeom.height,
+        sheetGeom.detent,
+        window.innerHeight,
+        chipShowing,
+      );
     }
     return desktopPanelPadding(panelGeom);
   }

@@ -1205,6 +1205,102 @@ const FAULTS = [
       "the Sheet-log beacon goes back to a silent no-op no matter what VITE_LOG_URL is set to",
     gate: ["npx", "vitest", "run", "tests/analytics/logUrl.wiring.test.ts"],
   },
+  // --- V1 (P round, 2026-09-24, Opus eyes-on review on the real 0.10.55 build): five owner-facing ---
+  // UI defects every automated gate had passed. Each fault below reverts exactly the one piece of
+  // its fix (see the patch's own header for the mechanism), and each shares this round's own
+  // PW_PORT (4431-4436, the range this round was assigned) with the e2e spec its own fix landed in.
+  {
+    id: "programarea-names-fallback-dropped",
+    patch: "tests/faults/programarea-names-fallback-dropped.patch",
+    describe:
+      "paLabel() reverts to its pre-V1 shape -- no PROGRAM_AREA_NAMES fallback, no `unit` " +
+      "scoping -- so a Program Area key with no bundle-published `name` (every real release " +
+      "through v9) falls straight back to the bare acronym, exactly Ben's live complaint",
+    gate: [
+      "npx",
+      "vitest",
+      "run",
+      "tests/places/zoneStats.test.ts",
+      "-t",
+      "PROGRAM_AREA_NAMES fallback",
+    ],
+  },
+  {
+    id: "panel-maximize-cap-restored",
+    patch: "tests/faults/panel-maximize-cap-restored.patch",
+    describe:
+      "Panel.svelte's `.panel--maximized { max-width: none }` rule is dropped -- the maximized " +
+      "panel's own content box reverts to R1's 720px docked-width ceiling even though " +
+      "`#panel-region` itself already spans the whole stage",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.panel.spec.ts",
+      "-g",
+      "drops its 720px cap when maximized",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4431" },
+  },
+  {
+    id: "report-table-scroll-dropped",
+    patch: "tests/faults/report-table-scroll-dropped.patch",
+    describe:
+      "report.css's `.table-scroll` reverts to `overflow-x: visible` -- a wide Table of Scores " +
+      "(many score components) blows out the whole document's width on a 390px phone again, " +
+      "instead of scrolling within its own box",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.spec.ts",
+      "-g",
+      "a place with many score components does not widen the page",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4432" },
+  },
+  {
+    id: "species-camera-flat-padding-restored",
+    patch: "tests/faults/species-camera-flat-padding-restored.patch",
+    describe:
+      "applyCamera() (state.svelte.ts) stops reading deps.chromePadding() -- the species " +
+      "camera's model-bounds fit reverts to a flat DEFAULT_CAMERA_PADDING (40px, every edge), " +
+      "blind to the phone sheet/legend chip (or a desktop docked panel) covering the map",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/species.camera.spec.ts",
+      "-g",
+      "the fitted model's own centre projects INSIDE the free area",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4433" },
+  },
+  {
+    id: "pill-reason-hidden-always",
+    patch: "tests/faults/pill-reason-hidden-always.patch",
+    describe:
+      "Pill.svelte's always-visible `.pill-reason` span reverts to `hidden` unconditionally -- " +
+      "the disabled 'Show analysis cells' pill's reason is invisible again, on a hover, a tap, " +
+      "or at rest, on every platform",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/places.spec.ts",
+      "-g",
+      "AT REST",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4436" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
