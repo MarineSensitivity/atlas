@@ -1,18 +1,26 @@
 // R3 (round-2 plan §5 U4, `docs/usability.md` §7 R3): end-to-end proof of the layer stack against a
 // REAL rendered map — `tests/map/layerStack.test.ts`/`tests/map/style.test.ts` already cover the
-// model/composeStyle rules at the unit level; this is the "does moving a group actually repaint the
-// map, and does it survive a reload" proof, the same shape `e2e/scores.outlines.spec.ts` uses for
-// `out=`.
+// model/composeStyle rules at the unit level; this is the "does moving/hiding/dimming a group
+// actually repaint the map, and does it survive a reload" proof, the same shape
+// `e2e/scores.outlines.spec.ts` uses for `out=`.
+//
+// M11 fix (Opus 5.5 review): this header used to claim an ORDER-level proof "on basemap-labels
+// specifically" that did not exist — the actual test below moves `basemap-land`, not
+// `basemap-labels`, at BOTH the order and pixel level (corrected here).
 //
 // Pixel-probe note: this harness's fixture basemap (`e2e/map-hermetic.ts`) carries a `background` +
 // `water` FILL layer (both classify into `basemap-land`) but no symbol/sprite layer with real glyph
 // bytes — `routeGlyphs()` fulfils the font range with an EMPTY body on purpose (a valid "no glyphs
 // in this range" answer), so a text layer paints nothing a pixel probe could read. Ben's example
-// ("names above a semi-transparent raster") is proven at the ORDER level here (`map.getStyle()` /
-// `queryRenderedFeatures`, on `basemap-labels` specifically) and at the PIXEL level using
-// `basemap-land` instead (the fixture's own solid, distinguishable `BASEMAP_RGB` fill) — the SAME
-// mechanism (a basemap group promoted above `data-raster`), just probed with a layer type this
-// hermetic harness can actually paint.
+// ("names above a semi-transparent raster") is proven here at BOTH the ORDER level (`map.getStyle()`)
+// and the PIXEL level using `basemap-land` instead of `basemap-labels` (the fixture's own solid,
+// distinguishable `BASEMAP_RGB` fill) — the SAME mechanism (a basemap group promoted above
+// `data-raster`), just probed with a layer type this hermetic harness can actually paint.
+//
+// M8 fix (Opus 5.5 review): `main`'s default theme is now DARK (`DEFAULT_SEL.theme`), not "auto"
+// resolving to paper — every `gotoLayersScores`/`gotoScoresWithEcoregion` navigation below passes
+// `&theme=light` explicitly so the PAPER pixel expectations (`BASEMAP_RGB`, `BLENDED_RASTER_RGB`,
+// both defined for the paper theme in `map-hermetic.ts`) still hold.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
@@ -32,6 +40,7 @@ import {
   readPixel,
   routeZones20,
 } from "./scores-hermetic";
+import { SCORE_RASTER_OPACITY } from "../src/lib/map/layers/raster";
 import {
   BASEMAP_RGB,
   RASTER_RGB,
@@ -40,6 +49,12 @@ import {
   routeGlyphs,
   routeTitilerTiles,
 } from "./map-hermetic";
+
+/** the theme's flat background colour (`src/lib/map/colors.ts#MAP_BACKGROUND_PAPER`) — what shows
+ * through once EVERY basemap layer (including `basemap-land`'s opaque water fill) is hidden. Not
+ * imported directly (this file stays outside `src/lib/map` on purpose, matching every other e2e
+ * fixture's own literal-colour convention, e.g. `map-hermetic.ts#BASEMAP_RGB`). */
+const MAP_BACKGROUND_PAPER_RGB = [234, 238, 243];
 
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 800 } });
@@ -102,7 +117,9 @@ async function gotoLayersScores(page: Page, search: string) {
   await routeBasemapStyle(page);
   await routeTitilerTiles(page);
   await routeGlyphs(page);
-  await page.goto(`/?proj=mercator${search}`);
+  // M8 fix: explicit `theme=light` -- `main`'s default is now dark, and every pixel expectation in
+  // this file assumes the PAPER fixture colours.
+  await page.goto(`/?proj=mercator&theme=light${search}`);
   await waitForHydration(page);
   await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
   await page.waitForFunction(() => !!window.__atlasMap!.handle.map.getLayer("r_lyr"), undefined, {
@@ -145,6 +162,12 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     expect(errors).toEqual([]);
   });
 
+  // M4 fix (Opus 5.5 review): this test used to also assert
+  // `queryRenderedFeatures({layers:["r_lyr"]}).length >= 0` — VACUOUS (a `.length` is never
+  // negative, so this could never fail regardless of what actually rendered). Deleted; the real,
+  // non-vacuous proof that the raster is still there (just underneath) is the PIXEL probe in the
+  // very next test, and `getLayer("r_lyr")` staying defined is asserted directly where it matters
+  // (the eye-toggle test below).
   test("moving basemap-land above data-raster reorders the REAL composed style (map.getStyle())", async ({
     page,
   }) => {
@@ -152,11 +175,6 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     await gotoLayersScores(page, `&layers=${LAND_ABOVE_RASTER}`);
     const ids = await styleLayerIds(page);
     expect(ids.indexOf("basemap-water")).toBeGreaterThan(ids.indexOf("r_lyr"));
-    // queryRenderedFeatures agrees: the raster tile IS still there, just underneath now.
-    const rasterFeatures = await page.evaluate(
-      () => window.__atlasMap!.handle.map.queryRenderedFeatures({ layers: ["r_lyr"] }).length,
-    );
-    expect(rasterFeatures).toBeGreaterThanOrEqual(0); // layer exists and is queryable either way
     expect(errors).toEqual([]);
   });
 
@@ -187,21 +205,23 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
       .toBe(BLENDED_RASTER_RGB.join(","));
   });
 
-  test("dimming data-raster to 35% opacity probes a DIFFERENTLY blended pixel than the 60% default", async ({
+  // B1 fix (Opus 5.5 review): the "Data" row's opacity SCALES the raster's own spec opacity
+  // (`SCORE_RASTER_OPACITY`, 0.6) — it never replaces it. A 35%-opacity slider therefore reads
+  // back a 0.6 x 0.35 = 0.21 final raster-opacity, NOT the bare 0.35 a replacing implementation
+  // would have produced (this test's own math WAS "RASTER_RGB*0.35 + BASEMAP_RGB*0.65" before this
+  // fix — i.e. it used to lock in the B1 bug at the e2e level too).
+  test("dimming data-raster to 35% opacity probes a DIFFERENTLY blended pixel than the 60% default (SCALED, not replaced)", async ({
     page,
   }) => {
-    // 35%, not 50%: 127*0.5 + 102*0.5 = 114.5 is an exact rounding TIE, and measured GPU alpha-
-    // blending rounds .5 ties differently from this file's own `Math.round` (114 vs 115) -- not a
-    // wrong blend, a genuine half-to-even-vs-half-up disagreement at the one value that can have
-    // one. 35% keeps every channel comfortably off a tie (±0.25 or more), and `closeRgb` below
-    // still tolerates ±2/channel for ordinary GPU/driver rounding, so this is not fragile to being
-    // OFF a tie either.
     const errors = collectConsoleErrors(page);
     const token = DEFAULT_ORDER.map((id) => (id === "data-raster" ? "data-raster:o35" : id)).join(
       ",",
     );
     await gotoLayersScores(page, `&layers=${token}`);
-    const expected = [0, 1, 2].map((i) => RASTER_RGB[i] * 0.35 + BASEMAP_RGB[i] * 0.65);
+    const scaledOpacity = SCORE_RASTER_OPACITY * 0.35; // 0.6 x 0.35 = 0.21
+    const expected = [0, 1, 2].map(
+      (i) => RASTER_RGB[i] * scaledOpacity + BASEMAP_RGB[i] * (1 - scaledOpacity),
+    );
     const [lon, lat] = OCEAN_PROBES[0];
     await expect
       .poll(async () => isCloseRgb(await readPixel(page, lon, lat), expected), {
@@ -287,6 +307,97 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
       })
       .toBe(BASEMAP_RGB.join(","));
     expect(await page.evaluate(() => !!window.__atlasMap!.handle.map.getLayer("r_lyr"))).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  // M3 fix (Opus 5.5 review): "only the Data row's eye is pixel-proven" -- the three tests below
+  // give the OTHER rows the same real, non-vacuous proof: a rendered-feature-count drop to exactly
+  // 0 (never removed -- `getLayer` still resolves), or a pixel handoff to the next thing underneath.
+  function zoneFeatureCount(page: Page, layerId = "programarea_ln") {
+    return page.evaluate(
+      (id) => window.__atlasMap!.handle.map.queryRenderedFeatures({ layers: [id] }).length,
+      layerId,
+    );
+  }
+
+  test("M3: the Zone outlines row's eye hides programarea_ln's rendered features (>0 -> 0), never removes the layer", async ({
+    page,
+  }) => {
+    // deliberately the DEFAULT `unit=cell` (never `unit=programarea`): `zoneUnitsFromBoot` always
+    // draws the outline regardless of the selected spatial unit, and `gotoLayersScores` waits for
+    // `r_lyr`, which only exists in cell mode (M5's own motivating issue: `raster: null` in zone
+    // mode) -- this test only cares about the outline, so cell mode keeps the helper reusable.
+    const errors = collectConsoleErrors(page);
+    await gotoLayersScores(page, "");
+    await expect.poll(() => zoneFeatureCount(page), { timeout: 20_000 }).toBeGreaterThan(0);
+
+    await page.getByRole("switch", { name: "Zone outlines visible on the map" }).click();
+
+    await expect.poll(() => zoneFeatureCount(page), { timeout: 20_000 }).toBe(0);
+    expect(await page.evaluate(() => !!window.__atlasMap!.handle.map.getLayer("programarea_ln"))).toBe(
+      true,
+    );
+    expect(errors).toEqual([]);
+  });
+
+  test("M3: the Selection row's eye hides the picked cell's selection-line ring (>0 -> 0), never removes the layer", async ({
+    page,
+  }) => {
+    // no collectConsoleErrors()/zero-console-errors assertion here (unlike the other M3 cases in
+    // this file): a `sel=cell:` selection mounts ScoresLens.svelte's cell-flower `$effect`
+    // (fetches the clicked cell's species composition through the real engine), which this
+    // fixture deliberately blocks via `blockWasm()` -- caught by the effect's own `.catch()`
+    // (`cellFlowerRows` -> null), but on chromium the underlying blocked fetch ALSO reaches the
+    // page as an unhandled "TypeError: Failed to fetch" pageerror, independent of the caught
+    // rejection. Same root cause, same convention as `e2e/scores.zonesTableHeader.spec.ts`'s own
+    // comment (there it is firefox's "NetworkError..."); that noise is a property of the flower
+    // panel's engine call, not of the Selection row's eye toggle this test asserts.
+    // a real cell selection, framed on-screen (`queryRenderedFeatures` queries the CURRENT
+    // viewport) -- the same cell/camera pair `scripts/verify.mjs`'s own "scores sel=cell:1500000"
+    // state already uses, on this exact v7 grid.
+    await gotoLayersScores(page, "&sel=cell:1500000&map=-156.375,50.575,8");
+    const ringCount = (layerId: string) =>
+      page.evaluate(
+        (id) => window.__atlasMap!.handle.map.queryRenderedFeatures({ layers: [id] }).length,
+        layerId,
+      );
+    await expect.poll(() => ringCount("selection-line"), { timeout: 20_000 }).toBeGreaterThan(0);
+
+    await page.getByRole("switch", { name: "Selection visible on the map" }).click();
+
+    await expect.poll(() => ringCount("selection-line"), { timeout: 20_000 }).toBe(0);
+    expect(await page.evaluate(() => !!window.__atlasMap!.handle.map.getLayer("selection-line"))).toBe(
+      true,
+    );
+  });
+
+  test("M3: the Land & water row's eye hides the basemap fill, showing the theme's plain background colour through", async ({
+    page,
+  }) => {
+    const errors = collectConsoleErrors(page);
+    await gotoLayersScores(page, "");
+    const [lon, lat] = OCEAN_PROBES[0];
+    await expect
+      .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
+        timeout: 20_000,
+      })
+      .toBe(BLENDED_RASTER_RGB.join(","));
+
+    // hide BOTH the raster (so the basemap fill would otherwise be the topmost visible thing) AND
+    // basemap-land, via the panel's own switches -- proving the BACKGROUND shows through once
+    // nothing else paints, not merely "the pixel changed to something."
+    await page.getByRole("switch", { name: "Data visible on the map" }).click();
+    await page.getByRole("switch", { name: "Land & water visible on the map" }).click();
+
+    await expect
+      .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
+        message: "expected the theme's plain background colour once both Data and Land & water were hidden",
+        timeout: 20_000,
+      })
+      .toBe(MAP_BACKGROUND_PAPER_RGB.join(","));
+    expect(await page.evaluate(() => !!window.__atlasMap!.handle.map.getLayer("basemap-water"))).toBe(
+      true,
+    );
     expect(errors).toEqual([]);
   });
 });
