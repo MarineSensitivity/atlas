@@ -41,7 +41,10 @@
     onFeedbackClick: (e: MouseEvent) => void;
     onShare: () => void;
     onReportTop: () => void;
-    onHelp: () => void;
+    /** the Help menu's own "Docs" destination (Shell.svelte's `docsHref`) -- the phone ⋯ menu's
+     * "Help" item opens this directly rather than toggling Shell.svelte's Help disclosure, which
+     * is `topbar-desktop-only` and so invisible at the width the ⋯ menu itself only exists at. */
+    helpDocsHref: string;
     sealFlag?: string;
     agency?: string;
     sealUrl?: string;
@@ -57,7 +60,7 @@
     onFeedbackClick,
     onShare,
     onReportTop,
-    onHelp,
+    helpDocsHref,
     sealFlag = import.meta.env.VITE_SEAL,
     agency = import.meta.env.VITE_AGENCY,
     sealUrl = import.meta.env.VITE_SEAL_URL || DEFAULT_SEAL_URL,
@@ -95,7 +98,11 @@
     { label: "Report", icon: "report", run: () => onReportTop() },
     { label: "Send feedback", icon: "feedback", run: handleFeedback, href: feedbackHref },
     { label: "About this release", icon: "info", run: () => (aboutOpen = true) },
-    { label: "Help", icon: "help", run: () => onHelp() },
+    // a real <a>, same as Feedback above -- opens the SAME docs link the desktop Help menu's own
+    // "Docs" item does (Shell.svelte's `docsHref`), rather than toggling that disclosure itself
+    // (invisible at the width this ⋯ menu only exists at -- see helpDocsHref's own doc comment).
+    // `run` is a no-op: the `<a href target="_blank">` below does the whole job on its own.
+    { label: "Help", icon: "help", run: () => {}, href: helpDocsHref },
   ]);
 
   async function openMore() {

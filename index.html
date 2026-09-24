@@ -71,13 +71,18 @@
     <!--
       pre-paint theme script (spec.md §3): sets `data-theme` on <html> before first paint, through
       the SAME rule as src/lib/state/types.ts's `resolveTheme` (dark -> navy, light -> paper,
-      "auto"/absent -> prefers-color-scheme, falling back to navy when that signal is unavailable).
-      It reads ONLY `location.search` and `matchMedia` and writes ONLY `document.documentElement.
-      dataset.theme` -- no localStorage, no fetch, nothing else -- so there is no flash of the wrong
-      theme and no other side effect. tests/shell/theme-preboot.test.ts runs this exact script (
-      extracted from this file, like tests/release/inline-early-fetch.test.ts does for the early-
-      fetch script below) through the same case table `resolveTheme` is tested against, and asserts
-      the two never disagree; it also asserts the script touches nothing but that one dataset key.
+      explicit "auto" -> prefers-color-scheme, falling back to navy when that signal is
+      unavailable). U2a (round 2): the DEFAULT changed from "auto" to "dark" (DEFAULT_SEL.theme,
+      types.ts) -- an absent or malformed `?theme=` now resolves straight to navy, the same as an
+      explicit `?theme=dark`, regardless of the OS's prefers-color-scheme; ONLY an explicit
+      `?theme=auto` (or its `navy`/`paper` alias -- there is none, "auto" has no resolved-theme
+      alias) still asks `matchMedia`. It reads ONLY `location.search` and `matchMedia` and writes
+      ONLY `document.documentElement.dataset.theme` -- no localStorage, no fetch, nothing else --
+      so there is no flash of the wrong theme and no other side effect.
+      tests/shell/theme-preboot.test.ts runs this exact script (extracted from this file, like
+      tests/release/inline-early-fetch.test.ts does for the early-fetch script below) through the
+      same case table `resolveTheme` is tested against, and asserts the two never disagree; it
+      also asserts the script touches nothing but that one dataset key.
     -->
     <script>
       (function () {
@@ -86,12 +91,12 @@
         // atlas-8 fix: the gallery/mockups use navy/paper (their own resolved-theme names,
         // docs/design/mockups/*.html) where the real app uses dark/light -- accepting both here
         // means a link copied from a mockup still resolves instead of silently falling through
-        // to prefers-color-scheme.
+        // to the default.
         if (q === "navy") q = "dark";
         else if (q === "paper") q = "light";
         if (q === "dark") theme = "navy";
         else if (q === "light") theme = "paper";
-        else {
+        else if (q === "auto") {
           var prefersDark = null;
           try {
             prefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
@@ -99,6 +104,10 @@
             prefersDark = null;
           }
           theme = prefersDark === false ? "paper" : "navy";
+        } else {
+          // U2a: no key, or garbage -- DEFAULT_SEL.theme is "dark", so this is navy outright,
+          // never a prefers-color-scheme lookup.
+          theme = "navy";
         }
         document.documentElement.dataset.theme = theme;
       })();

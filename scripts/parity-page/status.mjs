@@ -49,17 +49,49 @@ export const STATUS = {
     match: "Study area: FULL / AK / AT / GA / PA presets",
     status: "done",
     evidence: [
-      { file: "tests/map/interaction.test.ts", name: "flyToStudyArea" },
+      // e2e/scores.studyarea.spec.ts drives the REAL, BUILT app end-to-end — an Opus 5.5 audit
+      // found the evidence below (before this fix) could not have caught the owner's 2026-09-24
+      // live defect (`?area=AK` rendering the default camera): it spied on `flyTo` in isolation,
+      // and `flyToStudyArea` (`tests/map/interaction.test.ts`) has NO caller anywhere in `src/`.
       {
-        file: "tests/map/interaction.test.ts",
-        name: "is centre + zoom, marked programmatic so the URL is not rewritten mid-flight",
+        file: "e2e/scores.studyarea.spec.ts",
+        name: "?area=AK flies to Alaska on LOAD, not the default camera",
       },
       {
-        file: "tests/map/interaction.test.ts",
-        name: "an unknown ?area= clamps to FULL rather than erroring (state/codec.ts's rule)",
+        file: "e2e/scores.studyarea.spec.ts",
+        name: "changing the Study area select FULL -> AK flies there (real moveend) and writes area=AK to the URL",
+      },
+      {
+        file: "e2e/scores.studyarea.spec.ts",
+        name: "area=FULL (selected after another area) fits the whole study area again",
+      },
+      {
+        file: "e2e/scores.studyarea.spec.ts",
+        name: "a user pan after the fly is kept — not fought back to the study area",
+      },
+      {
+        file: "e2e/scores.studyarea.spec.ts",
+        name: "?area=AK still flies to Alaska with the Layers panel COLLAPSED at load",
+      },
+      {
+        file: "tests/map/camera.test.ts",
+        name: "shouldFlyToArea — sel.area drives the camera on load AND on change",
+      },
+      // the NEGATIVE half, kept alongside the positive one above, never a replacement for it.
+      {
+        file: "tests/map/titiler.test.ts",
+        name: "tileUrlLeaksStudyArea — no study-area key ever reaches a URL",
       },
     ],
-    note: "the study area is a camera only — `tileUrlLeaksStudyArea` proves no study-area key ever reaches a data or tile URL (apps#13/#14).",
+    note:
+      "fixed 2026-09-24 (owner report, live v7: `?area=AK` rendered the default camera). Root cause: " +
+      "the initial camera resolved `sel.area` against a literal `null` boot, and the ONLY `flyTo` " +
+      "call lived in LayersPanel.svelte's `onchange` — the panel BODY, which never runs for a URL- " +
+      "driven `sel.area` on load. Fixed in Shell.svelte's own `$effect` (`camera.ts#shouldFlyToArea`), " +
+      "a shell/lens-level store per docs/map.md's 0.10.21 rule — runs whether or not the Layers panel " +
+      "is mounted (see the COLLAPSED-panel case above). `tileUrlLeaksStudyArea` remains the negative " +
+      "half: the study area still moves the camera only, never a data or tile URL (apps#13/#14). " +
+      "Seeded fault: tests/faults/study-area-camera-ignored.patch.",
   },
   "S-02": {
     match: "Spatial units: Raster cells",
@@ -295,15 +327,29 @@ export const STATUS = {
       { file: "tests/lens/scores/flower.test.ts", name: "reads boot.flower_default[zoneAllKey]" },
       { file: "tests/lens/scores/flower.test.ts", name: "nothing selected: Full study area" },
       {
+        file: "tests/lens/scores/flower.test.ts",
+        name: "v7's real flower_default.FULL (8 components, Other included)",
+      },
+      {
         file: "tests/lens/scores/boot.test.ts",
         name: "prefers FULL when present among subregion keys",
       },
+      { file: "e2e/scores.flower.spec.ts", name: "nothing selected: the default flower" },
       {
-        file: "e2e/scores.firstpaint.spec.ts",
-        name: "shows the default flower (nothing selected, Tier 0 only)",
+        file: "e2e/scores.flower.spec.ts",
+        name: "every one of GAA's real 8 components draws a visible petal",
       },
     ],
-    note: "fixes the Shiny app's unversioned CSV: the default flower is this release's own `flower_default`.",
+    note:
+      "fixes the Shiny app's unversioned CSV: the default flower is this release's own " +
+      "`flower_default`. atlas-4 fix round 2 (owner-reported defect, 2026-09-24): the PREVIOUS " +
+      "evidence here (`e2e/scores.firstpaint.spec.ts`'s hub-value check) ran against a " +
+      "simplified 3-component fixture and so could never have caught the real live bug (v7's " +
+      "real flower_default.FULL has 8 components, 5 of which the hub circle covered entirely) " +
+      "-- a check that cannot fail is not a check. `e2e/scores.flower.spec.ts` now runs against " +
+      "the REAL 8-component v7 fixture (and a selected zone's own real 8-component flower) and " +
+      "probes each petal's own on-screen centroid via `document.elementFromPoint`, which is what " +
+      "actually caught the bug (see flowerGeometry.ts's header for the root cause).",
   },
   "S-14": {
     match: "Flower centre = round(mean(score))",
@@ -323,11 +369,27 @@ export const STATUS = {
         name: "has a row for every category key the parity doc lists",
       },
       {
-        file: "e2e/gallery.spec.ts",
-        name: "#flower-eight has exactly 8 distinct petal categories (colors)",
+        file: "tests/lens/scores/flower.test.ts",
+        name: "atlas-4 fix round 2: every real component resolves to a defined color and a real petal",
+      },
+      {
+        file: "e2e/scores.flower.spec.ts",
+        name: "v7's default flower: no petal's accessible name reads 'No data' for a real component",
       },
     ],
-    note: "fixes the grey `primary producer` petal; on v8/v9 the two published primary-producer keys are folded into one slot rather than throwing.",
+    note:
+      "fixes the grey `primary producer` petal; on v8/v9 the two published primary-producer " +
+      "keys are folded into one slot rather than throwing. atlas-4 fix round 2 (owner-reported " +
+      "defect, 2026-09-24): the PREVIOUS evidence here included `e2e/gallery.spec.ts`'s " +
+      '"#flower-eight has exactly 8 distinct petal categories (colors)", which reads ' +
+      "`getComputedStyle(path).fill` on each petal DIRECTLY and so passed even while the hub " +
+      "circle covered 5 of the 8 real petals -- every fill was genuinely defined and distinct, " +
+      "just painted over. That check stays in the suite (still a true, if too weak, assertion) " +
+      "but is no longer cited as evidence here; `e2e/scores.flower.spec.ts` replaces it with a " +
+      "real occlusion-aware probe (petal geometry -> on-screen centroid -> " +
+      "`document.elementFromPoint`), plus a unit test on the real v7/v9 fixtures asserting every " +
+      'component resolves to a defined, non-"no data" color AND a petal whose annular band ' +
+      "clears the shared hub.",
   },
   "S-15": {
     match: "Headers and filename stems exactly as §7.3",
@@ -413,11 +475,15 @@ export const STATUS = {
     evidence: [
       {
         file: "tests/lens/scores/composition.test.ts",
-        name: "groups by category, summed by suit_er_area",
+        name: "groups by category, counting ONE per row (each row is one species, sql/composition.sql)",
       },
       {
         file: "tests/lens/scores/composition.test.ts",
-        name: "drops a category with no positive sum, never a zero-size box",
+        name: "real v7 fixture (zone HAR, 478 species): box values are EXACTLY the per-category species counts",
+      },
+      {
+        file: "tests/lens/scores/composition-valueLabel.test.ts",
+        name: "REGRESSION: passes the exact current phrase, matching the count-based measure it now renders",
       },
       {
         file: "e2e/gallery.spec.ts",
@@ -428,7 +494,7 @@ export const STATUS = {
         name: "Treemap: an empty dataset shows the empty state, not a blank chart",
       },
     ],
-    note: 'the treemap is ONE level (species category), not the six WoRMS ranks the Shiny app drew (G-06). The two copy defects reported as G-23 (the summary line\'s mislabelled number, and the stale "bird not added" note) were fixed in 0.10.19 — see tests/ui/treemapLayout.test.ts and tests/lens/scores/composition-note.test.ts.',
+    note: 'the treemap is ONE level (species category), not the six WoRMS ranks the Shiny app drew (G-06). The two copy defects reported as G-23 (the summary line\'s mislabelled number, and the stale "bird not added" note) were fixed in 0.10.19 — see tests/ui/treemapLayout.test.ts and tests/lens/scores/composition-note.test.ts. Owner decision R8 (2026-09-24, atlas-4 fix round 2): boxes are now sized by SPECIES COUNT (`compositionTree()`\'s default `measure: "count"`), matching the ported Shiny app — the prior default (`suit_er_area`, suitability x extinction-risk x area) drew a real selection\'s Mammal box as the largest even though Shiny (sizing by count) draws it small; that measure is kept as an internal, not-yet-exposed option. `valueLabel` updated to "n species" accordingly (composition-valueLabel.test.ts).',
   },
   "S-20": {
     match: "Cell species unavailable",

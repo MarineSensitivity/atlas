@@ -109,11 +109,23 @@ export const BOOT_V7 = {
       { key: "USA", name: "All US waters", n_cells: 1, area_km2: 1, n_taxa: 1, metrics: {} },
     ],
   },
+  // atlas-4 fix round 2 (owner-reported defect, 2026-09-24): the REAL live v7 `flower_default.FULL`
+  // shape -- 8 components, "Other" included, full double precision -- read directly off the
+  // production screenshot (docs/parity/shots/scores-flower-atlas.jpg) rather than a simplified
+  // 3-item stand-in. That stand-in (bird/fish/primprod only) never exercised the bug: with only 3
+  // components, none of which happened to be small enough, the hub-occlusion defect (see
+  // flowerGeometry.ts's header) never showed up in a test at all. Order matches the real release's
+  // own row order (bird, coral, fish, invertebrate, mammal, other, turtle, primprod).
   flower_default: {
     FULL: [
-      { component: "bird", score: 45.67 },
-      { component: "other", score: 15.18 },
-      { component: "primprod", score: 10.38 },
+      { component: "bird", score: 45.6671707107685 },
+      { component: "coral", score: 10.4494142116047 },
+      { component: "fish", score: 15.9570514927416 },
+      { component: "invertebrate", score: 14.7345085163167 },
+      { component: "mammal", score: 41.668393775248 },
+      { component: "other", score: 15.1784428369187 },
+      { component: "turtle", score: 38.8176408891894 },
+      { component: "primprod", score: 10.3787489146688 },
     ],
   },
   palettes: {

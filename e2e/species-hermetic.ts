@@ -68,6 +68,29 @@ export function bootFor(ver: "v9" | "v7") {
     study_areas: ver === "v9" ? STUDY_AREAS_V9 : STUDY_AREAS_V7,
     units: [],
     datasets: ver === "v9" ? DATASETS_V9 : DATASETS_V7,
+    // U6 (round 2): every fixture taxon here (leatherback/walrus/wrybill) publishes
+    // `colormap: "spectral_r"` (tests/fixtures/species/v9/taxon/*.json) -- without a matching
+    // `boot.palettes` entry, `paletteStopsFromBoot()` (src/lib/raster/ramps.ts) returns null and
+    // `speciesMapInputs()` never builds a legend at all (no DOM node, not even an empty one --
+    // SpeciesLegend.svelte has no fallback branch). None of the existing specs against this
+    // fixture ever checked the legend's OWN presence (only `species-title-sci` etc.), so this gap
+    // was invisible until e2e/tour.spec.ts's species walk asserted `[data-testid="species-legend"]`
+    // directly. 11 real stops, copied from e2e/report-hermetic.ts's own BOOT_V9 fixture.
+    palettes: {
+      spectral_r: [
+        "#9E0142",
+        "#D53E4F",
+        "#F46D43",
+        "#FDAE61",
+        "#FEE08B",
+        "#FFFFBF",
+        "#E6F598",
+        "#ABDDA4",
+        "#66C2A5",
+        "#3288BD",
+        "#5E4FA2",
+      ],
+    },
   };
 }
 

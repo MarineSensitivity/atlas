@@ -21,6 +21,11 @@
     onAnnounce?: (text: string) => void;
     onclick?: () => void;
     tabindex?: number;
+    /** U6 (round 2): an optional tour anchor id, stamped as `data-tour`/`data-control` on the
+     * real `<button>` (never the wrapping span, which has no box of its own) -- lets a guided-tour
+     * step point at ONE rail tool (e.g. "rail-layers") the same way every other `data-tour`
+     * anchor in the shell already works, without giving every HexButton one by default. */
+    tourId?: string;
   }
 
   let {
@@ -31,6 +36,7 @@
     inactiveReason,
     onAnnounce,
     onclick,
+    tourId,
     tabindex = 0,
   }: Props = $props();
 
@@ -84,6 +90,8 @@
     aria-disabled={inactive ? "true" : undefined}
     aria-describedby={tooltipId}
     {tabindex}
+    data-tour={tourId}
+    data-control={tourId}
     onclick={handleClick}
     onkeydown={handleKeydown}
     onfocus={showNow}

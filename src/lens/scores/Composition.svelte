@@ -58,7 +58,13 @@
     <p class="note">No composition data for this selection.</p>
   {:else if TreemapComponent}
     {@const Comp = TreemapComponent}
-    <Comp {title} data={tree} valueLabel="combined suitability x extinction-risk x area" />
+    <!-- owner decision R8 (2026-09-24): sized by species COUNT, matching the ported Shiny app's
+         own treemap (compositionTree()'s default `measure: "count"`) -- it used to sum
+         suit_er_area, which drew Mammal as the LARGEST box on a real selection where Shiny draws
+         it small (few, high-suitability species inflate a suitability x ER x area sum without
+         inflating a species count). The suit_er_area measure still exists in composition.ts as an
+         internal option, not wired to any control here yet. -->
+    <Comp {title} data={tree} valueLabel="n species" />
   {:else}
     <p class="note">Loading the treemap…</p>
   {/if}

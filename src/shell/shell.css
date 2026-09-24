@@ -404,6 +404,73 @@ button.chip {
   flex: none;
 }
 
+/* U6 (round 2): the (?) Help menu -- a non-modal disclosure anchored under the top-bar Help
+   button (Popover.svelte's own floating-panel geometry, inlined: this menu's trigger is the
+   EXISTING .tool button, not Popover.svelte's own nested one). Always in the DOM (`hidden`
+   toggles it), so it never affects the topbar's own flex layout/CLS -- `position:absolute` takes
+   it out of flow the instant it is shown. */
+.help-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.help-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  width: 260px;
+  padding: var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  box-shadow: var(--elev-3);
+  display: flex;
+  flex-direction: column;
+  /* [hidden] and .help-menu are equal specificity (one attribute selector, one class selector) --
+     an author `display: flex` above otherwise wins over the UA default `[hidden]{display:none}`
+     regardless of source order (author origin beats user-agent origin), so a "closed" menu still
+     occupied space and intercepted clicks over whatever sat beneath it (measured: it ate every
+     click meant for the panel's own header controls). `[hidden]`, one extra selector, always wins
+     on SPECIFICITY instead, which is robust either way. */
+  gap: var(--space-3);
+}
+.help-menu[hidden] {
+  display: none;
+}
+.help-menu-item {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--fill-control);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.help-menu-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.help-shortcuts h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.help-shortcuts ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+}
+
 /* --- floating regions: rail, panel/sheet, about. Each src/lib/ui component sizes only itself; --- */
 /* --- this shell owns WHERE it floats (Panel.svelte/Sheet.svelte/Rail.svelte/About.svelte never --- */
 /* --- set position/top/right/bottom -- see each component's own header comment). ----------------- */
