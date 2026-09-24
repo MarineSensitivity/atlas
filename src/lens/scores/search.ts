@@ -10,7 +10,7 @@
 //  - a zone (Program Area, and any subregion/ecoregion archive the release happens to also
 //    publish in `boot.zones`) by key or by name;
 //  - a typed "lon, lat" coordinate pair, jumped to and resolved into a cell selection.
-import { paLabel } from "../../places/zoneStats";
+import { paLabel, resolvedZoneName } from "../../places/zoneStats";
 import { primaryUnitType, zoneRows } from "./boot";
 
 export interface ZoneSearchMatch {
@@ -77,11 +77,13 @@ export function matchZones(boot: unknown, query: string, limit = MAX_RESULTS): Z
   let order = 0;
   for (const unit of searchableZoneUnits(boot)) {
     for (const z of zoneRows(boot, unit)) {
-      const rank = matchRank(q, z.key, z.name);
+      // V6 fix (owner-reported, 2026-09-24): rank against the SAME resolved name the option label
+      // shows (`resolvedZoneName`, unit-scoped exactly as `paLabel` scopes it) -- not the bundle's
+      // raw `z.name`, which a real release never publishes for `zones.programarea`. Before this,
+      // "Aleutian" found nothing on the real v7/v9 shape even though the dropdown's own option text
+      // ("Aleutian Arc (ALA)") came from that same fallback table; only the bare key matched.
+      const rank = matchRank(q, z.key, resolvedZoneName(z.key, z.name, unit));
       if (rank === null) continue;
-      // V1 fix: pass `unit` so the app-side PROGRAM_AREA_NAMES fallback (zoneStats.ts#paLabel)
-      // only applies to programarea matches -- a subregion/ecoregion match never borrows a
-      // same-keyed Program Area's name.
       ranked.push({
         m: { kind: "zone", unit, key: z.key, label: paLabel(z.key, z.name, unit) },
         rank,

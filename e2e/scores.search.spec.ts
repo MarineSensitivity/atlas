@@ -145,6 +145,40 @@ test.describe("Q1: Scores-lens top-bar search (desktop, 1280x800)", () => {
   });
 });
 
+test.describe("V6 fix (owner-reported, 2026-09-24): fallback-name search on the real release shape", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test("typing 'Aleutian' finds Aleutian Arc on the real v7 shape (no published zone names) -- Enter flies to it", async ({
+    page,
+  }) => {
+    // `bootFor("v7")`, UNCHANGED -- every zone row publishes `name: key` (equivalent to "no name",
+    // paLabel's own rule), the real release shape. No `bootWithAleutianArc()`-style override: this
+    // is the exact case that was broken -- the dropdown already showed "Aleutian Arc (ALA)" via the
+    // PROGRAM_AREA_NAMES fallback, but typing that same name found nothing.
+    await blockWasm(page);
+    await routeBucket(page, "v7", bootFor("v7"));
+    await routeSession(page, { preview: true, ver: "v7" });
+    await routeSealFixture(page);
+    await routeZones20(page);
+    await routeBasemapStyle(page);
+    await routeTitilerTiles(page);
+    await routeGlyphs(page);
+    await page.goto("/?proj=mercator");
+    await waitForHydration(page);
+
+    const input = page.getByRole("combobox", { name: "Search Program Areas or coordinates" });
+    await expect(input).toBeVisible({ timeout: 10_000 });
+    await input.fill("Aleutian");
+
+    const option = page.getByRole("option", { name: "Aleutian Arc (ALA)" });
+    await expect(option).toBeVisible();
+
+    await input.press("Enter");
+    await expect.poll(() => urlSel(page)).toBe("zone:programarea:ALA");
+    expect(new URL(page.url()).searchParams.get("unit")).toBe("programarea");
+  });
+});
+
 test.describe("Q1: Scores-lens top-bar search (phone, 390x844)", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 

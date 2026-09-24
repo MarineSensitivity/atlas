@@ -1,3 +1,16 @@
+# atlas 0.10.61
+
+Round 2, V6: fix for the Scores-lens top-bar search found while shooting the Program Area harness
+state.
+
+- **Fixed: the Scores-lens top-bar search ignored a Program Area's full name unless the release
+  happened to publish one** — on the real release (no published `zones.programarea[*].name`),
+  typing "Aleutian" or "Gulf of Alaska" showed "No matches", even though the dropdown's own option
+  already read "Aleutian Arc (ALA)" / "Gulf of Alaska (GOA)" via the app-side fallback name table.
+  Only the bare acronym worked, contradicting both the search field's own placeholder ("Program
+  Areas or lon, lat") and the option text it renders. The matcher now ranks against the SAME
+  resolved name the dropdown shows.
+
 # atlas 0.10.60
 
 Round 2, V5: follow-up on the Opus eyes-on review of 0.10.59 — the eyes-on harness's own desktop
