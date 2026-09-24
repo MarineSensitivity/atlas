@@ -3,6 +3,9 @@
 // seven obvious phone bugs on a tree every automated gate had passed).
 //   npm run build && npx vite preview --port 4386 --strictPort &
 //   ATLAS_URL=http://localhost:4386 OUT=.tmp/eyes [ONLY=map,layers] node scripts/eyes-shots.mjs
+// 2026-09-24 second pass (Opus review of the first set): welcome needs a BARE url (any query counts as a
+// deep link and suppresses the modal); the desktop maximize button is "Full screen"; one browser context
+// per state (the sheet detent persists in localStorage); the report opens in a NEW TAB; taps on ocean.
 import { chromium } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 const BASE = process.env.ATLAS_URL ?? "http://localhost:4380/atlas";
@@ -38,10 +41,14 @@ async function tool(page, name) {
   await page.waitForTimeout(3000);
 }
 async function sheet(page, name) {
-  const b = page.getByRole("button", { name, exact: true }).first();
-  if (await b.count()) {
-    await b.click({ timeout: 10_000 }).catch(() => {});
-    await page.waitForTimeout(800);
+  // phone: "Full height"; desktop (R1 panel): "Full screen"
+  for (const n of [name, name === "Full height" ? "Full screen" : name]) {
+    const b = page.getByRole("button", { name: n, exact: true }).first();
+    if (await b.count()) {
+      await b.click({ timeout: 10_000 }).catch(() => {});
+      await page.waitForTimeout(800);
+      return;
+    }
   }
 }
 async function tapScoredCell(page, vp) {
@@ -49,9 +56,9 @@ async function tapScoredCell(page, vp) {
   const pts =
     vp === "phone"
       ? [
-          [150, 470],
-          [120, 330],
-          [90, 300],
+          [75, 320],
+          [60, 200],
+          [90, 230],
         ]
       : [
           [335, 400],
@@ -72,7 +79,7 @@ const STATES = [
   {
     id: "welcome",
     run: async (p, vp) => {
-      await go(p, "?ver=v7&theme=dark");
+      await go(p, "");
       await shot(p, vp, "01-welcome");
     },
   },
@@ -154,16 +161,26 @@ const STATES = [
     run: async (p, vp) => {
       await go(p, "?ver=v7&theme=dark#pl=z.pa.GAA&t=Gulf%20of%20Alaska%20Program%20Area");
       await explore(p);
+      const popupP = p
+        .context()
+        .waitForEvent("page", { timeout: 15_000 })
+        .catch(() => null);
       await tool(p, "Report");
       await sheet(p, "Full height");
-      await p.waitForTimeout(6000);
-      await shot(p, vp, "13-report-top");
-      await p.mouse.wheel(0, 1400);
-      await p.waitForTimeout(800);
-      await shot(p, vp, "14-report-scrolled");
-      await p.mouse.wheel(0, 1400);
-      await p.waitForTimeout(800);
-      await shot(p, vp, "15-report-scrolled2");
+      const popup = await popupP;
+      const r = popup ?? p;
+      if (popup) {
+        await popup.waitForLoadState("load").catch(() => {});
+        log("report opened in a new tab", popup.url());
+      }
+      await r.waitForTimeout(8000);
+      await shot(r, vp, "13-report-top");
+      await r.mouse.wheel(0, 1400);
+      await r.waitForTimeout(800);
+      await shot(r, vp, "14-report-scrolled");
+      await r.mouse.wheel(0, 1400);
+      await r.waitForTimeout(800);
+      await shot(r, vp, "15-report-scrolled2");
     },
   },
   {
@@ -195,18 +212,18 @@ const STATES = [
 ];
 const browser = await chromium.launch();
 for (const [vp, opts] of Object.entries(VIEWPORTS)) {
-  const ctx = await browser.newContext({ ...opts, colorScheme: "dark" });
   for (const st of STATES) {
     if (only.length && !only.includes(st.id)) continue;
+    // a FRESH context per state: the sheet detent / theme / welcome state live in localStorage
+    const ctx = await browser.newContext({ ...opts, colorScheme: "dark" });
     const page = await ctx.newPage();
     try {
       await st.run(page, vp);
     } catch (e) {
       log("FAIL", vp, st.id, String(e).split("\n")[0]);
     }
-    await page.close();
+    await ctx.close();
   }
-  await ctx.close();
 }
 await browser.close();
 log("done");
