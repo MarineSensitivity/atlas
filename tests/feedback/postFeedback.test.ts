@@ -16,7 +16,7 @@ describe("postFeedback", () => {
     expect(JSON.parse(init.body)).toEqual(payload);
   });
 
-  it('never sets `keepalive` (U3 fix: a keepalive fetch silently rejects over the 64 KiB body quota, which a screenshot-carrying payload routinely exceeds)', async () => {
+  it("never sets `keepalive` (U3 fix: a keepalive fetch silently rejects over the 64 KiB body quota, which a screenshot-carrying payload routinely exceeds)", async () => {
     const doFetch = vi.fn().mockResolvedValue({ ok: true });
     await postFeedback("https://script.google.com/exec", { image: "x".repeat(200_000) }, doFetch);
     const [, init] = doFetch.mock.calls[0];

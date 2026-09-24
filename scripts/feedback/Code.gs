@@ -25,8 +25,26 @@
 // empty) and a per-hour cache cap (MAX_PER_HOUR).
 
 var FEEDBACK_HEADER = [
-  "ts", "id", "app", "kind", "title", "text", "email", "url", "release", "version", "sha", "lens",
-  "viewport", "theme", "user_agent", "website", "restricted", "image_url", "issue_url", "status",
+  "ts",
+  "id",
+  "app",
+  "kind",
+  "title",
+  "text",
+  "email",
+  "url",
+  "release",
+  "version",
+  "sha",
+  "lens",
+  "viewport",
+  "theme",
+  "user_agent",
+  "website",
+  "restricted",
+  "image_url",
+  "issue_url",
+  "status",
 ];
 var REPO = "MarineSensitivity/atlas";
 var BRANCH = "main";
@@ -109,11 +127,26 @@ function doPost(e) {
     // 3. the row -- every FEEDBACK_HEADER column, `email` included (this is the ONE place it is
     //    ever written down; the issue body above never carries it).
     var row = {
-      ts: ts, id: id, app: String(b.app || "atlas"), kind: kind, title: title, text: text,
-      email: b.email || "", url: b.url || "", release: b.release || "", version: b.version || "",
-      sha: b.sha || "", lens: b.lens || "", viewport: b.viewport || "", theme: b.theme || "",
-      user_agent: b.user_agent || "", website: b.website || "", restricted: restricted,
-      image_url: image_url, issue_url: issue_url, status: "",
+      ts: ts,
+      id: id,
+      app: String(b.app || "atlas"),
+      kind: kind,
+      title: title,
+      text: text,
+      email: b.email || "",
+      url: b.url || "",
+      release: b.release || "",
+      version: b.version || "",
+      sha: b.sha || "",
+      lens: b.lens || "",
+      viewport: b.viewport || "",
+      theme: b.theme || "",
+      user_agent: b.user_agent || "",
+      website: b.website || "",
+      restricted: restricted,
+      image_url: image_url,
+      issue_url: issue_url,
+      status: "",
     };
     var sh = _tab("feedback");
 
@@ -123,16 +156,36 @@ function doPost(e) {
       var subject = "[atlas] " + kind + ": " + (title || text.split("\n")[0]).slice(0, 80);
       var inline = bytes ? { shot: Utilities.newBlob(bytes, "image/png", "view.png") } : null;
       var html =
-        "<p><b>" + _esc(kind) + "</b>" + (title ? ": " + _esc(title) : "") + "</p>" +
-        "<p>" + _esc(text).replace(/\n/g, "<br>") + "</p>" +
-        (inline ? '<p><img src="cid:shot" alt="the view" style="max-width:100%;border:1px solid #ccc"></p>' : "") +
-        (row.url ? "<p><b>View:</b> <a href=\"" + _esc(row.url) + "\">" + _esc(row.url) + "</a></p>" : "") +
-        "<p><b>Release:</b> " + _esc(row.release) + " · " + _esc(row.lens) + " · " + _esc(row.viewport) + " · " + _esc(row.theme) +
-        (restricted ? " · <b>RESTRICTED</b>" : "") + "<br>" +
+        "<p><b>" +
+        _esc(kind) +
+        "</b>" +
+        (title ? ": " + _esc(title) : "") +
+        "</p>" +
+        "<p>" +
+        _esc(text).replace(/\n/g, "<br>") +
+        "</p>" +
+        (inline
+          ? '<p><img src="cid:shot" alt="the view" style="max-width:100%;border:1px solid #ccc"></p>'
+          : "") +
+        (row.url
+          ? '<p><b>View:</b> <a href="' + _esc(row.url) + '">' + _esc(row.url) + "</a></p>"
+          : "") +
+        "<p><b>Release:</b> " +
+        _esc(row.release) +
+        " · " +
+        _esc(row.lens) +
+        " · " +
+        _esc(row.viewport) +
+        " · " +
+        _esc(row.theme) +
+        (restricted ? " · <b>RESTRICTED</b>" : "") +
+        "<br>" +
         (row.email ? "<b>From:</b> " + _esc(row.email) + "<br>" : "") +
-        (image_url ? "<b>Screenshot:</b> <a href=\"" + image_url + "\">Drive</a><br>" : "") +
-        (issue_url ? "<b>Issue:</b> <a href=\"" + issue_url + "\">" + issue_url + "</a><br>" : "") +
-        "<b>Sheet row id:</b> " + id + "</p>";
+        (image_url ? '<b>Screenshot:</b> <a href="' + image_url + '">Drive</a><br>' : "") +
+        (issue_url ? '<b>Issue:</b> <a href="' + issue_url + '">' + issue_url + "</a><br>" : "") +
+        "<b>Sheet row id:</b> " +
+        id +
+        "</p>";
       var mail = { to: to.join(","), subject: subject, htmlBody: html, name: "Atlas feedback" };
       if (inline) mail.inlineImages = inline;
       MailApp.sendEmail(mail);
@@ -146,8 +199,15 @@ function doPost(e) {
           subject: "Your atlas feedback: " + (title || text.split("\n")[0]).slice(0, 80),
           htmlBody:
             "<p>Thanks — we received this. It went to the team" +
-            (issue_url ? ' and is public issue <a href="' + issue_url + '">' + issue_url + "</a>, where any reply will appear" : "") +
-            ".</p>" + html,
+            (issue_url
+              ? ' and is public issue <a href="' +
+                issue_url +
+                '">' +
+                issue_url +
+                "</a>, where any reply will appear"
+              : "") +
+            ".</p>" +
+            html,
           name: "Atlas feedback",
         });
         status.push("copied to sender");
@@ -163,7 +223,13 @@ function doPost(e) {
       }),
     ]);
 
-    return _json({ ok: true, id: id, image_url: image_url, issue_url: issue_url, status: row.status });
+    return _json({
+      ok: true,
+      id: id,
+      image_url: image_url,
+      issue_url: issue_url,
+      status: row.status,
+    });
   } catch (err) {
     return _json({ ok: false, error: String(err) });
   }
@@ -190,7 +256,10 @@ function _openIssue(id, ts, b, kind, title, text, bytes) {
   if (bytes && bytes.length) {
     var path = "feedback/" + id + ".png";
     var put = UrlFetchApp.fetch(api + "/contents/" + path, {
-      method: "put", headers: headers, contentType: "application/json", muteHttpExceptions: true,
+      method: "put",
+      headers: headers,
+      contentType: "application/json",
+      muteHttpExceptions: true,
       payload: JSON.stringify({
         message: "feedback " + id + ": screenshot",
         content: Utilities.base64Encode(bytes),
@@ -198,18 +267,34 @@ function _openIssue(id, ts, b, kind, title, text, bytes) {
       }),
     });
     if (put.getResponseCode() < 300) {
-      img = "\n\n![view](https://raw.githubusercontent.com/" + REPO + "/" + BRANCH + "/" + path + ")";
+      img =
+        "\n\n![view](https://raw.githubusercontent.com/" + REPO + "/" + BRANCH + "/" + path + ")";
     }
   }
   var issueTitle = (title || text.split("\n")[0]).slice(0, 100);
   var body =
     (b.url ? "**View:** " + b.url + "\n" : "") +
-    "**Release:** " + (b.release || "unresolved") + " · " + (b.lens || "") + " · " +
-    (b.viewport || "") + " · " + (b.theme || "") +
-    "\n\n" + text + img +
-    "\n\n_Sent from the atlas feedback dialog · " + ts.toISOString() + " · id " + id + "_";
+    "**Release:** " +
+    (b.release || "unresolved") +
+    " · " +
+    (b.lens || "") +
+    " · " +
+    (b.viewport || "") +
+    " · " +
+    (b.theme || "") +
+    "\n\n" +
+    text +
+    img +
+    "\n\n_Sent from the atlas feedback dialog · " +
+    ts.toISOString() +
+    " · id " +
+    id +
+    "_";
   var res = UrlFetchApp.fetch(api + "/issues", {
-    method: "post", headers: headers, contentType: "application/json", muteHttpExceptions: true,
+    method: "post",
+    headers: headers,
+    contentType: "application/json",
+    muteHttpExceptions: true,
     payload: JSON.stringify({ title: issueTitle, body: body, labels: [kind] }),
   });
   if (res.getResponseCode() >= 300) {
@@ -264,5 +349,7 @@ function _esc(s) {
     .replace(/"/g, "&quot;");
 }
 function _json(o) {
-  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(
+    ContentService.MimeType.JSON,
+  );
 }

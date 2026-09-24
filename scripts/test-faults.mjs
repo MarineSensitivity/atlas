@@ -478,6 +478,31 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4398" },
   },
+  // U3 (round 2): the privacy rule behind "Send feedback"'s own checkbox -- `buildFeedbackPayload()`
+  // must place the hash on `payload.url` ONLY when the reporter ticks "include my current view
+  // link" (off by default). This patch makes it unconditional (see the patch's own comment) and
+  // must turn e2e/feedback.spec.ts's unticked-vs-ticked test red: the UNTICKED case starts finding
+  // a `#` fragment in the posted body it must never carry (tests/feedback/payload.test.ts's own
+  // pure-function assertions go red on the same patch too -- this entry drives the real, built,
+  // end-to-end leg, which is what a modified/replayed request would actually exploit).
+  {
+    id: "feedback-hash-leak",
+    patch: "tests/faults/feedback-hash-leak.patch",
+    describe:
+      "buildFeedbackPayload() places the hash on payload.url unconditionally -- a drawn place's " +
+      "geometry rides on every submission, ticked or not (the privacy checkbox becomes a no-op)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/feedback.spec.ts",
+      "-g",
+      "unticked never does",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4388" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

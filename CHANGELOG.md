@@ -1,3 +1,43 @@
+# atlas 0.10.33
+
+U3 (round 2): **Send feedback** — the "Report a problem" control (About card, bottom-left; U1's
+top-bar "Feedback" control will call the same function once it lands) now opens a real dialog
+instead of navigating straight to a prefilled GitHub issue.
+
+- **The dialog** (`src/lib/feedback/FeedbackDialog.svelte`): a kind (bug / idea / question / data —
+  Ben's R6 decision, each becomes the GitHub issue label verbatim), a short text, an optional email,
+  a client-captured screenshot of the current view (`capture.ts`, html-to-image — never html2canvas,
+  which rejects on the light theme's `color-mix()`) the reporter can annotate with a hand-rolled
+  canvas tool (`annotate.ts`: arrow / circle / rectangle / pen / text, three colours, undo/clear) or
+  remove, and a privacy checkbox: **"include my current view link" is off by default, and the URL
+  fragment (a drawn place's geometry) is absent from the payload entirely unless it is ticked** —
+  never merely hash-stripped (`payload.ts#buildFeedbackPayload`, unit-tested).
+- **Sending**: POSTs to `VITE_FEEDBACK_URL` (or its `atlas.feedback_url` localStorage override,
+  `endpoint.ts`, for testing) as `text/plain` JSON; falls back to a prefilled GitHub issue built from
+  the CURRENT form state (`githubIssue.ts`) when no endpoint is configured, copying the screenshot to
+  the clipboard first. **A restricted release never offers the GitHub-issue fallback** (client-side
+  convenience) **and the payload's own `restricted` flag is checked server-side too**
+  (`scripts/feedback/Code.gs`) — a modified or replayed request cannot bypass the review-gate privacy
+  rule. Two new analytics events, `feedback_open`/`feedback_sent`, carry only `{kind, restricted}`.
+- **The Apps Script** (`scripts/feedback/Code.gs`, ported from
+  `calcofi4r::cc_feedback_script()`): a Sheet row, mail to the `recipients` tab (seeded with
+  `ben@oceanmetrics.io` and `timothy.white@boem.gov`, R6), and — only when `restricted` is false — a
+  public GitHub issue in `MarineSensitivity/atlas` with the screenshot committed under
+  `feedback/<id>.png`. Runbook in `docs/feedback.md` (replaces the old "zero backend" doc); a Quarto
+  include for the docs site in `docs/feedback-quarto-include.md` (not committed to that repo).
+- **Fixed a real defect found writing the end-to-end test**: `postFeedback()` no longer sets
+  `keepalive: true` — a keepalive fetch is capped at a 64 KiB combined body quota (WHATWG spec), and
+  a screenshot-carrying payload routinely exceeds it, causing an immediate, silent rejection with no
+  network request ever visible. The dialog stays open through the whole send now, so nothing needs
+  to survive a navigation the way the original "Report a problem" control's click-that-might-open-a-
+  new-tab did.
+- **Gates**: `tests/feedback/payload.test.ts` (pure-function: hash-inclusion rule, `restricted` from
+  `access`, honeypot, size caps), `tests/feedback/lazy.test.ts` (html-to-image/annotate stay dynamic
+  imports; `scripts/size-budget-core.mjs`'s `FORBIDDEN_LAZY_MARKERS` gains `"html-to-image"`),
+  `e2e/feedback.spec.ts` extended (screenshot → annotate → send; ticked-vs-unticked hash; a
+  restricted-release fixture; no-endpoint fallback; keyboard walk; axe); seeded fault
+  `tests/faults/feedback-hash-leak.patch` (`PW_PORT=4388`).
+
 # atlas 0.10.35
 
 Fix S-01: the study-area camera did not move (owner report, live public v7, 2026-09-24).

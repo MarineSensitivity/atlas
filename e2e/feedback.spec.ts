@@ -180,7 +180,10 @@ test.describe("Send feedback: the dialog (U3)", () => {
       if (box) {
         await page.mouse.move(box.x + 10, box.y + 10);
         await page.mouse.down();
-        await page.mouse.move(box.x + Math.max(20, box.width - 10), box.y + Math.max(20, box.height - 10));
+        await page.mouse.move(
+          box.x + Math.max(20, box.width - 10),
+          box.y + Math.max(20, box.height - 10),
+        );
         await page.mouse.up();
       }
       await dialog.getByRole("button", { name: "Done" }).click();

@@ -131,7 +131,7 @@ and its two rules (the kind IS the label; a restricted release gets no public is
    Add two tabs:
    - **`feedback`** — first row exactly the header `Code.gs`'s own `FEEDBACK_HEADER` constant
      defines (`ts, id, app, kind, title, text, email, url, release, version, sha, lens, viewport,
-     theme, user_agent, website, restricted, image_url, issue_url, status`).
+theme, user_agent, website, restricted, image_url, issue_url, status`).
    - **`recipients`** — `A1 = "email"`, one address per row. Seed it with the two R6 addresses:
      `ben@oceanmetrics.io` and `timothy.white@boem.gov`. Edit a cell to add or remove someone later
      — no redeploy needed.
@@ -160,6 +160,7 @@ and its two rules (the kind IS the label; a restricted release gets no public is
    (Add `vars.VITE_FEEDBACK_URL` under **Settings → Secrets and variables → Actions → Variables**
    with the `/exec` URL as its value.) This runbook does **not** edit `pages.yml` itself — that is
    a separate change, reviewed like any other workflow edit.
+
 6. **Re-paste `Code.gs`** after any change to this file (a Sheet's bound script is not "installed"
    from `main` automatically — there is no build step for Apps Script).
 
