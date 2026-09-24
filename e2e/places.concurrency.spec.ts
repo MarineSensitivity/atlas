@@ -141,12 +141,21 @@ async function gotoRelease(page: Page, hold = false): Promise<Held> {
   return { requested, release };
 }
 
-async function addA(page: Page) {
+/** fills and submits the coordinate-entry form for place A WITHOUT waiting for its row --
+ * P8 item 6 added an async study-area check to "Add place" (the SAME `checkTouchesStudyArea`
+ * upload already ran), so under `hold`, submitting now itself reaches the held tile-0 route
+ * BEFORE the place exists. Callers that need to interleave with that round trip use this instead
+ * of `addA`; solo (unheld) callers can still use `addA` below. */
+async function submitA(page: Page) {
   await page.getByRole("button", { name: "Enter coordinates" }).click();
   const textarea = page.getByLabel("Coordinates, bounding box, or WKT/GeoJSON");
   await expect(textarea).toBeVisible();
   await textarea.fill(A_COORDS);
   await page.getByRole("button", { name: "Add place" }).click();
+}
+
+async function addA(page: Page) {
+  await submitA(page);
   await expect(page.locator(".place-row").first()).toBeVisible();
 }
 
@@ -242,8 +251,13 @@ test("two places back to back: each row's coverage and composite equal its solo 
   test.setTimeout(240_000); // the solo readings (two cold boots) when this worker has none yet
   const solo = await soloReadings(browser);
   const held = await gotoRelease(page, true);
-  await addA(page);
-  await held.requested; // A's analysis is on the engine now
+  // P8 item 6: adding A now itself runs an async study-area check (CoordinateDialog.svelte's
+  // `checkTouchesStudyArea`, the SAME one upload already had) before the place exists -- so it is
+  // THIS request, not the post-add scores effect's, that now reaches the held tile-0 route.
+  // `submitA` (not `addA`) fires the click without waiting for A's row, which cannot appear until
+  // this request is released below.
+  await submitA(page);
+  await held.requested; // A's own pre-add study-area check is on the engine now
   await upload(page, B_UPLOAD); // ... and B's study-area check joins it
   await uploadInFlight(page);
   held.release();
@@ -264,12 +278,36 @@ test("scores and Show analysis cells for the SAME place at once never double its
   test.setTimeout(240_000); // the solo readings (two cold boots) when this worker has none yet
   const solo = await soloReadings(browser);
   const held = await gotoRelease(page, true);
-  await addA(page);
-  await held.requested; // the panel's scores hold the engine
-  await page.getByRole("button", { name: "Show analysis cells" }).click();
-  await expect(page.getByRole("button", { name: "Loading analysed cells…" })).toBeVisible();
-  await page.waitForTimeout(500); // the toggle's own analysis reaches the engine
+  // P8 item 6 changed what this test can force. Before it, adding A by coordinates was a pure UI
+  // update (no engine round trip), so the post-add scores effect was GUARANTEED to be the first
+  // (and only) thing to ever request tile 0 -- exactly what this test needed held while "Show
+  // analysis cells" raced it for the SAME place. Now adding A ITSELF runs an async study-area
+  // check first (the same one upload always had), so tile 0's one real fetch belongs to THAT
+  // check, and it completes (getting cached) before A exists to be selected at all -- "Show
+  // analysis cells" cannot be clicked yet (disabled: no geom place selected), and clicking it
+  // later can never be forced to overlap a NETWORK fetch again: `Engine#load` dedupes by
+  // (name, digest), so a second caller for the same tile is either queued behind the first (via
+  // `exclusive()`, which serializes whole ANALYSES, not just fetches) or finds it already cached
+  // -- there is no "still in flight" window left to hold. What `exclusive()` actually guards
+  // (two ANALYSES of the same place never interleaving their SQL, whether or not either is
+  // waiting on a network fetch) is still exercised here -- the post-add scores effect and the
+  // click below are two independent `exclusive()` sequences for the SAME place, back to back --
+  // it is just no longer deterministically FORCED to overlap a paused fetch the way the file's
+  // own header describes. That determinism now lives entirely in
+  // `tests/analysis/concurrentPlaces.test.ts`'s "the same place analysed twice at once (scores +
+  // Show analysis cells) never doubles its cells" (a real DuckDB, `Promise.all`, no UI/network
+  // timing at all) -- unaffected by this file's change, and still the deterministic proof.
+  await submitA(page);
+  await held.requested; // A's own pre-add study-area check is on the engine now
   held.release();
+  await expect(page.locator(".place-row").first()).toBeVisible({ timeout: 45_000 });
+
+  const cellsBtn = page.getByRole("button", { name: "Show analysis cells" });
+  await expect(cellsBtn).toBeEnabled({ timeout: 45_000 });
+  await cellsBtn.click();
+  // still a real assertion, unrelated to the race: the click's OWN loading state fires
+  // synchronously (`loadingCells = true` before the `await`), whether or not anything is cached.
+  await expect(page.getByRole("button", { name: "Loading analysed cells…" })).toBeVisible();
 
   await expectPanel(page, solo.a);
   await expect(page.getByRole("button", { name: "Show analysis cells" })).toHaveAttribute(
@@ -287,8 +325,11 @@ test("an upload refused mid-analysis leaves the running place's numbers its own"
   test.setTimeout(240_000); // the solo readings (two cold boots) when this worker has none yet
   const solo = await soloReadings(browser);
   const held = await gotoRelease(page, true);
-  await addA(page);
-  await held.requested;
+  // P8 item 6: A's OWN addition now runs the async study-area check first (see the comment on the
+  // "two places back to back" test above) -- `submitA`, not `addA`, since A's row cannot appear
+  // until this request (now A's own pre-add check, not its post-add scores effect) is released.
+  await submitA(page);
+  await held.requested; // A's own pre-add study-area check is on the engine now
   await upload(page, D_UPLOAD); // D's check rewrites the SAME tile's cell set A is reading
   await uploadInFlight(page);
   held.release();
@@ -297,6 +338,6 @@ test("an upload refused mid-analysis leaves the running place's numbers its own"
     "does not touch any cell inside this release's US study area",
     { timeout: 45_000 },
   );
-  await expect(page.locator(".place-row")).toHaveCount(1);
+  await expect(page.locator(".place-row")).toHaveCount(1, { timeout: 45_000 });
   await expectPanel(page, solo.a);
 });

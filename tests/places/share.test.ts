@@ -6,6 +6,7 @@ import {
   summarizeShare,
 } from "../../src/places/share";
 import { DEFAULT_SEL, type Sel } from "../../src/lib/state/types";
+import { formatSel } from "../../src/lib/state/codec";
 import {
   decodePlaces,
   encodePlaces,
@@ -166,6 +167,71 @@ describe("shareUrl: the link is built from `newHash`, never trusting `href`'s ow
     expect(shareUrl(withTitleOnly, undefined, "g1.New.BBBB")).toBe(
       "https://marinesensitivity.org/atlas/#pl=g1.New.BBBB&t=Report",
     );
+  });
+});
+
+// P8 item 5 (Opus docs review, app finding #6): the tests above all pass a LITERAL, unescaped
+// `href` string ("#pl=g1.Old.AAAA&t=Report") -- which is not what a real address bar ever holds.
+// `formatSel` (`lib/state/codec.ts`) writes the hash through `URLSearchParams`, so a REAL `href`
+// percent-encodes the `~` multi-place separator (-> "%7E") and doubles a place name's own internal
+// "%20" escape (`encodeName()`) into "%2520". These tests build the href the SAME way the app
+// actually does (`formatSel`), reproducing exactly the shape that broke the old substring-replace.
+describe("shareUrl on a REAL (percent-encoded) address-bar href -- P8 item 5", () => {
+  const RECT: GeomPlace["geometry"] = {
+    type: "Polygon",
+    coordinates: [
+      [
+        [-124, 40],
+        [-124, 41],
+        [-123, 41],
+        [-123, 40],
+        [-124, 40],
+      ],
+    ],
+  };
+
+  it("several places (a `~`-joined pl) survive a real percent-encoded href, not just a literal test string", () => {
+    const places: Place[] = [
+      { kind: "zone", set: "pa", keys: ["GAA"] },
+      { kind: "zone", set: "pa", keys: ["WGA"] },
+    ];
+    const oldPl = encodePlaces(places);
+    const { hash } = formatSel({ ...DEFAULT_SEL, pl: oldPl });
+    const href = `https://marinesensitivity.org/atlas/${hash}`;
+    expect(href).toContain("%7E"); // sanity: the `~` separator really IS percent-encoded here
+    expect(href).not.toContain(`pl=${oldPl}`); // the exact string the old implementation searched for
+
+    const newHash = encodePlaces([{ kind: "zone", set: "pa", keys: ["GAA", "WGA"] }]);
+    const copied = shareUrl(href, oldPl, newHash);
+    const params = new URLSearchParams(new URL(copied).hash.slice(1));
+    expect(params.get("pl")).toBe(newHash);
+    // this is exactly what the old (silently no-op) substring replace would have left behind:
+    expect(params.get("pl")).not.toBe(oldPl);
+  });
+
+  it("a place name containing a space survives too (encodeName's own internal '%20', doubled by formatSel)", () => {
+    const oldPl = encodePlaces([{ kind: "geom", name: "Gulf box", geometry: RECT }]);
+    const { hash } = formatSel({ ...DEFAULT_SEL, pl: oldPl });
+    const href = `https://marinesensitivity.org/atlas/${hash}`;
+    expect(href).toMatch(/%2520/); // the name's own "%20" escape, doubled
+    expect(href).not.toContain(`pl=${oldPl}`);
+
+    const newHash = encodePlaces([{ kind: "geom", name: "Gulf box (simplified)", geometry: RECT }]);
+    const copied = shareUrl(href, oldPl, newHash);
+    const params = new URLSearchParams(new URL(copied).hash.slice(1));
+    expect(params.get("pl")).toBe(newHash);
+  });
+
+  it("t= (a title) still round-trips beside the rewritten pl=", () => {
+    const oldPl = encodePlaces([{ kind: "zone", set: "pa", keys: ["GAA"] }]);
+    const { hash } = formatSel({ ...DEFAULT_SEL, pl: oldPl, t: "My Report, v1" });
+    const href = `https://marinesensitivity.org/atlas/${hash}`;
+
+    const newHash = encodePlaces([{ kind: "zone", set: "pa", keys: ["GAA", "WGA"] }]);
+    const copied = shareUrl(href, oldPl, newHash);
+    const params = new URLSearchParams(new URL(copied).hash.slice(1));
+    expect(params.get("pl")).toBe(newHash);
+    expect(params.get("t")).toBe("My Report, v1");
   });
 });
 

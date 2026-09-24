@@ -316,9 +316,18 @@
     drawMode = shape;
   }
 
+  // P8 item 9 (P7 handback): `drawMode = drawMode ? "select" : null` was a no-op wherever it can
+  // actually be called -- the "Done" button only renders while `{#if drawMode}` (line ~784) is
+  // true, so at the one call site that matters `drawMode` is ALWAYS truthy, and the ternary always
+  // reassigned it back to `"select"`. `drawMode` could therefore never become `null` again: "Done"
+  // never disappeared, and `mapStore.setInteractionOwned(pickOn || drawMode !== null)` (the effect
+  // above) never released ownership of map clicks back to the rest of the app. Fixed to the SAME
+  // full teardown `togglePickMode()` already does when switching away from draw mode (above): stop
+  // the session, drop the reference, and actually clear `drawMode`.
   function stopDraw() {
-    drawSession?.setMode("select");
-    drawMode = drawMode ? "select" : null;
+    drawSession?.stop();
+    drawSession = undefined;
+    drawMode = null;
   }
 
   onDestroy(() => drawSession?.stop());
@@ -530,11 +539,14 @@
     areaKm2: number | null;
     coveragePct: number | null;
     composite: number | null;
-    /** P7: only ever set for a `kind: "geom"` row -- what to say in place of a composite chip while
-     * `placeScores` above doesn't (yet, or ever) have a real number for it. `errorMessage` is
-     * `describeAnalysisError()`'s own sentence (results.ts) -- a missing release object names
-     * itself, so the chip's `title` can say exactly what failed, not just that something did. */
-    status?: "loading" | "error" | "outside";
+    /** P7: `"loading"`/`"error"`/`"outside"` only ever apply to a `kind: "geom"` row -- what to
+     * say in place of a composite chip while `placeScores` above doesn't (yet, or ever) have a
+     * real number for it. `errorMessage` is `describeAnalysisError()`'s own sentence (results.ts)
+     * -- a missing release object names itself, so the chip's `title` can say exactly what failed,
+     * not just that something did. P8 item 2: `"unpublished"` is a `kind: "zone"` row's own state
+     * -- read synchronously off `boot` (`zoneStats.ts#summarizeZoneStats`), so a missing composite
+     * there is a permanent fact about the release, never "not yet". */
+    status?: "loading" | "error" | "outside" | "unpublished";
     errorMessage?: string;
   }
 
@@ -616,11 +628,18 @@
   // once atlas-7 builds it, opens on exactly this place -- nothing here is $state/$derived, so
   // there's no reactive value a mutable URL could go stale under (Toast.svelte's own
   // internal-bookkeeping exception to this rule, same reasoning).
+  //
+  // P8 item 3 (Opus docs review, app finding #4): this used to pass the FULL `sel.pl` (every place
+  // in the panel) plus a `sel=place:${i}` token that `report.html`'s `Report.svelte` never reads
+  // (it just `decodePlaces(sel.pl)`s -- confirmed, that file has no other reference to `sel.sel`
+  // anywhere) -- so a row's own "Open in report" silently reported every place, never just the row
+  // it was clicked on. `report.html` needs no change: building `pl` from ONLY this row's own place
+  // makes "every place in `pl`" mean exactly this one.
   function reportHref(i: number): string {
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const url = new URL("report.html", location.href);
     url.search = location.search;
-    url.hash = reportHash(sel.pl, sel.t, `place:${i}`);
+    url.hash = reportHash(hashFromPlaces([places[i]]), sel.t);
     return url.toString();
   }
 
@@ -821,7 +840,11 @@
           </button>
 
           <span class="row-stat" title="Area">{fmt(figures.areaKm2)} km²</span>
-          <span class="row-stat" title="Data coverage"
+          <span
+            class="row-stat"
+            title={figures.coveragePct === null
+              ? "Data coverage: not published for this release"
+              : "Data coverage"}
             >{figures.coveragePct === null ? "—" : `${fmt(figures.coveragePct)}%`}</span
           >
           {#if figures.composite !== null}
@@ -835,6 +858,11 @@
             <span title={figures.errorMessage}><Chip label="couldn't analyse" /></span>
           {:else if figures.status === "outside"}
             <Chip label="outside the study area" />
+          {:else if figures.status === "unpublished"}
+            <!-- P8 item 2: this release genuinely carries no composite for this zone -- a
+                 permanent fact, never "not analysed yet" (which implies a later step fills it in;
+                 there is none for a zone row, read synchronously off `boot`). -->
+            <Chip label="not published for this release" />
           {:else}
             <Chip label="not analysed yet" />
           {/if}
@@ -910,6 +938,7 @@
     open={coordDialogOpen}
     onclose={() => (coordDialogOpen = false)}
     onAccept={addEnteredPlaces}
+    dataEngine={dataEngineFn}
   />
 
   <ShareDialog

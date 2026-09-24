@@ -31,6 +31,26 @@
 
   const MAX_FILE_MB = 10; // geo/upload/normalize.ts's own MAX_FILE_BYTES, restated for the drop hint
 
+  // P8 item 7 (Opus docs review, app finding #2 / #25): `askGeoPackageConsent` above always passes
+  // `runtime: null` (this phase's documented limitation), so `parseGeoPackage` throws
+  // `geopackageNoRuntime` for EVERY `.gpkg`, unconditionally -- there is no state it could ever
+  // finish waiting for. That refusal's own catalogue text (`lib/geo/upload/messages.ts`) reads
+  // "...which is not running in this tab yet" / "Wait for the map's numbers to appear and drop the
+  // file again" -- wrong: retrying can never succeed, so it wastes the person's time. The
+  // catalogue lives outside this file's scope this round; this substitutes the plain, honest
+  // sentence at the ONE place this app actually renders it, rather than a retry instruction that
+  // cannot work. Every OTHER GeoPackage refusal (a declined consent, a blocked
+  // extensions.duckdb.org fetch) passes through unchanged -- those really can succeed on a retry.
+  function honestRefusal(r: Refusal): Refusal {
+    if (r.rule !== "geopackageNoRuntime") return r;
+    return {
+      rule: r.rule,
+      what: "GeoPackage is not supported yet.",
+      why: "Reading a GeoPackage needs a spatial-database reader this app does not wire up in this phase — it is not a matter of the data engine still starting, and dropping the file again will not change the outcome.",
+      fix: "Export the layer as GeoJSON or a zipped shapefile in your GIS and drop that instead.",
+    };
+  }
+
   /** the GeoPackage consent prompt (Deliverable 4): names the size and the third-party host before
    * anything is fetched. `runtime` stays `null` (no DuckDB `spatial` wiring in this phase, a
    * documented limitation — see docs/upload.md's own GeoPackage section) so this consent, even
@@ -96,7 +116,7 @@
       };
       const result = await normalize({ name: file.name, bytes }, { multiFeature: "perFeature" });
       if (!result.ok) {
-        refusal = result.refusal;
+        refusal = honestRefusal(result.refusal);
         trackOutcome(0, "refused");
         return;
       }
@@ -117,7 +137,7 @@
       const result = await normalize(pending, { multiFeature: mode });
       multiPrompt = null;
       if (!result.ok) {
-        refusal = result.refusal;
+        refusal = honestRefusal(result.refusal);
         trackOutcome(0, "refused");
         return;
       }
@@ -171,7 +191,7 @@
     <input type="file" onchange={onInputChange} disabled={busy} />
     <span>
       {busy ? "Reading…" : "Drop a file here, on the map, or choose one"} — GeoJSON, zipped shapefile,
-      KML, GPX, FlatGeobuf, WKT or GeoPackage, up to {MAX_FILE_MB} MB.
+      KML, GPX, FlatGeobuf, WKT or GeoPackage (not yet), up to {MAX_FILE_MB} MB.
     </span>
   </label>
 
