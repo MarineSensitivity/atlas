@@ -236,15 +236,8 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
         const tile = tileOf(cellId, grid);
         const sources = await getAnalysisSources(ver, bootObj);
         value = await fetchCellValue(sources, { cellId, tile, metricKey: lyr });
-        console.log("DIAG2 value resolved:", value, "cellId", cellId, "lyr", lyr);
-      } else {
-        console.log("DIAG2 skipped: ver=", ver, "lyr=", lyr);
       }
-    } catch (err) {
-      console.log(
-        "DIAG2 caught:",
-        err instanceof Error ? err.message + " " + err.stack : String(err),
-      );
+    } catch {
       value = null; // no engine / no tile for this cell (off-grid, unscored) — "no value", not a throw
     }
     if (token !== popupToken) return; // a later click superseded this one
