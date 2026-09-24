@@ -411,6 +411,32 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4400" },
   },
+  // R3 (round-2 plan §5 U4): `composeStyle`'s own `input.layerStack` — the Layers panel's
+  // reorder/opacity/visibility choices — used to be read on arrival. This patch reinstates exactly
+  // the regression the deliverable names ("the stack ignored by composeStyle"): the input is
+  // accepted but never consulted, so every Layers-panel change silently does nothing and the map
+  // always renders the default stack. Must turn e2e/layers.spec.ts's own reorder case red (moving
+  // `basemap-land` above `data-raster` no longer changes `map.getStyle()`'s order or the probed
+  // pixel).
+  {
+    id: "layerstack-order-ignored",
+    patch: "tests/faults/layerstack-order-ignored.patch",
+    describe:
+      "composeStyle() stops reading input.layerStack -- every Layers-panel reorder/opacity/" +
+      "visibility change silently does nothing, and the map always renders the default stack " +
+      "(R3's own regression, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/layers.spec.ts",
+      "-g",
+      "moving basemap-land above data-raster reorders the REAL composed style",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4377" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

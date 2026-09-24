@@ -1,0 +1,17 @@
+diff --git a/src/lib/map/style.ts b/src/lib/map/style.ts
+index c50ffd7..e1e70c6 100644
+--- a/src/lib/map/style.ts
++++ b/src/lib/map/style.ts
+@@ -373,7 +373,11 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
+   // from a data spec — one mechanism, not a raster-specific and a zone-specific and a selection-
+   // specific one). `defaultLayerStackEntries()` is a no-op on both counts, so an existing caller
+   // that never passes `layerStack` sees byte-identical output to before this input existed.
+-  const stackEntries = input.layerStack ?? defaultLayerStackEntries();
++  // SEEDED FAULT (tests/faults/layerstack-order-ignored.patch): `input.layerStack` is accepted but
++  // never consulted again -- every reorder/opacity/visibility change from the Layers panel silently
++  // does nothing, and the map always renders the default stack.
++  void input.layerStack;
++  const stackEntries = defaultLayerStackEntries();
+   const groupById = new Map(stackEntries.map((e) => [e.id, e]));
+   const styledRoled: RoledLayer[] = roled.map(({ role, layer }) => {
+     const group = ROLE_GROUP[role];
