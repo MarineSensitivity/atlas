@@ -29,7 +29,9 @@ async function explore(page) {
     await b.waitFor({ state: "visible", timeout: 8000 });
     await b.click();
     await page.waitForTimeout(500);
-  } catch {}
+  } catch {
+    /* no welcome modal on this load (deep link or already dismissed) */
+  }
 }
 async function tool(page, name) {
   await page.getByRole("button", { name, exact: true }).first().click({ timeout: 20_000 });
