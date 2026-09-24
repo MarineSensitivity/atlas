@@ -37,6 +37,19 @@ U6 (Report + Tour) and U2a (dark theme by default) from the round-2 usability as
   `"auto"`), wired into `npm run test:faults`.
 - `docs/parity.html`'s known gaps: G-28 (Report placeholder) and G-30 (theme default `auto`)
   removed — both are exactly what this release fixes.
+- `scripts/verify.mjs` fix (found by the U2a change, not a pre-existing bug): `scoresRasterProbe()`/
+  `speciesRasterProbe()` defaulted their basemap-blend expectation to the PAPER fixture colour,
+  which was correct only while `auto` (the old default) resolved to paper under headless
+  Chromium's own `prefers-color-scheme`. Every state that never sets `theme=` explicitly now
+  defaults to the NAVY blend instead (`BASEMAP_RGB_NAVY`); the one state that still means "paper,
+  specifically" (`shell (theme=light)`) passes the paper colour explicitly.
+- `src/shell/tour.ts`: `setLens()` is now guarded (`if (a.getLens() !== target) …`) — calling it
+  even when the lens was already correct still reset `sel.out` and re-triggered the lens' own
+  reactive load for no reason.
+- `e2e/species-hermetic.ts`: the shared species fixture now publishes `boot.palettes.spectral_r`
+  (11 real stops) — without it `paletteStopsFromBoot()` returns `null` and the species legend never
+  renders at all (not even an empty node), a pre-existing fixture gap no earlier spec against it
+  had ever exercised.
 
 # atlas 0.10.27
 
