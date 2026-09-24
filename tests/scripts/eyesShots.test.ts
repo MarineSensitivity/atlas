@@ -14,9 +14,9 @@ const src = readFileSync(SCRIPT_PATH, "utf8");
 
 describe("scripts/eyes-shots.mjs: the third-pass fixes stay in place", () => {
   it("(a) the flower-petal selector targets a real petal (path.petal), not a bare 'svg path' nth(3)", () => {
-    expect(src).toContain('svg path.petal');
+    expect(src).toContain("svg path.petal");
     // the exact pre-fix selector this replaces -- must not reappear.
-    expect(src).not.toContain('svg path[role=button], svg [data-component], svg path');
+    expect(src).not.toContain("svg path[role=button], svg [data-component], svg path");
   });
 
   it("(a) the petal step waits for the tap label to actually appear before shooting", () => {
@@ -55,7 +55,10 @@ describe("scripts/eyes-shots.mjs: the third-pass fixes stay in place", () => {
     // the phone branch's own three points -- x=75/60/90 are stable identifiers (unchanged by this
     // fix), so matching on them pins the search to the RIGHT array without fragile line-slicing.
     const m = src.match(/\[75,\s*(\d+)\][\s\S]{0,40}\[60,\s*(\d+)\][\s\S]{0,40}\[90,\s*(\d+)\]/);
-    expect(m, "could not find the phone tapScoredCell points [75,y]/[60,y]/[90,y] in the source").not.toBeNull();
+    expect(
+      m,
+      "could not find the phone tapScoredCell points [75,y]/[60,y]/[90,y] in the source",
+    ).not.toBeNull();
     const ys = (m as RegExpMatchArray).slice(1).map(Number);
     // the OLD points were 320/200/230 -- every new point must sit at or above the old MINIMUM (200),
     // and the new set must not be identical to the old one.
@@ -64,9 +67,11 @@ describe("scripts/eyes-shots.mjs: the third-pass fixes stay in place", () => {
   });
 
   it("keeps the documented CLI contract (ATLAS_URL, OUT, ONLY) unchanged", () => {
-    expect(src).toContain('process.env.ATLAS_URL');
-    expect(src).toContain('process.env.OUT');
-    expect(src).toContain('process.env.ONLY');
-    expect(src).toMatch(/ATLAS_URL=http:\/\/localhost:\d+ OUT=\.tmp\/eyes \[ONLY=map,layers\] node scripts\/eyes-shots\.mjs/);
+    expect(src).toContain("process.env.ATLAS_URL");
+    expect(src).toContain("process.env.OUT");
+    expect(src).toContain("process.env.ONLY");
+    expect(src).toMatch(
+      /ATLAS_URL=http:\/\/localhost:\d+ OUT=\.tmp\/eyes \[ONLY=map,layers\] node scripts\/eyes-shots\.mjs/,
+    );
   });
 });

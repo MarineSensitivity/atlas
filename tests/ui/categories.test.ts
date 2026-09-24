@@ -150,15 +150,18 @@ describe("categoryLabel: the report/panel DISPLAY text for a raw component/categ
     expect(categoryLabel("bird")).toBe("Bird");
   });
 
-  it("an UNRECOGNIZED raw string is sentence-cased, never blanked to NO_DATA_CATEGORY's 'No data' " +
-    "(a real, if legacy/compound, component label -- e.g. a release's 'invertebrate and coral' or " +
-    "'marine mammal' -- must still read as prose, not disappear)", () => {
-    expect(categoryLabel("invertebrate and coral")).toBe("Invertebrate and coral");
-    expect(categoryLabel("marine mammal")).toBe("Marine mammal");
-    expect(categoryLabel("diving seabird")).toBe("Diving seabird");
-    expect(categoryLabel("reptile")).not.toBe("No data");
-    expect(categoryLabel("reptile")).toBe("Reptile");
-  });
+  it(
+    "an UNRECOGNIZED raw string is sentence-cased, never blanked to NO_DATA_CATEGORY's 'No data' " +
+      "(a real, if legacy/compound, component label -- e.g. a release's 'invertebrate and coral' or " +
+      "'marine mammal' -- must still read as prose, not disappear)",
+    () => {
+      expect(categoryLabel("invertebrate and coral")).toBe("Invertebrate and coral");
+      expect(categoryLabel("marine mammal")).toBe("Marine mammal");
+      expect(categoryLabel("diving seabird")).toBe("Diving seabird");
+      expect(categoryLabel("reptile")).not.toBe("No data");
+      expect(categoryLabel("reptile")).toBe("Reptile");
+    },
+  );
 
   it("an empty string stays empty (nothing to sentence-case)", () => {
     expect(categoryLabel("")).toBe("");

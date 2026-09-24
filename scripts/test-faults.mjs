@@ -1221,8 +1221,8 @@ const FAULTS = [
     patch: "tests/faults/report-flower-petal-opacity-reverted.patch",
     describe:
       "Report.svelte's flower petal regains opacity=\"0.5\" -- the report's own petals render " +
-      "paler than their SAME-token .flower-legend swatch again (Opus eyes-on: \"petals are pale " +
-      "while the legend swatches are dark\")",
+      'paler than their SAME-token .flower-legend swatch again (Opus eyes-on: "petals are pale ' +
+      'while the legend swatches are dark")',
     gate: [
       "npx",
       "playwright",
@@ -1240,8 +1240,8 @@ const FAULTS = [
     patch: "tests/faults/category-label-raw-key-reverted.patch",
     describe:
       "categoryLabel()'s known-category branch reverts to returning the raw string verbatim -- " +
-      "\"primprod\"/\"bird\" show in the report's tables and the app's component/species tables " +
-      "again instead of \"Primary producer\"/\"Bird\"",
+      '"primprod"/"bird" show in the report\'s tables and the app\'s component/species tables ' +
+      'again instead of "Primary producer"/"Bird"',
     gate: [
       "npx",
       "vitest",
