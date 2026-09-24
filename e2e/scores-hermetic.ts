@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession, waitForHydration } from "./hermetic";
 import {
-  BASEMAP_RGB,
+  BASEMAP_RGB_NAVY,
   RASTER_RGB,
   SCORE_COG_URL,
   blockWasm,
@@ -331,7 +331,14 @@ export const OCEAN_PROBES: Array<[number, number]> = [
 
 /** the score raster paints at `SCORE_RASTER_OPACITY` (0.6, `layers/raster.ts`) OVER the basemap,
  * not at full opacity — this is the blended colour a real probe reads, and asserting it (rather
- * than the raw fixture colour) is what actually proves the opacity constant is wired through. */
+ * than the raw fixture colour) is what actually proves the opacity constant is wired through.
+ *
+ * `gotoScoresMap` never sets `?theme=`, so the app resolves its own default (`DEFAULT_SEL.theme`,
+ * `src/lib/state/types.ts`) — navy since 0.10.29's U2a (dark-by-default), not the `paper` this
+ * constant assumed through 0.10.34. Blend against `BASEMAP_RGB_NAVY`, the fixture colour the
+ * basemap actually paints under that default, not `BASEMAP_RGB` (paper) — a spec that wants to
+ * prove the PAPER blend specifically must navigate with `?theme=light` instead of relying on this
+ * shared constant (see e2e/map.spec.ts's `BASEMAP_RGB_BY_THEME`-driven theme-switch test). */
 export const BLENDED_RASTER_RGB = [0, 1, 2].map((i) =>
-  Math.round(RASTER_RGB[i] * 0.6 + BASEMAP_RGB[i] * 0.4),
+  Math.round(RASTER_RGB[i] * 0.6 + BASEMAP_RGB_NAVY[i] * 0.4),
 );

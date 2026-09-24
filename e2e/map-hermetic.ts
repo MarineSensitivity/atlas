@@ -111,19 +111,22 @@ export function solidPng(r: number, g: number, b: number, size = 256, a = 255): 
   ]);
 }
 
-/** the "paper" (light) theme's basemap fixture colour — UNCHANGED by M5 (atlas-8 review round 2):
- * every spec/script that never sets `theme=` (scoresRasterProbe, species.timing.spec.ts's
- * `BLENDED_RASTER_RGB`, scores.firstpaint.spec.ts, scores.collapsed-panel.spec.ts, ...) resolves
- * `"auto"` to `"paper"` here (`resolveTheme("auto", prefersDark)` -> paper whenever `prefersDark`
- * is a real `false`, which every headless engine in this repo reports — verified against all
- * three), so their blend math must keep reading exactly this value. */
+/** the "paper" (light) theme's basemap fixture colour. Through 0.10.34 every spec/script that never
+ * set `theme=` resolved here, because `DEFAULT_SEL.theme` was `"auto"` and every headless engine in
+ * this repo reports `prefersDark` as a real `false` (`resolveTheme("auto", false)` -> paper).
+ *
+ * 0.10.29's U2a changed `DEFAULT_SEL.theme` to `"dark"` (dark-by-default), so a bare URL with no
+ * `?theme=` now resolves to NAVY, not paper — `scoresRasterProbe`/`speciesRasterProbe`
+ * (scripts/verify.mjs) and the shared `BLENDED_RASTER_RGB` constants in scores-hermetic.ts /
+ * species.timing.spec.ts were fixed to blend against `BASEMAP_RGB_NAVY` below instead. This colour
+ * is now current only for a spec that explicitly navigates with `?theme=light`. */
 export const BASEMAP_RGB: [number, number, number] = [0, 102, 153];
 /** the "navy" (dark) theme's basemap fixture colour — M5: before this, both themes routed to the
  * SAME `BASEMAP_RGB`, so a theme switch could be proven only by the DECLARED style JSON containing
  * a different `sprite` string, never by a painted pixel (the review's exact finding: "proves
  * neither the swap nor the paint"). Distinct enough from `BASEMAP_RGB` that no plausible blend or
- * anti-aliasing edge could confuse the two. Only a spec that explicitly requests `theme=dark`/
- * `theme=navy` ever sees this colour. */
+ * anti-aliasing edge could confuse the two. Since 0.10.29's U2a this is also the DEFAULT a bare URL
+ * (no `?theme=`) resolves to — no longer "only a spec that explicitly requests theme=dark/navy".*/
 export const BASEMAP_RGB_NAVY: [number, number, number] = [10, 20, 40];
 /** fixture water colour by RESOLVED theme (`document.documentElement.dataset.theme`), for a probe
  * that already knows which theme it is looking at rather than assuming `BASEMAP_RGB`. */
