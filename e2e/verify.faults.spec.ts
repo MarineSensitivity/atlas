@@ -136,17 +136,23 @@ test.describe("seeded fault: a panel pushed off-screen at 390 px", () => {
     // sanity: the real shell has no such problem before the fault is injected.
     expect(await assertLayout(page)).toEqual([]);
 
-    // the seeded fault: push a REAL [data-control] element (the theme toggle, always present)
-    // past the right edge of a 390 px viewport with a plain transform -- exactly the class of bug
-    // an ancestor's `overflow:hidden` clipping a control produces, without ever tripping
+    // the seeded fault: push a REAL [data-control] element (the version chip, always present at
+    // EVERY viewport -- unlike the theme toggle this plant used before the P round, which moved
+    // into the phone ⋯ menu and is now `topbar-desktop-only`/`display:none` at 390px, so
+    // assertLayout's own `isVisible()` skip -- correct for a control legitimately absent at this
+    // viewport, verify.mjs's own comment -- made this plant a no-op instead of a fault) past the
+    // right edge of a 390 px viewport with a plain transform -- exactly the class of bug an
+    // ancestor's `overflow:hidden` clipping a control produces, without ever tripping
     // `scrollWidth > clientWidth` on <html> (which is why the per-control box check exists at all,
     // not just the whole-document overflow check).
     await page.evaluate(() => {
-      const el = document.querySelector('[data-control="theme"]') as HTMLElement | null;
+      const el = document.querySelector('[data-control="version-chip"]') as HTMLElement | null;
       if (el) el.style.transform = "translateX(500px)";
     });
 
     const problems = await assertLayout(page);
-    expect(problems.some((p) => p.includes('"theme"') && p.includes("off-screen"))).toBe(true);
+    expect(problems.some((p) => p.includes('"version-chip"') && p.includes("off-screen"))).toBe(
+      true,
+    );
   });
 });
