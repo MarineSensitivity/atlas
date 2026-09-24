@@ -79,4 +79,44 @@ test.describe("P1: phone search button", () => {
     await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
     await expect(page.locator('[data-control="search-phone"]')).toBeHidden();
   });
+
+  // P5 fix round 2 (coordinator finding, 390px eyes-on evidence on
+  // p5-phone-search-sheet-species-results.png): the results list rendered PAST the dialog's own
+  // bottom edge, over the page behind it -- `.picker-dropdown` is `position: absolute` (by design
+  // on the desktop field, where it must float over the map), so it contributed nothing to the
+  // modal's own content height. RED-FIRST: fails on the pre-fix tree (the dropdown's boundingBox
+  // extends below the dialog's).
+  test("species lens: the results list renders INSIDE the dialog, not past its bottom edge", async ({
+    page,
+  }) => {
+    await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
+    await page.getByRole("button", { name: "Search species and places" }).click();
+    const dialog = page.getByRole("dialog", { name: "Search" });
+    await dialog.getByRole("combobox", { name: "Search species" }).fill("Walrus");
+    const result = dialog.getByRole("option", { name: /Walrus/i });
+    await expect(result).toBeVisible();
+
+    const dialogBox = (await dialog.boundingBox())!;
+    const dropdownBox = (await dialog.locator(".picker-dropdown").boundingBox())!;
+    const resultBox = (await result.boundingBox())!;
+    for (const [name, box] of [
+      ["dropdown", dropdownBox],
+      ["result row", resultBox],
+    ] as const) {
+      expect(box.x, `${name}'s left edge is left of the dialog's`).toBeGreaterThanOrEqual(
+        dialogBox.x - 0.5,
+      );
+      expect(box.y, `${name}'s top edge is above the dialog's`).toBeGreaterThanOrEqual(
+        dialogBox.y - 0.5,
+      );
+      expect(
+        box.x + box.width,
+        `${name}'s right edge extends past the dialog's`,
+      ).toBeLessThanOrEqual(dialogBox.x + dialogBox.width + 0.5);
+      expect(
+        box.y + box.height,
+        `${name}'s bottom edge extends past the dialog's -- it is rendering OVER the page behind it`,
+      ).toBeLessThanOrEqual(dialogBox.y + dialogBox.height + 0.5);
+    }
+  });
 });

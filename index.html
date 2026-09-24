@@ -522,7 +522,17 @@
           data-control="more-menu"
           ><span class="sk-icon-tool"></span
         ></span>
-        <span class="tool" aria-hidden="true" data-tour="theme" data-control="theme"
+        <!--
+          P5 fix round 2 (coordinator finding, 390px eyes-on evidence): `topbar-desktop-only`
+          added here -- the standalone theme button stopped fitting the phone topbar once the P1
+          search button (above) landed beside ⋯; it now also lives in the ⋯ menu
+          (TopBarActions.svelte), same route as Feedback/About just above.
+        -->
+        <span
+          class="tool topbar-desktop-only"
+          aria-hidden="true"
+          data-tour="theme"
+          data-control="theme"
           ><span class="sk-icon-tool"></span
         ></span>
       </header>

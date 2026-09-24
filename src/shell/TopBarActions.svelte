@@ -62,6 +62,14 @@
      * (Shell.svelte's `onHelpTakeTour`, passed through verbatim) -- the phone ⋯ menu's own
      * "Take a tour" item. */
     onTakeTour: () => void;
+    /** P5 fix round 2 (coordinator finding, 390px eyes-on evidence): the desktop theme toggle
+     * (Shell.svelte's own button) is now `topbar-desktop-only` -- its own width was what pushed
+     * the theme button itself, and everything after it, past the phone viewport's right edge once
+     * the P1 search button was added beside it. `resolvedTheme` mirrors Shell.svelte's own
+     * `$derived` (never re-resolved here from `sel`/`prefersDark`); `onToggleTheme` is its
+     * `toggleTheme`, passed through verbatim, same convention as `onTakeTour` above. */
+    resolvedTheme: "navy" | "paper";
+    onToggleTheme: () => void;
     sealFlag?: string;
     agency?: string;
     sealUrl?: string;
@@ -79,6 +87,8 @@
     onReportTop,
     helpDocsHref,
     onTakeTour,
+    resolvedTheme,
+    onToggleTheme,
     sealFlag = import.meta.env.VITE_SEAL,
     agency = import.meta.env.VITE_AGENCY,
     sealUrl = import.meta.env.VITE_SEAL_URL || DEFAULT_SEAL_URL,
@@ -112,14 +122,15 @@
 
   interface MoreItem {
     label: string;
-    icon: "share" | "report" | "feedback" | "info" | "help" | "tour";
+    icon: "share" | "report" | "feedback" | "info" | "help" | "tour" | "themeSun" | "themeMoon";
     run: (e: MouseEvent) => void;
     href?: string;
   }
   // R2, round 2: "Help" split into its two destinations ("Take a tour" / "Docs") so the tour is
   // actually reachable on the phone -- see this file's header comment. Order: Share, Report,
-  // Feedback, About this release, Take a tour, Docs -- e2e/shell.chrome.spec.ts asserts this exact
-  // item-name list.
+  // Feedback, About this release, Take a tour, Docs, Theme -- e2e/shell.chrome.spec.ts asserts
+  // this exact item-name list. "Theme" (P5 fix round 2) is last, mirroring its own rightmost
+  // position in the desktop topbar.
   const moreItems = $derived<MoreItem[]>([
     { label: "Share", icon: "share", run: () => onShare() },
     { label: "Report", icon: "report", run: () => onReportTop() },
@@ -137,6 +148,13 @@
     // (invisible at the width this ⋯ menu only exists at -- see helpDocsHref's own doc comment).
     // `run` is a no-op: the `<a href target="_blank">` below does the whole job on its own.
     { label: "Docs", icon: "help", run: () => {}, href: helpDocsHref },
+    // P5 fix round 2: the SAME vocabulary/icon-swap as the desktop button (this file's own
+    // `resolvedTheme` doc comment) -- "the DESTINATION theme", never "navy"/"paper".
+    {
+      label: resolvedTheme === "navy" ? "Switch to light theme" : "Switch to dark theme",
+      icon: resolvedTheme === "navy" ? "themeSun" : "themeMoon",
+      run: () => onToggleTheme(),
+    },
   ]);
 
   async function openMore() {
@@ -216,7 +234,7 @@
   class="tool topbar-phone-only"
   data-tour="more"
   data-control="more-menu"
-  aria-label="More: Share, Report, Feedback, About, Take a tour, Docs"
+  aria-label="More: Share, Report, Feedback, About, Take a tour, Docs, Theme"
   aria-haspopup="menu"
   aria-expanded={moreOpen}
   bind:this={moreTriggerEl}

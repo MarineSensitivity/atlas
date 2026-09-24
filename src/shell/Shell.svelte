@@ -1283,16 +1283,25 @@
     onReportTop={onReport}
     helpDocsHref={docsHref}
     onTakeTour={onHelpTakeTour}
+    {resolvedTheme}
+    onToggleTheme={toggleTheme}
   />
   <!-- U2a (round 2): sun/moon, CalCOFI's convention (src/App.tsx's `.cc-theme-toggle`) -- the
        icon shown is the DESTINATION theme (a sun while dark invites switching to light, a moon
        while light invites switching to dark), and the accessible name states the action in ONE
        vocabulary (light/dark -- the URL's own words, docs/usability.md p3), never "navy"/"paper"
        (those stay internal token-set names only). mdiBrightness7/mdiBrightness4 are Apache-2.0
-       (@mdi/js, already a project dependency -- see LICENSE.md / node_modules/@mdi/js/LICENSE). -->
+       (@mdi/js, already a project dependency -- see LICENSE.md / node_modules/@mdi/js/LICENSE).
+       P5 fix round 2 (coordinator finding, 390px eyes-on evidence): this used to be the ONE
+       control with no `topbar-desktop-only` -- with the new P1 search button added beside ⋯, the
+       phone topbar's fixed content (mark hidden already, lens switch, search, ⋯, theme) no longer
+       fit at 390px OR 360px: this button's own right edge landed ~20px/~2px past the viewport.
+       `topbar-desktop-only` here, and a "Switch to light/dark theme" item in the ⋯ menu
+       (TopBarActions.svelte, same as Feedback/About's own phone route) reclaims exactly one
+       button's width instead of shaving pixels off every other control. -->
   <button
     type="button"
-    class="tool"
+    class="tool topbar-desktop-only"
     data-tour="theme"
     data-control="theme"
     aria-label={resolvedTheme === "navy" ? "Switch to light theme" : "Switch to dark theme"}
@@ -1567,11 +1576,11 @@
      `.modal-body { overflow: auto }` -- entirely reasonable for ordinary text content -- clipping
      SpeciesPicker's own results list, which is `position: absolute` (so it contributes NOTHING to
      the dialog's natural, content-driven height): the dialog shrank to the search row's own ~50px
-     and the dropdown rendered past that box's bottom edge, invisible without first discovering you
-     could scroll a box that LOOKED fully sized already. The species branch reserves enough
-     min-height for the dropdown's own (fixed 320px list + its "US only" header) so the dialog's
-     real height includes it -- opening this modal focuses the field immediately (`openPhoneSearch`),
-     which itself opens the dropdown, so this space is essentially always in use, not a dead gap. -->
+     and the dropdown rendered past that box's bottom edge. A first fix (a fixed min-height guess)
+     still let it render past the dialog's own bottom edge on review -- shell.css's own
+     `.search-field-phone--species .picker-dropdown` override forces it into NORMAL FLOW instead
+     (`position: static`), so the dialog's real height always includes it, growing/scrolling
+     (`.modal-body`'s own `overflow: auto`) to hold whatever it actually is, not a guessed number. -->
 {#if ModalComp}
   {@const ModalC = ModalComp}
   <ModalC open={phoneSearchOpen} title="Search" onclose={closePhoneSearch}>

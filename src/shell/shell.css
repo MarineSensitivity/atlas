@@ -437,18 +437,25 @@ button.chip {
   width: 100%;
   color: var(--text-secondary);
 }
-/* P1 fix round 2 (eyes-on evidence, a real screenshot): SpeciesPicker's own results list is
-   `position: absolute` (`.picker-dropdown`), so it contributes NOTHING to this row's natural
-   content height -- the dialog auto-sized to the search row alone (~50px) and
-   Modal.svelte's `.modal-body { overflow: auto }` then clipped the dropdown past that box's
-   bottom edge, invisible without knowing to scroll a box that already looked full-height. `align-
-   items: flex-start` (not the default `center` above) keeps the icon pinned to the INPUT row
-   instead of drifting to the middle of this now-tall box; `min-height` reserves room for the
-   dropdown's own fixed 320px list plus its "US only" header (Shell.svelte's own comment explains
-   why this is not a dead gap: opening this modal focuses the field, which opens the dropdown). */
+/* P1 fix round 2 / P5 fix round 2 (coordinator finding, 390px eyes-on evidence): SpeciesPicker's
+   own results list (`.picker-dropdown`) is `position: absolute` BY DESIGN on the desktop field --
+   it must float OVER the map without pushing content down there. Inside THIS modal it needs the
+   opposite: a normal-flow list under the input, so the dialog's own auto-height (and
+   Modal.svelte's `.modal-body { overflow: auto }`) genuinely include it, and scroll it if it is
+   ever taller than the viewport allows -- a fixed `min-height` guess (this rule's first version)
+   was fragile AND still let the dropdown render past the dialog's own bottom edge in review.
+   `align-items: flex-start` (not the default `center` above) keeps the icon pinned to the INPUT
+   row rather than drifting to the middle of a box whose height now varies with the dropdown.
+   `.picker-dropdown`'s own OVERRIDE below is scoped to this class (SpeciesPicker.svelte itself,
+   and the desktop topbar field, are untouched) and chains BOTH classes on this same element for
+   specificity (0,3,0) -- guaranteed to beat that component's own scoped `.picker-dropdown` rule
+   (0,2,0) regardless of which one the CSS bundle happens to order last. */
 .search-field-phone--species {
   align-items: flex-start;
-  min-height: 420px;
+}
+.search-field-phone.search-field-phone--species .picker-dropdown {
+  position: static;
+  margin-top: var(--space-1);
 }
 .search-field-phone-control {
   flex: 1;

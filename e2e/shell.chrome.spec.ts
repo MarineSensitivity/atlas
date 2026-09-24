@@ -121,7 +121,7 @@ test.describe("R2: Send feedback", () => {
 });
 
 test.describe("R2: phone ⋯ overflow menu", () => {
-  test("at 390x844, the ⋯ trigger opens a role=menu with Share/Report/Feedback/About/Take a tour/Docs", async ({
+  test("at 390x844, the ⋯ trigger opens a role=menu with Share/Report/Feedback/About/Take a tour/Docs/Theme", async ({
     page,
   }) => {
     await gotoShell(page, PHONE);
@@ -135,8 +135,12 @@ test.describe("R2: phone ⋯ overflow menu", () => {
     await expect(menu).toBeVisible();
     const items = menu.getByRole("menuitem");
     // R2 round 2: "Help" split into "Take a tour" + "Docs" (the tour was unreachable on the phone
-    // otherwise), "Send feedback" renamed to "Feedback" -- final order below.
-    await expect(items).toHaveCount(6);
+    // otherwise), "Send feedback" renamed to "Feedback" -- final order below. P5 fix round 2
+    // (coordinator finding, 390px eyes-on evidence): the standalone phone theme button no longer
+    // fit once the P1 search button was added beside ⋯ -- it moved here, last (mirroring its own
+    // rightmost position in the desktop topbar). `gotoShell` loads `?theme=navy`, so the
+    // DESTINATION theme reads "light" (this file's own vocabulary note, U2a).
+    await expect(items).toHaveCount(7);
     const labels = await items.evaluateAll((els) => els.map((e) => e.textContent?.trim()));
     expect(labels).toEqual([
       "Share",
@@ -145,6 +149,7 @@ test.describe("R2: phone ⋯ overflow menu", () => {
       "About this release",
       "Take a tour",
       "Docs",
+      "Switch to light theme",
     ]);
 
     // opening the menu moves focus to its first item.
@@ -213,7 +218,7 @@ test.describe("R2: phone ⋯ overflow menu", () => {
     expect(page.url()).toBe(before);
   });
 
-  test("desktop shows no ⋯ trigger; phone shows no direct Feedback/About buttons", async ({
+  test("desktop shows no ⋯ trigger; phone shows no direct Feedback/About/theme buttons", async ({
     page,
   }) => {
     await gotoShell(page, DESKTOP);
@@ -222,6 +227,29 @@ test.describe("R2: phone ⋯ overflow menu", () => {
     await gotoShell(page, PHONE);
     await expect(page.locator('[data-control="feedback"]')).toBeHidden();
     await expect(page.locator('[data-control="about"]')).toBeHidden();
+    // P5 fix round 2: theme joined Feedback/About's own phone route (topbar-desktop-only + a ⋯
+    // menu item) once its standalone button stopped fitting at 390px/360px alongside the new P1
+    // search button.
+    await expect(page.locator('[data-control="theme"]')).toBeHidden();
+  });
+
+  // P5 fix round 2 (coordinator finding, 390px eyes-on evidence): the theme toggle's own phone
+  // route -- proves the ⋯ menu's "Switch to..." item actually flips `data-theme`, the same real
+  // effect the desktop button's own onclick produces (U2a).
+  test("selecting the theme item from the ⋯ menu toggles data-theme, and its label follows", async ({
+    page,
+  }) => {
+    await gotoShell(page, PHONE);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "navy");
+
+    await page.locator('[data-control="more-menu"]').click();
+    await page.getByRole("menuitem", { name: "Switch to light theme" }).click();
+
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "paper");
+    // the menu closes on selection, same as every other item (onMoreItemClick calls closeMore()
+    // first) -- reopen it to prove the label followed the new theme.
+    await page.locator('[data-control="more-menu"]').click();
+    await expect(page.getByRole("menuitem", { name: "Switch to dark theme" })).toBeVisible();
   });
 });
 
