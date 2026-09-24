@@ -700,6 +700,49 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4371" },
   },
+  {
+    id: "report-map-duplicated",
+    patch: "tests/faults/report-map-duplicated.patch",
+    describe:
+      "report.css's screen-only `.map-print { display: none }` rule dropped -- the static " +
+      "print/export snapshot sits visible right below the live interactive map again, reading " +
+      "as two stacked map figures",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.map.spec.ts",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4377" },
+  },
+  {
+    id: "report-map-fitbounds-skipped",
+    patch: "tests/faults/report-map-fitbounds-skipped.patch",
+    describe:
+      "Report.svelte#mountMap's final flyToBounds(finalBounds, ...) call is skipped -- the camera " +
+      "stays at the provisional full-study-area view it flew to first (to load the zone's pmtiles " +
+      "tiles) and never actually reaches the place, even though the correct target box was computed",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.map.spec.ts",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4377" },
+  },
+  {
+    id: "scores-footnote-floor-reverted",
+    patch: "tests/faults/scores-footnote-floor-reverted.patch",
+    describe:
+      "scores.ts#COVERAGE_FOOTNOTE_FLOOR_PCT reverted from 99 to 100 -- a component at 99.9% " +
+      "coverage footnotes again, and a fully-covered place with one component at 99.9% gets a " +
+      "footnote it should not (the original 'footnotes almost every cell' bug, replayed)",
+    gate: ["npx", "vitest", "run", "tests/lib/report/scores.test.ts"],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

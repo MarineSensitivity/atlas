@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  bboxFromRenderedFeatures,
   captureRejectionReason,
   combinedBbox,
   luminanceStatsFromRgba,
+  ringsFromRenderedFeatures,
   scoreColorExpression,
+  unionBounds,
+  zoneKeyColors,
+  zoneMatchColorExpression,
+  zonePolygonLayers,
 } from "../../src/report/reportMap";
+import { REPORT_MAP_OUTLINE, REPORT_NODATA_COLOR } from "../../src/report/colors";
 
 describe("combinedBbox", () => {
   it("null when no place carries a geometry or point", () => {
@@ -35,6 +42,166 @@ describe("combinedBbox", () => {
       [-10, -10],
       [20.5, 20.5],
     ]);
+  });
+});
+
+// ---- P4: zone places' REAL Program-Area polygon, from the release's own PMTiles -----------------
+
+describe("zoneKeyColors", () => {
+  const stops = ["#000000", "#ffffff"];
+
+  it("scores a real per-key color from the report's own ramp domain", () => {
+    const out = zoneKeyColors([{ key: "GAA", score: 100 }], [0, 100], stops);
+    expect(out).toEqual({ GAA: "#ffffff" });
+  });
+
+  it("a null score gets the no-data fallback, not a ramp lookup", () => {
+    const out = zoneKeyColors([{ key: "GAA", score: null }], [0, 100], stops);
+    expect(out).toEqual({ GAA: REPORT_NODATA_COLOR });
+  });
+
+  it("no domain/paletteStops (not yet resolved) falls back the same way as a null score", () => {
+    expect(zoneKeyColors([{ key: "GAA", score: 50 }], null, stops)).toEqual({
+      GAA: REPORT_NODATA_COLOR,
+    });
+    expect(zoneKeyColors([{ key: "GAA", score: 50 }], [0, 100], null)).toEqual({
+      GAA: REPORT_NODATA_COLOR,
+    });
+  });
+});
+
+describe("zoneMatchColorExpression", () => {
+  it("builds a match expression, one label/output pair per key, ending in the fallback", () => {
+    const expr = zoneMatchColorExpression(
+      "programarea_key",
+      { GAA: "#111111", ALA: "#222222" },
+      REPORT_NODATA_COLOR,
+    );
+    expect(expr).toEqual([
+      "match",
+      ["get", "programarea_key"],
+      "GAA",
+      "#111111",
+      "ALA",
+      "#222222",
+      REPORT_NODATA_COLOR,
+    ]);
+  });
+
+  // B3's own precedent (lib/map/layers/zones.ts#zoneFillLayer): a `match` needs >= 1 pair before
+  // its fallback -- an EMPTY keyColors must return the literal fallback, not an invalid 2-arg match.
+  it("an empty keyColors returns the literal fallback, never an invalid 2-argument match", () => {
+    expect(zoneMatchColorExpression("programarea_key", {}, REPORT_NODATA_COLOR)).toBe(
+      REPORT_NODATA_COLOR,
+    );
+  });
+});
+
+describe("zonePolygonLayers", () => {
+  const group = {
+    unit: {
+      unit: "programarea",
+      pmtiles: "https://example.test/z.pmtiles",
+      sourceLayer: "programarea",
+    },
+    keyColors: { GAA: "#111111" },
+  };
+
+  it("a fill + line pair, filtered to exactly this report's keys, never the whole unit", () => {
+    const layers = zonePolygonLayers(group);
+    expect(layers.map((l) => l.type)).toEqual(["fill", "line"]);
+    for (const l of layers) {
+      const generic = l as unknown as { source: string; "source-layer": string; filter: unknown };
+      expect(generic.source).toBe("programarea_src");
+      expect(generic["source-layer"]).toBe("programarea");
+      expect(generic.filter).toEqual(["in", ["get", "programarea_key"], ["literal", ["GAA"]]]);
+    }
+    const fill = layers[0] as { paint: Record<string, unknown> };
+    expect(fill.paint["fill-color"]).toEqual([
+      "match",
+      ["get", "programarea_key"],
+      "GAA",
+      "#111111",
+      REPORT_NODATA_COLOR,
+    ]);
+    expect(fill.paint["fill-outline-color"]).toBe(REPORT_MAP_OUTLINE);
+  });
+});
+
+describe("ringsFromRenderedFeatures / bboxFromRenderedFeatures", () => {
+  const square = {
+    geometry: {
+      type: "Polygon",
+      coordinates: [
+        [
+          [-96, 24],
+          [-84, 24],
+          [-84, 30],
+          [-96, 30],
+          [-96, 24],
+        ],
+      ],
+    },
+  };
+
+  it("null when the query found nothing -- the caller falls back, never treats it as the whole world", () => {
+    expect(bboxFromRenderedFeatures([])).toBeNull();
+    expect(ringsFromRenderedFeatures([])).toEqual([]);
+  });
+
+  it("a Polygon feature's bbox, via the SAME bboxOf() combinedBbox uses -- no second algorithm", () => {
+    expect(bboxFromRenderedFeatures([square])).toEqual([
+      [-96, 24],
+      [-84, 30],
+    ]);
+  });
+
+  it("a MultiPolygon feature's every polygon counts toward the combined bbox", () => {
+    const multi = {
+      geometry: {
+        type: "MultiPolygon",
+        coordinates: [
+          square.geometry.coordinates,
+          [
+            [
+              [10, 10],
+              [12, 10],
+              [12, 12],
+              [10, 12],
+              [10, 10],
+            ],
+          ],
+        ],
+      },
+    };
+    expect(bboxFromRenderedFeatures([multi])).toEqual([
+      [-96, 10],
+      [12, 30],
+    ]);
+  });
+});
+
+describe("unionBounds", () => {
+  const a: [[number, number], [number, number]] = [
+    [-10, -10],
+    [0, 0],
+  ];
+  const b: [[number, number], [number, number]] = [
+    [5, 5],
+    [20, 20],
+  ];
+
+  it("plain min/max union of two boxes", () => {
+    expect(unionBounds(a, b)).toEqual([
+      [-10, -10],
+      [20, 20],
+    ]);
+  });
+
+  it("either side null just returns the other -- never throws, never collapses to null", () => {
+    expect(unionBounds(a, null)).toEqual(a);
+    expect(unionBounds(null, b)).toEqual(b);
+    expect(unionBounds(null, null)).toBeNull();
   });
 });
 

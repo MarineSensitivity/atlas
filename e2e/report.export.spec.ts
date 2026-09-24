@@ -27,7 +27,7 @@
 // (`routeSealFixture`, hermetic.ts) -- so `fetchAsDataUrl(sealUrl)` (exportHtml.ts) fetches a real,
 // hermetic image over the SAME route every other spec here already trusts, not a live one.
 import { expect, test } from "@playwright/test";
-import { gotoReport, PL } from "./report-hermetic";
+import { gotoReport, PL, waitForMapCapture } from "./report-hermetic";
 
 const SEAL_URL = "https://marinesensitivity.org/branding/mma-seal.svg";
 
@@ -38,7 +38,7 @@ test.describe("B5: Download HTML, opened offline", () => {
   }) => {
     await gotoReport(page, { ver: "v7", pl: PL });
     await expect(page.locator(".progress-line")).toContainText("Done");
-    await expect(page.locator(".map-print img")).toBeVisible({ timeout: 15_000 });
+    await waitForMapCapture(page); // P4: attribute-based wait -- `.map-print` is off-screen by default
 
     // simulate the seal build (this file's own header): a real `.agency-lockup img` node, at the
     // SAME url `sealUrl` defaults to, in the exact place `onDownloadHtml`'s transform looks for it

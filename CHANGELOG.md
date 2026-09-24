@@ -1,3 +1,25 @@
+# atlas 0.10.43
+
+P4 (Ben, phone, "Report" tool, live 0.10.37): the Report map was duplicated and seemingly empty
+(or at least never zoomed to the selected place), and the Table of Scores printed a footnote on
+nearly every cell.
+
+- **The Report map is ONE figure again.** The static print/export snapshot (`.map-print`) is now
+  hidden on screen by default (it only shows for print or the downloaded HTML) — previously it sat
+  visible right below the live interactive map, reading as two stacked, mostly-empty map boxes.
+- **A Program-Area place now draws its real polygon and the camera fits it.** The report map used
+  to draw a zone place only as a circle at its `label_pt` — a field no published release actually
+  carries, so the place was silently dropped and the camera never left its default view ("not
+  zoomed to selected/drawn areas"). It now draws the place's real polygon from the release's own
+  PMTiles (the same source the live Atlas already uses) and flies the camera to its real extent.
+- **Table of Scores footnotes are grouped, one per area, and only for genuinely partial coverage.**
+  The floor moved from "anything under ~100 % coverage" (which footnoted almost every cell) to
+  99 %, and every component below it — plus any component the release's own 5 % coverage floor
+  dropped entirely — now joins ONE sentence per area ("ALA: turtle scored over 88.3% of the
+  area.") instead of a separate near-duplicate footnote per component. A mean-where-scored note is
+  appended only when it differs from the displayed value. Every export (HTML, DOCX, ZIP) reflects
+  the same footnotes as the screen.
+
 # atlas 0.10.41
 
 P2 (owner finding on live 0.10.37, phone/dark theme, Scores lens, Flower plot tool): the flower

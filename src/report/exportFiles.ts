@@ -26,7 +26,10 @@ function csvField(v: unknown): string {
 }
 
 /** `scores_<slug>.csv`: one row per component this place has, plus a final `Overall` row -- the
- * SAME numbers `ScoresTableSection` prints, never re-derived from the raw components. */
+ * SAME numbers `ScoresTableSection` prints, never re-derived from the raw components. P4: a place
+ * whose Table of Scores row carries a footnote (below the coverage floor, or a component the
+ * workflow's own 5 % floor dropped entirely) gets that SAME sentence appended as a trailing `Note`
+ * row -- the ZIP export renders the same footnotes as the screen, same as the HTML/DOCX exports. */
 export function scoresCsv(model: ReportModel, placeIndex: number): string {
   const row = model.scores.rows[placeIndex];
   const header = ["component", "score"].map(csvField).join(",");
@@ -34,6 +37,8 @@ export function scoresCsv(model: ReportModel, placeIndex: number): string {
     .filter((c) => c.score !== null)
     .map((c) => [csvField(c.component), csvField(c.score)].join(","));
   lines.push([csvField("Overall"), csvField(row.overall)].join(","));
+  const footnote = model.scores.footnotes.find((fn) => fn.place === row.name);
+  if (footnote) lines.push([csvField("Note"), csvField(footnote.text)].join(","));
   return [header, ...lines].join("\r\n") + "\r\n";
 }
 

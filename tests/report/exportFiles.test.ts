@@ -126,9 +126,13 @@ describe("scoresCsv", () => {
     expect(csv).toContain("Overall,50");
   });
 
-  it("a place with no components still prints just the Overall row", () => {
+  it("a place with no components prints the Overall row plus a Note for the absent one (P4: the footnote the screen's <sup> also carries)", () => {
     const csv = scoresCsv(model, 1);
-    expect(csv.trim().split("\r\n")).toEqual(["component,score", "Overall,"]);
+    expect(csv.trim().split("\r\n")).toEqual([
+      "component,score",
+      "Overall,",
+      "Note,My box: bird not scored (coverage below the 5% floor).",
+    ]);
   });
 });
 

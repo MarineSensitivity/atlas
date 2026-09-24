@@ -19,15 +19,20 @@
 // still comfortable) -- `tests/report/noSecondMapCopy.wiring.test.ts` is the seeded-fault-backed
 // proof that this module and `Report.svelte` never restate a basemap URL, a MapLibre constructor
 // call or a glyphs endpoint again.
-import type { AreaGeometry } from "../lib/geo/types";
+import type { AreaGeometry, Ring } from "../lib/geo/types";
 import { bboxOf } from "../lib/geo/types";
 import { pointOnSurface } from "./pointOnSurface";
 import type { LegendStop, PaletteStops } from "../lib/raster/ramps";
-import { legendStops } from "../lib/raster/ramps";
+import { colorForValue, legendStops } from "../lib/raster/ramps";
 import { composeStyle } from "../lib/map/style";
 import { GLYPHS_URL, loadBasemapStyle } from "../lib/map/layers/basemap";
-import { zoneLabelsFromBoot } from "../lib/map/layers/zones";
-import type { StyleSpecification } from "../lib/map/types";
+import {
+  zoneKeyProperty,
+  zoneLabelsFromBoot,
+  zoneSourceId,
+  zoneSources,
+} from "../lib/map/layers/zones";
+import type { LayerSpecification, StyleSpecification, ZoneUnitSpec } from "../lib/map/types";
 import {
   REPORT_MAP_LABEL_HALO,
   REPORT_MAP_LABEL_TEXT,
@@ -58,8 +63,12 @@ export interface ReportMapFeatureInput {
   score: number | null;
   /** a custom (drawn) place's decoded geometry. */
   geometry?: AreaGeometry;
-  /** a zone place's representative point (no polygon boundary is fetched for the report map --
-   * see this module's own review note below). */
+  /** a zone place's representative point -- a FALLBACK label anchor/marker for when its release
+   * publishes no `label_pt` (this module's own review note used to say the point was ALL a zone
+   * place ever drew; P4 fixed that -- see `ReportZoneGroup` below, which draws the real Program-Area
+   * polygon from the SAME PMTiles archive the live Atlas already renders it from). A zone place with
+   * neither a resolved point NOR a `ReportZoneGroup` match still shows nothing here, but its polygon
+   * layer (when the release publishes `boot.units[]`, which every real one does) covers that case. */
   point?: [number, number];
 }
 
@@ -125,8 +134,160 @@ export function combinedBbox(
   ];
 }
 
-/** `places-circle`'s own `circle-opacity` (a zone place -- no polygon boundary is fetched for the
- * report map, see `ReportMapFeatureInput.point`'s own doc -- draws as a circle, never a fill).
+// ---- zone places: the REAL Program-Area polygon, from the release's own PMTiles (P4) ------------
+//
+// B1 (`.claude/plans_todo/atlas-refs/2026-09-24 parity-page audit (Opus 5.5) on 0.10.28.md`): "The
+// report map draws no place for any Program-Area report on any published release" -- caused by
+// `zonePointFromBoot` needing `label_pt`, which no published boot carries, so a zone place had
+// NEITHER a point NOR a polygon and was silently dropped from `places`/`place-labels`, and
+// `combinedBbox` (above) never had anything to fly to. The audit's own suggested fix: "draw zone
+// places from the unit's PMTiles polygon filtered by key and frame on it" -- exactly what this
+// section does, reusing `lib/map/layers/zones.ts#zoneSources()`/`zoneSourceId()`/`zoneKeyProperty()`
+// verbatim (the SAME vector archive + property names the live Atlas already draws Program-Area
+// outlines from -- "no second copy"), never a second geometry fetch.
+
+/** one zone unit's report polygon: the unit spec (source url/layer) plus a precomputed `{key:
+ * color}` map, ALREADY resolved by the caller (`Report.svelte#mountMap`, from `colorForValue()`
+ * over this report's own ramp domain -- see `scoreColorExpression`'s own header for why that must
+ * be THIS report's domain, never the release's) -- a MapLibre `match` expression can only take
+ * literal per-key colors, not a data-driven `["get","score"]` expression, because a raw zone vector
+ * tile carries no `score` property of its own (unlike the synthetic `places` GeoJSON source above). */
+export interface ReportZoneGroup {
+  unit: ZoneUnitSpec;
+  keyColors: Readonly<Record<string, string>>;
+}
+
+/** `{key: color}` for one unit's zone places, via `colorForValue()` (`lib/raster/ramps.ts` -- the
+ * SAME continuous ramp interpolation `scoreColorExpression`'s data-driven `interpolate` expression
+ * would apply, just precomputed to a literal because a raw zone vector tile carries no `score`
+ * property `["get","score"]` could read -- see `ReportZoneGroup`'s own header). A place with `score:
+ * null` gets {@link REPORT_NODATA_COLOR}, matching `scoreColorExpression`'s `hasScore === false`
+ * branch. `Report.svelte#mountMap` calls this once per unit, never re-deriving the ramp math. */
+export function zoneKeyColors(
+  entries: readonly { key: string; score: number | null }[],
+  domain: [number, number] | null,
+  paletteStops: PaletteStops | null,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const { key, score } of entries) {
+    out[key] =
+      score !== null && domain && paletteStops
+        ? colorForValue(paletteStops, score, domain[0], domain[1])
+        : REPORT_NODATA_COLOR;
+  }
+  return out;
+}
+
+/** `["match", ["get", keyProperty], k1, c1, k2, c2, ..., defaultColor]` -- B3's own precedent
+ * (`lib/map/layers/zones.ts#zoneFillLayer`'s header): a MapLibre `match` expression needs at least
+ * one label/output pair before its fallback, so an EMPTY `keyColors` returns the literal
+ * `defaultColor` instead of an invalid two-argument `match`. */
+export function zoneMatchColorExpression(
+  keyProperty: string,
+  keyColors: Readonly<Record<string, string>>,
+  defaultColor: string,
+): unknown {
+  const entries = Object.entries(keyColors);
+  if (entries.length === 0) return defaultColor;
+  const match: unknown[] = ["match", ["get", keyProperty]];
+  for (const [key, color] of entries) match.push(key, color);
+  match.push(defaultColor);
+  return match;
+}
+
+/** `report-zone-fill-{unit}` / `report-zone-line-{unit}` -- the fill+line pair for one zone unit's
+ * report polygons, filtered to exactly the keys this report asked about (never the WHOLE unit --
+ * an unrelated Program Area must not paint). Fill color is `zoneMatchColorExpression()`'s literal
+ * per-key match (never `scoreColorExpression`'s data-driven one -- see `ReportZoneGroup`'s header);
+ * the outline reuses `REPORT_MAP_OUTLINE`, the SAME color `places-fill`'s `fill-outline-color`
+ * already uses, so a drawn place and a zone place read as the same visual language. */
+export function zonePolygonLayers(group: ReportZoneGroup): LayerSpecification[] {
+  const keyProperty = zoneKeyProperty(group.unit.unit);
+  const keys = Object.keys(group.keyColors);
+  const filter = ["in", ["get", keyProperty], ["literal", keys]] as unknown as never;
+  const source = zoneSourceId(group.unit.unit);
+  return [
+    {
+      id: `report-zone-fill-${group.unit.unit}`,
+      type: "fill",
+      source,
+      "source-layer": group.unit.sourceLayer,
+      filter,
+      paint: {
+        "fill-color": zoneMatchColorExpression(
+          keyProperty,
+          group.keyColors,
+          REPORT_NODATA_COLOR,
+        ) as never,
+        "fill-opacity": 0.6,
+        "fill-outline-color": REPORT_MAP_OUTLINE,
+      },
+    },
+    {
+      id: `report-zone-line-${group.unit.unit}`,
+      type: "line",
+      source,
+      "source-layer": group.unit.sourceLayer,
+      filter,
+      paint: { "line-color": REPORT_MAP_OUTLINE, "line-width": 2, "line-opacity": 1 },
+    },
+  ];
+}
+
+/** every ring of a MapLibre `queryRenderedFeatures()` result's geometry (Polygon or MultiPolygon --
+ * the only two shapes `zonePolygonLayers()`'s fill/line layers ever query), grouped as `Ring[][]`
+ * (one entry per polygon) -- so `bboxOf()` (`geo/types.ts`, the SAME dateline-naive bbox
+ * `combinedBbox` above already uses; see that function's own note on why plain min/max is accepted
+ * here) can compute their combined extent with no second bbox algorithm. Exported and DOM-free
+ * (plain GeoJSON-shaped objects in, `Ring[][]` out) so it is unit-testable without a real MapLibre
+ * instance -- `Report.svelte#mountMap` is the only DOM-touching caller. */
+export function ringsFromRenderedFeatures(
+  features: readonly { geometry: { type: string; coordinates: unknown } }[],
+): Ring[][] {
+  const polygons: Ring[][] = [];
+  for (const f of features) {
+    const g = f.geometry;
+    if (g.type === "Polygon") polygons.push(g.coordinates as Ring[]);
+    else if (g.type === "MultiPolygon") for (const p of g.coordinates as Ring[][]) polygons.push(p);
+  }
+  return polygons;
+}
+
+/** `combinedBbox()`'s own `[[x0,y0],[x1,y1]]` shape, computed from ACTUAL rendered zone polygon
+ * geometry instead of a fixed box around a label point -- `null` when the query found nothing (no
+ * `boot.units[]` published, the pmtiles fetch failed, or the key genuinely is not in the archive),
+ * which the caller falls back from rather than treating as "the whole world". */
+export function bboxFromRenderedFeatures(
+  features: readonly { geometry: { type: string; coordinates: unknown } }[],
+): [[number, number], [number, number]] | null {
+  const polygons = ringsFromRenderedFeatures(features);
+  if (polygons.length === 0) return null;
+  const [x0, y0, x1, y1] = bboxOf({ type: "MultiPolygon", coordinates: polygons });
+  return [
+    [x0, y0],
+    [x1, y1],
+  ];
+}
+
+/** the plain min/max union of two `combinedBbox()`-shaped boxes -- SAME no-antimeridian-re-expression
+ * convention as `combinedBbox` itself (its own header explains why that is accepted here). Either
+ * argument may be `null` (nothing to union); both `null` returns `null`. */
+export function unionBounds(
+  a: [[number, number], [number, number]] | null,
+  b: [[number, number], [number, number]] | null,
+): [[number, number], [number, number]] | null {
+  if (!a) return b;
+  if (!b) return a;
+  return [
+    [Math.min(a[0][0], b[0][0]), Math.min(a[0][1], b[0][1])],
+    [Math.max(a[1][0], b[1][0]), Math.max(a[1][1], b[1][1])],
+  ];
+}
+
+/** `places-circle`'s own `circle-opacity` -- a zone place with a resolved point (a fallback: most
+ * releases publish no `label_pt`, see `ReportMapFeatureInput.point`'s own doc) still draws this
+ * circle marker ON TOP of its `ReportZoneGroup` polygon, if any; a point with no matching polygon
+ * (no `boot.units[]`, or a key the archive does not have) draws the circle alone, same as before P4.
  * Named (not an inline `0.85`) for readability here -- NOT imported by M4's e2e pixel-proof
  * (`e2e/report-hermetic.ts#EXPECTED_PLACE_CIRCLE_OPACITY`), which fix round 2 made a deliberately
  * SEPARATE literal on purpose: a gate whose expectation is derived from the value under test
@@ -149,6 +310,9 @@ export interface BuildReportMapStyleOptions {
   places: readonly ReportMapFeatureInput[];
   domain: [number, number] | null;
   paletteStops: PaletteStops | null;
+  /** zone places' REAL polygons (P4), one group per unit in use -- empty/omitted for a report with
+   * no zone places or whose release publishes no `boot.units[]`. */
+  zoneGroups?: readonly ReportZoneGroup[];
 }
 
 /**
@@ -176,16 +340,23 @@ export async function buildReportMapStyle(opts: BuildReportMapStyleOptions): Pro
     opts.domain && opts.paletteStops
       ? scoreColorExpression(opts.paletteStops, opts.domain)
       : REPORT_NODATA_COLOR;
+  const zoneGroups = opts.zoneGroups ?? [];
+  // one pmtiles vector source per unit (`zoneSources()`, `lib/map/layers/zones.ts` -- the SAME
+  // reader the live Atlas's own zone outlines use), and one fill+line pair per unit, UNDER the
+  // synthetic `places`/`place-labels` layers below so a resolved circle/label still draws on top.
+  const zoneLayers: LayerSpecification[] = zoneGroups.flatMap(zonePolygonLayers);
 
   const style: StyleSpecification = {
     ...base,
     sources: {
       ...base.sources,
+      ...zoneSources(zoneGroups.map((g) => g.unit)),
       places: { type: "geojson", data: placesFeatureCollection(opts.places) },
       "place-labels": { type: "geojson", data: labelsFeatureCollection(opts.places) },
     },
     layers: [
       ...base.layers,
+      ...zoneLayers,
       {
         id: "places-fill",
         type: "fill",
@@ -303,8 +474,13 @@ function nextFrame(): Promise<void> {
 const CAPTURE_IDLE_FALLBACK_MS = 4_000;
 
 /** a raster tile's fetch can resolve (which is what `"idle"`'s own bookkeeping tracks) before its
- * IMAGE DECODE finishes -- measured, fix round 2 item 6, below. */
-const CAPTURE_DECODE_SETTLE_MS = 300;
+ * IMAGE DECODE finishes -- measured, fix round 2 item 6, below. Exported (P4): the SAME settle gap
+ * `Report.svelte#mountMap` waits before querying a zone unit's rendered polygon -- vector tile
+ * parsing has an equivalent post-"idle" gap (measured directly: a single `waitForIdle` after
+ * `flyTo(full)` sometimes queried ZERO rendered features on a layer that unquestionably existed and
+ * unquestionably had matching data, `report.map.spec.ts`'s own red run before this fix) -- never a
+ * second, independently-guessed constant. */
+export const CAPTURE_DECODE_SETTLE_MS = 300;
 
 /**
  * Waits for the NEXT `"idle"`, unconditionally, bounded by a fallback timer (`styleQueue.ts`'s own
@@ -328,8 +504,14 @@ const CAPTURE_DECODE_SETTLE_MS = 300;
  * frame. `captureMapPng` calls this TWICE, with {@link CAPTURE_DECODE_SETTLE_MS} of real wall-clock
  * time between the two: the second call almost always resolves immediately (truly idle by then),
  * but gives any in-flight decode the time it measurably needs.
+ *
+ * Exported (P4): `Report.svelte#mountMap` reuses this SAME bounded wait before querying a zone
+ * unit's rendered polygon features -- the same "settle before reading the map" need `captureMapPng`
+ * already has, never a second wait primitive.
  */
-async function waitForIdle(map: { once(ev: "idle", cb: () => void): unknown }): Promise<void> {
+export async function waitForIdle(map: {
+  once(ev: "idle", cb: () => void): unknown;
+}): Promise<void> {
   await new Promise<void>((resolve) => {
     let done = false;
     const finish = () => {
