@@ -1056,11 +1056,15 @@ const ZONE_RESULTS_BOOT = {
         n_cells: 45790,
         area_km2: 875225.03,
         n_taxa: 2503,
+        // the three components' mean is exactly the composite below (30 + 25 + 20) / 3 = 25 --
+        // matching the real pipeline's own rule (`flower.ts`'s header: the composite IS the mean
+        // of exactly these `_ecoregion_rescaled` keys), so the flower's own centre and the
+        // composite figure beside it agree, the way a real release's numbers always do.
         metrics: {
-          extrisk_bird_ecoregion_rescaled: 42.39,
-          extrisk_mammal_ecoregion_rescaled: 31.5,
-          primprod_ecoregion_rescaled: 12.4,
-          score_extriskspcat_primprod_ecoregionrescaled_equalweights: 27.2,
+          extrisk_bird_ecoregion_rescaled: 30,
+          extrisk_mammal_ecoregion_rescaled: 25,
+          primprod_ecoregion_rescaled: 20,
+          score_extriskspcat_primprod_ecoregionrescaled_equalweights: 25,
         },
         coverage: null,
       },
@@ -1101,10 +1105,10 @@ for (const viewport of [
       await expect(coverageNote).toContainText("cells");
       await expect(coverageNote).toContainText("km²");
       await expect(coverageNote).toContainText("published composite");
-      await expect(coverageNote).toContainText("27.2");
+      await expect(coverageNote).toContainText("25.0");
 
       // the flower -- the bundle's published composite, not a re-derived number
-      await expect(results.locator(".composite-figure")).toContainText("27.2");
+      await expect(results.locator(".composite-figure")).toContainText("25.0");
       await expect(results.locator(".composite-row svg").first()).toBeVisible();
 
       // the component table -- real component rows, not an empty grid
