@@ -13,6 +13,15 @@
   import { tick, type Snippet } from "svelte";
   import Switch from "./Switch.svelte";
   import Icon from "./Icon.svelte";
+  // P5 fix (post-merge finding, e2e/shell.a11y.spec.ts "exactly one live region"): `move()`/
+  // `reset()` below used to hold their own local `announce` STATE and render a second, private
+  // `<p aria-live>` -- a real SC 4.1.3 regression against this app's own rule (announcer.ts's own
+  // header: "Exactly ONE <Announcer /> renders the actual region... every other component calls
+  // `announce(text)` and renders no region of its own"). Routed through the shared function
+  // instead, so the whole shell keeps exactly one `role="status"` region, same as every other
+  // component's own non-visual confirmation (ScoresLens.svelte's popup echo, SpeciesPicker's
+  // result-count announcement).
+  import { announce } from "./announcer";
   import {
     LAYER_GROUP_ENABLED,
     LAYER_GROUP_LABEL,
@@ -58,11 +67,6 @@
   );
 
   let expandedId = $state<LayerGroupId | null>(DATA_ROW_ID);
-  // a single, transient status line for the panel's ONE `aria-live` region (never one per row --
-  // the region announces whichever move/reset just happened; a screen-reader user hears it exactly
-  // once per action, matching how `Announcer.svelte`'s shell-wide region is already used elsewhere
-  // in this app for a non-visual confirmation of a state change).
-  let announce = $state("");
 
   function toggleExpanded(id: LayerGroupId) {
     expandedId = expandedId === id ? null : id;
@@ -111,13 +115,13 @@
     onChange(next);
     const newArrIndex = next.findIndex((e) => e.id === id);
     const displayPosition = next.length - newArrIndex; // 1 = top of the list
-    announce = `${label} moved to position ${displayPosition} of ${next.length}`;
+    announce(`${label} moved to position ${displayPosition} of ${next.length}`);
     tick().then(() => refocusRow(id, dir));
   }
 
   function reset() {
     onChange(defaultLayerStackEntries());
-    announce = "Layers reset to the default stack";
+    announce("Layers reset to the default stack");
   }
 </script>
 
@@ -215,8 +219,6 @@
       Reset layers
     </button>
   </div>
-
-  <p aria-live="polite" class="sr-only">{announce}</p>
 </div>
 
 <style>
