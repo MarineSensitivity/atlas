@@ -201,44 +201,44 @@ generator must follow:
    loudly if `@mdi/js` has no such export, so a wrong name is a build error, not a wrong picture.
 2. **Bespoke glyphs live in `src/lib/brand/glyphs/*.svg`** and are read from those files, not retyped.
 
-| app name       | source                   | used by                                                                                                  |
-| -------------- | ------------------------ | --------------------------------------------------------------------------------------------------------|
-| `layers`       | `mdiLayers`              | rail 1                                                                                                   |
-| `places`       | `mdiMapMarker`           | rail 2                                                                                                   |
-| `flower`       | **bespoke `flower.svg`** | rail 3, the flower panel's header, the report                                                            |
-| `table`        | `mdiTable`               | rail 4, "Open table"                                                                                     |
-| `report`       | `mdiFileDocumentOutline` | rail 5, top bar Report, "Add to report"                                                                  |
-| `help`         | `mdiHelpCircleOutline`   | top bar Help / tour / About                                                                              |
-| `search`       | `mdiMagnify`             | top bar search                                                                                           |
-| `share`        | `mdiShareVariant`        | top bar Share                                                                                            |
+| app name       | source                   | used by                                                                                                 |
+| -------------- | ------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `layers`       | `mdiLayers`              | rail 1                                                                                                  |
+| `places`       | `mdiMapMarker`           | rail 2                                                                                                  |
+| `flower`       | **bespoke `flower.svg`** | rail 3, the flower panel's header, the report                                                           |
+| `table`        | `mdiTable`               | rail 4, "Open table"                                                                                    |
+| `report`       | `mdiFileDocumentOutline` | rail 5, top bar Report, "Add to report"                                                                 |
+| `help`         | `mdiHelpCircleOutline`   | top bar Help / tour / About                                                                             |
+| `search`       | `mdiMagnify`             | top bar search                                                                                          |
+| `share`        | `mdiShareVariant`        | top bar Share                                                                                           |
 | `themeSun`     | `mdiBrightness7`         | theme toggle, shown while dark (switches to light) — U2a, round 2; replaces `theme`/`mdiThemeLightDark` |
 | `themeMoon`    | `mdiBrightness4`         | theme toggle, shown while light (switches to dark) — U2a, round 2                                       |
-| `version`      | `mdiChevronDown`         | the `v7 ▾` chip, every `<select>`-like control                                                  |
-| `chevronDown`  | `mdiChevronDown`         | accordion closed                                                                                         |
-| `chevronUp`    | `mdiChevronUp`           | accordion open                                                                                           |
-| `collapseSide` | `mdiChevronDoubleRight`  | panel header control 1 (desktop)                                                                         |
-| `collapseDown` | `mdiChevronDoubleDown`   | sheet header control 1 (phone)                                                                           |
-| `dockRight`    | `mdiDockRight`           | panel dock control (desktop, R1)                                                                         |
-| `dockBottom`   | `mdiDockBottom`          | panel dock control (desktop, R1)                                                                         |
-| `dockLeft`     | `mdiDockLeft`            | panel dock control (desktop, R1)                                                                         |
-| `expand`       | `mdiArrowExpand`         | header control 3 ("full"), sheet "full"                                                                  |
-| `collapseAll`  | `mdiArrowCollapse`       | "full" toggled back, panel restore from a pill                                                           |
-| `close`        | `mdiClose`               | modal close, chip dismiss                                                                                |
+| `version`      | `mdiChevronDown`         | the `v7 ▾` chip, every `<select>`-like control                                                          |
+| `chevronDown`  | `mdiChevronDown`         | accordion closed                                                                                        |
+| `chevronUp`    | `mdiChevronUp`           | accordion open                                                                                          |
+| `collapseSide` | `mdiChevronDoubleRight`  | panel header control 1 (desktop)                                                                        |
+| `collapseDown` | `mdiChevronDoubleDown`   | sheet header control 1 (phone)                                                                          |
+| `dockRight`    | `mdiDockRight`           | panel dock control (desktop, R1)                                                                        |
+| `dockBottom`   | `mdiDockBottom`          | panel dock control (desktop, R1)                                                                        |
+| `dockLeft`     | `mdiDockLeft`            | panel dock control (desktop, R1)                                                                        |
+| `expand`       | `mdiArrowExpand`         | header control 3 ("full"), sheet "full"                                                                 |
+| `collapseAll`  | `mdiArrowCollapse`       | "full" toggled back, panel restore from a pill                                                          |
+| `close`        | `mdiClose`               | modal close, chip dismiss                                                                               |
 | `info`         | `mdiInformationOutline`  | the `ⓘ` popover trigger, the About popover (R2)                                                         |
-| `maximize`     | `mdiFullscreen`          | panel header control (R1, maximize to stage)                                                             |
-| `restore`      | `mdiFullscreenExit`      | panel header control (R1, restore from maximize)                                                         |
-| `more`         | `mdiDotsHorizontal`      | phone top-bar overflow (⋯) menu (R2)                                                                  |
-| `feedback`     | `mdiMessageAlertOutline` | top bar "Feedback" (R2)                                                                                  |
-| `copy`         | `mdiContentCopy`         | copy the scientific / common name                                                                        |
-| `check`        | `mdiCheck`               | merged-model pill, selected row                                                                          |
-| `alert`        | `mdiAlertCircleOutline`  | a denied release, a failed upload                                                                        |
-| `download`     | `mdiDownload`            | CSV export, report download                                                                              |
-| `upload`       | `mdiUpload`              | Places → upload                                                                                          |
-| `draw`         | `mdiVectorPolygon`       | Places → draw                                                                                            |
-| `filter`       | `mdiFilterVariant`       | table column filter                                                                                      |
-| `sortAsc`      | `mdiArrowUp`             | table sort ascending                                                                                     |
-| `sortDesc`     | `mdiArrowDown`           | table sort descending                                                                                    |
-| `preview`      | `mdiEye`                 | the PREVIEW chip on the preview host                                                                     |
+| `maximize`     | `mdiFullscreen`          | panel header control (R1, maximize to stage)                                                            |
+| `restore`      | `mdiFullscreenExit`      | panel header control (R1, restore from maximize)                                                        |
+| `more`         | `mdiDotsHorizontal`      | phone top-bar overflow (⋯) menu (R2)                                                                    |
+| `feedback`     | `mdiMessageAlertOutline` | top bar "Feedback" (R2)                                                                                 |
+| `copy`         | `mdiContentCopy`         | copy the scientific / common name                                                                       |
+| `check`        | `mdiCheck`               | merged-model pill, selected row                                                                         |
+| `alert`        | `mdiAlertCircleOutline`  | a denied release, a failed upload                                                                       |
+| `download`     | `mdiDownload`            | CSV export, report download                                                                             |
+| `upload`       | `mdiUpload`              | Places → upload                                                                                         |
+| `draw`         | `mdiVectorPolygon`       | Places → draw                                                                                           |
+| `filter`       | `mdiFilterVariant`       | table column filter                                                                                     |
+| `sortAsc`      | `mdiArrowUp`             | table sort ascending                                                                                    |
+| `sortDesc`     | `mdiArrowDown`           | table sort descending                                                                                   |
+| `preview`      | `mdiEye`                 | the PREVIEW chip on the preview host                                                                    |
 
 ### The bespoke `flower` glyph
 
