@@ -161,7 +161,7 @@ theme, user_agent, website, restricted, image_url, issue_url, status`).
    ```
 
    (Add `vars.VITE_FEEDBACK_URL` under **Settings → Secrets and variables → Actions → Variables**
-   with the `/exec` URL as its value — a plain repository *variable*, not a *secret*: it is an
+   with the `/exec` URL as its value — a plain repository _variable_, not a _secret_: it is an
    endpoint URL that ships in the public bundle either way, the same category `VITE_AGENCY`
    already is.) This runbook does **not** edit `pages.yml` itself — that is a separate change,
    reviewed like any other workflow edit.

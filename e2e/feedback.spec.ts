@@ -204,7 +204,7 @@ test.describe("Send feedback: the dialog (U3)", () => {
     await expect(dialog.getByText(/sent to the team/i)).toBeVisible();
   });
 
-  test('unticked (the default): sending never includes the hash, or any url field at all', async ({
+  test("unticked (the default): sending never includes the hash, or any url field at all", async ({
     page,
   }) => {
     await routeBucket(page);
