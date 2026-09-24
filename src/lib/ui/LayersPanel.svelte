@@ -16,6 +16,7 @@
   import {
     LAYER_GROUP_ENABLED,
     LAYER_GROUP_LABEL,
+    canMoveLayerStackEntry,
     defaultLayerStackEntries,
     isDefaultLayerStack,
     moveLayerStackEntry,
@@ -179,7 +180,7 @@
               type="button"
               class="move-btn"
               aria-label={`Move ${label} up (toward the top of the map)`}
-              disabled={!enabled || arrIndex === stack.length - 1}
+              disabled={!enabled || !canMoveLayerStackEntry(stack, arrIndex, arrIndex + 1)}
               data-move-id={entry.id}
               data-move-dir="up"
               onclick={() => move(arrIndex, arrIndex + 1, label, "up")}
@@ -190,7 +191,7 @@
               type="button"
               class="move-btn"
               aria-label={`Move ${label} down (toward the bottom of the map)`}
-              disabled={!enabled || arrIndex === 0}
+              disabled={!enabled || !canMoveLayerStackEntry(stack, arrIndex, arrIndex - 1)}
               data-move-id={entry.id}
               data-move-dir="down"
               onclick={() => move(arrIndex, arrIndex - 1, label, "down")}

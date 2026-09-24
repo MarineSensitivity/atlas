@@ -553,11 +553,13 @@ describe("composeStyle + layerStack (R3: the layer stack model)", () => {
   // partial `layers=` URL token, but `composeStyle` takes `layerStack` directly, so a hand-built
   // array (bypassing the URL layer, e.g. a future caller or a test) had no such repair.
   // `normalizeLayerStack` fixes it at the one call site instead.
-  it("m10: a layerStack MISSING a whole group no longer throws -- it composes as if that group were appended at its default", () => {
-    // a selection (data-places) alongside the raster (data-raster) so the appended group's
-    // position is OBSERVABLE: the default stack draws data-raster BELOW data-places, so a
-    // `layerStack` missing data-raster entirely must show it landing AFTER data-places once
-    // normalizeLayerStack appends it, not merely "somewhere, without crashing."
+  it("m10: a layerStack MISSING a whole group no longer throws -- it composes as if that group were never removed", () => {
+    // review round 2: normalizeLayerStack now inserts a missing group at its own DEFAULT position
+    // (the same fix parseLayerStack's M2 already had), not appended at the array's end -- so a
+    // `layerStack` missing data-raster entirely composes BYTE IDENTICAL to the real default, not
+    // merely "somewhere, without crashing" (the weaker claim this test used to make, back when a
+    // missing group really did land in the wrong place -- after data-places/selection instead of
+    // before it).
     const opts = {
       theme: "navy" as const,
       basemapStyle: CARTO_FULL,
@@ -570,9 +572,9 @@ describe("composeStyle + layerStack (R3: the layer stack model)", () => {
     const withPartial = composeStyle({ ...opts, layerStack: partialStack });
     const withDefault = composeStyle({ ...opts, layerStack: defaultLayerStackEntries() });
 
+    expect(withPartial.layers.map((l) => l.id)).toEqual(withDefault.layers.map((l) => l.id));
     const idx = (s: typeof withPartial, id: string) => s.layers.findIndex((l) => l.id === id);
-    expect(idx(withDefault, "r_lyr")).toBeLessThan(idx(withDefault, "selection-line")); // today's rule
-    expect(idx(withPartial, "r_lyr")).toBeGreaterThan(idx(withPartial, "selection-line")); // appended AFTER
+    expect(idx(withPartial, "r_lyr")).toBeLessThan(idx(withPartial, "selection-line"));
   });
 
   it("default order: every basemap sub-role (including labels) sits UNDER the raster — today's rendering", () => {

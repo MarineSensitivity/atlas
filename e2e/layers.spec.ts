@@ -339,6 +339,38 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     expect(errors).toEqual([]);
   });
 
+  // review round 2 (re-check of M7): the PANEL never disabled a rejected move -- at the DEFAULT
+  // stack, "Selection"'s (data-places) own DOWN button is nowhere near either array boundary (it
+  // sits at arrIndex 7, the very top), so the OLD `arrIndex === 0` check left it enabled even
+  // though moveLayerStackEntry's own pin rejects any move starting FROM data-places outright. A
+  // click used to fire a phantom "moved to position N" aria-live announcement for a move that
+  // changed nothing. Proves BOTH halves: the button is disabled on load (no click needed to find
+  // out), and forcing a click through anyway (bypassing the disabled attribute) confirms the
+  // underlying model really is a no-op -- the URL never gains `layers=`.
+  test("review round 2: Selection's own move buttons are disabled on load, not just at a boundary -- clicking (bypassing disabled) is a genuine no-op", async ({
+    page,
+  }) => {
+    const errors = collectConsoleErrors(page);
+    await gotoLayersScores(page, "");
+    const selectionDown = page.getByRole("button", {
+      name: "Move Selection down (toward the bottom of the map)",
+    });
+    const selectionUp = page.getByRole("button", {
+      name: "Move Selection up (toward the top of the map)",
+    });
+    await expect(selectionDown).toBeDisabled();
+    await expect(selectionUp).toBeDisabled();
+
+    const liveRegion = page.locator(".layers-stack [aria-live]");
+    const urlBefore = page.url();
+    // force-click through the disabled attribute (Playwright's own escape hatch) -- if
+    // moveLayerStackEntry is truly a no-op here, the URL/live-region stay untouched regardless.
+    await selectionDown.click({ force: true });
+    expect(page.url()).toBe(urlBefore);
+    await expect(liveRegion).toHaveText("");
+    expect(errors).toEqual([]);
+  });
+
   // orchestrator audit item 1: "each row's eye toggle must be gated by an e2e where toggling makes
   // that layer's rendered features disappear" -- the REAL `Switch` control (not a `layers=` URL
   // shortcut), proving the panel's own accessible name wires through to `onChange` -> `composeStyle`

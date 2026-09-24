@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_LAYER_GROUPS,
   applyLayerGroupStyling,
+  canMoveLayerStackEntry,
   classifyBasemapLayer,
   DEFAULT_LAYER_STACK,
   defaultLayerStackEntries,
@@ -133,26 +134,66 @@ describe("normalizeLayerStack", () => {
     expect(out.at(-1)).toEqual({ id: "data-places", visible: true, opacity: 1 });
   });
 
-  it("a stack missing SEVERAL groups gets all of them appended, in DEFAULT_LAYER_STACK's own relative order", () => {
+  // review round 2: this used to bare-APPEND every missing group at the array's end regardless of
+  // where it belongs -- `basemap-bathymetry` (removed here alongside `data-places`) would have
+  // landed AFTER `data-places` at the very end, not right after `basemap-land` where it actually
+  // sits in DEFAULT_LAYER_STACK. Fixed via the SAME insert-at-default-position algorithm
+  // `parseLayerStack`'s M2 fix uses (`insertMissingAtDefaultPosition`) -- since both removed groups
+  // reconstruct exactly where they started, the result here is the full default order verbatim.
+  it("a stack missing SEVERAL groups gets each one inserted at its OWN default position, not appended at the end", () => {
     const partial = defaultLayerStackEntries().filter(
       (e) => e.id !== "data-places" && e.id !== "basemap-bathymetry",
     );
     const out = normalizeLayerStack(partial);
-    expect(out.map((e) => e.id)).toEqual([
-      ...partial.map((e) => e.id),
-      "basemap-bathymetry",
-      "data-places",
-    ]);
+    expect(out.map((e) => e.id)).toEqual([...DEFAULT_LAYER_STACK]);
+    expect(out.find((e) => e.id === "basemap-bathymetry")).toEqual({
+      id: "basemap-bathymetry",
+      visible: true,
+      opacity: 1,
+    });
+  });
+
+  // a case the "several groups" test above cannot distinguish from a coincidence (removing
+  // bathymetry + places happens to reconstruct the full default order either way): remove a group
+  // whose default position is NOT at the end, and confirm it lands in the MIDDLE, not appended
+  // after data-places (which STAYS present here -- a buggy bare-append would put basemap-roads
+  // AFTER it, at the very top of the map).
+  it("a single interior group missing lands in the MIDDLE at its default position, never after data-places", () => {
+    const partial = defaultLayerStackEntries().filter((e) => e.id !== "basemap-roads");
+    const out = normalizeLayerStack(partial);
+    expect(out.map((e) => e.id)).toEqual([...DEFAULT_LAYER_STACK]);
+    expect(out.at(-1)?.id).toBe("data-places"); // NOT basemap-roads
   });
 
   it("an empty stack normalises to exactly the default stack", () => {
     expect(normalizeLayerStack([])).toEqual(defaultLayerStackEntries());
   });
 
-  it("a REORDERED but complete stack is left alone (normalising is about MISSING groups, not order)", () => {
+  it("a REORDERED-among-BASEMAP-groups but complete stack is left alone (normalising is about missing groups and DATA order, not basemap order)", () => {
     const def = defaultLayerStackEntries();
-    const reordered = [def[1], def[0], ...def.slice(2)];
+    const reordered = [def[1], def[0], ...def.slice(2)]; // swaps two basemap groups only
     expect(normalizeLayerStack(reordered)).toBe(reordered);
+  });
+
+  // review round 2 (re-check of M7): the OTHER finding -- a hand-built `layerStack` (or a
+  // `layers=` URL, via `parseLayerStack` below) that names every group but violates
+  // `data-raster < data-zones < data-places` used to sail through unenforced; `composeStyle`
+  // would then rank `data-places` BELOW the raster, painting Selection under everything else.
+  it("a complete stack with data-places NOT last is repaired -- moved to the very end", () => {
+    const def = defaultLayerStackEntries();
+    const violating = [def[7], ...def.slice(0, 7)]; // data-places moved to the FRONT
+    const out = normalizeLayerStack(violating);
+    expect(out.map((e) => e.id)).toEqual([...DEFAULT_LAYER_STACK]);
+  });
+
+  it("a complete stack with data-zones before data-raster is repaired -- their two slots swap, everything else untouched", () => {
+    const def = defaultLayerStackEntries();
+    const raster = def.findIndex((e) => e.id === "data-raster");
+    const zones = def.findIndex((e) => e.id === "data-zones");
+    const violating = [...def];
+    [violating[raster], violating[zones]] = [violating[zones], violating[raster]];
+    const out = normalizeLayerStack(violating);
+    expect(out.map((e) => e.id)).toEqual([...DEFAULT_LAYER_STACK]);
   });
 });
 
@@ -386,6 +427,24 @@ describe("parseLayerStack / formatLayerStack (layers= round trip)", () => {
     expect(parsed.find((e) => e.id === "data-zones")?.visible).toBe(false);
   });
 
+  // review round 2 (re-check of M7): the live bug the re-check found -- a crafted URL naming the
+  // three data groups in a REVERSED, order-violating sequence used to be accepted verbatim by
+  // parseLayerStack (it only ever repaired MISSING ids, never checked the ones actually present),
+  // so composeStyle would rank data-places BELOW the raster: Selection painted under the score
+  // raster, and only "Reset layers" (which discards the whole token) repaired it.
+  it("a crafted URL naming data-places, data-zones, data-raster (reversed) is repaired to the correct data order", () => {
+    // this token names only the 3 data groups (reversed); the other 5 (basemap) are MISSING and
+    // get inserted at their own default positions too (M2) -- repairing BOTH defects at once lands
+    // on exactly DEFAULT_LAYER_STACK, which parseLayerStack's own contract reports as `null` ("no
+    // deviation from default"), not a returned array that happens to equal it token-for-token.
+    expect(parseLayerStack("data-places,data-zones,data-raster")).toBeNull();
+    // proved directly, bypassing the null-collapse, by keeping one real deviation (an explicit
+    // opacity) so the repaired result is NOT the bare default and its order is inspectable.
+    const parsed = parseLayerStack("data-places,data-zones:o50,data-raster")!;
+    expect(parsed.map((e) => e.id)).toEqual(DEFAULT_LAYER_STACK);
+    expect(parsed.find((e) => e.id === "data-zones")?.opacity).toBe(0.5);
+  });
+
   it("a garbage opacity flag is ignored (falls back to 1), never thrown", () => {
     const parsed = parseLayerStack("data-raster:o150,basemap-land:oxx")!;
     expect(parsed.find((e) => e.id === "data-raster")?.opacity).toBe(1);
@@ -477,5 +536,44 @@ describe("moveLayerStackEntry", () => {
       "data-zones",
       "data-places",
     ]);
+  });
+});
+
+// review round 2 (re-check of M7): the PANEL never disabled a rejected move -- the ▲/▼ buttons
+// only ever checked the array BOUNDARY (arrIndex 0 / length-1), blind to the pin/fixed-order rules
+// above, so e.g. Selection's own DOWN button (never at the boundary -- it sits at the TOP) stayed
+// enabled and firing it announced a phantom "moved to position N" for a move that changed nothing.
+// `LayersPanel.svelte` now disables a button exactly when this returns false, instead of
+// re-deriving the boundary check itself.
+describe("canMoveLayerStackEntry", () => {
+  it("a genuine move (still within bounds, no constraint violated) returns true", () => {
+    const entries = defaultLayerStackEntries();
+    expect(canMoveLayerStackEntry(entries, 0, 4)).toBe(true); // basemap-land up past labels
+  });
+
+  it("data-places' own move (either direction) always returns false -- it is pinned", () => {
+    const entries = defaultLayerStackEntries();
+    const placesIdx = entries.findIndex((e) => e.id === "data-places");
+    expect(canMoveLayerStackEntry(entries, placesIdx, placesIdx - 1)).toBe(false); // "down"
+    expect(canMoveLayerStackEntry(entries, placesIdx, placesIdx + 1)).toBe(false); // "up" (n/a, still false)
+  });
+
+  it("the entry directly below data-places cannot move any further up -- clamps to a no-op at the boundary", () => {
+    const entries = defaultLayerStackEntries();
+    const zonesIdx = entries.findIndex((e) => e.id === "data-zones"); // directly below data-places
+    const placesIdx = entries.findIndex((e) => e.id === "data-places");
+    expect(canMoveLayerStackEntry(entries, zonesIdx, placesIdx)).toBe(false);
+  });
+
+  it("a move that would invert data-raster/data-zones' relative order returns false", () => {
+    const entries = defaultLayerStackEntries();
+    const zonesIdx = entries.findIndex((e) => e.id === "data-zones");
+    const rasterIdx = entries.findIndex((e) => e.id === "data-raster");
+    expect(canMoveLayerStackEntry(entries, zonesIdx, rasterIdx - 1)).toBe(false);
+  });
+
+  it("moving to the SAME position (from === to, after clamping) returns false", () => {
+    const entries = defaultLayerStackEntries();
+    expect(canMoveLayerStackEntry(entries, 2, 2)).toBe(false);
   });
 });

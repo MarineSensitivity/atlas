@@ -122,6 +122,64 @@ export function defaultLayerStackEntries(): LayerStackEntry[] {
   return DEFAULT_LAYER_STACK.map((id) => ({ id, visible: true, opacity: 1 }));
 }
 
+/** shared by {@link parseLayerStack} (M2, review round 1) and {@link normalizeLayerStack} below:
+ * inserts every {@link DEFAULT_LAYER_STACK} id NOT already in `out` right after its own nearest
+ * EARLIER default predecessor that IS present — never appended at the array's end/top, which used
+ * to bury a partial token's own data under an opaque land fill (`parseLayerStack`'s own header has
+ * the full story). Mutates and returns `out` in place; both callers already own a throwaway array
+ * by the time they call this. */
+function insertMissingAtDefaultPosition(out: LayerStackEntry[]): LayerStackEntry[] {
+  const seen = new Set(out.map((e) => e.id));
+  for (const id of DEFAULT_LAYER_STACK) {
+    if (seen.has(id)) continue;
+    const defaultIdx = DEFAULT_LAYER_STACK.indexOf(id);
+    let insertAt = 0;
+    for (let i = defaultIdx - 1; i >= 0; i--) {
+      const pos = out.findIndex((e) => e.id === DEFAULT_LAYER_STACK[i]);
+      if (pos !== -1) {
+        insertAt = pos + 1;
+        break;
+      }
+    }
+    out.splice(insertAt, 0, { id, visible: true, opacity: 1 });
+    seen.add(id);
+  }
+  return out;
+}
+
+/**
+ * review round 2 (re-check of M7): `moveLayerStackEntry` rejects any SINGLE move that would
+ * invert `data-raster`/`data-zones`/`data-places`' relative order or pass `data-places`' own
+ * position — but a `layers=` URL can name every group explicitly, in ANY order, bypassing that
+ * incremental check entirely (`?layers=data-places,data-zones,data-raster` put Selection at the
+ * very BOTTOM, under the raster, and only "Reset layers" repaired it — the live bug the re-check
+ * found). This is the one place that GUARANTEES the final order regardless of how `entries`
+ * arrived: `data-places` is pinned to the very end (moved there if it is not already); if
+ * `data-raster`/`data-zones` are both present and inverted, their two array SLOTS are swapped (not
+ * the whole array reordered), so a token that only gets the data order wrong keeps every basemap
+ * row exactly where it named it. Returns the SAME reference when the order was already correct.
+ * `DATA_RELATIVE_ORDER` is declared further down this file, near `moveLayerStackEntry` -- fine to
+ * reference here (a `const`, but by the time this function is actually CALLED the whole module has
+ * finished evaluating top to bottom). */
+function enforceDataOrder(entries: readonly LayerStackEntry[]): readonly LayerStackEntry[] {
+  let out = entries;
+  const placesIdx = out.findIndex((e) => e.id === "data-places");
+  if (placesIdx !== -1 && placesIdx !== out.length - 1) {
+    const copy = [...out];
+    const [places] = copy.splice(placesIdx, 1);
+    copy.push(places);
+    out = copy;
+  }
+  const rasterIdx = out.findIndex((e) => e.id === "data-raster");
+  const zonesIdx = out.findIndex((e) => e.id === "data-zones");
+  if (rasterIdx !== -1 && zonesIdx !== -1 && rasterIdx > zonesIdx) {
+    const copy = [...out];
+    [copy[rasterIdx], copy[zonesIdx]] = [copy[zonesIdx], copy[rasterIdx]];
+    out = copy;
+  }
+  return out;
+}
+
 /**
  * m10 (review round 1): `style.ts#composeStyle` takes `layerStack` directly (not only through
  * {@link parseLayerStack}'s own URL-string normalisation) -- a caller that hands it a hand-built,
@@ -130,17 +188,21 @@ export function defaultLayerStackEntries(): LayerStackEntry[] {
  * is exactly the "a layer order that would cascade" failure that function's `@throws` exists to
  * catch. `parseLayerStack` already repairs a well-formed but PARTIAL `layers=` token; this handles
  * anything shorter of that, including a caller that bypasses the URL layer entirely. Any group
- * `entries` omits is appended, visible/opacity default, in {@link DEFAULT_LAYER_STACK}'s own
- * relative order — the same "missing == default, appended" rule generalized to a whole missing
- * group. A complete stack round-trips unchanged (same array reference, even).
+ * `entries` omits is inserted at its own default relative position (review round 2 fix — this used
+ * to bare-APPEND every missing group at the array's end regardless of where it belongs, which
+ * `docs/map.md` incorrectly already claimed was "its default position"; now it actually is, via
+ * the SAME {@link insertMissingAtDefaultPosition} algorithm `parseLayerStack` uses). Also enforces
+ * the data-group order ({@link enforceDataOrder}) — the round-2 re-check's OTHER finding, so a
+ * hand-built `layerStack` bypassing `parseLayerStack` entirely gets the same guarantee. A complete,
+ * correctly-ordered stack round-trips unchanged (same array reference, even).
  */
 export function normalizeLayerStack(
   entries: readonly LayerStackEntry[],
 ): readonly LayerStackEntry[] {
   const present = new Set(entries.map((e) => e.id));
   const missing = DEFAULT_LAYER_STACK.filter((id) => !present.has(id));
-  if (missing.length === 0) return entries;
-  return [...entries, ...missing.map((id) => ({ id, visible: true, opacity: 1 }))];
+  const filled = missing.length === 0 ? entries : insertMissingAtDefaultPosition([...entries]);
+  return enforceDataOrder(filled);
 }
 
 /** true iff `entries` is draw-order-and-value identical to `defaultLayerStackEntries()` — the
@@ -394,22 +456,14 @@ export function parseLayerStack(v: string | null): LayerStackEntry[] | null {
     seen.add(parsed.id);
     out.push({ id: parsed.id, visible: parsed.visible, opacity: parsed.opacity });
   }
-  for (const id of DEFAULT_LAYER_STACK) {
-    if (seen.has(id)) continue;
-    const defaultIdx = DEFAULT_LAYER_STACK.indexOf(id);
-    let insertAt = 0;
-    for (let i = defaultIdx - 1; i >= 0; i--) {
-      const pos = out.findIndex((e) => e.id === DEFAULT_LAYER_STACK[i]);
-      if (pos !== -1) {
-        insertAt = pos + 1;
-        break;
-      }
-    }
-    out.splice(insertAt, 0, { id, visible: true, opacity: 1 });
-    seen.add(id);
-  }
-  if (out.length === 0) return null;
-  return isDefaultLayerStack(out) ? null : out;
+  insertMissingAtDefaultPosition(out);
+  // review round 2: a token can name every group explicitly, in an order that violates
+  // data-raster < data-zones < data-places (`moveLayerStackEntry`'s own incremental rejection
+  // never sees a URL-supplied token at all) -- enforce it here too, the same guarantee
+  // `normalizeLayerStack` gives a hand-built `layerStack` that bypasses this parser entirely.
+  const ordered = [...enforceDataOrder(out)];
+  if (ordered.length === 0) return null;
+  return isDefaultLayerStack(ordered) ? null : ordered;
 }
 
 function formatOneToken(e: LayerStackEntry): string {
@@ -475,4 +529,22 @@ export function moveLayerStackEntry(
     .filter((id): id is DataGroupId => (DATA_RELATIVE_ORDER as readonly string[]).includes(id));
   if (gotOrder.join(",") !== wantOrder.join(",")) return [...entries];
   return out;
+}
+
+/**
+ * review round 2 (re-check of M7): the panel's ▲/▼ buttons used to disable ONLY at the array
+ * boundary (`arrIndex === 0`/`stack.length - 1`) — blind to the pin/fixed-order rules above, so
+ * "Selection"'s own DOWN button (never at the boundary; it sits at the TOP) stayed enabled and a
+ * click through it fired a phantom `aria-live` "moved to position N" announcement for a move
+ * `moveLayerStackEntry` silently rejected. `LayersPanel.svelte` calls this instead of re-deriving
+ * the boundary itself, so there is exactly one definition of "would this move do anything."
+ */
+export function canMoveLayerStackEntry(
+  entries: readonly LayerStackEntry[],
+  from: number,
+  to: number,
+): boolean {
+  const result = moveLayerStackEntry(entries, from, to);
+  if (result.length !== entries.length) return true;
+  return result.some((e, i) => e.id !== entries[i].id);
 }
