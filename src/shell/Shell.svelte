@@ -606,13 +606,28 @@
   // settled" event -- the same backstop docs/map.md's styleQueue.ts uses elsewhere in this file --
   // plus a fixed safety timeout, so a spec/host that never actually loads a tile (most hermetic
   // e2e fixtures do not route one) still clears the loader rather than leaving it up forever.
+  //
+  // U1 fix round (CI run 35956406448): this used to announce "Map loading"/"Map ready" through
+  // the ONE SHARED region (src/lib/ui/announcer.ts) -- but this loader is PERSISTENT and its own
+  // "idle" can fire at any later, unpredictable moment, long after the page first painted,
+  // clobbering the shared region's text out from under an unrelated feature's own announcement
+  // made in between (a popup's description, a chunk-load failure) -- three real specs
+  // (scores.popup, species-popup, shell.chunk-error) read a stale "Map ready" instead of their own
+  // text. Fixed with its own DEDICATED `role="status"` region (`.map-loading-status` in the
+  // template below, visually hidden) -- `Honeycomb`'s own mount-time announce is opted OUT
+  // (`announceOnMount={false}`) so nothing here ever touches the shared region at all.
   let mapLoading = $state(true);
   const MAP_LOADING_TIMEOUT_MS = 8000;
+  // the dedicated region's own text -- "Map loading" as soon as this component exists (mirroring
+  // what Honeycomb's own mount-time announce used to say), "Map ready" once hidden. A real text
+  // CHANGE either way (never re-set to the same value), which is what a polite region needs to
+  // fire a screen reader announcement.
+  let mapLoadingStatus = $state("Map loading");
 
   function hideMapLoader() {
     if (!mapLoading) return;
     mapLoading = false;
-    announce("Map ready");
+    mapLoadingStatus = "Map ready";
   }
 
   // the map's FIRST "idle" fires almost instantly, on the empty/blank style it is constructed
@@ -1369,9 +1384,16 @@
        MOVE, not ones added/removed on top of an unrelated canvas). -->
   {#if mapLoading}
     <div class="map-loading-overlay" data-testid="map-loading">
-      <Honeycomb label="Map loading" />
+      <Honeycomb label="Map loading" announceOnMount={false} />
     </div>
   {/if}
+  <!-- this loader's OWN dedicated live region (see `hideMapLoader`'s own header for why it is not
+       the shared one `src/lib/ui/announcer.ts` provides) -- `data-testid`, not a bare
+       `[role="status"]` selector, so a spec can target it unambiguously alongside the SHARED
+       Announcer region, which carries the identical role. -->
+  <div class="visually-hidden" role="status" aria-live="polite" data-testid="map-loading-status">
+    {mapLoadingStatus}
+  </div>
 
   <!-- map-chrome parity audit (2026-09-24): `attributionControl: false` (map.ts) means MapLibre
        injects nothing itself -- Shiny shows "MapLibre | © CARTO, © OpenStreetMap contributors" on
