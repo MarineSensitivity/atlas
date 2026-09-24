@@ -21,12 +21,21 @@ describe("scripts/eyes-shots.mjs: the third-pass fixes stay in place", () => {
 
   it("(a) the petal step waits for the tap label to actually appear before shooting", () => {
     expect(src).toMatch(/\.petal-label/);
-    expect(src).toMatch(/waitFor\(\{ state: "visible", timeout: 5000 \}\)/);
+    expect(src).toMatch(/waitFor\(\{ state: "visible", timeout: 2000 \}\)/);
   });
 
   it("(a) a zero-score DEGENERATE petal path (empty d) is skipped, so the click lands on real area", () => {
     expect(src).toContain('svg path.petal:not([d=""])');
   });
+
+  it(
+    "(a) a thin low-score petal that misses its bounding-box-centre click is not the only attempt -- " +
+      "every non-degenerate petal is tried in turn until one's label shows",
+    () => {
+      expect(src).toMatch(/for \(let i = 0; i < petalCount && !labelShown; i\+\+\)/);
+      expect(src).toMatch(/petals\s*\n?\s*\.nth\(i\)/);
+    },
+  );
 
   it("(b) the table step waits for 'Loading species…' to clear before shooting", () => {
     expect(src).toContain("waitForSpeciesLoaded");

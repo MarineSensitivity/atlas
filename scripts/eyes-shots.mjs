@@ -192,16 +192,27 @@ const STATES = [
       await shot(p, vp, "06-flower-half");
       // third pass (a): petals are `path.petal` (Flower.svelte), never a bare `svg path` -- and a
       // real petal can be a zero-score DEGENERATE path (`d=""`, flowerGeometry.ts) with no area to
-      // click, so this also skips those. Waits for the tap label (`.petal-label`) to actually show
-      // before shooting -- a click that lands on nothing must not silently "succeed".
-      const petal = p.locator('svg path.petal:not([d=""])').first();
-      await petal.click({ timeout: 5000 }).catch(() => {});
-      const labelShown = await p
-        .locator(".petal-label")
-        .first()
-        .waitFor({ state: "visible", timeout: 5000 })
-        .then(() => true)
-        .catch(() => false);
+      // click, so this also skips those. A low-score petal is still a real (non-degenerate) path,
+      // but a thin annular sliver's BOUNDING-BOX centre -- what Playwright's plain `.click()` targets
+      // -- can land in the box's own empty corner rather than on the painted crescent (measured: the
+      // FIRST real petal on a live v7 cell was "Bird 3.2", too thin to hit this way). Tries each
+      // non-degenerate petal in DOM order until one's tap label (`.petal-label`) actually shows,
+      // rather than assuming the first one worked.
+      const petals = p.locator('svg path.petal:not([d=""])');
+      const petalCount = await petals.count();
+      let labelShown = false;
+      for (let i = 0; i < petalCount && !labelShown; i++) {
+        await petals
+          .nth(i)
+          .click({ timeout: 5000 })
+          .catch(() => {});
+        labelShown = await p
+          .locator(".petal-label")
+          .first()
+          .waitFor({ state: "visible", timeout: 2000 })
+          .then(() => true)
+          .catch(() => false);
+      }
       if (!labelShown) log("WARN flower petal tap produced no visible label");
       await shot(p, vp, "07-flower-petal");
       await sheet(p, "Full height");
