@@ -5,47 +5,60 @@
   // computed: title + copy buttons (§7.1), the layer bar + representation toggle (§7.2), the
   // sidebar card (§7.3). The legend and the picker mount elsewhere (over the map, and in the
   // topbar's shared search field) — see Shell.svelte.
+  //
+  // R3 (round-2 plan §5 U4, Deliverable 4: "the species raster and its range are stack rows too"):
+  // this whole body is now the shared stack's "Data" row content (`src/lib/ui/LayersPanel.svelte`'s
+  // `dataControls` snippet) — the species raster/range paint through the SAME `data-raster` group
+  // the scores lens' raster does, so switching lenses keeps whatever visible/opacity/order choice
+  // the viewer already made (`sel.layers` is lens-independent view state).
   import type { SpeciesLens } from "./state.svelte";
   import SpeciesTitle from "./SpeciesTitle.svelte";
   import LayerBarView from "./LayerBarView.svelte";
   import SpeciesCardView from "./SpeciesCardView.svelte";
-  import type { Representation } from "../../lib/state/types";
+  import LibLayersPanel from "../../lib/ui/LayersPanel.svelte";
+  import type { LayerStackEntry, Representation } from "../../lib/state/types";
 
   interface Props {
     lens: SpeciesLens;
     rep: Representation;
+    layerStack: readonly LayerStackEntry[];
+    onLayerStackChange: (next: readonly LayerStackEntry[]) => void;
   }
 
-  let { lens, rep }: Props = $props();
+  let { lens, rep, layerStack, onLayerStackChange }: Props = $props();
 </script>
 
-<div class="species-panel" data-testid="species-panel">
-  {#if lens.cardError}
-    <p class="error" role="alert">Couldn't load this species ({lens.cardError.kind}).</p>
-  {:else if lens.card}
-    <SpeciesTitle sci={lens.card.sci} common={lens.card.common} />
-    {#if lens.bar}
-      <LayerBarView
-        bar={lens.bar}
-        {rep}
-        onSelectLayer={(key) => lens.selectLayer(key)}
-        onSetRepresentation={(r) => lens.setRepresentation(r)}
-      />
-    {/if}
-    {#if lens.mapInputs.notice}
-      <p class="notice" role="status">{lens.mapInputs.notice}</p>
-    {/if}
-    {#if lens.info}
-      <SpeciesCardView
-        info={lens.info}
-        asset={lens.mapInputs.asset}
-        onSelect={(key) => lens.selectLayer(key)}
-      />
-    {/if}
-  {:else if lens.loading}
-    <p>Loading…</p>
-  {/if}
-</div>
+<LibLayersPanel stack={layerStack} onChange={onLayerStackChange}>
+  {#snippet dataControls()}
+    <div class="species-panel" data-testid="species-panel">
+      {#if lens.cardError}
+        <p class="error" role="alert">Couldn't load this species ({lens.cardError.kind}).</p>
+      {:else if lens.card}
+        <SpeciesTitle sci={lens.card.sci} common={lens.card.common} />
+        {#if lens.bar}
+          <LayerBarView
+            bar={lens.bar}
+            {rep}
+            onSelectLayer={(key) => lens.selectLayer(key)}
+            onSetRepresentation={(r) => lens.setRepresentation(r)}
+          />
+        {/if}
+        {#if lens.mapInputs.notice}
+          <p class="notice" role="status">{lens.mapInputs.notice}</p>
+        {/if}
+        {#if lens.info}
+          <SpeciesCardView
+            info={lens.info}
+            asset={lens.mapInputs.asset}
+            onSelect={(key) => lens.selectLayer(key)}
+          />
+        {/if}
+      {:else if lens.loading}
+        <p>Loading…</p>
+      {/if}
+    </div>
+  {/snippet}
+</LibLayersPanel>
 
 <style>
   .species-panel {

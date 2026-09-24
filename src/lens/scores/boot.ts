@@ -4,10 +4,21 @@
 // a plain `boot` and returns plain data, so a component only calls it (CLAUDE.md).
 //
 // `boot.units[]` carries exactly ONE row (master plan D17: programarea on v2-v9, planarea on v1;
-// no subregion/ecoregion unit is ever published, whatever the geometry would support), so
-// "the ONE `boot.units` row" is read positionally (`units[0]`), never by filtering for a type —
-// there is nothing to filter among.
+// no subregion/ecoregion unit is ever published as a SELECTABLE spatial unit, whatever the geometry
+// would support), so "the ONE `boot.units` row" is read positionally (`units[0]`), never by
+// filtering for a type — there is nothing to filter among.
+//
+// R3 orchestrator audit item 2 (2026-09-24): `boot.units[]` NEVER publishes ecoregion, but the
+// release's MANIFEST does (`manifest.json`'s own `zones[]`, verified live on v7: a
+// `zone_set_key: "ecoregion_2025-06"` row with `fld: "ecoregion_key"` + a real `pmtiles` URL) —
+// the ARCHIVE exists, it is simply never offered as a selectable unit. The ported Shiny app draws
+// a standalone black 3px ecoregion outline on every scores view regardless of the selected spatial
+// unit; this app drew none, so the Atlantic/Hawaii/Puerto Rico portions of the study area (outside
+// every Program Area) had NO outline at all. `ecoregionZoneUnitFromManifest` (below) is the fix:
+// an ALWAYS-ON outline (never a fill, never a choropleth — D17 stands, this is decoration, not a
+// second selectable unit), read from the manifest, independent of `sel.unit`/`sel.out`.
 import { unitFromFld } from "../../lib/map/layers/zones";
+import type { ZoneUnitSpec } from "../../lib/map/types";
 
 export interface BootLayerRow {
   metric_key: string;
@@ -195,6 +206,70 @@ export function zoneRows(boot: unknown, unit: string): ZoneRow[] {
       n_taxa: typeof raw.n_taxa === "number" ? raw.n_taxa : null,
       metrics,
     });
+  }
+  return out;
+}
+
+interface RawManifestZoneRow {
+  fld?: unknown;
+  pmtiles?: unknown;
+}
+
+/**
+ * The standalone ecoregion OUTLINE (never a fill/choropleth — D17 stands), read from
+ * `manifest.zones[]` — the row whose `fld` is `"ecoregion_key"` (present on every v2+ release per
+ * the live registry; `null` for a manifest that has not loaded yet, carries no `zones` array, or
+ * genuinely does not publish one — e.g. a stub fixture in a test). `sourceLayer` is derived the
+ * SAME way `zoneUnitsFromBoot` derives every OTHER unit's (`unitFromFld(fld)`) — msens' own PMTiles
+ * builder names a unit's tippecanoe layer after its type, never a hand-maintained second table.
+ *
+ * `lineVisible: true`, unconditionally: this outline is NOT gated by `sel.out` (that key controls
+ * the release's own SELECTABLE unit's outline — see `zoneUnitsWithOutline`'s header) — it is
+ * decoration the ported Shiny app always drew, independent of which spatial unit is selected.
+ */
+export function ecoregionZoneUnitFromManifest(manifest: unknown): ZoneUnitSpec | null {
+  const rows = (manifest as { zones?: unknown } | null | undefined)?.zones;
+  if (!Array.isArray(rows)) return null;
+  for (const raw of rows as RawManifestZoneRow[]) {
+    if (!raw || typeof raw !== "object") continue;
+    const { fld, pmtiles } = raw;
+    if (typeof fld !== "string" || typeof pmtiles !== "string" || !fld || !pmtiles) continue;
+    if (unitFromFld(fld) !== "ecoregion") continue;
+    return { unit: "ecoregion", pmtiles, sourceLayer: "ecoregion", lineVisible: true };
+  }
+  return null;
+}
+
+interface RawManifestMetricRow {
+  metric_key?: unknown;
+  label?: unknown;
+}
+
+/**
+ * `metric_key` -> the manifest's own SHORT label (`manifest.metrics[]`, one row per
+ * metric×subregion — verified live on v7: `{metric_key:"extrisk_bird", label:"bird: ext. risk",
+ * description:"Extinction risk for bird", ...}`), deduped (first occurrence wins; the label is the
+ * same across every subregion for a given key). This is DISTINCT from `boot.layers[].label`, which
+ * (orchestrator audit item 3) actually carries the LONG description text ("Primary productivity:
+ * Oregon State Vertically Generalized Production Model (VGPM) from ... 2014 to 2023" for
+ * `primprod`) — the ported Shiny app's short names ("score", "fish: ext. risk, ecorgn") come from
+ * here, never truncated boot-layer text. `{}` when the manifest has not loaded yet or carries no
+ * `metrics` array (a caller falls back to `boot.layers[].label`, never a blank option).
+ */
+export function metricLabelsFromManifest(manifest: unknown): Record<string, string> {
+  const rows = (manifest as { metrics?: unknown } | null | undefined)?.metrics;
+  const out: Record<string, string> = {};
+  if (!Array.isArray(rows)) return out;
+  for (const raw of rows as RawManifestMetricRow[]) {
+    if (
+      raw &&
+      typeof raw === "object" &&
+      typeof raw.metric_key === "string" &&
+      typeof raw.label === "string" &&
+      !(raw.metric_key in out)
+    ) {
+      out[raw.metric_key] = raw.label;
+    }
   }
   return out;
 }

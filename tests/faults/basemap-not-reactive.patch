@@ -1,9 +1,9 @@
 diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
-index 50b97d0..4079525 100644
+index b0f0240..1dd2e6c 100644
 --- a/src/shell/Shell.svelte
 +++ b/src/shell/Shell.svelte
-@@ -473,9 +473,11 @@
-   // for, now structural rather than a comment to remember.
+@@ -707,9 +707,11 @@
+ 
    const composeStyleInput = $derived({
      theme: resolvedTheme,
 -    // the reactive half of the 0.10.20 basemap fix: reading this is what makes the effect below
@@ -15,5 +15,5 @@ index 50b97d0..4079525 100644
 +    // landed, and a style.json arriving after the last reactive change means the basemap
 +    // never paints at all, for the life of the page.
      projection: sel.proj,
-     zones: zonesForStyle,
+     zones: ecoregionUnit ? [...zonesForStyle, ecoregionUnit] : zonesForStyle,
      raster:

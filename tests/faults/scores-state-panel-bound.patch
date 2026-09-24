@@ -1,46 +1,44 @@
 diff --git a/src/lens/scores/ScoresLens.svelte b/src/lens/scores/ScoresLens.svelte
-index 1e505a9..20ee469 100644
+index 5fff8bb..b7eb42a 100644
 --- a/src/lens/scores/ScoresLens.svelte
 +++ b/src/lens/scores/ScoresLens.svelte
-@@ -46,10 +46,31 @@
-      * `unit`/`lyr`/`manifestOverlays`/`selection`/`mapSelection`/`showOutsidePra`/`mapExtra` all
-      * come from here now, not recomputed a second time. */
-     lens: ScoresLens;
+@@ -56,6 +56,10 @@
+      * and the map can never disagree about what the current stack is. */
+     layerStack: readonly LayerStackEntry[];
+     onLayerStackChange: (next: readonly LayerStackEntry[]) => void;
 +    // SEEDED FAULT (tests/faults/scores-state-panel-bound.patch): reinstates the 0.10.17 bug --
 +    // Shell.svelte reads this bucket instead of `lens.mapExtra` directly, so the map only ever
 +    // sees a value while THIS component is mounted.
-+    mapExtra?: ScoresLens["mapExtra"] | null;
++    mapExtra?: import("./mapInputs").ScoresMapInputs | null;
    }
  
--  let { sel, selStore, boot, manifest, ver, mapHandle, activeTool, fallbackBody, lens }: Props =
--    $props();
-+  let {
-+    sel,
-+    selStore,
-+    boot,
-+    manifest,
-+    ver,
-+    mapHandle,
-+    activeTool,
-+    fallbackBody,
-+    lens,
+   let {
+@@ -70,12 +74,20 @@
+     lens,
+     layerStack,
+     onLayerStackChange,
 +    mapExtra = $bindable(null),
-+  }: Props = $props();
-+
+   }: Props = $props();
+ 
+   const unit = $derived(lens.unit);
+   const lyr = $derived(lens.lyr);
+   const manifestOverlays = $derived(lens.manifestOverlays);
+ 
 +  // SEEDED FAULT (tests/faults/scores-state-panel-bound.patch): only runs while this component is
 +  // mounted -- a collapsed desktop panel never mounts it, so `mapExtra` (and therefore the map)
 +  // never sees a value.
 +  $effect(() => {
 +    mapExtra = lens.mapExtra;
 +  });
- 
-   const unit = $derived(lens.unit);
-   const lyr = $derived(lens.lyr);
++
+   // the selection AS THE FLOWER/SPECIES/TABLE PANELS SEE IT (`cell:<id>` keeps the raw cell id —
+   // `flower.ts`/`species.ts` need it verbatim for titles and headers).
+   const selection = $derived(lens.selection);
 diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
-index 9fd5636..5d04b70 100644
+index 46b200f..7f14861 100644
 --- a/src/shell/Shell.svelte
 +++ b/src/shell/Shell.svelte
-@@ -500,6 +500,11 @@
+@@ -521,12 +521,17 @@
    // every read of it below is null-safe and falls back to "the shell's own base view", same as
    // the old `{}` default did.
    let scoresLens = $state<ScoresLensState | null>(null);
@@ -48,11 +46,18 @@ index 9fd5636..5d04b70 100644
 +  // purpose -- a bucket only ScoresLens.svelte (the PANEL body) ever writes, via bind:mapExtra,
 +  // instead of reading scoresLens.mapExtra directly. A collapsed desktop panel never mounts that
 +  // component, so this stays null forever.
-+  let scoresPanelMapExtra = $state<ScoresLensState["mapExtra"] | null>(null);
++  let scoresPanelMapExtra = $state<import("../lens/scores/mapInputs").ScoresMapInputs | null>(null);
+ 
+   // P1 fix: hoisted out of the template (it used to be a `{@const}` inline where the legend chip
+   // rendered) so BOTH the floating placement and the "full" detent's inline-in-sheet placement can
+   // read the SAME value without recomputing it or duplicating the lens/kind branch.
+   const phoneLegend = $derived(
+-    sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresLens?.mapExtra.legend ?? null),
++    sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresPanelMapExtra?.legend ?? null),
+   );
  
    // G-25 fix: `Sel.out`'s ONE effect on the map, applied to whichever `zones` array (the shell's
-   // own outline-only `zoneUnits`, or the scores lens' richer `scoresLens.mapExtra.zones`) is about
-@@ -512,7 +517,7 @@
+@@ -540,7 +545,7 @@
    // never mounted on a species view in the first place.
    const zonesForStyle = $derived<ZoneUnitSpec[]>(
      zoneUnitsWithOutline(
@@ -61,9 +66,9 @@ index 9fd5636..5d04b70 100644
        sel.out,
      ),
    );
-@@ -775,11 +780,11 @@
+@@ -833,11 +838,11 @@
      projection: sel.proj,
-     zones: zonesForStyle,
+     zones: ecoregionUnit ? [...zonesForStyle, ecoregionUnit] : zonesForStyle,
      raster:
 -      sel.lens === "scores" ? (scoresLens?.mapExtra.raster ?? null) : speciesLens.mapInputs.raster,
 +      sel.lens === "scores" ? (scoresPanelMapExtra?.raster ?? null) : speciesLens.mapInputs.raster,
@@ -73,32 +78,23 @@ index 9fd5636..5d04b70 100644
      selection:
 -      placesSelection ?? (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
 +      placesSelection ?? (sel.lens === "scores" ? (scoresPanelMapExtra?.selection ?? null) : null),
+     layerStack,
    });
  
-   $effect(() => {
-@@ -1331,6 +1336,7 @@
-             {activeTool}
-             fallbackBody={TOOL_BODY[activeTool]}
+@@ -1417,6 +1422,7 @@
              lens={scoresLens}
+             {layerStack}
+             {onLayerStackChange}
 +            bind:mapExtra={scoresPanelMapExtra}
            />
          {:else}
            <p>{TOOL_BODY[activeTool]}</p>
-@@ -1365,7 +1371,7 @@
-        -- `isPhone` gates the two branches, so exactly one ever renders, never both. -->
-   {#if isPhone}
-     {@const legend =
--      sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresLens?.mapExtra.legend ?? null)}
-+      sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresPanelMapExtra?.legend ?? null)}
-     {#if legend}
-       <div class="legend-chip-region">
-         <LegendChip title={legend.title}>
-@@ -1384,7 +1390,7 @@
-     <Comp legend={speciesLens.mapInputs.legend} />
+@@ -1480,7 +1486,7 @@
    {:else if sel.lens === "scores" && ScoresLegendComp}
      {@const Comp = ScoresLegendComp}
--    <Comp legend={scoresLens?.mapExtra.legend ?? null} />
-+    <Comp legend={scoresPanelMapExtra?.legend ?? null} />
+     <div class="lens-legend-region">
+-      <Comp legend={scoresLens?.mapExtra.legend ?? null} />
++      <Comp legend={scoresPanelMapExtra?.legend ?? null} />
+     </div>
    {/if}
  </main>
- 

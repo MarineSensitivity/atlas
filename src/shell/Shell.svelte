@@ -41,18 +41,32 @@
     viewportBucket,
     type PanelGeometry,
   } from "../lib/ui/panelGeometry";
-  import { loadSheetDetent } from "../lib/ui/sheetGeometry";
+  import {
+    DEFAULT_SHEET_DETENT,
+    legendChipMode,
+    loadSheetDetent,
+    type SheetGeometry,
+  } from "../lib/ui/sheetGeometry";
   import { createSelStore } from "../lib/state/sel.svelte";
   import { formatSel } from "../lib/state/codec";
-  import { DEFAULT_SEL, defaultOut, resolveTheme } from "../lib/state/types";
+  import { DEFAULT_SEL, defaultOut, resolveTheme, type LayerStackEntry } from "../lib/state/types";
   import { createMap, type MapHandle } from "../lib/map/map";
   import { composeStyle, BASEMAP_LAYER_PREFIX } from "../lib/map/style";
+  // R3 (round-2 plan §5 U4): the layer stack — resolved here (the SAME resolved object both
+  // `composeStyleInput` and each lens's `LayersPanel` mount read, per this task's own instructions
+  // to keep Shell.svelte's edits to exactly "the panel mount and the composeStyle input").
+  import { defaultLayerStackEntries, isDefaultLayerStack } from "../lib/map/layerStack";
   import {
     warmBasemapStyles,
     BASEMAP_ATTRIBUTION,
     type CartoStyleLike,
   } from "../lib/map/layers/basemap";
   import { zoneUnitsFromBoot, zoneUnitsWithOutline } from "../lib/map/layers/zones";
+  // R3 orchestrator audit item 2: the standalone ecoregion outline, read from the release's
+  // MANIFEST (never `boot.units[]`, which stays exactly one row per D17) -- a plain `.ts` reader,
+  // not a `.svelte` SFC, so it is exempt from `tests/shell/lazy-lens-imports.test.ts`'s static-
+  // import ban the same way `state.svelte.ts` already is (that file's own header explains why).
+  import { ecoregionZoneUnitFromManifest } from "../lens/scores/boot";
   import { studyAreaFromBoot, type StudyArea } from "../lib/map/interaction";
   import {
     INITIAL_AREA_CAMERA_STATE,
@@ -171,6 +185,13 @@
   // shell.css position `#panel-region` (data-dock/data-maximized/`--panel-size`, below), per this
   // file's "the shell owns WHERE it floats" convention (docs/map.md's sibling rule for the map).
   let panelGeom = $state<PanelGeometry>(DEFAULT_PANEL_GEOMETRY);
+  // P1 fix: Sheet.svelte's own mirror of `panelGeom` above -- its `ongeometry` reports the
+  // sheet's current detent + REAL measured height (svh-based CSS, not a number this shell could
+  // otherwise know), which is what lets the floating legend chip track the sheet's actual top
+  // edge (`legendChipMode`, `.legend-chip-region`'s `--legend-chip-sheet-height`, below) instead
+  // of sitting at a fixed offset that used to land on the sheet's own header controls at "peek"
+  // and the last table row at "half" (Ben's phone report, 2026-09-24).
+  let sheetGeom = $state<SheetGeometry>({ detent: DEFAULT_SHEET_DETENT, height: 0 });
   let railFocusObserver: MutationObserver | undefined;
   let railFocusDeadline = 0;
   // the observer below is created ONCE and lives for the shell's whole lifetime; this is what it
@@ -501,6 +522,13 @@
   // the old `{}` default did.
   let scoresLens = $state<ScoresLensState | null>(null);
 
+  // P1 fix: hoisted out of the template (it used to be a `{@const}` inline where the legend chip
+  // rendered) so BOTH the floating placement and the "full" detent's inline-in-sheet placement can
+  // read the SAME value without recomputing it or duplicating the lens/kind branch.
+  const phoneLegend = $derived(
+    sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresLens?.mapExtra.legend ?? null),
+  );
+
   // G-25 fix: `Sel.out`'s ONE effect on the map, applied to whichever `zones` array (the shell's
   // own outline-only `zoneUnits`, or the scores lens' richer `scoresLens.mapExtra.zones`) is about
   // to reach `composeStyle()` below -- see `zoneUnitsWithOutline`'s own header. This is the ONLY
@@ -515,6 +543,27 @@
       sel.lens === "scores" ? (scoresLens?.mapExtra.zones ?? zoneUnits) : zoneUnits,
       sel.out,
     ),
+  );
+
+  // R3 orchestrator audit item 2: the standalone ecoregion outline (black, 3px --
+  // `layers/zones.ts#ZONE_LINE_STYLE.ecoregion`, unchanged) drawn on every SCORES view,
+  // independent of `sel.unit`/`sel.out` -- `null` when the release's manifest has not loaded yet or
+  // does not publish one. Appended AFTER `zoneUnitsWithOutline()` (never fed through it): this is
+  // decoration, not the release's one selectable unit, so `sel.out` never hides it. Kept OUT of
+  // `zoneUnits`/`zonesForStyle` (Places/pick-mode's own inputs) so drawing it can never make
+  // "ecoregion" a pickable zone type by accident.
+  //
+  // m9 (review round 1): a release whose OWN `boot.units[]` already publishes an "ecoregion"
+  // selectable unit (so `zonesForStyle` already carries one, e.g. via `sel.out=ecoregion`) must
+  // not ALSO get this manifest-published outline appended -- `composeStyle` keys every zone unit's
+  // ids on `unit` (`ecoregion_ln`, …), so two "ecoregion" entries in the same `zones` array collide
+  // into duplicate layer ids and break the style. No release does this today (the manifest outline
+  // exists precisely BECAUSE no release has an ecoregion `boot` unit), but the guard is cheap and
+  // makes the combination structurally safe rather than "currently doesn't happen to occur."
+  const ecoregionUnit = $derived(
+    sel.lens === "scores" && !zonesForStyle.some((u) => u.unit === "ecoregion")
+      ? ecoregionZoneUnitFromManifest(manifest)
+      : null,
   );
 
   // usability M4: "the default camera frames Canada; panel/sheet cover the study area" -- the
@@ -767,19 +816,29 @@
   // optional-chain call) means it is ALWAYS evaluated regardless of whether `mapHandle` happens to
   // be null yet -- the same "defensive belt" the old local `raster`/`range` statements existed
   // for, now structural rather than a comment to remember.
+  // R3 (round-2 plan §5 U4): resolved ONCE here — `sel.layers` (URL deltas) filled in with the
+  // release's default stack (`defaultLayerStackEntries()`, a no-op on `composeStyle`'s own default
+  // when nothing has been customized). Both lens panels below and `composeStyleInput` read this
+  // SAME value, so the panel's rows and what the map actually draws can never disagree.
+  const layerStack = $derived<readonly LayerStackEntry[]>(sel.layers ?? defaultLayerStackEntries());
+  function onLayerStackChange(next: readonly LayerStackEntry[]) {
+    selStore.set({ layers: isDefaultLayerStack(next) ? undefined : next });
+  }
+
   const composeStyleInput = $derived({
     theme: resolvedTheme,
     // the reactive half of the 0.10.20 basemap fix: reading this is what makes the effect below
     // re-run (and the basemap actually appear) when the CARTO fetch resolves late.
     basemapStyle: basemapStyles[resolvedTheme],
     projection: sel.proj,
-    zones: zonesForStyle,
+    zones: ecoregionUnit ? [...zonesForStyle, ecoregionUnit] : zonesForStyle,
     raster:
       sel.lens === "scores" ? (scoresLens?.mapExtra.raster ?? null) : speciesLens.mapInputs.raster,
     range: sel.lens === "species" ? speciesLens.mapInputs.range : null,
     overlays: sel.lens === "scores" ? (scoresLens?.mapExtra.overlays ?? []) : [],
     selection:
       placesSelection ?? (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
+    layerStack,
   });
 
   $effect(() => {
@@ -1283,6 +1342,27 @@
        read them. Absent on the phone (Panel never mounts there; Sheet.svelte keeps its own
        detents), which is also why the desktop-only CSS rules never need an `isPhone` guard of
        their own. -->
+  <!-- P1 fix: declared here, as a sibling of BOTH `#panel-region` (below) and the floating legend
+       region (further below, after `#panel-region` closes) -- a snippet is only in scope within
+       the block it is declared in, so it has to live at THIS level to be referenced from both
+       `<Sheet>`'s `headerExtra` prop (inside `#panel-region`) and the floating placement (a
+       sibling of `#panel-region`, outside it). Exactly one `<LegendChip>` instance exists no
+       matter which placement is active -- switching between them (the sheet crossing the "full"
+       boundary) unmounts/remounts it, which simply closes an open modal rather than leaving two
+       chips live at once. -->
+  {#snippet legendChipContent()}
+    {#if phoneLegend}
+      <LegendChip title={phoneLegend.title}>
+        {#if sel.lens === "species" && SpeciesLegendComp}
+          {@const Comp = SpeciesLegendComp}
+          <Comp legend={phoneLegend} />
+        {:else if sel.lens === "scores" && ScoresLegendComp}
+          {@const Comp = ScoresLegendComp}
+          <Comp legend={phoneLegend} />
+        {/if}
+      </LegendChip>
+    {/if}
+  {/snippet}
   <div
     class="panel-region"
     id="panel-region"
@@ -1318,7 +1398,7 @@
       {:else if sel.lens === "species" && activeTool === "layers"}
         {#if SpeciesLensPanelComp}
           {@const Comp = SpeciesLensPanelComp}
-          <Comp lens={speciesLens} rep={sel.rep} />
+          <Comp lens={speciesLens} rep={sel.rep} {layerStack} {onLayerStackChange} />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
         {/if}
@@ -1335,6 +1415,8 @@
             {activeTool}
             fallbackBody={TOOL_BODY[activeTool]}
             lens={scoresLens}
+            {layerStack}
+            {onLayerStackChange}
           />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
@@ -1344,7 +1426,14 @@
       {/if}
     {/snippet}
     {#if isPhone}
-      <Sheet id="shell" title={TOOL_LABEL[activeTool]}>
+      <Sheet
+        id="shell"
+        title={TOOL_LABEL[activeTool]}
+        ongeometry={(g) => (sheetGeom = g)}
+        headerExtra={phoneLegend && legendChipMode(sheetGeom.detent) === "inline"
+          ? legendChipContent
+          : undefined}
+      >
         {@render panelBody()}
       </Sheet>
     {:else}
@@ -1366,29 +1455,33 @@
        branches render here, lazy, the same way every other lens component in this file is. On the
        phone the desktop-only floating legends (`display:none` below 900px, "no room beside the
        sheet") are replaced by ONE compact chip (LegendChip.svelte) sharing the SAME legend object
-       -- `isPhone` gates the two branches, so exactly one ever renders, never both. -->
+       -- `isPhone` gates the two branches, so exactly one ever renders, never both.
+
+       P1 fix (Ben's phone report, 2026-09-24): the chip used to float here at a FIXED offset
+       regardless of the sheet's detent, which put it on top of the sheet's own header controls at
+       "peek" and the last table row at "half"/"full". It now only floats here while
+       `legendChipMode` says "floating" (peek/half, or any future drag-resized height in between
+       -- see sheetGeometry.ts); at "full" it moves INSIDE the sheet instead (`headerExtra`,
+       above), so this region renders nothing then. `--legend-chip-sheet-height` (read by
+       shell.css's `.legend-chip-region`) is the sheet's REAL measured height (`sheetGeom.height`),
+       so the chip tracks the sheet's actual top edge -- the CSS fallback (`0px`, shell.css) is
+       what "no sheet mounted yet" degrades to, the same position the chip has always had. -->
   {#if isPhone}
-    {@const legend =
-      sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresLens?.mapExtra.legend ?? null)}
-    {#if legend}
-      <div class="legend-chip-region">
-        <LegendChip title={legend.title}>
-          {#if sel.lens === "species" && SpeciesLegendComp}
-            {@const Comp = SpeciesLegendComp}
-            <Comp {legend} />
-          {:else if sel.lens === "scores" && ScoresLegendComp}
-            {@const Comp = ScoresLegendComp}
-            <Comp {legend} />
-          {/if}
-        </LegendChip>
+    {#if phoneLegend && legendChipMode(sheetGeom.detent) === "floating"}
+      <div class="legend-chip-region" style={`--legend-chip-sheet-height: ${sheetGeom.height}px`}>
+        {@render legendChipContent()}
       </div>
     {/if}
   {:else if sel.lens === "species" && SpeciesLegendComp}
     {@const Comp = SpeciesLegendComp}
-    <Comp legend={speciesLens.mapInputs.legend} />
+    <div class="lens-legend-region">
+      <Comp legend={speciesLens.mapInputs.legend} />
+    </div>
   {:else if sel.lens === "scores" && ScoresLegendComp}
     {@const Comp = ScoresLegendComp}
-    <Comp legend={scoresLens?.mapExtra.legend ?? null} />
+    <div class="lens-legend-region">
+      <Comp legend={scoresLens?.mapExtra.legend ?? null} />
+    </div>
   {/if}
 </main>
 
