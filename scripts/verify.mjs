@@ -475,15 +475,26 @@ function speciesRangeProbe() {
  *
  * `out="ecoregion"` is the SAME structural zero as `out="none"`, not a bug: plan D17
  * (`src/lens/scores/boot.ts`'s own header, `docs/parity.html`'s intentional difference **ID-03**,
- * "Only Program Areas are drawn as a choropleth") — `boot.units[]` carries exactly ONE unit per
- * release (`programarea` on v2-v9, `planarea` on v1; confirmed against the real, orchestrator-
- * verified v7/v9 bundles trimmed into `tests/lens/scores/fixtures.ts`) and no release EVER
- * publishes a second, ecoregion-outline unit -- there is no PMTiles archive for `out=ecoregion`
- * to draw, on ANY release, so the zone LINE layer renders zero features by construction. ID-03's
+ * "Only Program Areas are drawn as a choropleth") — `boot.units[]` carries exactly ONE
+ * SELECTABLE unit per release (`programarea` on v2-v9, `planarea` on v1; confirmed against the
+ * real, orchestrator-verified v7/v9 bundles trimmed into `tests/lens/scores/fixtures.ts`) and no
+ * release EVER publishes a second, ecoregion-type SELECTABLE unit -- there is no PMTiles archive
+ * `out=ecoregion`/`zoneUnitsWithOutline()` (what THIS probe exercises, via `sel.out`) could ever
+ * pick, on ANY release, so `programarea_ln` (the one line layer `scoresOutlineProbe` below
+ * queries) renders zero features by construction whenever `out` is not `"programarea"`. ID-03's
  * own text ("subregion and ecoregion scores are still published and still used... they are simply
  * never drawn as a choropleth") is about FILLS, but the same "exactly one published unit" fact
- * governs outlines too -- there is only ever one `ZoneUnitSpec`, so `out=ecoregion` has nothing to
- * outline either. `out="programarea"` is the one real, always-published unit and must render.
+ * governs outlines too -- there is only ever one SELECTABLE `ZoneUnitSpec`, so `out=ecoregion` has
+ * nothing of its own to outline either. `out="programarea"` is the one real, always-published unit
+ * and must render.
+ *
+ * R3 orchestrator audit item 2 (unrelated to `out=` or this probe) separately draws a STANDALONE,
+ * always-on ecoregion outline read from the release's MANIFEST (`ecoregionZoneUnitFromManifest`,
+ * `src/shell/Shell.svelte`'s `ecoregionUnit`) on its own `ecoregion_ln` layer id -- appended
+ * outside `zoneUnitsWithOutline`/`zonesForStyle` entirely, so `sel.out` never reaches it (see
+ * `e2e/layers.spec.ts`'s own "ecoregion boundaries" describe block). It is a DIFFERENT PMTiles
+ * source from the one this paragraph is about, and does not change anything above: it never makes
+ * "ecoregion" a pickable/SELECTABLE unit, so it is not what `out=ecoregion` could ever mean.
  */
 function scoresOutlineProbe(out) {
   return async (page) => {

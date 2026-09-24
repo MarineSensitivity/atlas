@@ -439,7 +439,14 @@ describe("composeStyle + zoneUnitsWithOutline (G-25: Sel.out reaches the rendere
     expect(line && "layout" in line ? line.layout : null).toEqual({ visibility: "none" });
   });
 
-  it('out="ecoregion" on a release that only publishes programarea: the SAME hidden-line result as "none" -- not a bug, plan D17 (no release ever publishes a second, ecoregion-outline unit)', () => {
+  // m8 (review round 1): "no release ever publishes a second, ecoregion-outline unit" is scoped to
+  // SELECTABLE units (`boot.units[]`, what `zoneUnitsWithOutline`/`out=` picks from) -- it is not a
+  // claim about ecoregion PMTiles existing at all. R3 orchestrator audit item 2 separately draws a
+  // standalone, always-on ecoregion outline read from the release's MANIFEST
+  // (`ecoregionZoneUnitFromManifest`, `Shell.svelte`'s `ecoregionUnit`), appended OUTSIDE this
+  // function's `zones` input entirely (see `e2e/layers.spec.ts`'s "ecoregion boundaries" describe
+  // block) -- `composeStyle` here never sees it, so this test's claim is unaffected by it.
+  it('out="ecoregion" on a release that only publishes programarea: the SAME hidden-line result as "none" -- not a bug, plan D17 (no release ever publishes a second, SELECTABLE ecoregion-outline unit)', () => {
     const s = composeStyle({
       theme: "navy",
       basemap: null,
