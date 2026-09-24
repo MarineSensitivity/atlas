@@ -61,9 +61,12 @@
   ];
 
   function onAreaChange(value: string) {
+    // atlas-8 defect fix (owner report, 2026-09-24): the camera used to fly from HERE, the panel
+    // BODY — which never runs for a `sel.area` arriving from the URL on load (a collapsed/unmounted
+    // panel means it never runs at all). `Shell.svelte`'s own `$effect` (camera.ts's
+    // `shouldFlyToArea`) now owns the fly, for both load and change; clearing `map` here is what
+    // lets it (its own guard skips while an explicit `sel.map` camera is set).
     selStore.set({ area: value, map: undefined });
-    const area = studyAreas.find((a: StudyArea) => a.key === value);
-    if (area && mapHandle) mapHandle.flyTo(area);
   }
 
   function onUnitChange(value: string) {

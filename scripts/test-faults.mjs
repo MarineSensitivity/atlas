@@ -438,6 +438,73 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4400" },
   },
+  // atlas-4 fix round 2 (owner-reported defect, 2026-09-24, "Flower plot, nothing selected"): the
+  // flower drew only ~3-4 of 8 real petals, root-caused to a hub disc drawn on top of full
+  // pie-slice petals silently covering any component scoring <= the hub's own radius (24) --
+  // NEVER a color/category mapping gap (every real category already had a defined `--cat-*`
+  // token, `flowerGeometry.ts`'s header). This patch drops exactly one such mapping (categories.ts's
+  // `other: "other"` SYNONYMS row), which makes `categoryFor("other")` fall back to
+  // `NO_DATA_CATEGORY` (the grey "not reportable" token, label "No data") -- a DIFFERENT, adjacent
+  // failure mode from the geometry bug this round actually fixed, but one `e2e/scores.flower.spec.ts`
+  // is positioned to catch directly (its own "no petal's accessible name reads 'No data'" case) and
+  // one this fix's real v7 fixture (which has an "Other" component) makes newly reachable.
+  {
+    id: "flower-petal-colour-dropped",
+    patch: "tests/faults/flower-petal-colour-dropped.patch",
+    describe:
+      "categories.ts loses the 'other' SYNONYMS row -- the flower's real 'Other' component " +
+      "silently falls back to the grey NO_DATA_CATEGORY token instead of its own color " +
+      "(atlas-4 fix round 2's real v7 flower_default.FULL fixture has an Other component)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.flower.spec.ts",
+      "-g",
+      "no petal's accessible name reads 'No data'",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4393" },
+  },
+  // U6/U2a (round 2): the load-bearing rule behind U2a's default-theme change -- DEFAULT_SEL.theme
+  // reverting from "dark" to "auto" would silently undo the whole feature (a first-time visitor on
+  // a light-OS system would see the paper theme again, docs/usability.md's original finding). This
+  // patch is exactly that one-line revert and must turn tests/state/codec.test.ts's own "theme:
+  // tri-state, default 'dark'" describe block red (5 assertions: the bare default, the garbage
+  // fallback, and the now-flipped formatSel omit/write rules for "dark" vs "auto"). Proven RED
+  // against this exact patch (vitest -- 5 failed, 75 passed) before being committed.
+  {
+    id: "theme-default-reverts-to-auto",
+    patch: "tests/faults/theme-default-reverts-to-auto.patch",
+    describe:
+      'DEFAULT_SEL.theme reverts from "dark" to "auto" -- a first-time visitor on a light-OS ' +
+      "system sees the paper theme again, undoing U2a's default-theme change",
+    gate: ["npx", "vitest", "run", "tests/state/codec.test.ts"],
+  },
+  // S-01 (owner report, 2026-09-24, live v7): `?area=AK` rendered the DEFAULT camera. The old
+  // evidence for this rule (`flyToStudyArea` unit tests) spied on `flyTo` in isolation and could
+  // not fail -- `flyToStudyArea` has no caller anywhere in `src/` (an Opus 5.5 audit finding). This
+  // patch reproduces the ORIGINAL defect's effect directly at the decision point
+  // (`shouldFlyToArea` always answers "don't fly") and must turn the real end-to-end spec red.
+  {
+    id: "study-area-camera-ignored",
+    patch: "tests/faults/study-area-camera-ignored.patch",
+    describe:
+      "camera.ts#shouldFlyToArea always returns fly:false -- sel.area never reaches the camera " +
+      "again, on load or on change (the owner's original live defect, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.studyarea.spec.ts",
+      "-g",
+      "flies to Alaska on LOAD",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4398" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

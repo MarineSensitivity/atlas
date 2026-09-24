@@ -2,10 +2,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CAMERA_WRITE_DELAY_MS,
+  INITIAL_AREA_CAMERA_STATE,
   boundsToCameraView,
   cameraEqual,
   createCameraWriter,
   roundCamera,
+  shouldFlyToArea,
+  type AreaCameraState,
 } from "../../src/lib/map/camera";
 import { formatSel, parseSel } from "../../src/lib/state/codec";
 import { DEFAULT_SEL } from "../../src/lib/state/types";
@@ -195,5 +198,57 @@ describe("boundsToCameraView", () => {
       { minZoom: 3, maxZoom: 18 },
     );
     expect(zoom).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// the owner's 2026-09-24 defect: `?area=AK` rendered the default camera. Root cause was
+// `Shell.svelte` resolving the initial study area against a literal `null` boot, plus the ONLY
+// `flyTo` call living in `LayersPanel.svelte`'s `onchange` (the panel body, which never runs for a
+// URL-driven `sel.area` on load) — see camera.ts's own header just above `shouldFlyToArea`.
+describe("shouldFlyToArea — sel.area drives the camera on load AND on change", () => {
+  it("flies on the FIRST resolution when ?area= is explicit (non-default) — this is the bug fix", () => {
+    const { fly, next } = shouldFlyToArea("AK", "FULL", INITIAL_AREA_CAMERA_STATE);
+    expect(fly).toBe(true);
+    expect(next).toEqual({ flownAreaKey: "AK" });
+  });
+
+  it("does NOT fly on the first resolution when sel.area is still the default", () => {
+    // boot just arrived; sel.area was never set explicitly — the map was already constructed
+    // pointed roughly there (createMap's own area fallback), so this must be a no-op: precedence
+    // for a LATER round that pads that initial default camera for docked panel/sheet chrome (an
+    // area=-driven fly must win over the default fit, but the default fit itself is untouched
+    // here — this is exactly why that precedence needs a comment AND a test).
+    const { fly, next } = shouldFlyToArea("FULL", "FULL", INITIAL_AREA_CAMERA_STATE);
+    expect(fly).toBe(false);
+    expect(next).toEqual({ flownAreaKey: "FULL" });
+  });
+
+  it("does not re-fly to the same key twice in a row (no-fight: a re-render is not a change)", () => {
+    const first = shouldFlyToArea("AK", "FULL", INITIAL_AREA_CAMERA_STATE);
+    const second = shouldFlyToArea("AK", "FULL", first.next);
+    expect(second.fly).toBe(false);
+  });
+
+  it("flies on a LATER change to a different area (the select, or the back button)", () => {
+    const afterFirst = shouldFlyToArea("AK", "FULL", INITIAL_AREA_CAMERA_STATE).next;
+    const { fly, next } = shouldFlyToArea("GA", "FULL", afterFirst);
+    expect(fly).toBe(true);
+    expect(next).toEqual({ flownAreaKey: "GA" });
+  });
+
+  it("flies on a LATER, explicit return to the default — it is no longer 'first'", () => {
+    const afterFirst = shouldFlyToArea("GA", "FULL", INITIAL_AREA_CAMERA_STATE).next;
+    const { fly } = shouldFlyToArea("FULL", "FULL", afterFirst);
+    expect(fly).toBe(true);
+  });
+
+  it("area=FULL (an explicit, non-default STATE transition) fits the whole study area", () => {
+    // the select's own "All US waters" option round-trips through the same path as any other
+    // area, once it is a real change rather than the untouched initial default.
+    let state: AreaCameraState = INITIAL_AREA_CAMERA_STATE;
+    state = shouldFlyToArea("AK", "FULL", state).next;
+    const { fly, next } = shouldFlyToArea("FULL", "FULL", state);
+    expect(fly).toBe(true);
+    expect(next.flownAreaKey).toBe("FULL");
   });
 });

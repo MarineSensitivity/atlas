@@ -26,6 +26,12 @@
     onclick?: () => void;
     tabindex?: number;
     orientation?: Orientation;
+    /** U6 (round 2): an optional tour anchor id, stamped as `data-tour`/`data-control` on the
+     * real `<button>` (never the wrapping span, which has no box of its own) -- lets a guided-tour
+     * step point at ONE rail tool (e.g. "rail-layers") the same way every other `data-tour`
+     * anchor in the shell already works. Carried over from HexButton.svelte's own prop of the
+     * same name when RailButton replaced it as the rail's button (R4). */
+    tourId?: string;
   }
 
   let {
@@ -38,6 +44,7 @@
     onclick,
     tabindex = 0,
     orientation = "vertical",
+    tourId,
   }: Props = $props();
 
   // per-INSTANCE tooltip id (SC 4.1.2) -- only rendered/wired while `inactive`, since an active
@@ -86,6 +93,8 @@
     aria-disabled={inactive ? "true" : undefined}
     aria-describedby={inactive ? tooltipId : undefined}
     {tabindex}
+    data-tour={tourId}
+    data-control={tourId}
     onclick={handleClick}
     onkeydown={handleKeydown}
     onfocus={showNow}

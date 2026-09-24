@@ -18,9 +18,11 @@
   // toggle -- geometry/rules live in flowerGeometry.ts (computeFlowerGeometry), unit-tested there.
   import { categoryFor } from "./categories";
   import { announce } from "./announcer";
+  import { formatScore } from "../format";
   import {
     computeFlowerGeometrySafe,
     describeFlowerSummary,
+    petalCentroid,
     type FlowerComponentInput,
   } from "./flowerGeometry";
 
@@ -110,6 +112,12 @@
            static shape with one name, not a widget) so its aria-label is valid AND individually
            exposed in the accessibility tree. -->
       {#each geometry.petals as p (p.key)}
+        <!-- data-cx/data-cy below: this petal's own on-screen (viewBox) centroid (petalCentroid --
+             flowerGeometry.ts), so e2e/scores.flower.spec.ts can probe the exact pixel a petal's
+             colored annular band covers via `SVGGraphicsElement.getScreenCTM()` rather than
+             parsing `d` or trusting a computed-style read that cannot tell "defined" from
+             "covered by the hub" apart (the gap the reported defect slipped through). -->
+        {@const c = petalCentroid(p, 100, 100)}
         <!-- a <path> has no native interactive role, so svelte-check's a11y rule does not
              recognize tabindex+role="img"+aria-label as the correct pattern here -- there is no
              more accurate native element or role to reach for. -->
@@ -120,12 +128,14 @@
           style={`fill: var(${p.category.color})`}
           tabindex={showTable ? -1 : 0}
           role="img"
-          aria-label={`${p.category.label}: ${p.score}`}
+          aria-label={`${p.category.label}: ${formatScore(p.score)}`}
+          data-cx={c.x}
+          data-cy={c.y}
         >
-          <title>{`${p.category.label}: ${p.score}`}</title>
+          <title>{`${p.category.label}: ${formatScore(p.score)}`}</title>
         </path>
       {/each}
-      <circle cx="100" cy="100" r="24" class="hub" />
+      <circle cx="100" cy="100" r={geometry.innerRadius} class="hub" />
       <text x="100" y="100" text-anchor="middle" dy="0.35em" class="hub-text">
         {roundedCenter !== null ? roundedCenter : "—"}
       </text>
@@ -143,7 +153,7 @@
         {#each safe.keptComponents as c (c.key)}
           <tr>
             <td>{categoryFor(c.key).label}</td>
-            <td class="num">{c.score === null ? "No data" : c.score}</td>
+            <td class="num">{c.score === null ? "No data" : formatScore(c.score)}</td>
           </tr>
         {/each}
         <tr class="mean-row">

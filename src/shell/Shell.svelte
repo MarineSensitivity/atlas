@@ -32,12 +32,17 @@
   import { announce } from "../lib/ui/announcer";
   import { createSelStore } from "../lib/state/sel.svelte";
   import { formatSel } from "../lib/state/codec";
-  import { defaultOut, resolveTheme } from "../lib/state/types";
+  import { DEFAULT_SEL, defaultOut, resolveTheme } from "../lib/state/types";
   import { createMap, type MapHandle } from "../lib/map/map";
   import { composeStyle } from "../lib/map/style";
   import { warmBasemapStyles, type CartoStyleLike } from "../lib/map/layers/basemap";
   import { zoneUnitsFromBoot, zoneUnitsWithOutline } from "../lib/map/layers/zones";
   import { studyAreaFromBoot } from "../lib/map/interaction";
+  import {
+    INITIAL_AREA_CAMERA_STATE,
+    shouldFlyToArea,
+    type AreaCameraState,
+  } from "../lib/map/camera";
   import { createAnalytics } from "../lib/analytics/analytics";
   // atlas-8 Deliverable 4 (beta feedback, zero backend -- CLAUDE.md/GATES.md's "the CalCOFI
   // zero-backend fallback"): both pure functions take a snapshot the caller builds -- neither ever
@@ -71,6 +76,13 @@
   // even when the Places PANEL itself (`../places/Places.svelte`, lazy) has never been opened.
   import { createPlacesMapStore } from "../places/placesMap.svelte";
   import type { ResolvedTheme, ZoneUnitSpec } from "../lib/map/types";
+  // U6 (round 2): Report -- pure decision logic (report.ts) + the tour's step DATA (tour.ts, no
+  // driver.js). Both are small/dependency-free, so both stay ordinary static imports; only the
+  // TOUR RUNTIME (tourRuntime.ts, which imports driver.js) is a dynamic import() -- see
+  // `beginTour()` below and that file's own header.
+  import { recordRecentReport, reportAction } from "./report";
+  import { tourStepsForLens, type TourActions } from "./tour";
+  import type { Lens } from "../lib/state/types";
 
   const selStore = createSelStore(location);
   const sel = selStore.sel;
@@ -205,14 +217,148 @@
     }
   }
 
-  function onReport() {
-    activeTool = "report";
+  // --- Report (U6, round 2, docs/usability.md M1) -------------------------------------------------
+  // "Report" does the obvious thing with what is selected NOW: `reportAction()` (report.ts, pure)
+  // decides between opening report.html straight away (a place list in `#pl=`, or a zone selected
+  // via `sel=zone:…`) and showing the chooser -- the SAME rail panel `selectTool("report")` already
+  // opens for every other tool, never a second surface. window.open() runs SYNCHRONOUSLY here (no
+  // `await` before it), the same popup-blocker rule Places.svelte/TablePanel.svelte's own "Report"
+  // actions already follow.
+  function reportStorage(): Storage | null {
+    try {
+      return window.sessionStorage;
+    } catch {
+      return null; // private mode / storage disabled -- chrome, not correctness
+    }
   }
 
-  function onHelp() {
-    announce("Guided tour and full help arrive in a later phase — see About below.");
-    document.querySelector<HTMLButtonElement>("#about-region button")?.focus();
+  function onReport() {
+    const action = reportAction(sel, earlyVersion);
+    if (action.kind === "open") {
+      window.open(action.href, "_blank", "noopener");
+      recordRecentReport(reportStorage(), { href: action.href, label: action.label });
+    } else {
+      selectTool("report");
+    }
   }
+
+  // --- Help menu (U6, round 2) ---------------------------------------------------------------------
+  // A non-modal disclosure (Popover.svelte's own dismiss-on-outside-click/Esc pattern, inlined here
+  // rather than reused verbatim: Popover.svelte renders its OWN small round trigger button, and this
+  // menu's trigger is the EXISTING top-bar "Help" button instead of a second, nested one). Tour,
+  // keyboard shortcuts and a docs link; "Report a problem" stays bottom-left for now (U3 moves it).
+  // Deliberately NOT a <dialog>/Modal.svelte: a modal's top-layer + focus trap would block the rest
+  // of the page, and e2e/shell.a11y.spec.ts's interaction walk clicks Help and then every rail tool
+  // in the same test -- a blocking modal left open would break that walk for no functional reason
+  // (a menu, unlike a welcome/version dialog, is not meant to demand attention).
+  let helpOpen = $state(false);
+  let helpTriggerEl: HTMLButtonElement | undefined;
+  let helpMenuEl: HTMLDivElement | undefined;
+
+  function onHelp() {
+    helpOpen = !helpOpen;
+    if (helpOpen) analytics.track("open_help", {});
+  }
+
+  function closeHelp(returnFocus = true) {
+    if (!helpOpen) return;
+    helpOpen = false;
+    if (returnFocus) helpTriggerEl?.focus();
+  }
+
+  function handleHelpDocumentPointerdown(event: PointerEvent) {
+    if (!helpOpen) return;
+    const target = event.target as Node;
+    if (helpMenuEl?.contains(target) || helpTriggerEl?.contains(target)) return;
+    helpOpen = false; // dismissed by clicking elsewhere -- focus was already elsewhere
+  }
+
+  // LOCAL, not document-level, for the same reason Popover.svelte's identical handler is: the
+  // innermost open layer handles Esc first, before it can bubble to an ancestor's own Escape
+  // handling (e.g. an enclosing Panel collapsing itself). Attached IMPERATIVELY, not a template
+  // `onkeydown` on the (non-interactive) menu `<div>` -- Popover.svelte's own identical fix for
+  // the same svelte-check a11y rule (a static element with a keydown handler needs a role a
+  // plain disclosure region should not claim).
+  function handleHelpKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape" && helpOpen) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeHelp();
+    }
+  }
+
+  onMount(() => {
+    document.addEventListener("pointerdown", handleHelpDocumentPointerdown);
+    const el = helpMenuEl;
+    el?.addEventListener("keydown", handleHelpKeydown);
+    return () => {
+      document.removeEventListener("pointerdown", handleHelpDocumentPointerdown);
+      el?.removeEventListener("keydown", handleHelpKeydown);
+    };
+  });
+
+  function onHelpTakeTour() {
+    closeHelp(false);
+    void beginTour();
+  }
+
+  // --- Tour (U6, round 2) ---------------------------------------------------------------------------
+  // The step DATA (tour.ts) is a plain, dependency-free module and stays a static import above; the
+  // RUNTIME (tourRuntime.ts, driver.js) is reached ONLY through this dynamic import(), so driver.js
+  // never enters the static critical path (scripts/size-budget.mjs's 450 KB budget). `?tour=on`
+  // (an EXPLICIT query value, checked directly -- `sel.tour` cannot distinguish that from the
+  // default, both parse to "on") starts the tour once on load, same rule WelcomeModal.svelte's own
+  // suppression now follows so the two overlays never stack.
+  let tourActive = $state(false);
+
+  function buildTourActions(): TourActions {
+    let tourSnapshot: { lens: Lens; activeTool: ToolName } | null = null;
+    return {
+      getLens: () => sel.lens,
+      setLens: (lens) => onLensChange(lens),
+      selectTool: (name) => selectTool(name),
+      snapshot: () => {
+        tourSnapshot = { lens: sel.lens, activeTool };
+      },
+      restore: () => {
+        if (!tourSnapshot) return;
+        if (sel.lens !== tourSnapshot.lens) onLensChange(tourSnapshot.lens);
+        activeTool = tourSnapshot.activeTool;
+        tourSnapshot = null;
+      },
+    };
+  }
+
+  async function beginTour() {
+    if (tourActive) return;
+    tourActive = true;
+    const lens = sel.lens;
+    const { startTour } = await import("./tourRuntime");
+    const steps = tourStepsForLens(lens);
+    const actions = buildTourActions();
+    analytics.track("tour_start", { lens });
+    startTour(steps, actions, {
+      onStep: (step, index) => analytics.track("tour_step", { lens, step: step.id, index }),
+      onEnd: (completed) => {
+        analytics.track("tour_end", { lens, completed });
+        tourActive = false;
+      },
+    });
+  }
+
+  onMount(() => {
+    let explicitTourOn = false;
+    try {
+      explicitTourOn = new URLSearchParams(location.search).get("tour") === "on";
+    } catch {
+      /* location.search unavailable -- treat as absent, never as an error */
+    }
+    if (!explicitTourOn) return;
+    // a beat for the shell's own first paint to settle before the tour overlay appears -- the
+    // same reasoning tourRuntime.ts's BEFORE_SETTLE_MS uses between steps, just once, up front.
+    const t = setTimeout(() => void beginTour(), 400);
+    return () => clearTimeout(t);
+  });
 
   let versionPickerOpen = $state(false);
   function onVersionClick() {
@@ -245,6 +391,9 @@
     released?: string;
   }
   let earlyVersion = $state<string | null>(null);
+  // U6 (round 2): the Help menu's Docs link -- the same `https://marinesensitivity.org/docs/{ver}/`
+  // shape src/lib/report/model.ts's own `docsHref` already uses, keyed on THIS release.
+  const docsHref = $derived(`https://marinesensitivity.org/docs/${earlyVersion ?? "latest"}/`);
   let boot = $state<unknown>(null);
   let manifest = $state<unknown>(null);
   let versions = $state<EarlyVersionRow[] | null>(null);
@@ -344,10 +493,15 @@
 
   onMount(() => {
     if (!mapEl) return;
+    // `boot` (read a few lines up) is ALWAYS still `null` here regardless of what is passed below:
+    // it settles from `early.boot.then(...)` above, a microtask that cannot run until this whole
+    // synchronous mount pass (every `onMount` body in this component) has returned. Passed as `boot`
+    // anyway, not a literal `null`, so this stays correct if that ordering ever changes — the
+    // effect just below is what actually resolves the real `study_areas` row once `boot` arrives.
     const handle = createMap(mapEl, {
       theme: resolveTheme(sel.theme, prefersDark),
       camera: sel.map,
-      area: studyAreaFromBoot(null, sel.area),
+      area: studyAreaFromBoot(boot, sel.area),
       projection: sel.proj,
       // URL-is-the-view: the camera goes back through selStore, i.e. history.replaceState, and
       // only for user-driven moves (src/lib/map/camera.ts).
@@ -411,6 +565,38 @@
       handle.destroy();
       mapHandle = undefined;
     };
+  });
+
+  // --- the study-area camera: `sel.area` drives it on LOAD and on CHANGE, never the panel body ---
+  // The owner's 2026-09-24 defect: `?area=AK` rendered the default camera, live, in production.
+  // Root cause was two bugs stacked. (1) The map's INITIAL camera above (`area:
+  // studyAreaFromBoot(null, sel.area)`) is constructed against a literal `null` boot, on purpose —
+  // at `onMount` time `boot` (the `$state` a few lines up) has not resolved yet regardless of what
+  // is passed here (it settles from `early.boot.then(...)`, a separate microtask), so there was
+  // never a way to see the release's real `study_areas` row at construction time; only the baked
+  // `FALLBACK_FULL_STUDY_AREA` was ever reachable there. (2) The ONLY place anything called
+  // `handle.flyTo(area)` was `LayersPanel.svelte`'s `onchange` handler — the panel BODY (only
+  // mounted while a tool is open and, on desktop, the panel is not collapsed) — which never runs for
+  // a `sel.area` arriving from the URL on load. `docs/map.md`'s 0.10.21 rule exists for exactly this
+  // shape of bug: a map input must live in a lens/shell-level store the shell reads unconditionally,
+  // never panel-only UI.
+  //
+  // This effect is that store, at the shell level (`sel.area` is a top-level `Sel` field, not scores
+  // -specific — CLAUDE.md/docs/map.md's own convention: "map inputs are a plain store... independent
+  // of which tool/panel is open or collapsed"). It re-runs whenever `boot`, `mapHandle`, `sel.area`
+  // or `sel.map` changes and defers the fly/no-fly DECISION to `camera.ts#shouldFlyToArea` (a pure,
+  // unit-tested function — read its header for the exact precedence a later round touching the
+  // DEFAULT first-view camera must preserve). `LayersPanel.svelte`'s `onAreaChange` still writes
+  // `{ area: value, map: undefined }` to `sel` (so a shared link reproduces the choice, and clearing
+  // `map` is what lets THIS effect fly for it) — it no longer calls `mapHandle.flyTo` itself.
+  let areaCameraState: AreaCameraState = INITIAL_AREA_CAMERA_STATE;
+  $effect(() => {
+    if (!mapHandle || !boot) return; // nothing to resolve `sel.area` against yet
+    if (sel.map) return; // an explicit camera (a user's pan, or a pasted `?map=` link) always wins
+    const area = studyAreaFromBoot(boot, sel.area);
+    const decision = shouldFlyToArea(area.key, DEFAULT_SEL.area, areaCameraState);
+    areaCameraState = decision.next;
+    if (decision.fly) mapHandle.flyTo(area);
   });
 
   // one composed style, re-applied with setStyle(diff:true) whenever theme, projection, the
@@ -587,6 +773,11 @@
   let NotFoundModalComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let PlacesComp = $state<Component<any> | null>(null);
+  // U6 (round 2): the "report" rail tool's real panel body -- same lazy-on-first-open pattern as
+  // PlacesComp above (ReportTool.svelte itself has no heavy deps; this is about keeping every
+  // tool's panel out of the static graph equally, not a size concern for this one).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let ReportToolComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let VersionPickerModalComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -681,6 +872,12 @@
   });
 
   $effect(() => {
+    if (activeTool === "report" && !ReportToolComp) {
+      import("./ReportTool.svelte").then((mod) => (ReportToolComp = mod.default));
+    }
+  });
+
+  $effect(() => {
     if (!VersionPickerModalComp) {
       import("../lens/scores/VersionPickerModal.svelte")
         .then((mod) => (VersionPickerModalComp = mod.default))
@@ -770,25 +967,78 @@
   >
     <Icon name="report" size={18} />Report
   </button>
-  <button
-    type="button"
-    class="tool topbar-desktop-only"
-    data-tour="help"
-    data-control="help"
-    aria-label="Help, guided tour and About"
-    onclick={onHelp}
-  >
-    <Icon name="help" size={18} />
-  </button>
+  <!-- U6 (round 2): the (?) Help menu -- tour, keyboard shortcuts, a docs link. Always rendered
+       (never {#if helpOpen}), toggled with `hidden`, so `aria-controls` on the trigger names an
+       element that actually EXISTS in the DOM (SC 4.1.2) -- Popover.svelte's identical fix. -->
+  <!-- "topbar-desktop-only" on the WRAPPER too, not just the button inside it -- the skeleton
+       (index.html) has no wrapping element around the help tool at all, so at phone width it
+       contributes NOTHING to the topbar's flex layout. Without this class here, the wrapper stayed
+       `display:inline-flex` (its child hidden, but the span itself still a flex ITEM), adding one
+       extra gap the skeleton never has -- the CLS geometry-equality gate's phone-only mismatch. -->
+  <span class="help-wrap topbar-desktop-only">
+    <button
+      type="button"
+      class="tool topbar-desktop-only"
+      data-tour="help"
+      data-control="help"
+      aria-expanded={helpOpen}
+      aria-controls="help-menu"
+      aria-label="Help"
+      bind:this={helpTriggerEl}
+      onclick={onHelp}
+    >
+      <Icon name="help" size={18} />
+    </button>
+    <!-- an ordinary disclosure region (About.svelte's own aria-expanded/aria-controls pattern),
+         NOT role="menu" -- a real ARIA menu widget promises arrow-key/Home/End roving focus this
+         does not implement, which would be a WORSE a11y contract than none at all. Tab/Shift+Tab
+         reaches "Take a tour" then "Docs" in document order, same as any other disclosure.
+         role="group" (axe: aria-prohibited-attr -- a plain <div> has no role that permits
+         aria-label at all; "group" is the same role the panel-size control group already uses). -->
+    <div
+      class="help-menu"
+      id="help-menu"
+      role="group"
+      aria-label="Help"
+      hidden={!helpOpen}
+      bind:this={helpMenuEl}
+    >
+      <button type="button" class="help-menu-item" onclick={onHelpTakeTour}>Take a tour</button>
+      <div class="help-shortcuts">
+        <h3>Keyboard shortcuts</h3>
+        <ul>
+          <li>Tab / Shift+Tab — move between controls</li>
+          <li>Esc — close the open panel or dialog</li>
+          <li>↓ / ↑ / Home / End — move within the tool rail</li>
+          <li>= — zoom the map in</li>
+        </ul>
+      </div>
+      <a
+        class="help-menu-item"
+        href={docsHref}
+        target="_blank"
+        rel="noopener"
+        onclick={() => closeHelp(false)}
+      >
+        Docs
+      </a>
+    </div>
+  </span>
+  <!-- U2a (round 2): sun/moon, CalCOFI's convention (src/App.tsx's `.cc-theme-toggle`) -- the
+       icon shown is the DESTINATION theme (a sun while dark invites switching to light, a moon
+       while light invites switching to dark), and the accessible name states the action in ONE
+       vocabulary (light/dark -- the URL's own words, docs/usability.md p3), never "navy"/"paper"
+       (those stay internal token-set names only). mdiBrightness7/mdiBrightness4 are Apache-2.0
+       (@mdi/js, already a project dependency -- see LICENSE.md / node_modules/@mdi/js/LICENSE). -->
   <button
     type="button"
     class="tool"
     data-tour="theme"
     data-control="theme"
-    aria-label={resolvedTheme === "navy" ? "Switch to the paper theme" : "Switch to the navy theme"}
+    aria-label={resolvedTheme === "navy" ? "Switch to light theme" : "Switch to dark theme"}
     onclick={toggleTheme}
   >
-    <Icon name="theme" size={18} />
+    <Icon name={resolvedTheme === "navy" ? "themeSun" : "themeMoon"} size={18} />
   </button>
 </header>
 
@@ -847,6 +1097,17 @@
         {#if PlacesComp}
           {@const Comp = PlacesComp}
           <Comp {sel} {selStore} {boot} {mapHandle} {zoneUnits} mapStore={placesMap} />
+        {:else}
+          <p>{TOOL_BODY[activeTool]}</p>
+        {/if}
+      {:else if activeTool === "report"}
+        <!-- U6 (round 2): intercepted here, BEFORE the lens branches below, so "Report" is the
+             SAME chooser+recent-reports panel on either lens -- ScoresLens.svelte's own fallback
+             (`fallbackBody`) never renders for this tool any more (its own header already says
+             "places" and "report" belong to other phases). -->
+        {#if ReportToolComp}
+          {@const Comp = ReportToolComp}
+          <Comp {sel} {boot} ver={earlyVersion} onOpenPlaces={() => selectTool("places")} />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
         {/if}
@@ -957,5 +1218,5 @@
 {/if}
 {#if WelcomeModalComp}
   {@const Comp = WelcomeModalComp}
-  <Comp tour={sel.tour} />
+  <Comp tour={sel.tour} onTakeTour={() => void beginTour()} />
 {/if}

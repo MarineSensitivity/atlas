@@ -1,3 +1,78 @@
+# atlas 0.10.35
+
+Fix S-01: the study-area camera did not move (owner report, live public v7, 2026-09-24).
+`https://marinesensitivity.org/atlas/?ver=v7&area=AK` rendered the DEFAULT camera (globe over
+North America, Layers panel showing "Study area: Alaska") instead of flying to Alaska — the
+study area is a CAMERA, not a filter.
+
+- **Root cause, two bugs stacked.** (1) `Shell.svelte` resolved the map's initial camera against a
+  literal `null` boot (`studyAreaFromBoot(null, sel.area)`), so it could never see a release's real
+  `study_areas` rows. (2) The ONLY place anything ever called `handle.flyTo(area)` was
+  `LayersPanel.svelte`'s `onchange` handler — the panel BODY, which never runs for a `sel.area`
+  arriving from the URL on load (or while the Layers panel is collapsed/unmounted).
+- **Fix.** `sel.area` now drives the camera from a shell-level `$effect` (`Shell.svelte`), calling
+  the new pure decision `src/lib/map/camera.ts#shouldFlyToArea` — unit-tested, and documenting the
+  precedence a later round touching the DEFAULT first-view camera must preserve: an explicit
+  `?area=` always wins over whatever framed the first paint, `sel.map` (an explicit camera) always
+  wins over `sel.area`, and a user's pan after the fly is never fought. `LayersPanel.svelte`'s
+  `onAreaChange` no longer calls `mapHandle.flyTo` itself — it only writes `sel`.
+- **Gates.** `e2e/scores.studyarea.spec.ts` drives the real, built app end-to-end (load, a select
+  change, `area=FULL` re-fitting the whole study area, a kept user pan, and the fix still working
+  with the Layers panel collapsed at load); `scripts/verify.mjs`'s `area=` states gained an
+  additive camera-bounds assertion; seeded fault `tests/faults/study-area-camera-ignored.patch`.
+  S-01's parity-page evidence (`docs/parity/checklists`, `scripts/parity-page/status.mjs`) is
+  rewritten: the old evidence (`flyToStudyArea`, which has no caller in `src/`) could not have
+  caught this; `tileUrlLeaksStudyArea` remains as the negative half (no study-area key ever reaches
+  a tile/data URL).
+
+# atlas 0.10.34
+
+Owner-reported live defect (v7, 2026-09-24, "Flower plot, nothing selected") plus two follow-on
+review items (Opus 5.5 audit; owner decision R8).
+
+- **The flower drew only the petals whose category happened to score above 24** — not a
+  color/category mapping gap (every one of the eight real categories already had a defined,
+  distinct `--cat-*` token). Root cause: every petal was a full PIE SLICE from the true centre
+  (`radius = score` when `outerRadius = 100`), and a solid hub disc of a hardcoded `r="24"` was
+  then drawn ON TOP of it to host the centre number — any component scoring `<= 24` (on the
+  reported case: Coral 10.4, Fish 16.0, Invertebrate 14.7, Other 15.2, Primary producer 10.4 of
+  8 real components) produced a slice that fit entirely inside the hub and was completely covered
+  by it, leaving only Bird/Mammal/Turtle visible. Fixed by drawing every petal as an ANNULAR
+  SECTOR (a donut-ring wedge) from a shared `innerRadius` (matching the hub) out to a score-scaled
+  outer radius, mirroring how `msens::ggplot_flower()` offsets its own polar axis
+  (`xlim(c(-10, max(height)))`) so a real, present score is never fully covered by the centre
+  annotation — `src/lib/ui/flowerGeometry.ts#computeFlowerGeometry`/`sectorPath`, applied in all
+  three renderers that share it: the live panel (`src/lib/ui/Flower.svelte`), the exported
+  docx/HTML report's standalone SVG (`src/report/flowerSvg.ts`), and the on-screen Report
+  document's own inline SVG (`src/report/Report.svelte`).
+- **Every reported score is now rounded to exactly ONE decimal place** (`src/lib/format.ts#formatScore`):
+  the summary sentence, the accessible per-petal name, the "Show table" table, and both report
+  SVGs' tooltips — the reported defect's other half ("the values text under the flower prints full
+  double precision", e.g. `45.6671707107685`). The summary's trailing sentence no longer claims a
+  page POSITION ("See the component table **below**"), since that toggle/table sits ABOVE it in
+  `Flower.svelte` and there is no table at all beside the exported report's narrative text.
+- **The exported/on-screen Report document's own flower** gets the same fix (hub radius, never
+  covering a real petal) plus two review items: petal `opacity` corrected to `0.5` (was `0.92`,
+  the ported app's own `alpha = 0.5`) and a category LEGEND (swatch + label) beneath each flower —
+  its `<title>` tooltip is unreachable in a printed page or the static docx/HTML export
+  (`docs/parity/checklists/atlas-7-report.md:24`).
+- **The composition treemap now sizes boxes by SPECIES COUNT**, matching the ported Shiny app
+  (owner decision R8) — it previously summed `suit_er_area` (suitability × extinction-risk ×
+  area), which drew a real selection's Mammal box as the LARGEST even though Shiny (sizing by
+  count) draws it small. `compositionTree()`'s new default is `measure: "count"`; the prior
+  weighted measure is kept as an internal, not-yet-exposed option
+  (`{ measure: "suit_er_area" }`). `Composition.svelte`'s `valueLabel` is now `"n species"`.
+- **The parity page's own S-13/S-14 evidence was a "check that cannot fail"**: the 3-component
+  hermetic fixture (`e2e/scores.firstpaint.spec.ts`) never exercised a petal small enough to be
+  covered, and `e2e/gallery.spec.ts`'s "8 distinct petal categories (colors)" read
+  `getComputedStyle(path).fill` directly, which is true and defined for a COVERED petal exactly as
+  for a visible one. Both hermetic fixtures (`e2e/scores-hermetic.ts`,
+  `tests/lens/scores/fixtures.ts`) now carry v7's REAL 8-component `flower_default.FULL` (read off
+  the live release, full double precision); new `e2e/scores.flower.spec.ts` probes each petal's own
+  geometric centroid via `document.elementFromPoint()` — real occlusion-aware hit-testing — for the
+  default flower AND a selected zone's own flower. Seeded fault
+  `tests/faults/flower-petal-colour-dropped.patch` (`scripts/test-faults.mjs`, PW_PORT 4393).
+
 # atlas 0.10.32
 
 R2 round U5 (`docs/usability.md` §7 R4/R5): the tool rail, the logo and the light theme's yellow.
@@ -32,6 +107,59 @@ mark-wavehex.svg` and `public/favicon.svg` carry the same mark as a static asset
   `LayerBarView.svelte` and `Treemap.svelte` still need the same edit (docs/usability.md §7 R5's
   full ~10-selector list) but were left alone here as files other in-flight rounds own.
   `gallery.html`'s screenshots change with the palette; darwin baselines regenerated deliberately.
+
+# atlas 0.10.29
+
+U6 (Report + Tour) and U2a (dark theme by default) from the round-2 usability assessment
+(`docs/usability.md`).
+
+- **U6 — Report does the obvious thing with what is selected (M1).** The top-bar "Report" button
+  and the "report" rail tool were both placeholders (`activeTool = "report"` into a literal
+  "arrives in a later phase" string). `src/shell/report.ts#reportAction()` now decides: a place
+  list in `#pl=` opens `report.html` for every place in it; a single Program Area selected on the
+  map/table (`sel=zone:<unit>:<key>`) opens a one-place report for it; with nothing selected, the
+  rail tool (now `src/shell/ReportTool.svelte`) shows a chooser — pick a Program Area from the
+  release's own zone list, or hand off to the Places tool for drawing/coordinates/upload — plus the
+  reports opened this session (`sessionStorage`, capped at 5, deduped by link). Every open still
+  runs `window.open()` synchronously (no `await` before it) and reuses the SAME `reportHash()` /
+  `hashFromPlaces()` encoders the Places panel and the Zones table's "Report on selected" already
+  built through, never a second hand-rolled one.
+- **U6 — Guided tour.** driver.js, lazy (`src/shell/tourRuntime.ts`, a dynamic `import()` only —
+  never on the 450 KB static critical path; `scripts/size-budget-core.mjs`'s
+  `FORBIDDEN_LAZY_MARKERS` now lists `"driver"`). 8 steps for the Scores lens, 5 for Species
+  (`src/shell/tour.ts`, `docs/usability.md` §5); each step's `before()` hook opens the tool/lens it
+  needs before driver.js resolves its anchor, and the tour snapshots + restores the lens/tool it
+  found on Esc/Done (CalCOFI explore's `src/tour.ts` pattern). `?tour=on` starts it once on load
+  (suppressing the welcome modal so the two overlays never stack); the welcome modal's "Take a
+  Tour" and a new **(?) Help** menu in the top bar ("Take a tour", keyboard shortcuts, a docs link)
+  both start the same real tour instead of announcing a stub. New analytics events `tour_start`,
+  `tour_step`, `tour_end`, `open_help`.
+- **U2a — dark by default; sun/moon toggle.** `DEFAULT_SEL.theme` is `"dark"`, not `"auto"`: an
+  absent or malformed `?theme=` now paints navy regardless of the OS's `prefers-color-scheme`,
+  matching both Shiny apps and the brand's dark lockup (`"auto"` stays a legal, explicit override —
+  `?theme=auto` still follows the OS). `index.html`'s pre-paint script changed identically, so
+  there is still no flash of the wrong theme. The toggle is now a sun/moon control
+  (`mdiBrightness7`/`mdiBrightness4`, Apache-2.0 via `@mdi/js`) showing the DESTINATION theme, with
+  an accessible name in one vocabulary ("Switch to light/dark theme" — `light`/`dark`, the URL's
+  own words, never "navy"/"paper"). `report.html` is unchanged (always `data-theme="paper"`,
+  print-first).
+- Seeded fault: `tests/faults/theme-default-reverts-to-auto.patch` (`DEFAULT_SEL.theme` back to
+  `"auto"`), wired into `npm run test:faults`.
+- `docs/parity.html`'s known gaps: G-28 (Report placeholder) and G-30 (theme default `auto`)
+  removed — both are exactly what this release fixes.
+- `scripts/verify.mjs` fix (found by the U2a change, not a pre-existing bug): `scoresRasterProbe()`/
+  `speciesRasterProbe()` defaulted their basemap-blend expectation to the PAPER fixture colour,
+  which was correct only while `auto` (the old default) resolved to paper under headless
+  Chromium's own `prefers-color-scheme`. Every state that never sets `theme=` explicitly now
+  defaults to the NAVY blend instead (`BASEMAP_RGB_NAVY`); the one state that still means "paper,
+  specifically" (`shell (theme=light)`) passes the paper colour explicitly.
+- `src/shell/tour.ts`: `setLens()` is now guarded (`if (a.getLens() !== target) …`) — calling it
+  even when the lens was already correct still reset `sel.out` and re-triggered the lens' own
+  reactive load for no reason.
+- `e2e/species-hermetic.ts`: the shared species fixture now publishes `boot.palettes.spectral_r`
+  (11 real stops) — without it `paletteStopsFromBoot()` returns `null` and the species legend never
+  renders at all (not even an empty node), a pre-existing fixture gap no earlier spec against it
+  had ever exercised.
 
 # atlas 0.10.28
 

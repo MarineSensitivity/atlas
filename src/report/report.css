@@ -199,6 +199,34 @@ figure {
   gap: 1.5rem;
 }
 
+/* atlas-4 fix round 2 / docs/parity/checklists/atlas-7-report.md:24 ("legend beneath"): a printed
+ * page and the exported docx/HTML snapshot show neither hover state nor JS, so the petals'
+ * `<title>` tooltip is never reachable there -- this is the ONLY text equivalent for "which color
+ * is which component" in those two outputs. */
+.flower-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8rem;
+}
+
+.flower-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.flower-legend .swatch {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+  border: 1px solid var(--border-control, #c9d2dc);
+}
+
 /* ---- footnotes ----------------------------------------------------------------------------- */
 
 .footnotes {

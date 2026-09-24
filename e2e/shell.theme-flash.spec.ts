@@ -26,13 +26,19 @@ interface Case {
   expectTheme: "navy" | "paper";
 }
 
+// U2a (round 2): the default is DARK, not "auto" -- an absent or malformed `?theme=` now paints
+// navy REGARDLESS of prefers-color-scheme (the two `colorScheme: "light"` rows below used to
+// expect "paper" here; they no longer do). Only an EXPLICIT `?theme=auto` still asks
+// prefers-color-scheme -- the two new rows at the end are what proves that path still works.
 const CASES: Case[] = [
   { search: "", colorScheme: "dark", expectTheme: "navy" },
-  { search: "", colorScheme: "light", expectTheme: "paper" },
+  { search: "", colorScheme: "light", expectTheme: "navy" },
   { search: "?theme=light", colorScheme: "dark", expectTheme: "paper" },
   { search: "?theme=dark", colorScheme: "light", expectTheme: "navy" },
   { search: "?theme=garbage", colorScheme: "dark", expectTheme: "navy" },
-  { search: "?theme=garbage", colorScheme: "light", expectTheme: "paper" },
+  { search: "?theme=garbage", colorScheme: "light", expectTheme: "navy" },
+  { search: "?theme=auto", colorScheme: "dark", expectTheme: "navy" },
+  { search: "?theme=auto", colorScheme: "light", expectTheme: "paper" },
 ];
 
 for (const c of CASES) {

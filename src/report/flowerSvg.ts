@@ -6,7 +6,15 @@
 // re-parses the whole page in a browser with no stylesheet at all. `resolveColor` is the seam: the
 // live document (Report.svelte) resolves each `--cat-*` token via `getComputedStyle`, and a test
 // can pass a trivial identity/lookup function instead.
+//
+// atlas-4 fix round 2: `geometry.petals[*].path` is now an ANNULAR sector, not a pie slice from the
+// centre (`flowerGeometry.ts`'s header) -- this file's own hub circle used to sit ON TOP of full
+// pie slices and silently cover any petal whose score was below the hub's radius, the exact
+// mechanism behind the live "flower draws only ~4 of 8 petals" defect. Reading `geometry.innerRadius`
+// for the hub (rather than a hardcoded literal) means this export can never drift from the petals
+// drawn around it again.
 import type { FlowerGeometry } from "../lib/ui/flowerGeometry";
+import { formatScore } from "../lib/format";
 import {
   REPORT_FLOWER_HUB_FILL,
   REPORT_FLOWER_HUB_STROKE,
@@ -38,7 +46,7 @@ export function flowerStandaloneSvg(
     .map(
       (p) =>
         `<path d="${p.path}" fill="${opts.resolveColor(p.category.color)}" stroke="${REPORT_FLOWER_PETAL_STROKE}" stroke-width="1" opacity="0.92">` +
-        `<title>${esc(p.category.label)}: ${p.score}</title></path>`,
+        `<title>${esc(p.category.label)}: ${formatScore(p.score)}</title></path>`,
     )
     .join("");
   const centreText = centre !== null ? String(Math.round(centre)) : "—";
@@ -46,7 +54,7 @@ export function flowerStandaloneSvg(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="${size}" height="${size}" ` +
     `role="img" aria-label="${esc(title)} flower, centre ${centreText}">` +
     `${petals}` +
-    `<circle cx="100" cy="100" r="24" fill="${REPORT_FLOWER_HUB_FILL}" stroke="${REPORT_FLOWER_HUB_STROKE}" stroke-width="1"/>` +
+    `<circle cx="100" cy="100" r="${geometry.innerRadius}" fill="${REPORT_FLOWER_HUB_FILL}" stroke="${REPORT_FLOWER_HUB_STROKE}" stroke-width="1"/>` +
     `<text x="100" y="100" text-anchor="middle" dy="0.35em" font-family="sans-serif" ` +
     `font-size="28" font-weight="700" fill="${REPORT_FLOWER_TEXT}">${esc(centreText)}</text>` +
     `</svg>`
