@@ -985,6 +985,18 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4402" },
   },
+  // gallery axe ceilings round follow-up (CI run 35982505817): this gate originally drove
+  // e2e/gallery.spec.ts's real Playwright/axe render at 320 CSS px -- but "does the min-width:0
+  // fix keep .col from overflowing" bottoms out in FONT METRICS (whether `.cat-table-scroll`'s
+  // unbreakable `<code>` tokens are wide enough to push `.col` past 288px), and linux Chromium's
+  // `<code>` glyphs render narrower than macOS's. The fault stayed GREEN on the linux CI runner:
+  // dropping `min-width: 0` there never actually pushed `.col` past its section, so axe's
+  // color-contrast incomplete count never moved and the gate saw nothing wrong. `min-width: 0` is
+  // a CSS DECLARATION, not a pixel measurement, so the platform-independent form of this rule is
+  // a source-scan of it -- retargeted at tests/ui/categoriesOverflow.test.ts's own assertion
+  // (plain regex over the `.col` rule, comments stripped first so its OWN prose describing the
+  // fix can't false-match), which is deterministic on every platform because it never renders
+  // anything.
   {
     id: "gallery-categories-min-width-dropped",
     patch: "tests/faults/gallery-categories-min-width-dropped.patch",
@@ -994,15 +1006,12 @@ const FAULTS = [
       "px with no per-section way to reach it (the gallery axe ceilings round's real bug, replayed)",
     gate: [
       "npx",
-      "playwright",
-      "test",
-      "--config=playwright.gallery.config.ts",
-      "e2e/gallery.spec.ts",
-      "-g",
-      "finding triaged, both themes, both widths.*phoneNarrow",
-      "--workers=1",
+      "vitest",
+      "run",
+      "tests/ui/categoriesOverflow.test.ts",
+      "-t",
+      "carries min-width: 0",
     ],
-    env: { PW_PORT: "4407" },
   },
 ];
 
