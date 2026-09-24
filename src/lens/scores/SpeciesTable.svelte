@@ -192,7 +192,7 @@
           {#each sortedRows as row (row.mdl_key + "|" + row.sp_scientific)}
             <tr>
               {#each columns as col (col.key)}
-                <td class:num={col.numeric}>
+                <td class:num={col.numeric} title={cellText(row, col)}>
                   {#if col.key === "taxon"}
                     <a
                       href={taxonUrl(row.taxon_authority, row.taxon_id)}
@@ -233,8 +233,16 @@
     border-radius: var(--radius-control);
   }
 
+  /* R1 (docs/usability.md M6 / the owner's species-table acceptance case, 2026-09-24): FIXED
+     layout so 12 columns always fit the panel's ACTUAL width -- at the widest dock (720px) and in
+     maximize (the whole stage), all 12 headers land inside the table's own visible box with no
+     horizontal scroll, which `AUTO` layout (each column sized to its content's preferred width)
+     could never guarantee regardless of how much room the panel is given. At the narrower DEFAULT
+     dock (380px) this divides 12 columns evenly -- narrower per-column text, ellipsis-truncated
+     (below) with the full value as a `title` tooltip, never a column simply missing. */
   .grid {
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     font-variant-numeric: tabular-nums;
   }
@@ -246,6 +254,7 @@
     background: var(--surface-sunken);
     text-align: left;
     padding: 0;
+    overflow: hidden;
   }
 
   .sort-btn {
@@ -262,6 +271,12 @@
     font-weight: 700;
     text-align: left;
     cursor: pointer;
+  }
+
+  .sort-btn span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .filter-row th {
@@ -288,17 +303,29 @@
     font: inherit;
     font-size: var(--text-xs);
     padding: var(--space-1);
-    width: 80px;
+    /* NOT a fixed 80px (that used to force the table's own intrinsic width past the panel's --
+       under fixed layout, above, the FIELD must shrink with its `<th>`, never the reverse). */
+    width: 100%;
   }
 
   td {
     padding: var(--space-1) var(--space-2);
     border-bottom: 1px solid var(--divider);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   td.num {
     text-align: right;
+  }
+
+  /* the taxon/model links: same ellipsis treatment as plain cell text (the `<a>`, not `td` alone,
+     is what actually overflows -- an inline element's text does not ellipsis on its own). */
+  td a {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .empty {

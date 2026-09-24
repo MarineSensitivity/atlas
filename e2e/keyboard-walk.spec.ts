@@ -791,6 +791,71 @@ test.describe("step 3: open the report and export it", () => {
 });
 
 // =================================================================================================
+// STEP 4 -- R1 (docs/usability.md §7): the panel's dock/resize/maximize controls, keyboard only
+// =================================================================================================
+
+test.describe("step 4: R1 panel controls (dock/resize/maximize) are keyboard reachable and operable", () => {
+  test("Full screen maximizes the panel; Esc restores it and returns focus to the control", async ({
+    page,
+    browserName,
+  }) => {
+    await gotoWalk(page);
+    await tabTo(page, browserName, "Full screen", { step: "step 4: the Full screen control" });
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#panel-region")).toHaveAttribute("data-maximized", "true");
+    await assertFocusUsable(page, "step 4: after maximizing");
+
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#panel-region")).toHaveAttribute("data-maximized", "false");
+    const restored = await assertFocusUsable(page, "step 4: after Esc restores");
+    expect(restored, "focus must return to the control that opened maximize").toBe("Full screen");
+  });
+
+  test("the resize handle is reachable and resizes with arrow keys (10px, 50px with Shift)", async ({
+    page,
+    browserName,
+  }) => {
+    await gotoWalk(page);
+    await tabTo(page, browserName, "Resize panel", { step: "step 4: the resize handle" });
+    await page.keyboard.press("ArrowLeft"); // dock=right (default): ArrowLeft grows the panel
+    await expect(page.locator(":focus")).toHaveAttribute("aria-valuenow", "390");
+    await page.keyboard.press("Shift+ArrowLeft");
+    await expect(page.locator(":focus")).toHaveAttribute("aria-valuenow", "440");
+  });
+});
+
+// =================================================================================================
+// STEP 5 -- R2 (docs/usability.md §7): About + Feedback in the top bar, keyboard only
+// =================================================================================================
+
+test.describe("step 5: R2 top-bar controls (About, Feedback) are keyboard reachable", () => {
+  test("About opens a dialog; Close returns focus to the (i) button", async ({
+    page,
+    browserName,
+  }) => {
+    await gotoWalk(page);
+    await tabTo(page, browserName, "About this release", { step: "step 5: the (i) button" });
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog", { name: "About this release" })).toBeVisible();
+
+    await tabTo(page, browserName, "Close", { step: "step 5: the Close button", max: 12 });
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog", { name: "About this release" })).toBeHidden();
+
+    const name = await assertFocusUsable(page, "step 5: after About closes");
+    expect(name, "focus must return to the (i) button, not to <body>").toBe("About this release");
+  });
+
+  test("Feedback is a reachable, named top-bar control", async ({ page, browserName }) => {
+    await gotoWalk(page);
+    // just reachable + named here -- the click behaviour itself is e2e/shell.chrome.spec.ts's own
+    // gate (kept behind one function so a later U3 round changes only that, never this control).
+    await tabTo(page, browserName, "Feedback", { step: "step 5: the Feedback control" });
+    await assertFocusUsable(page, "step 5: Feedback focused");
+  });
+});
+
+// =================================================================================================
 // SC 2.4.7 Focus Visible -- every stop the walk passes through must SHOW that it has focus
 // =================================================================================================
 

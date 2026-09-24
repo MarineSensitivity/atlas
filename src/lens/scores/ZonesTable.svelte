@@ -93,14 +93,16 @@
               </td>
             {/if}
             <td class="num">{i + 1}</td>
-            <td>
+            <td title={r.name}>
               <button type="button" class="zone-link" onclick={() => onSelectZone(r.key)}>
                 {r.name}
               </button>
             </td>
-            <td class="num">{formatValue(r.value)}</td>
+            <td class="num" title={formatValue(r.value)}>{formatValue(r.value)}</td>
             {#each r.components as c (c.label)}
-              <td class="num">{formatValue(c.score)}</td>
+              <td class="num" title={`${c.label}: ${formatValue(c.score)}`}
+                >{formatValue(c.score)}</td
+              >
             {/each}
           </tr>
         {/each}
@@ -152,8 +154,13 @@
     border-radius: var(--radius-control);
   }
 
+  /* R1 (the owner's species/zones-table acceptance case, 2026-09-24): FIXED layout, same rationale
+     as SpeciesTable.svelte's own comment -- at the widest dock (720px) and in maximize, every
+     column (Rank/Zone/Score/however many components the release publishes) lands inside the
+     table's own visible box with no horizontal scroll. */
   .grid {
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
@@ -165,12 +172,17 @@
     background: var(--surface-sunken);
     text-align: left;
     padding: var(--space-1) var(--space-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   td {
     padding: var(--space-1) var(--space-2);
     border-bottom: 1px solid var(--divider);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .num {
@@ -178,6 +190,11 @@
   }
 
   .zone-link {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     border: 0;
     background: none;
     color: var(--text-link);
@@ -185,6 +202,7 @@
     text-decoration: underline;
     cursor: pointer;
     padding: 0;
+    text-align: left;
   }
 
   .zone-link:focus-visible {

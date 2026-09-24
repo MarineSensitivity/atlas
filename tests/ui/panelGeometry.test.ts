@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampPanelSize,
   DEFAULT_PANEL_GEOMETRY,
   loadPanelGeometry,
+  PANEL_SIZE_MAX,
+  PANEL_SIZE_MIN,
   panelStorageKey,
   savePanelGeometry,
   viewportBucket,
@@ -30,6 +33,25 @@ describe("viewportBucket (spec.md §10: matchMedia(max-width: 899px))", () => {
   });
 });
 
+describe("clampPanelSize (R1: 320-720 px)", () => {
+  it("passes a value already in range through untouched", () => {
+    expect(clampPanelSize(500)).toBe(500);
+  });
+  it("clamps below the floor", () => {
+    expect(clampPanelSize(10)).toBe(PANEL_SIZE_MIN);
+  });
+  it("clamps above the ceiling", () => {
+    expect(clampPanelSize(5000)).toBe(PANEL_SIZE_MAX);
+  });
+  it("rounds a fractional size", () => {
+    expect(clampPanelSize(400.6)).toBe(401);
+  });
+  it("falls back to the default on a non-finite value", () => {
+    expect(clampPanelSize(NaN)).toBe(DEFAULT_PANEL_GEOMETRY.size);
+    expect(clampPanelSize(Infinity)).toBe(DEFAULT_PANEL_GEOMETRY.size);
+  });
+});
+
 describe("panel geometry persistence (chrome only, per viewport size, never the URL)", () => {
   it("keys are namespaced per panel id AND viewport bucket", () => {
     expect(panelStorageKey("layers", "desktop")).toBe("atlas.panel.layers.desktop");
@@ -47,24 +69,73 @@ describe("panel geometry persistence (chrome only, per viewport size, never the 
 
   it("round-trips a saved geometry", () => {
     const storage = fakeStorage();
-    savePanelGeometry(storage, "layers", "desktop", { collapsed: true, detent: "full" });
+    savePanelGeometry(storage, "layers", "desktop", {
+      collapsed: true,
+      maximized: false,
+      dock: "left",
+      size: 420,
+    });
     expect(loadPanelGeometry(storage, "layers", "desktop")).toEqual({
       collapsed: true,
-      detent: "full",
+      maximized: false,
+      dock: "left",
+      size: 420,
     });
+  });
+
+  it("round-trips a maximized, bottom-docked geometry", () => {
+    const storage = fakeStorage();
+    savePanelGeometry(storage, "layers", "desktop", {
+      collapsed: false,
+      maximized: true,
+      dock: "bottom",
+      size: 500,
+    });
+    expect(loadPanelGeometry(storage, "layers", "desktop")).toEqual({
+      collapsed: false,
+      maximized: true,
+      dock: "bottom",
+      size: 500,
+    });
+  });
+
+  it("clamps a stored size back into range on load (a manually-edited or stale value)", () => {
+    const storage = fakeStorage({
+      "atlas.panel.layers.desktop": JSON.stringify({
+        collapsed: false,
+        maximized: false,
+        dock: "right",
+        size: 5,
+      }),
+    });
+    expect(loadPanelGeometry(storage, "layers", "desktop").size).toBe(PANEL_SIZE_MIN);
   });
 
   it("desktop and phone geometry for the same panel do not collide", () => {
     const storage = fakeStorage();
-    savePanelGeometry(storage, "layers", "desktop", { collapsed: false, detent: "full" });
-    savePanelGeometry(storage, "layers", "phone", { collapsed: true, detent: "half" });
+    savePanelGeometry(storage, "layers", "desktop", {
+      collapsed: false,
+      maximized: false,
+      dock: "right",
+      size: 400,
+    });
+    savePanelGeometry(storage, "layers", "phone", {
+      collapsed: true,
+      maximized: false,
+      dock: "bottom",
+      size: 500,
+    });
     expect(loadPanelGeometry(storage, "layers", "desktop")).toEqual({
       collapsed: false,
-      detent: "full",
+      maximized: false,
+      dock: "right",
+      size: 400,
     });
     expect(loadPanelGeometry(storage, "layers", "phone")).toEqual({
       collapsed: true,
-      detent: "half",
+      maximized: false,
+      dock: "bottom",
+      size: 500,
     });
   });
 
@@ -73,9 +144,21 @@ describe("panel geometry persistence (chrome only, per viewport size, never the 
     expect(loadPanelGeometry(storage, "layers", "desktop")).toEqual(DEFAULT_PANEL_GEOMETRY);
   });
 
-  it("falls back to the default when the stored shape is wrong (e.g. an invalid detent)", () => {
+  it("falls back to the default when the stored shape is wrong (e.g. an invalid dock)", () => {
     const storage = fakeStorage({
-      "atlas.panel.layers.desktop": JSON.stringify({ collapsed: false, detent: "quarter" }),
+      "atlas.panel.layers.desktop": JSON.stringify({
+        collapsed: false,
+        maximized: false,
+        dock: "top",
+        size: 400,
+      }),
+    });
+    expect(loadPanelGeometry(storage, "layers", "desktop")).toEqual(DEFAULT_PANEL_GEOMETRY);
+  });
+
+  it("falls back to the default on the OLD (pre-R1) 'detent' shape -- no silent migration", () => {
+    const storage = fakeStorage({
+      "atlas.panel.layers.desktop": JSON.stringify({ collapsed: true, detent: "half" }),
     });
     expect(loadPanelGeometry(storage, "layers", "desktop")).toEqual(DEFAULT_PANEL_GEOMETRY);
   });

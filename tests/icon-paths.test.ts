@@ -39,6 +39,7 @@ const SPEC_ICON_NAMES = [
   "collapseDown",
   "dockRight",
   "dockBottom",
+  "dockLeft",
   "expand",
   "collapseAll",
   "close",
@@ -53,6 +54,10 @@ const SPEC_ICON_NAMES = [
   "sortAsc",
   "sortDesc",
   "preview",
+  "maximize",
+  "restore",
+  "more",
+  "feedback",
 ];
 
 // SVG path command characters and allowed symbols (see tests/glyphs.test.ts for a real parser;

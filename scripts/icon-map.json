@@ -14,6 +14,7 @@
   "collapseDown": "mdiChevronDoubleDown",
   "dockRight": "mdiDockRight",
   "dockBottom": "mdiDockBottom",
+  "dockLeft": "mdiDockLeft",
   "expand": "mdiArrowExpand",
   "collapseAll": "mdiArrowCollapse",
   "close": "mdiClose",
@@ -27,5 +28,9 @@
   "filter": "mdiFilterVariant",
   "sortAsc": "mdiArrowUp",
   "sortDesc": "mdiArrowDown",
-  "preview": "mdiEye"
+  "preview": "mdiEye",
+  "maximize": "mdiFullscreen",
+  "restore": "mdiFullscreenExit",
+  "more": "mdiDotsHorizontal",
+  "feedback": "mdiMessageAlertOutline"
 }
