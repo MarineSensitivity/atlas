@@ -11,6 +11,7 @@
     loadSheetDetent,
     saveSheetDetent,
     type SheetDetent,
+    type SheetGeometry,
   } from "./sheetGeometry";
 
   interface Props {
@@ -18,14 +19,32 @@
     id: string;
     title: string;
     children: Snippet;
+    /** P1 fix: a compact, non-scrolling row rendered directly under the header (grab handle +
+     * title/controls), above the scrolling body -- real layout space, not an overlay, so it can
+     * never cover the header's own controls nor get lost in the scrolling content. Shell.svelte
+     * uses this to move the phone legend chip INSIDE the sheet at the "full" detent. */
+    headerExtra?: Snippet;
+    /** reports the sheet's current detent + measured height on every change (mirrors Panel.svelte's
+     * own `ongeometry`) -- Shell.svelte uses this to keep the floating legend chip anchored to the
+     * sheet's REAL top edge instead of a fixed offset that used to land on the header controls at
+     * "peek" and the last table row at "half" (Ben's phone report, 2026-09-24). */
+    ongeometry?: (geometry: SheetGeometry) => void;
   }
 
-  let { id, title, children }: Props = $props();
+  let { id, title, children, headerExtra, ongeometry }: Props = $props();
 
   const bodyId = $derived(`sheet-body-${id}`);
   const titleId = $derived(`sheet-title-${id}`);
   let detent = $state<SheetDetent>(DEFAULT_SHEET_DETENT);
   let rootEl: HTMLElement | undefined;
+  // P1 fix: the sheet's real rendered height (svh-based CSS, not a JS-known number) -- Svelte's
+  // built-in `bind:offsetHeight` keeps this current across a detent change AND any future
+  // drag-resize, without this component needing to duplicate its own height formula elsewhere.
+  let measuredHeight = $state(0);
+
+  $effect(() => {
+    ongeometry?.({ detent, height: measuredHeight });
+  });
 
   function storage(): Storage | null {
     try {
@@ -67,7 +86,12 @@
   }
 </script>
 
-<section class="sheet detent-{detent}" aria-labelledby={titleId} bind:this={rootEl}>
+<section
+  class="sheet detent-{detent}"
+  aria-labelledby={titleId}
+  bind:this={rootEl}
+  bind:offsetHeight={measuredHeight}
+>
   <div class="sheet-grab" role="separator" aria-label="Drag to resize the sheet"></div>
   <div class="sheet-head">
     <h2 class="sheet-title" id={titleId}>{title}</h2>
@@ -100,6 +124,13 @@
       </button>
     </div>
   </div>
+  {#if headerExtra}
+    <!-- P1 fix: real flex-row layout space (flex: none, see below), NOT an absolutely-positioned
+         overlay -- it pushes `.sheet-body` down instead of covering it. -->
+    <div class="sheet-header-extra">
+      {@render headerExtra()}
+    </div>
+  {/if}
   <!-- tabindex="0": a scrollable region with no focusable child of its own must still be
        reachable by keyboard (axe scrollable-region-focusable); svelte-check's own a11y rule does
        not know that exception, hence the ignore below (spec.md §10 asks for exactly this). -->
@@ -177,6 +208,14 @@
     font-size: var(--text-xl);
     letter-spacing: var(--tracking-display);
     margin: 0;
+  }
+
+  /* P1 fix: a real flex-row child (flex: none, own top-to-bottom space) directly under the header
+     and above the scrolling body -- never covers the header's own buttons, never scrolls away with
+     nothing (it has no scroll of its own; it just occupies its own row). */
+  .sheet-header-extra {
+    flex: none;
+    padding: 0 var(--space-4) var(--space-2);
   }
 
   .panel-controls {

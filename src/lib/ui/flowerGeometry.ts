@@ -40,6 +40,15 @@ import { formatScore } from "../format";
  * Flower.svelte's hardcoded `r="24"` and this module's plain pie slices did. */
 export const FLOWER_HUB_RADIUS_RATIO = 0.24;
 
+/** the flower SVG's fixed `viewBox`, `"0 0 (2*outerRadius) (2*outerRadius)"` -- ONE place
+ * Flower.svelte reads the plot's true drawing-coordinate box from, so the `size` prop (a CSS
+ * pixel value only, atlas-4 fix round 3: "Flower plot should be centered") can never be mistaken
+ * for a change to the coordinate system the petals are computed in. Unit-tested directly since
+ * this module runs under vitest's node environment, which cannot render Flower.svelte itself. */
+export function flowerViewBox(outerRadius = 100): string {
+  return `0 0 ${outerRadius * 2} ${outerRadius * 2}`;
+}
+
 export interface FlowerComponentInput {
   /** raw category/component key as the data names it (msens sp_cat, or the flower's
    * metric_key-derived component label) -- resolved through categories.ts so every spelling of a
@@ -171,6 +180,15 @@ export function petalCentroid(
   const midAngle = (petal.startAngle + petal.endAngle) / 2;
   const midRadius = (petal.innerRadius + petal.radius) / 2;
   return polarToCartesian(cx, cy, midRadius, midAngle);
+}
+
+/** one petal's tap/hover/focus label text -- "Bird: 56.8", always `formatScore`'s ONE decimal.
+ * The single source for both the petal's own accessible name (`aria-label`/`<title>`, read on
+ * focus regardless of pointer type) and the visible on-tap/on-hover label Flower.svelte draws in
+ * the hub area, so the two can never disagree (atlas-4 fix round 3, owner: "values of petal show
+ * on click (and for desktop on hover)"). */
+export function petalLabelText(petal: Pick<FlowerPetal, "category" | "score">): string {
+  return `${petal.category.label}: ${formatScore(petal.score)}`;
 }
 
 /**

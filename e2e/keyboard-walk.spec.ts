@@ -41,6 +41,10 @@ const COMPOSITE_LABEL = "Overall score";
  * THIS object by the assertions below, never retyped: the test's expected number and the fixture's
  * published number are one value. */
 const TOP_ZONE = { key: "GAA", name: "Gulf of America", score: 73.4 };
+// P3 fix (owner-reported, 2026-09-24): "Program area selection should list full names and
+// parenthetical acronyms" -- the zone button's/checkbox's accessible name and the Zone column
+// cell now read "Gulf of America (GAA)", not the bare name (`paLabel`, src/places/zoneStats.ts).
+const TOP_ZONE_LABEL = `${TOP_ZONE.name} (${TOP_ZONE.key})`;
 const ZONES = [
   {
     key: TOP_ZONE.key,
@@ -472,7 +476,7 @@ test.describe("step 1: select a Program Area and read its score from the zones t
     await expect(firstRow).toContainText(TOP_ZONE.name);
 
     // "select a Program Area": the zone's own name button, reached by Tab, activated by Enter.
-    await tabTo(page, browserName, TOP_ZONE.name, { step: "step 1: the zone button" });
+    await tabTo(page, browserName, TOP_ZONE_LABEL, { step: "step 1: the zone button" });
     await page.keyboard.press("Enter");
 
     // URL-is-the-view: selecting a zone writes `sel=zone:programarea:GAA` and nothing else.
@@ -499,7 +503,7 @@ test.describe("step 1: select a Program Area and read its score from the zones t
     const cells = await row.locator("td").allTextContents();
     const trimmed = cells.map((c) => c.trim());
     expect(trimmed[1], `rank column for ${TOP_ZONE.name}`).toBe("1");
-    expect(trimmed[2], `zone column for ${TOP_ZONE.name}`).toBe(TOP_ZONE.name);
+    expect(trimmed[2], `zone column for ${TOP_ZONE.name}`).toBe(TOP_ZONE_LABEL);
     // ZonesTable formats with `toLocaleString("en-US", { maximumFractionDigits: 1 })` -- the value
     // the table SHOWS and the value the release PUBLISHES are asserted to be the same number, not
     // two independently-written literals.
@@ -672,7 +676,7 @@ test.describe("step 3: open the report and export it", () => {
    * activate "Report on selected" -- which opens report.html in a NEW TAB (`window.open`, so the
    * popup blocker still sees a user gesture; TablePanel.svelte's own rule). */
   async function reportOnSelectedZone(page: Page, browserName: string): Promise<Page> {
-    await tabTo(page, browserName, `Select ${TOP_ZONE.name} for report`, {
+    await tabTo(page, browserName, `Select ${TOP_ZONE_LABEL} for report`, {
       step: "step 3: the zone's report checkbox",
     });
     await page.keyboard.press("Space");

@@ -96,15 +96,16 @@ export function topSpeciesFaulty(rows: readonly SpeciesRow[], limit = 20): strin
 }
 
 // ---- FAULT 5: a coverage footnote is suppressed ----------------------------------------------
-// the threshold written as "< 90 %" ("don't footnote trivial gaps") rather than "< 100 %": the
-// components D7b exists for -- turtle at 1.4 % in GEO -- still footnote, but the many partial ones
-// just under 100 % silently do not, and the table again implies the score holds everywhere.
+// the threshold written as "< 90 %" ("don't footnote trivial gaps") rather than P4's real "< 99 %"
+// floor: the components D7b exists for -- turtle at 1.4 % or 42 % in a fixture's Aleutian box --
+// still footnote, but a component in the 90-99 % band (v9 gulf_rectangle's ~96.9 %, v7's aleutian
+// ~98.7 %) silently does not, and the table again implies the score holds everywhere.
 export function footnotesFaulty(places: readonly ScoresTablePlace[]): string[] {
   const out: string[] = [];
   for (const p of places) {
     for (const c of p.components) {
       if (c.coverage !== null && c.coverage < 0.9) {
-        // <-- THE FAULT (correct: < 1 - 1e-9)
+        // <-- THE FAULT (correct: < 0.99, P4's COVERAGE_FOOTNOTE_FLOOR_PCT)
         out.push(
           `${p.name}, ${c.component}: scored over ${formatCoveragePct(c.coverage)} of the place` +
             (c.mean_where_present !== null

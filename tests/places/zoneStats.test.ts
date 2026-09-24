@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  allZoneStats,
+  paLabel,
   summarizeZoneStats,
   zoneCenterFromBoot,
   zoneDisplayName,
@@ -75,9 +77,63 @@ describe("summarizeZoneStats", () => {
 });
 
 describe("zoneDisplayName", () => {
-  it("joins resolved names with ', '", () => {
+  // P3 fix (owner-reported, 2026-09-24): "Program area selection should list full names and
+  // parenthetical acronyms" -- every resolved zone name now carries its acronym in parens
+  // (`paLabel`), never the bare name alone. Seeded fault: dropping the `paLabel` call here turns
+  // this back into "St. George Basin, Western Gulf of Alaska" -- red.
+  it("joins resolved 'Name (KEY)' labels with ', '", () => {
     const stats = zoneStatsFor(BOOT, "programarea", ["GAA", "WGA"]);
-    expect(zoneDisplayName(stats)).toBe("St. George Basin, Western Gulf of Alaska");
+    expect(zoneDisplayName(stats)).toBe("St. George Basin (GAA), Western Gulf of Alaska (WGA)");
+  });
+
+  it("a zone with no boot row falls back to the bare key, not 'ZZZ (ZZZ)'", () => {
+    const stats = zoneStatsFor(BOOT, "programarea", ["ZZZ"]);
+    expect(zoneDisplayName(stats)).toBe("ZZZ");
+  });
+});
+
+describe("paLabel (P3: 'Aleutian Arc (ALA)' style labels everywhere a Program Area is shown)", () => {
+  it("formats 'Name (KEY)' when a name is published", () => {
+    expect(paLabel("ALA", "Aleutian Arc")).toBe("Aleutian Arc (ALA)");
+  });
+
+  it("falls back to the bare key when the bundle publishes no name", () => {
+    expect(paLabel("ALA", undefined)).toBe("ALA");
+    expect(paLabel("ALA", null)).toBe("ALA");
+    expect(paLabel("ALA", "")).toBe("ALA");
+  });
+
+  it("falls back to the bare key rather than 'ALA (ALA)' when name already equals the key", () => {
+    expect(paLabel("ALA", "ALA")).toBe("ALA");
+  });
+});
+
+describe("allZoneStats (P3, orchestrator-directed 2026-09-24: the Places panel's 'Add a Program Area' chooser)", () => {
+  // boot's OWN publish order is deliberately NOT alphabetical, so this proves the sort, not a
+  // coincidence of the fixture's order.
+  const UNSORTED_BOOT = {
+    zones: {
+      programarea: [
+        { key: "WGA", name: "Western Gulf of Alaska", area_km2: 22000, composite: 21.1 },
+        { key: "GAA", name: "St. George Basin", area_km2: 16850, composite: 33.9 },
+        { key: "ZZZ", area_km2: 1 }, // no boot `name` -- falls back to the bare key
+      ],
+    },
+  };
+
+  it("returns every published zone, sorted by its resolved paLabel text (not boot's publish order)", () => {
+    const stats = allZoneStats(UNSORTED_BOOT, "programarea");
+    expect(stats.map((s) => paLabel(s.key, s.name))).toEqual([
+      "St. George Basin (GAA)",
+      "Western Gulf of Alaska (WGA)",
+      "ZZZ",
+    ]);
+  });
+
+  it("is [] for a unit the release does not publish, never a throw", () => {
+    expect(allZoneStats(UNSORTED_BOOT, "ecoregion")).toEqual([]);
+    expect(allZoneStats(null, "programarea")).toEqual([]);
+    expect(allZoneStats({}, "programarea")).toEqual([]);
   });
 });
 

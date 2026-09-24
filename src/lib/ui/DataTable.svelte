@@ -8,6 +8,7 @@
   import Icon from "./Icon.svelte";
   import {
     type CellPosition,
+    columnWidthPx,
     computeVisibleWindow,
     type DataTableColumn,
     filterRows,
@@ -18,6 +19,7 @@
     scrollTopForRow,
     sortRows,
     type SortDirection,
+    totalTableWidthPx,
   } from "./dataTableCore";
 
   interface Props {
@@ -58,6 +60,11 @@
   );
   const visibleRows = $derived(sortedRows.slice(windowState.startIndex, windowState.endIndex));
   const pageSize = $derived(Math.max(1, Math.floor(height / rowHeight)));
+  // dataTableCore.ts's own header: `table-layout: fixed` only honours a `<colgroup>`'s widths once
+  // the `<table>` has an explicit (summed) pixel width -- `width: max-content`/`auto` do not
+  // qualify (measured on real Chromium: every column ignored its `<col>` width and sized itself
+  // from its own content instead).
+  const tableWidthPx = $derived(totalTableWidthPx(columns));
 
   // announces through the ONE shared live region (spec.md §11 / SC 4.1.3 -- this component
   // renders no role="status" of its own) on load AND on every filter change: tracks
@@ -163,15 +170,27 @@
   >
     <table
       class="grid"
+      style={`width:${tableWidthPx}px`}
       role="grid"
       aria-label={label}
       aria-rowcount={gridRowCount(sortedRows.length)}
       aria-colcount={columns.length}
     >
+      <!-- P3 fix (owner-reported, 2026-09-24): an explicit per-column width (dataTableCore.ts#
+           columnWidthPx -- a readable minimum for text, narrower for numeric), PLUS an explicit
+           summed `width` on the table itself (`tableWidthPx`, above) -- `table-layout: fixed` only
+           honours a `<colgroup>` once the table has a definite width (dataTableCore.ts's own
+           header) -- so a wide column set scrolls the table horizontally instead of squeezing
+           every column to fit. -->
+      <colgroup>
+        {#each columns as col (col.key)}
+          <col style={`width:${columnWidthPx(col)}px`} />
+        {/each}
+      </colgroup>
       <thead>
         <tr aria-rowindex="1">
-          {#each columns as col (col.key)}
-            <th scope="col" aria-sort={ariaSortFor(col)}>
+          {#each columns as col, colIndex (col.key)}
+            <th scope="col" class:sticky-col={colIndex === 0} aria-sort={ariaSortFor(col)}>
               {#if col.sortable}
                 <button type="button" class="sort-btn" onclick={() => toggleSort(col)}>
                   <span>{col.label}</span>
@@ -186,8 +205,8 @@
           {/each}
         </tr>
         <tr class="filter-row" aria-rowindex="2">
-          {#each columns as col (col.key)}
-            <th scope="col">
+          {#each columns as col, colIndex (col.key)}
+            <th scope="col" class:sticky-col={colIndex === 0}>
               <label class="filter-field">
                 <span class="sr-only">Filter {col.label}</span>
                 <Icon name="filter" size={14} class="filter-icon" />
@@ -227,6 +246,7 @@
                   class="cell"
                   class:cell--numeric={col.numeric}
                   class:cell--active={isActive}
+                  class:sticky-col={colIndex === 0}
                   data-row={rowIndex}
                   data-col={colIndex}
                   tabindex={isActive ? 0 : -1}
@@ -296,8 +316,15 @@
     border-radius: var(--radius-control);
   }
 
+  /* P3 fix (owner-reported, 2026-09-24): each column gets an explicit width from `<colgroup>`
+     (dataTableCore.ts#columnWidthPx); `width` (the SUM of those widths, `tableWidthPx`) is set
+     inline above, per dataTableCore.ts's own header -- `table-layout: fixed` only honours a
+     `<colgroup>` once the table has a DEFINITE width, never `max-content`/`auto`. `min-width: 100%`
+     still stretches it (proportionally) to fill a panel wide enough to hold every column without
+     scrolling; a narrower panel scrolls `.scroll-region` (below) horizontally instead of squeezing
+     every column evenly. */
   .grid {
-    width: 100%;
+    min-width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
     font-variant-numeric: tabular-nums;
@@ -310,6 +337,30 @@
     background: var(--surface-sunken);
     text-align: left;
     padding: 0;
+  }
+
+  /* the first (identifying) column: sticky on the LEFT too, so it survives a horizontal scroll the
+     same way the header row survives a vertical one. A header cell that is both column- and
+     row-sticky needs the higher z-index so it stacks above a plain top-sticky header cell
+     scrolling underneath it. */
+  .sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface-sunken);
+  }
+
+  /* `.cell` (below) also sets `position: relative` for `.cell-expand`'s own absolute positioning
+     -- `.cell.sticky-col` (two classes, higher specificity than either alone) makes sure
+     `position: sticky` always wins on a body cell that carries both, regardless of declaration
+     order. */
+  .cell.sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    /* opaque -- must fully cover whatever column scrolled out from underneath it, not blend with
+       the panel's own translucent glass background. */
+    background: var(--surface-raised);
   }
 
   .sort-btn {

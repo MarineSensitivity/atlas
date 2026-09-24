@@ -109,9 +109,24 @@ describe("fault 4 -- the top 20 sorted by the wrong column (avg_suit, not suit_e
   });
 });
 
-describe("fault 5 -- a coverage footnote is suppressed (threshold 90 % instead of 100 %)", () => {
-  it.each(everyFixture())(
-    "$ver/$place: every partial component footnotes; the fault emits none",
+describe("fault 5 -- a coverage footnote is suppressed (threshold 90 % instead of P4's real 99 %)", () => {
+  // P4 moved the real floor from "~100 %" to 99 % and grouped every below-floor component into ONE
+  // footnote per place (scores.ts's own header) -- so the fixtures that exercise this fault are the
+  // ones with a component in the 90-99 % band the fault's 90 % threshold cannot see at all (a real
+  // GAA fixture sits either exactly at 1 or already >= 99 %, so it has nothing in that band and is
+  // correctly excluded, same spirit as fault 1's `withVu` filter).
+  const withBand = everyFixture().filter((f) =>
+    f.fx.input.components.some(
+      (c) => c.coverage !== null && c.coverage >= 0.9 && c.coverage < 0.99,
+    ),
+  );
+
+  it("at least one fixture has a component in the 90-99 % band (the gate is not vacuous)", () => {
+    expect(withBand.length).toBeGreaterThan(0);
+  });
+
+  it.each(withBand)(
+    "$ver/$place: the real (grouped, 99 %) rule catches components the fault's 90 % threshold misses",
     ({ fx }) => {
       const place = {
         name: fx.name,
@@ -120,15 +135,17 @@ describe("fault 5 -- a coverage footnote is suppressed (threshold 90 % instead o
         components: fx.input.components,
         overall: overallScore(fx.input.components),
       };
-      const partial = fx.input.components.filter(
-        (c) => c.coverage !== null && c.coverage < 1 - 1e-9,
+      const realBelowFloor = fx.input.components.filter(
+        (c) => c.coverage !== null && c.coverage < 0.99,
       );
-      expect(partial.length, "every fixture has at least one partial component").toBeGreaterThan(0);
-      expect(scoresTable([place]).footnotes.length).toBe(partial.length);
-      // the fault's threshold is above every coverage in these fixtures, so it prints nothing --
-      // the table then implies each score holds over the whole place, which is the D7b claim the
-      // footnote exists to refuse.
-      expect(footnotesFaulty([place]).length).toBeLessThan(partial.length);
+      expect(realBelowFloor.length, "every filtered fixture has one").toBeGreaterThan(0);
+      // grouped: a single-place report gets at most ONE footnote, however many components trigger.
+      expect(scoresTable([place]).footnotes.length).toBe(1);
+      // the fault's per-component list is SHORTER than the real per-component count, because a
+      // component in the 90-99 % band never crosses its 90 % threshold -- the table then implies
+      // that component's score holds over the whole place, which is the D7b claim the footnote
+      // exists to refuse.
+      expect(footnotesFaulty([place]).length).toBeLessThan(realBelowFloor.length);
     },
   );
 
@@ -150,7 +167,7 @@ describe("fault 5 -- a coverage footnote is suppressed (threshold 90 % instead o
       overall: 0.7,
     };
     expect(scoresTable([place]).footnotes[0].text).toBe(
-      "GEO, turtle: scored over 1.4% of the place, where its mean is 50.",
+      "GEO: turtle scored over 1.4% of the area, mean 50 where scored.",
     );
   });
 });

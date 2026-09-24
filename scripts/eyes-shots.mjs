@@ -159,13 +159,16 @@ const STATES = [
   {
     id: "report",
     run: async (p, vp) => {
-      await go(p, "?ver=v7&theme=dark#pl=z.pa.GAA&t=Gulf%20of%20Alaska%20Program%20Area");
+      await go(p, "?ver=v7&theme=dark#pl=z.pa.GAA&t=Gulf%20of%20America%20Program%20Area");
       await explore(p);
       const popupP = p
         .context()
         .waitForEvent("page", { timeout: 15_000 })
         .catch(() => null);
       await tool(p, "Report");
+      // the rail opens the chooser sheet; "Open report" is what opens report.html in a new tab
+      const open = p.getByRole("button", { name: /open report/i }).first();
+      if (await open.count()) await open.click({ timeout: 10_000 }).catch(() => {});
       await sheet(p, "Full height");
       const popup = await popupP;
       const r = popup ?? p;

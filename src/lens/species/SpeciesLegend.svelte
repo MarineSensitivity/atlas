@@ -54,18 +54,15 @@
     box-shadow: var(--elev-2);
   }
 
-  /* the phone viewport has no room for this beside the bottom rail (centered, also anchored at
-     `bottom: var(--space-3)`) and the bottom sheet -- the SAME "no room" trade-off Shell.svelte's
-     on-map About card already makes at this breakpoint (shell.css's own `.about-region { display:
-     none }`, cited there as an open item, not blocking, docs/design/spec.md §14). Undocumented
-     until atlas-4/5's defect fix gave the scores lens a floating legend too and a phone axe check
-     first exercised this combination (measured: the legend overlapping the rail produced a
-     `bgOverlap` color-contrast `incomplete` axe cannot resolve, e2e/shell.a11y.spec.ts). */
-  @media (max-width: 899px) {
-    .species-legend {
-      display: none;
-    }
-  }
+  /* P1 fix (Ben's phone report, 2026-09-24): a `display:none` used to live HERE for "no room
+     beside the sheet" below 900px -- but Shell.svelte reuses this exact component's markup inside
+     LegendChip.svelte's phone modal (the SAME `<Comp {legend} />`), so this rule also blanked the
+     modal's body on the phone. The desktop floating placement's "no room on the phone" hiding
+     (originally added to dodge an axe `bgOverlap` against the rail, e2e/shell.a11y.spec.ts) now
+     lives in shell.css's `.lens-legend-region` instead, a wrapper class Shell.svelte itself owns
+     around the desktop-only branch -- this component no longer decides by viewport at all, only by
+     `isPhone` (via which slot Shell.svelte mounts it into). See ScoresLegend.svelte's identical
+     fix, same reason. */
 
   .species-legend--categorical h2 {
     font-size: var(--text-sm);

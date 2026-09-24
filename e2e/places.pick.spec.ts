@@ -98,6 +98,55 @@ async function screenPointFor(page: Page, lonLat: [number, number]) {
   }, lonLat);
 }
 
+// P3 (orchestrator-directed, 2026-09-24): "the Places tool currently has NO Program Area list at
+// all, only Pick mode on the map" -- unreachable without a pointer, and unreachable on a phone
+// where the map is often off-screen behind the panel. The new "Add a Program Area" chooser
+// (Places.svelte) is a keyboard/phone-reachable alternative: full-name-sorted options reading
+// "Full Name (KEY)" (`paLabel`), adding through the IDENTICAL `addZonePlace`/`writePlaces` path
+// the map pick (above) uses.
+test("P3: 'Add a Program Area' lists full-name labels and adds the SAME way a map pick does", async ({
+  page,
+}) => {
+  const errors = collectConsoleErrors(page);
+  await gotoPlacesOverGaa(page);
+
+  const select = page.getByLabel("Add a Program Area");
+  await expect(select).toBeVisible();
+
+  // BOOT_FIXTURE.zones.programarea (map-hermetic.ts): GAA "Gulf of America", MDA "Mid Atlantic",
+  // CGA "Cook Inlet", CAA "Central California" -- every option reads "Full Name (KEY)", never the
+  // bare acronym, and sorted by that full name (CAA/CGA/GAA/MDA keys, but Central
+  // California/Cook Inlet/Gulf of America/Mid Atlantic alphabetically).
+  const optionTexts = await select.locator("option").allTextContents();
+  expect(optionTexts).toEqual([
+    "Choose a Program Area…",
+    "Central California (CAA)",
+    "Cook Inlet (CGA)",
+    "Gulf of America (GAA)",
+    "Mid Atlantic (MDA)",
+  ]);
+
+  const addButton = page.getByRole("button", { name: "Add this Program Area" });
+  await expect(addButton).toBeDisabled();
+
+  await select.selectOption("GAA");
+  await expect(addButton).toBeEnabled();
+  await addButton.click();
+
+  // the SAME `z.pa.GAA` token the map-pick flow (below) produces -- one mechanism, two entry
+  // points.
+  await expect
+    .poll(() => page.evaluate(() => location.hash), { timeout: 10_000 })
+    .toMatch(/^#pl=z\.pa\.GAA/);
+  await expect(page.locator(".place-row")).toContainText("Gulf of America (GAA)");
+
+  // the select resets after adding, and stays enabled to add another Program Area.
+  await expect(select).toHaveValue("");
+  await expect(addButton).toBeDisabled();
+
+  expect(errors).toEqual([]);
+});
+
 for (const unitMode of [
   "raster cells (no fill published by anything)",
   "Program areas selected",

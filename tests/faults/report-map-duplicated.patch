@@ -1,0 +1,12 @@
+diff --git a/src/report/report.css b/src/report/report.css
+index aaeb3b4..dd84cf6 100644
+--- a/src/report/report.css
++++ b/src/report/report.css
+@@ -73,7 +73,6 @@ figure {
+    wins over this class rule with no `!important` needed -- so the downloaded/offline document is
+    unaffected and still shows its static snapshot. */
+ .map-print {
+-  display: none;
+ }
+ 
+ .progress-line {
