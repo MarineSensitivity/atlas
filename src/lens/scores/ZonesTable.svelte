@@ -151,7 +151,7 @@
             </td>
             <td class="num" title={formatValue(r.value)}>{formatValue(r.value)}</td>
             {#each r.components as c (c.label)}
-              <td class="num" title={`${c.label}: ${formatValue(c.score)}`}
+              <td class="num" title={`${categoryLabel(c.label)}: ${formatValue(c.score)}`}
                 >{formatValue(c.score)}</td
               >
             {/each}
