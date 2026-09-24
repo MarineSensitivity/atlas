@@ -1,11 +1,11 @@
 diff --git a/e2e/map-hermetic.ts b/e2e/map-hermetic.ts
-index 14a9a52..717935e 100644
+index f155eef..f6f9786 100644
 --- a/e2e/map-hermetic.ts
 +++ b/e2e/map-hermetic.ts
-@@ -124,7 +124,10 @@ export const BASEMAP_RGB: [number, number, number] = [0, 102, 153];
+@@ -127,7 +127,10 @@ export const BASEMAP_RGB: [number, number, number] = [0, 102, 153];
   * neither the swap nor the paint"). Distinct enough from `BASEMAP_RGB` that no plausible blend or
-  * anti-aliasing edge could confuse the two. Only a spec that explicitly requests `theme=dark`/
-  * `theme=navy` ever sees this colour. */
+  * anti-aliasing edge could confuse the two. Since 0.10.29's U2a this is also the DEFAULT a bare URL
+  * (no `?theme=`) resolves to — no longer "only a spec that explicitly requests theme=dark/navy".*/
 -export const BASEMAP_RGB_NAVY: [number, number, number] = [10, 20, 40];
 +// SEEDED FAULT (tests/faults/map-hermetic-same-theme-color.patch): back to the SAME value as
 +// BASEMAP_RGB -- e2e/map.spec.ts's theme-switch test must go red (the pixel probe can no longer
