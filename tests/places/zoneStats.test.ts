@@ -52,7 +52,14 @@ describe("zoneStatsFor", () => {
     const stats = zoneStatsFor(BOOT, "programarea", ["GAA", "ZZZ"]);
     expect(stats).toEqual([
       { key: "GAA", name: "St. George Basin", areaKm2: 16850, coveragePct: 100, composite: 33.9 },
-      { key: "ZZZ", name: "ZZZ", areaKm2: null, coveragePct: null, composite: null },
+      {
+        key: "ZZZ",
+        name: "ZZZ",
+        areaKm2: null,
+        coveragePct: null,
+        composite: null,
+        status: "unpublished",
+      },
     ]);
   });
 });
@@ -67,12 +74,119 @@ describe("summarizeZoneStats", () => {
     });
   });
 
-  it("every field is null when nothing is known", () => {
+  // P8 item 2: a composite-less summary is a permanent fact about the release ("unpublished"),
+  // never silently indistinguishable from "not analysed yet" -- `Places.svelte`'s zone-row branch
+  // reads this `status` to pick the honest chip.
+  it("status is 'unpublished' when nothing is known", () => {
     expect(
       summarizeZoneStats([
         { key: "x", name: "x", areaKm2: null, coveragePct: null, composite: null },
       ]),
-    ).toEqual({ areaKm2: null, coveragePct: null, composite: null });
+    ).toEqual({ areaKm2: null, coveragePct: null, composite: null, status: "unpublished" });
+  });
+});
+
+// P8 item 2 (P7 handback + Opus docs review finding #27): the ORIGINAL fixture above (flat
+// `composite`/`pct_covered` fields) is not what a real release publishes -- every Program-Area row
+// was reading undefined fields and showing "not analysed yet" forever. This fixture is copied from
+// the REAL live v7 `boot.json` (`s3://oceanmetrics.io-public/marine-atlas/v7/app/boot.json`,
+// `zones.programarea[0]` and `[1]`, and the one `layers` row with `category: "composite"`), values
+// verbatim.
+const REAL_V7_BOOT = {
+  layers: [
+    { metric_key: "primprod", category: "raw" },
+    { metric_key: "extrisk_bird_ecoregion_rescaled", category: "component" },
+    {
+      metric_key: "score_extriskspcat_primprod_ecoregionrescaled_equalweights",
+      label:
+        "Combined score of extinction risk per species category and primary productivity, equally weighted",
+      category: "composite",
+    },
+  ],
+  zones: {
+    programarea: [
+      {
+        key: "ALA",
+        n_cells: 45790,
+        area_km2: 875225.027218056,
+        n_taxa: 2503,
+        metrics: {
+          extrisk_bird: 89.085250176649,
+          extrisk_bird_ecoregion_rescaled: 42.3898340211856,
+          score_extriskspcat_primprod_ecoregionrescaled_equalweights: 28.2800625961801,
+        },
+        coverage: null,
+      },
+      {
+        key: "ALB",
+        n_cells: 10272,
+        area_km2: 167874.54763979,
+        n_taxa: 1222,
+        metrics: {
+          extrisk_bird: 47.1228117341986,
+          score_extriskspcat_primprod_ecoregionrescaled_equalweights: 12.2811149697871,
+        },
+        coverage: null,
+      },
+    ],
+  },
+};
+
+describe("zoneStatFromBoot on the REAL v7 boot.json shape (P8 item 2)", () => {
+  it("reads the composite NESTED under metrics[compositeMetricKey], not a flat `composite` field", () => {
+    expect(zoneStatFromBoot(REAL_V7_BOOT, "programarea", "ALA")).toEqual({
+      key: "ALA",
+      name: "ALA", // v7 publishes no `name` on the row -- bare key (docs review finding #23)
+      areaKm2: 875225.027218056,
+      coveragePct: null, // `coverage: null` published explicitly -- "not published", read as null
+      composite: 28.2800625961801,
+    });
+  });
+
+  it("a second zone reads its OWN composite, not the first's", () => {
+    expect(zoneStatFromBoot(REAL_V7_BOOT, "programarea", "ALB")?.composite).toBe(12.2811149697871);
+  });
+
+  it("status is 'unpublished' -- never 'not analysed yet' -- when metrics carries no composite key at all", () => {
+    const noComposite = {
+      layers: REAL_V7_BOOT.layers,
+      zones: {
+        programarea: [{ key: "ZZZ", area_km2: 1, metrics: { extrisk_bird: 1 }, coverage: null }],
+      },
+    };
+    expect(zoneStatFromBoot(noComposite, "programarea", "ZZZ")).toEqual({
+      key: "ZZZ",
+      name: "ZZZ",
+      areaKm2: 1,
+      coveragePct: null,
+      composite: null,
+      status: "unpublished",
+    });
+  });
+
+  it("a Program-Area row shows its composite AND coverage when both are actually present", () => {
+    const withCoverage = {
+      layers: REAL_V7_BOOT.layers,
+      zones: {
+        programarea: [
+          {
+            key: "GEO",
+            area_km2: 100,
+            pct_covered: 42.1,
+            metrics: {
+              score_extriskspcat_primprod_ecoregionrescaled_equalweights: 27.2,
+            },
+          },
+        ],
+      },
+    };
+    expect(zoneStatFromBoot(withCoverage, "programarea", "GEO")).toEqual({
+      key: "GEO",
+      name: "GEO",
+      areaKm2: 100,
+      coveragePct: 42.1,
+      composite: 27.2,
+    });
   });
 });
 

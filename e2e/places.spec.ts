@@ -477,6 +477,58 @@ test("'show analysis cells' paints the covered cells as a real selection-line fe
     .toBeGreaterThan(0);
 });
 
+// P8 item 4 (Opus docs review, app finding #5): `DataTable.svelte` always renders "Export CSV" and
+// calls `onExport?.(rows)` -- `ResultsPanel.svelte` used to pass NEITHER of its two DataTables an
+// `onExport`, so the button was silently dead. Needs the SAME real engine as the round trip above:
+// a real `scoreResults.components` list is what the Components table (and its export) render from.
+test("P8 item 4: 'Export CSV' on the place results' Components table actually downloads a file", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await gotoPlacesWithRoundtripRelease(page, "/?map=-123.75,40.75,7");
+  await addByCoordinates(page);
+  await readResultsPanel(page); // waits for a real composite -- the Components table is now rendered
+
+  const exportBtn = page
+    .locator(".results")
+    .getByRole("button", { name: "Export visible rows as CSV" })
+    .first();
+  await expect(exportBtn).toBeVisible();
+
+  const [download] = await Promise.all([page.waitForEvent("download"), exportBtn.click()]);
+  expect(download.suggestedFilename()).toMatch(/_components_\d{4}-\d{2}-\d{2}\.csv$/);
+});
+
+// P8 item 7 (Opus docs review, app findings #2/#25): `UploadPanel.svelte` always constructs its
+// GeoPackage dependency with `runtime: null` (a documented limitation), so `parseGeoPackage`
+// throws `geopackageNoRuntime` for EVERY `.gpkg` -- but that refusal's own catalogue text (out of
+// this round's file scope, `lib/geo/upload/messages.ts`) says "not running in this tab yet" /
+// "wait... and drop the file again", which can never succeed. `honestRefusal()`
+// (`UploadPanel.svelte`) substitutes the plain, correct sentence at the one place this app
+// actually renders it.
+test("P8 item 7: dropping a GeoPackage shows an honest 'not supported yet' refusal, never a wait-and-retry one", async ({
+  page,
+}) => {
+  await openPlaces(page);
+  // "SQLite format 3\0" is the one signature detect.ts sniffs for -- a GeoPackage IS a SQLite 3
+  // database (module header) -- padded so the file is a plausible non-trivial size.
+  const gpkgBytes = Buffer.concat([Buffer.from("SQLite format 3\0", "ascii"), Buffer.alloc(64)]);
+  await page.locator(".upload input[type='file']").setInputFiles({
+    name: "place.gpkg",
+    mimeType: "application/geopackage+sqlite3",
+    buffer: gpkgBytes,
+  });
+
+  const refusalPanel = page.locator(".upload .refusal");
+  await expect(refusalPanel).toBeVisible();
+  await expect(refusalPanel).toContainText("GeoPackage is not supported yet");
+  // the OLD text this replaces -- must be gone, not merely joined by the new sentence.
+  await expect(refusalPanel).not.toContainText("not running in this tab yet");
+  await expect(refusalPanel).not.toContainText("Wait for the map's numbers");
+  // the drop-zone's own accepted-format hint no longer implies GeoPackage just works today.
+  await expect(page.locator(".dropzone")).toContainText("GeoPackage (not yet)");
+});
+
 // item 3b (atlas-8 review round 2): "Show analysis cells" could paint the PREVIOUS place's cells
 // when the selection changed mid-load -- `toggleAnalysisCells()` (Places.svelte) snapshotted the
 // place before its two `await`s and applied whatever came back unconditionally. `cellsToken` now
@@ -759,6 +811,28 @@ test.describe("P7: places drawn in sequence stay on the map, survive a reload, a
     // every other drawn/entered place does, not a different or skipped path.
     expect(hash).toMatch(/^#pl=g1\.Drawn(%2520|%20|\s)place%25201\./);
   });
+
+  // P8 item 9 (P7 handback): `stopDraw()`'s `drawMode = drawMode ? "select" : null` was a no-op --
+  // "Done" only ever renders while `drawMode` is truthy, so at the button's own click handler the
+  // ternary always reassigned `"select"`, never `null`. "Done" therefore never disappeared, and the
+  // draw session never released `mapStore.setInteractionOwned`'s claim on map clicks.
+  test("clicking Done actually ends draw mode: the Done button disappears", async ({ page }) => {
+    test.setTimeout(60_000);
+    await gotoWideDrawSession(page);
+    await drawPolygonAt(page, SHAPE_A); // drawPolygonAt's own last step already clicks Done once
+
+    // drawPolygonAt clicked Done already (if present) -- assert what that click should have done:
+    // no "Done" button left anywhere in the panel, i.e. drawMode really is back to null.
+    await expect(page.getByRole("button", { name: "Done" })).toHaveCount(0);
+
+    // draw a SECOND shape from a clean (non-draw) state to prove the session was a full teardown,
+    // not merely hidden chrome: starting a fresh Polygon still works after "Done".
+    await drawCircleAt(page, SHAPE_B_CENTER, SHAPE_B_EDGE);
+    const doneAgain = page.getByRole("button", { name: "Done" });
+    await expect(doneAgain).toBeVisible();
+    await doneAgain.click();
+    await expect(doneAgain).toHaveCount(0);
+  });
 });
 
 // Rule 2 ("a newly drawn/added place is analysed automatically, so its row shows numbers, not
@@ -788,4 +862,73 @@ test("Rule 2: a drawn/entered place is analysed automatically WITHOUT being sele
   const rowAChip = page.locator(".place-row").nth(0).locator(".chip").first();
   await expect(rowAChip).toHaveText(/composite/, { timeout: 30_000 });
   await expect(rowAChip).not.toHaveText("not analysed yet");
+});
+
+// P8 item 2 (P7 handback + Opus docs review finding #27): `zoneStatFromBoot` used to read
+// `composite`/`score`/`pct_covered`/`coverage` off the TOP of a `boot.zones` row -- none of which a
+// real release publishes. A real v7 Program-Area row (verified live,
+// `s3://.../marine-atlas/v7/app/boot.json`, `zones.programarea[0]`) is
+// `{ key, n_cells, area_km2, n_taxa, metrics: { ...score_extriskspcat_..._equalweights }, coverage:
+// null }` -- so EVERY Program-Area row read "not analysed yet" forever, even fully published ones.
+// No engine/DuckDB needed for this (`zoneStats.ts`'s own header: "Tier 0 -- it's already in
+// boot.json"), so this fixture needs no release parquet, only a `boot.json` shaped like the real
+// one.
+test("P8 item 2: a Program Area row shows its published composite, read from the REAL v7 boot.json shape", async ({
+  page,
+}) => {
+  const boot = {
+    schema: 1,
+    ver: "v7",
+    grid_id: "usa05",
+    grid: {
+      nc: 3103,
+      nr: 2006,
+      xmin: 141.1,
+      ymax: 74.75,
+      resx: 0.05,
+      resy: 0.05,
+      lon360: true,
+      tile: { size: 50 },
+    },
+    study_areas: [{ key: "FULL", label: "All US waters", lon: -101.3, lat: 46.9, zoom: 2.16 }],
+    units: [],
+    layers: [
+      { metric_key: "extrisk_bird_ecoregion_rescaled", category: "component", order: 1 },
+      {
+        metric_key: "score_extriskspcat_primprod_ecoregionrescaled_equalweights",
+        label: "Combined score",
+        category: "composite",
+        order: 2,
+      },
+    ],
+    zones: {
+      programarea: [
+        {
+          key: "GAA",
+          n_cells: 45790,
+          area_km2: 875225.03,
+          n_taxa: 2503,
+          metrics: {
+            extrisk_bird_ecoregion_rescaled: 42.39,
+            score_extriskspcat_primprod_ecoregionrescaled_equalweights: 27.2,
+          },
+          coverage: null,
+        },
+      ],
+    },
+  };
+  await routeBucket(page, "v7", boot);
+  await routeSession(page, null);
+  await routeSealFixture(page);
+  await page.goto("/");
+  await waitForHydration(page);
+  await page.locator("#rail-region button[aria-label='Places']").click();
+
+  await page.getByLabel("Add a Program Area").selectOption("GAA");
+  await page.getByRole("button", { name: "Add this Program Area" }).click();
+
+  const row = page.locator(".place-row").first();
+  await expect(row).toBeVisible();
+  await expect(row).toContainText("27.2 composite");
+  await expect(row).not.toContainText("not analysed yet");
 });

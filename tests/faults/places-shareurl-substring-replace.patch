@@ -1,0 +1,28 @@
+diff --git a/src/places/share.ts b/src/places/share.ts
+index 087a3c8..843e0c3 100644
+--- a/src/places/share.ts
++++ b/src/places/share.ts
+@@ -67,20 +67,10 @@ export function describeShareSummary(s: ShareSummary): string {
+  * none" branch this used to need is gone.
+  */
+ export function shareUrl(href: string, oldPl: string | undefined, newHash: string): string {
+-  void oldPl;
++  if (oldPl) return href.replace(`pl=${oldPl}`, `pl=${newHash}`);
+   const url = new URL(href);
+-  const existing = new URLSearchParams(url.hash.replace(/^#/, ""));
+-  existing.delete("pl");
+-  // `pl` first, matching `codec.ts#formatSel`'s own key order (it calls `hashParams.set("pl", …)`
+-  // before `"t"`) -- so a copied link reads the same way the address bar always has, whether or
+-  // not this href already carried a `pl=`.
+-  const hashParams = new URLSearchParams();
+-  hashParams.set("pl", newHash);
+-  for (const [k, v] of existing) hashParams.append(k, v);
+-  // the same cosmetic un-escaping `codec.ts#prettyEncode` applies when the address bar itself
+-  // writes this hash, so a copied link reads the same way (",": "%2C", ":": "%3A" -- neither
+-  // character is ever part of a `pl=` token itself, both can appear in a `t=` title).
+-  url.hash = `#${hashParams.toString().replace(/%2C/g, ",").replace(/%3A/g, ":")}`;
++  const rest = url.hash.replace(/^#/, "");
++  url.hash = rest ? `#pl=${newHash}&${rest}` : `#pl=${newHash}`;
+   return url.toString();
+ }
+ 
