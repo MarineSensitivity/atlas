@@ -246,6 +246,37 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     expect(errors).toEqual([]);
   });
 
+  // review round 2 (re-check of B1): CLOSED at the unit level (`tests/map/style.test.ts`'s "a
+  // zone's own INVISIBLE query fill... stays 0 at any data-zones opacity"), but the e2e-level probe
+  // was MISSING an in-zone point -- every `OCEAN_PROBES` coordinate lies outside this fixture's 20
+  // Program Area polygons (`e2e/fixtures/scores/zones20.geojson`, lon -170..-144, lat 20..40), so
+  // the earlier e2e suite could not tell a REAL replacing regression (the B1 bug, resurrected)
+  // apart from a probe that simply never touched the query fill at all. -158,-156 x 26,28 is "GAA"
+  // (Gulf of America, Eastern) -- its CENTRE, -157/27, is far enough from the 1px boundary line
+  // that a probe there can only ever read the invisible query fill (or the raster through it),
+  // never the line. In cell mode (the default unit here) there is no visible zone FILL at all, so
+  // dimming "Zone outlines" (data-zones) to 50% must leave the plain raster blend untouched --
+  // exactly what a REPLACING implementation would break (0 x 0.5 stays 0 either way for a NUMBER,
+  // but a replacing bug turns the invisible placeholder's `fill-opacity: 0` paint key into the
+  // stack's own 0.5, painting the near-black QUERY_FILL_COLOR visibly over this pixel instead).
+  test("dimming data-zones to 50% opacity, probed INSIDE a real Program Area polygon (GAA's centre), leaves the plain raster blend untouched", async ({
+    page,
+  }) => {
+    const errors = collectConsoleErrors(page);
+    const token = DEFAULT_ORDER.map((id) => (id === "data-zones" ? "data-zones:o50" : id)).join(
+      ",",
+    );
+    await gotoLayersScores(page, `&layers=${token}`);
+    const [lon, lat] = [-157, 27]; // GAA's centre, well inside its [-158,-156]x[26,28] rectangle
+    await expect
+      .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
+        message: `expected the plain 60%-opacity raster blend [${BLENDED_RASTER_RGB.join(",")}] -- a replacing implementation would paint the invisible query fill's colour visibly here instead`,
+        timeout: 20_000,
+      })
+      .toBe(BLENDED_RASTER_RGB.join(","));
+    expect(errors).toEqual([]);
+  });
+
   test("layers= round-trips through a reload: the reorder AND the pixel it produces both survive", async ({
     page,
   }) => {
