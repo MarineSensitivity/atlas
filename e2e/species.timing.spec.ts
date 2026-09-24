@@ -42,7 +42,9 @@ test.use({ viewport: { width: 1280, height: 800 } });
 // its own default (`DEFAULT_SEL.theme`, `src/lib/state/types.ts`), which is navy since 0.10.29's
 // U2a (dark-by-default), not the `paper` this constant assumed through 0.10.34. Blend against
 // `BASEMAP_RGB_NAVY`, the fixture colour the basemap actually paints under that default.
-const BLENDED_RASTER_RGB = RASTER_RGB.map((c, i) => Math.round(c * 0.8 + BASEMAP_RGB_NAVY[i] * 0.2));
+const BLENDED_RASTER_RGB = RASTER_RGB.map((c, i) =>
+  Math.round(c * 0.8 + BASEMAP_RGB_NAVY[i] * 0.2),
+);
 
 // The plan's own gate: "first species pixel <= 2.5s cold" (atlas-8 budgets table), on the MEDIAN
 // of N >= 3 cold runs.
