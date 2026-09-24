@@ -23,6 +23,48 @@ yet" / "—".
   so honestly** — "analysis unavailable for this release: `<object>` (HTTP `<code>`)" — instead of
   sitting on "not analysed yet" forever or showing a raw, stack-shaped error message.
 
+# atlas 0.10.45
+
+**P6 — map + lens defects from the Opus 5.5 eyes-on assessment (D3, D4, D8, D12, P2).**
+
+- **D3: a click outside the scored area no longer misleads.** The popup for a cell with no value
+  (off-grid, unscored — e.g. land) now reads a plain one-line "No scored cell here · lon …, lat …"
+  — never a cell id and never the layer's long title (a Utah click used to read "Cell 2711027 ·
+  lon -113.526, lat 38.932 · {30-word description}: no value"). That click also no longer WRITES
+  the selection: the previously selected scored cell (or nothing) stays selected, so the Flower and
+  Table panels never flash a misleading "not published"/"could not be loaded" message for a click
+  that never landed on scored data at all. Those panels' own empty-state copy is now "Click a
+  scored cell on the map to see its flower / species", with a genuine query failure (a real thrown
+  error, not just "nothing here") shown as a visually distinct message that names the failure. The
+  species lens' own click popup got the same treatment: a "no value" click (a nodata COG pixel, or
+  off the release's grid) now shows one line, "No scored cell here", with NO Cell ID line at all —
+  even when the click did resolve a real grid cell, since showing an internal id beside "no value"
+  reads as a lookup bug rather than "this model has no data here".
+- **D4: the click popup shows the SHORT metric label, not the long description.** The popup used to
+  print `boot.layers[].label` verbatim (e.g. the full VGPM productivity description); it now prefers
+  the release manifest's own short per-metric name (`manifest.metrics[]`), matching the layer picker
+  and legend.
+- **D12: the popup tip now matches the popup's own background** in both themes (already the case in
+  code; re-verified with this round's other popup changes).
+- **D8: selecting a species model now frames its own extent**, not the whole default study area. A
+  model with no published bbox of its own now falls back to a SIBLING input's bbox for the same
+  taxon (e.g. AquaMaps framing off AquaX's extent) before falling to the study area, and — as the
+  true last resort, for a release that publishes no bbox anywhere (v1-v7) — fetches the drawn COG's
+  own extent from titiler's `/cog/info` (real-build verification found `/cog/bounds` is not a
+  registered route on titiler-v8) and, when that extent is a degenerate whole-360°-longitude span
+  (measured: the walrus v7 COG's own metadata), narrows it with a small point-probe sweep before
+  flying. The manual "zoom to layer" re-fit reaches this same last resort, not just the automatic
+  fly-to on selecting a model.
+- **P2: the phone first view no longer leaves a large empty band of "sky" above the globe, and no
+  longer strands Canada/Greenland in frame instead of the US.** A flat-Mercator shift alone could
+  not fix this: MapLibre's GLOBE projection renders the whole sphere below roughly zoom 3 regardless
+  of how the shift is capped. The fix raises the phone's initial zoom
+  (`PHONE_STUDY_AREA_ZOOM_BOOST`) before applying an (uncapped) panel/sheet-aware shift — verified
+  against the real v7 build, not only the hermetic fixture — and the initial fit now re-runs once
+  the Layers sheet's own measured height at its default detent is known, rather than assuming a
+  constant. The same asymmetric, chrome-aware padding is available to any `fitBounds`-style camera
+  fit (`boundsToCameraView`'s new `ChromePadding` option), reused by D8's model-selection fly-to.
+
 # atlas 0.10.44
 
 **P5 — shell defects from the Opus 5.5 eyes-on assessment (2026-09-24):**

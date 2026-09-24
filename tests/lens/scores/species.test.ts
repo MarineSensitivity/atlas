@@ -10,6 +10,7 @@ import {
   modelSelPatch,
   speciesFilenameStem,
   speciesHeader,
+  speciesTableEmptyText,
   taxonUrl,
   toCsv,
   unitSingularLabel,
@@ -194,5 +195,29 @@ describe("toCsv", () => {
   it("null/undefined become an empty field", () => {
     const csv = toCsv([{ x: null }], [{ key: "x", value: (r: { x: null }) => r.x }]);
     expect(csv).toBe("x\r\n\r\n");
+  });
+});
+
+// D3(b) (Opus 5.5 eyes-on, 2026-09-24): "the Flower and Table panels with no scored selection say
+// 'Click a scored cell on the map to see its flower / species' — and a GENUINE query failure keeps
+// a distinct message that names the failure, so the two states are never confused (assert both)."
+// The species-table half of the same pair `flower.test.ts`'s `flowerEmptyText` describe asserts.
+describe("speciesTableEmptyText (D3(b) — assert both states, and that they are distinct)", () => {
+  it("no scored selection: the hint, never reading as a failure", () => {
+    expect(speciesTableEmptyText()).toBe("Click a scored cell on the map to see its species.");
+    expect(speciesTableEmptyText(null)).toBe("Click a scored cell on the map to see its species.");
+  });
+
+  it("a genuine query failure: a DISTINCT message that names the failure", () => {
+    const text = speciesTableEmptyText("HTTP 404");
+    expect(text).toContain("HTTP 404");
+    expect(text).not.toBe(speciesTableEmptyText()); // never confusable with the "nothing selected" hint
+  });
+
+  it("the two states are never conflated", () => {
+    const hint = speciesTableEmptyText();
+    const error = speciesTableEmptyText("engine disconnected");
+    expect(error.startsWith("The species table could not be loaded:")).toBe(true);
+    expect(hint.startsWith("Click a scored cell")).toBe(true);
   });
 });

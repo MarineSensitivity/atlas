@@ -6,6 +6,7 @@
   import Flower from "../../lib/ui/Flower.svelte";
   import {
     defaultFlowerComponents,
+    flowerEmptyText,
     flowerTitle,
     zoneFlowerComponents,
     type DedupResult,
@@ -17,13 +18,20 @@
     boot: unknown;
     selection: ScoresSelection;
     /** the clicked cell's own flower (step 2's engine-backed path, already de-duplicated by
-     * `cellFlowerComponents`); `undefined` while unloaded, `null` on a load failure. Cell
-     * selections fall back to a loading/unavailable message when this is not yet a real result. */
+     * `cellFlowerComponents`); `undefined` while unloaded, `null` on a load failure OR genuinely no
+     * data. Cell selections fall back to a loading/empty message when this is not yet a real
+     * result. */
     cellComponents?: DedupResult | null;
+    /** D3(b) (Opus 5.5 eyes-on, 2026-09-24): set ONLY when `cellComponents` became `null` because
+     * the fetch itself THREW (a real engine/network failure) — `undefined`/`null` for a plain "no
+     * components" answer. Keeps the "genuine query failure" state textually distinct from "nothing
+     * scored is selected" (`flower.ts#flowerEmptyText`'s own header explains why they must never be
+     * confused). */
+    cellComponentsError?: string | null;
     cellCoords?: { lon: number; lat: number };
   }
 
-  let { boot, selection, cellComponents, cellCoords }: Props = $props();
+  let { boot, selection, cellComponents, cellComponentsError, cellCoords }: Props = $props();
 
   const allKey = $derived(zoneAllKey(boot));
 
@@ -57,10 +65,10 @@
     <Flower {title} {components} {droppedLabels} />
   {:else if selection?.kind === "cell" && cellComponents === undefined}
     <p class="note">Loading the cell's component scores…</p>
+  {:else if cellComponentsError}
+    <p class="note note--error">{flowerEmptyText(cellComponentsError)}</p>
   {:else}
-    <p class="note">
-      No flower data is published for {selection ? "this selection" : "the default view"} in this release.
-    </p>
+    <p class="note">{flowerEmptyText()}</p>
   {/if}
 </div>
 
@@ -75,5 +83,11 @@
     margin: 0;
     color: var(--text-secondary);
     font-size: var(--text-sm);
+  }
+
+  /* D3(b): a genuine query failure reads visually distinct from the plain "click a cell" hint --
+     never the same colour as a routine empty state. */
+  .note--error {
+    color: var(--text-danger);
   }
 </style>

@@ -96,16 +96,24 @@
   // analysis (or the click popup's own value fetch) builds, so this whole build-then-read
   // sequence now runs inside `exclusive(sources.db, ...)` too (usability B1's rule).
   let cellFlowerRows = $state<DedupResult | null | undefined>(undefined);
+  // D3(b) (Opus 5.5 eyes-on, 2026-09-24): the catch below used to swallow ANY failure into the
+  // SAME `null` a genuinely empty result produces, so FlowerPanel could never tell "the release has
+  // nothing here" from "the fetch itself broke" apart -- both showed the (misleading) "no flower
+  // data is published" text. Captured here, separately, so the panel can show a distinct message
+  // that NAMES the failure.
+  let cellFlowerError = $state<string | null>(null);
   let cellFlowerToken = 0;
   $effect(() => {
     const s = selection;
     const v = ver;
     if (s?.kind !== "cell") {
       cellFlowerRows = undefined;
+      cellFlowerError = null;
       return;
     }
     const token = ++cellFlowerToken;
     cellFlowerRows = undefined;
+    cellFlowerError = null;
     (async () => {
       if (!v) throw new Error("no release version yet");
       const bootObj = boot as Record<string, unknown>;
@@ -127,8 +135,10 @@
       .then((rows) => {
         if (token === cellFlowerToken) cellFlowerRows = cellFlowerComponents(rows);
       })
-      .catch(() => {
-        if (token === cellFlowerToken) cellFlowerRows = null;
+      .catch((err: unknown) => {
+        if (token !== cellFlowerToken) return;
+        cellFlowerRows = null;
+        cellFlowerError = err instanceof Error ? err.message : String(err);
       });
   });
 
@@ -167,7 +177,13 @@
     {/snippet}
   </LibLayersPanel>
 {:else if activeTool === "flower"}
-  <FlowerPanel {boot} {selection} cellComponents={cellFlowerRows} {cellCoords} />
+  <FlowerPanel
+    {boot}
+    {selection}
+    cellComponents={cellFlowerRows}
+    cellComponentsError={cellFlowerError}
+    {cellCoords}
+  />
 {:else if activeTool === "table"}
   <TablePanel {sel} {selStore} {boot} {manifest} {ver} {unit} {lyr} {selection} />
 {:else}

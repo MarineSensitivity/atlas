@@ -1,0 +1,20 @@
+diff --git a/src/lens/species/popup.ts b/src/lens/species/popup.ts
+index d4172d3..c2e7bd7 100644
+--- a/src/lens/species/popup.ts
++++ b/src/lens/species/popup.ts
+@@ -186,10 +186,11 @@ export function popupHtml(content: PopupContent): string {
+     content.textColor === null
+       ? `background:${escapeHtml(content.pinColor)}`
+       : `background:${escapeHtml(content.pinColor)};color:${content.textColor}`;
+-  const cellLine =
+-    content.kind === "no-value"
+-      ? ""
+-      : `Cell ID: ${content.cellId === null ? "—" : String(content.cellId)}<br>`;
++  // SEEDED FAULT (tests/faults/species-popup-no-value-cellid.patch): the "no-value" omission is
++  // dropped -- a no-value click shows a "Cell ID: ..." line again (or "Cell ID: —" for a genuinely
++  // off-grid click), the exact D3 regression this fold-in fixed. Must turn
++  // tests/lens/species/popup.test.ts's "D3 fold-in" describe red.
++  const cellLine = `Cell ID: ${content.cellId === null ? "—" : String(content.cellId)}<br>`;
+   return (
+     `<div class="species-popup">` +
+     `<b><i>${escapeHtml(content.sci)}</i></b><br>` +

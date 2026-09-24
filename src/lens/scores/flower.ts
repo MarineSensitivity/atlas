@@ -153,6 +153,23 @@ export function cellFlowerComponents(rows: readonly CellComponentRow[]): DedupRe
   return dedupeFlowerComponents(candidates);
 }
 
+/**
+ * D3(b) (Opus 5.5 eyes-on, 2026-09-24): the Flower panel's own EMPTY-STATE copy, distinct from a
+ * genuine query failure. The owner's report: a click on a cell with no value used to read "No
+ * flower data is published for this selection in this release" — wording that BLAMES THE DATA for
+ * what is really "nothing scored is selected" (the fix at the click site, `state.svelte.ts`'s
+ * `showCellPopup`, means this branch is reached mainly by a stale/deep-linked selection pointing at
+ * a cell the release genuinely never scored, or by a state that resolves to no components for some
+ * other benign reason — never by a plain land click any more). A THROWN error while fetching the
+ * clicked cell's components (`ScoresLens.svelte`'s own `cellFlowerToken` effect) is a SEPARATE,
+ * distinct condition that must never be confused with "there is simply nothing to show" — see the
+ * `errorMessage` branch below, and `tests/lens/scores/flower.test.ts`'s "assert both" pair.
+ */
+export function flowerEmptyText(errorMessage?: string | null): string {
+  if (errorMessage) return `The flower could not be loaded: ${errorMessage}`;
+  return "Click a scored cell on the map to see its flower.";
+}
+
 /** `flower_panel_title` (parity doc §7.1), verbatim: a clicked cell names its id + coords; a
  * clicked zone names itself; nothing selected says "Full study area". */
 export function flowerTitle(

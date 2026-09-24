@@ -5,6 +5,7 @@ import {
   componentLabel,
   dedupeFlowerComponents,
   defaultFlowerComponents,
+  flowerEmptyText,
   flowerTitle,
   zoneFlowerComponents,
 } from "../../../src/lens/scores/flower";
@@ -211,6 +212,32 @@ describe("flowerTitle", () => {
 
   it("nothing selected: Full study area", () => {
     expect(flowerTitle(null)).toBe("Full study area");
+  });
+});
+
+// D3(b) (Opus 5.5 eyes-on, 2026-09-24): "the Flower and Table panels with no scored selection say
+// 'Click a scored cell on the map to see its flower / species' — and a GENUINE query failure keeps
+// a distinct message that names the failure, so the two states are never confused (assert both)."
+describe("flowerEmptyText (D3(b) — assert both states, and that they are distinct)", () => {
+  it("no scored selection: the hint, never blaming the data", () => {
+    expect(flowerEmptyText()).toBe("Click a scored cell on the map to see its flower.");
+    expect(flowerEmptyText(null)).toBe("Click a scored cell on the map to see its flower.");
+    // the exact fault this replaces — the old wording implied the RELEASE was missing data.
+    expect(flowerEmptyText()).not.toContain("is published");
+    expect(flowerEmptyText()).not.toContain("in this release");
+  });
+
+  it("a genuine query failure: a DISTINCT message that names the failure", () => {
+    const text = flowerEmptyText("engine disconnected");
+    expect(text).toContain("engine disconnected");
+    expect(text).not.toBe(flowerEmptyText()); // never confusable with the "nothing selected" hint
+  });
+
+  it("the two states share no substring longer than incidental words (assert both, never conflated)", () => {
+    const hint = flowerEmptyText();
+    const error = flowerEmptyText("timeout");
+    expect(error.startsWith("The flower could not be loaded:")).toBe(true);
+    expect(hint.startsWith("Click a scored cell")).toBe(true);
   });
 });
 
