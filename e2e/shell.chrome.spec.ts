@@ -78,17 +78,35 @@ test.describe("R2: About popover", () => {
 });
 
 test.describe("R2: Send feedback", () => {
-  test("the top-bar Feedback control calls the existing feedback handler (not a plain navigation)", async ({
-    page,
-  }) => {
+  // U3 (round 2) landed after this control did: `onFeedbackClick` is now Shell.svelte's own
+  // `openFeedback()` (the real FeedbackDialog.svelte, lazy-loaded), not a plain `feedbackHref`
+  // navigation -- see TopBarActions.svelte's own header for the one-line rewiring. This still
+  // stays behind ONE function boundary: e2e/feedback.spec.ts's own dialog-content/submit
+  // assertions are untouched by that (they already click `[data-control="feedback"]`, which now
+  // resolves to THIS top-bar control instead of the removed on-map anchor) -- this spec only
+  // proves BOTH of R2's own triggers (the desktop control, the phone ⋯ item) reach the same
+  // dialog, which is R2's own concern.
+  test("the top-bar Feedback control opens the real feedback dialog", async ({ page }) => {
     await gotoShell(page, DESKTOP);
     const feedback = page.locator('[data-control="feedback"]');
     await expect(feedback).toHaveText(/Feedback/);
-    // no VITE_FEEDBACK_URL configured in this build -> onFeedbackClick's early return means a
-    // plain click follows feedbackHref's default navigation (a GitHub issue URL); that a click
-    // does not throw and the control carries a real href is the behavioural contract this stays
-    // behind ONE function for (U3 replaces the function body, never this control).
+    // the href fallback (JS disabled/failed, middle-click) is still a real GitHub issue link --
+    // unaffected by the dialog now handling a plain left click instead.
     await expect(feedback).toHaveAttribute("href", /github\.com/);
+    await feedback.click();
+    const dialog = page.locator("dialog[open]");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "Feedback" })).toBeVisible();
+  });
+
+  test("the phone ⋯ menu's Feedback item opens the same real feedback dialog", async ({ page }) => {
+    await gotoShell(page, PHONE);
+    await page.locator('[data-control="more-menu"]').click();
+    const menu = page.getByRole("menu", { name: "More" });
+    await menu.getByRole("menuitem", { name: "Send feedback" }).click();
+    const dialog = page.locator("dialog[open]");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "Feedback" })).toBeVisible();
   });
 });
 

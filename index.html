@@ -392,8 +392,27 @@
     <div id="shell" class="app">
       <header class="topbar" data-tour="topbar">
         <span data-tour="brand" style="display: flex; align-items: center; gap: var(--space-2)">
-          <img class="mark mark--navy" src="./src/lib/brand/vendor/mst-mark.svg" alt="" />
-          <img class="mark mark--paper" src="./src/lib/brand/vendor/mst-mark-dark.svg" alt="" />
+          <!-- R5: the wave-in-hexagon mark, inlined identically to
+               src/lib/brand/WaveHexMark.svelte's own render (see that file's header) so the
+               pre-hydration skeleton paints the real mark, not a placeholder -- width/height are
+               explicit attributes, so its box is byte-identical to the hydrated twin regardless of
+               which stylesheet (this inline one, or the component's scoped one) resolves first. -->
+          <svg
+            class="wavehex"
+            viewBox="0 0 64 64"
+            width="28"
+            height="28"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path class="wavehex-bg" d="M32 3 57.1 17.5v29L32 61 6.9 46.5v-29Z" />
+            <path
+              class="wavehex-wave"
+              d="M6.9 40c6-7 13-7 19-1s14 7 21 0 8-4 10.2-2.5v10L32 61 6.9 46.5Z"
+            />
+            <path class="wavehex-crest" d="M10 30.5c5-6 11-6 16.5-1s13 6 19.5-.5 7-3.5 9-2.5" />
+            <path class="wavehex-ring" d="M32 3 57.1 17.5v29L32 61 6.9 46.5v-29Z" />
+          </svg>
           <h1 class="brand-title" id="app-title">Marine Sensitivity Atlas</h1>
         </span>
 
@@ -519,11 +538,11 @@
           data-control="rail"
         >
           <div class="sk-rail" aria-hidden="true">
-            <span class="sk-hexbtn is-pressed"></span>
-            <span class="sk-hexbtn"></span>
-            <span class="sk-hexbtn"></span>
-            <span class="sk-hexbtn"></span>
-            <span class="sk-hexbtn"></span>
+            <span class="sk-railitem is-pressed"></span>
+            <span class="sk-railitem"></span>
+            <span class="sk-railitem"></span>
+            <span class="sk-railitem"></span>
+            <span class="sk-railitem"></span>
           </div>
         </nav>
 

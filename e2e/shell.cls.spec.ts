@@ -65,27 +65,27 @@ const KEYS: KeySpec[] = [
   { key: "rail-frame", skeleton: "#rail-region > *", hydrated: "#rail-region > *" },
   {
     key: "rail-layers",
-    skeleton: "#rail-region .sk-hexbtn:nth-child(1)",
+    skeleton: "#rail-region .sk-railitem:nth-child(1)",
     hydrated: '#rail-region button[aria-label="Layers"]',
   },
   {
     key: "rail-places",
-    skeleton: "#rail-region .sk-hexbtn:nth-child(2)",
+    skeleton: "#rail-region .sk-railitem:nth-child(2)",
     hydrated: '#rail-region button[aria-label="Places"]',
   },
   {
     key: "rail-flower",
-    skeleton: "#rail-region .sk-hexbtn:nth-child(3)",
+    skeleton: "#rail-region .sk-railitem:nth-child(3)",
     hydrated: '#rail-region button[aria-label="Flower plot"]',
   },
   {
     key: "rail-table",
-    skeleton: "#rail-region .sk-hexbtn:nth-child(4)",
+    skeleton: "#rail-region .sk-railitem:nth-child(4)",
     hydrated: '#rail-region button[aria-label="Table"]',
   },
   {
     key: "rail-report",
-    skeleton: "#rail-region .sk-hexbtn:nth-child(5)",
+    skeleton: "#rail-region .sk-railitem:nth-child(5)",
     hydrated: '#rail-region button[aria-label="Report"]',
   },
   { key: "panel-frame", skeleton: "#panel-region > *", hydrated: "#panel-region > *" },

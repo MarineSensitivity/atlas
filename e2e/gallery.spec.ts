@@ -419,20 +419,31 @@ test.describe("fix round 1, item 1 (SC 4.1.2): every id-reference resolves to a 
     expect(problems).toEqual([]);
   });
 
-  test("the enabled Flower rail button's own tooltip describes ITSELF, not the inactive rail's", async ({
+  test("the enabled Flower rail button has no tooltip; the inactive one describes ITSELF, not another instance's", async ({
     page,
   }) => {
     await gotoGallery(page, "navy");
-    // #rail's first toolbar (Scores lens) has an ENABLED Flower button; its second toolbar
-    // (Species lens) has the INACTIVE one with a DIFFERENT tooltip text ("...Scores only"). Both
-    // are labelled "Flower plot" -- exactly the label collision the fix closes.
+    // R4 (docs/usability.md §7): RailButton.svelte only wires a tooltip for an INACTIVE control
+    // (an active/enabled one shows its label as visible text instead -- no more hover-to-learn,
+    // so there is nothing left for a tooltip to say). #rail's first toolbar (Scores lens) has the
+    // ENABLED Flower button; its second toolbar (Species lens) has the INACTIVE one, with its own
+    // per-instance tooltip id (`uid()`, same fix this test originally proved for the old
+    // icon-only HexButton) -- so it must describe ITSELF ("...Scores only"), not collide with any
+    // other instance's tooltip on the page.
     const enabledFlower = page
       .locator("#rail [role='toolbar']")
       .nth(0)
       .locator("button[aria-label='Flower plot']");
-    const describedById = await enabledFlower.getAttribute("aria-describedby");
+    await expect(enabledFlower).not.toHaveAttribute("aria-describedby", /.*/);
+
+    const inactiveFlower = page
+      .locator("#rail [role='toolbar']")
+      .nth(1)
+      .locator("button[aria-label='Flower plot']");
+    const describedById = await inactiveFlower.getAttribute("aria-describedby");
+    expect(describedById, "the inactive Flower button has no aria-describedby at all").toBeTruthy();
     const description = await page.locator(`#${describedById}`).textContent();
-    expect(description).not.toContain("Scores only");
+    expect(description).toContain("Scores only");
   });
 });
 

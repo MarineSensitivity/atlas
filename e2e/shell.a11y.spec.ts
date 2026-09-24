@@ -65,20 +65,29 @@ async function gotoShell(page: import("@playwright/test").Page, theme: string, p
 // exclusion, phone briefly rose to 12 and cited a THIRD reason, `bgOverlap` (the legend's box
 // visually overlapping the centered bottom rail, both anchored at the same `bottom` offset), which
 // is why phone keeps the two-reason allow-list below rather than growing a third entry.
-// RE-TRIAGED 2026-09-24 (U1, R2): desktop 15 -> 25, phone 10 -> 12.
-//   - About/Feedback (TopBarActions.svelte) landed in the same glass topbar Share/Report/Help
-//     already sit in -- more text/icon nodes over the SAME unresolvable background (each one's own
-//     token pair is independently proven by `node scripts/contrast.mjs`, same conclusion as every
-//     prior re-triage here). This test's own `gotoShell()` routes no basemap style.json (it never
-//     needed to, before now), so usability M4's new honeycomb loader never actually settles here --
-//     measured node count varies with exactly when the LAZY legend chunk resolves relative to when
-//     axe scans (23-24 observed); 25 leaves headroom rather than chasing an exact number that was
-//     never stable to begin with.
-//   - phone: the legend chip (LegendChip.svelte, usability M14) is the first floating phone element
-//     since the on-map About card was removed (R2) -- 2 more nodes, same reason as above.
+// RE-TRIAGED 2026-09-24 (U1 R2 + R4 merged): two independent re-triages landed together.
+//   - U1/R2: desktop 15 -> 25, phone 10 -> 12. About/Feedback (TopBarActions.svelte) landed in
+//     the same glass topbar Share/Report/Help already sit in -- more text/icon nodes over the
+//     SAME unresolvable background (each one's own token pair is independently proven by
+//     `node scripts/contrast.mjs`, same conclusion as every prior re-triage here). This test's
+//     own `gotoShell()` routes no basemap style.json (it never needed to, before now), so
+//     usability M4's new honeycomb loader never actually settles here -- measured node count
+//     varies with exactly when the LAZY legend chunk resolves relative to when axe scans (23-24
+//     observed); 25 leaves headroom rather than chasing an exact number that was never stable to
+//     begin with. Phone: the legend chip (LegendChip.svelte, usability M14) is the first floating
+//     phone element since the on-map About card was removed (R2) -- 2 more nodes, same reason.
+//   - R4 (docs/usability.md §7): phone 10 -> 14, desktop 15 -> 19. The rail is now a labelled
+//     stack (RailButton.svelte) -- four new visible TEXT nodes per viewport (the idle items'
+//     labels; the pressed item's own label sits on the OPAQUE `--fill-accent` fill, which axe
+//     resolves normally and does not flag it). Verified, not assumed: the idle label's token
+//     pair (`--text-secondary` on the SAME rail glass background every other rail node already
+//     sat on) is one of the pairs `node scripts/contrast.mjs` independently resolves and passes;
+//     no new node cited a reason outside the two already allow-listed below.
+//   Combined, MEASURED on the real merged tree (never summed from the two deltas above): desktop
+//   29, phone 16 -- see this file's own re-run after the U1+R4 merge for the exact counts.
 const COLOR_CONTRAST_INCOMPLETE_CEILING: Record<string, number> = {
-  phone: 12,
-  desktop: 25,
+  phone: 16,
+  desktop: 29,
 };
 // `imgNode` joined `pseudoContent` in the same re-triage: axe reports it when the element's
 // background resolves to an IMAGE it cannot sample — here the map's WebGL canvas behind the glass

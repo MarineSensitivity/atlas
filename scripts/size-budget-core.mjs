@@ -49,7 +49,19 @@ export const RUNTIME_WORKER_BUDGET_BYTES = 150 * 1024; // 150 KB gzip (F3) — a
 // that in mind before adding a dependency to this list and assuming it is now covered.
 // "driver" (U6, round 2): the guided tour's driver.js -- reached ONLY through
 // src/shell/tourRuntime.ts's dynamic import(), never the static critical path.
-export const FORBIDDEN_LAZY_MARKERS = ["duckdb", "terra-draw", "docx", "shp", "treemap", "driver"];
+// "html-to-image" (U3, round 2): the feedback screenshot capture (src/lib/feedback/capture.ts) --
+// reached ONLY through FeedbackDialog.svelte's own dynamic import(), same story as driver.js above
+// (tests/feedback/lazy.test.ts is this pair's own source-level wiring gate, matching
+// tests/report-lazy-import-duckdb.wiring.test.ts's technique).
+export const FORBIDDEN_LAZY_MARKERS = [
+  "duckdb",
+  "terra-draw",
+  "docx",
+  "shp",
+  "treemap",
+  "driver",
+  "html-to-image",
+];
 
 /**
  * Walk a Vite manifest from `entryKey`, following only STATIC `imports` (never `dynamicImports`),

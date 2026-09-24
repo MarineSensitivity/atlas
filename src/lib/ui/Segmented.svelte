@@ -59,6 +59,9 @@
     background: var(--fill-accent);
     color: var(--text-on-accent);
     font-weight: 700;
+    /* R5 y1: --fill-accent alone is 1.49:1 on paper (exempt) -- an inset ring (no layout impact,
+       unlike a real border) carries the pressed state at >= 3:1, per WCAG 1.4.11. */
+    box-shadow: inset 0 0 0 2px var(--border-accent);
   }
 
   /* SC 1.4.1/1.4.11: forced-colors mode leaves every segment's background at Canvas, erasing

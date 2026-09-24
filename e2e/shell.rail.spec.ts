@@ -1,0 +1,115 @@
+// R4 (docs/usability.md §7): the tool rail is now a vertical labelled stack on desktop and a
+// bottom tab bar on the phone -- this spec proves the four things the decision actually promises,
+// none of which the pre-existing rail specs cover (e2e/shell.phone-rail.spec.ts is about z-index/
+// reachability, not labels or the active marker; tools.test.ts is a pure-data test with no DOM):
+//   1. every tool's label is VISIBLE text on desktop (not tooltip-only -- the usability finding
+//      this decision answers: "meaning only in tooltips ... a first-timer has to hover each").
+//   2. the phone rail is a labelled ROW (tab bar), same five tools, at every sheet detent.
+//   3. the active tool's marker (`aria-current`, plus the hex pip CSS) follows clicks.
+//   4. arrow keys (+ Home/End) move the roving-tabindex focus stop, per roving.ts.
+import { expect, test, type Page } from "@playwright/test";
+import { gotoPublicShell, waitForHydration } from "./hermetic";
+
+const RAIL_LABELS = ["Layers", "Places", "Flower plot", "Table", "Report"];
+
+async function dismissWelcome(page: Page) {
+  await expect(
+    page.getByRole("dialog", { name: "Welcome to the Marine Sensitivity Atlas" }),
+  ).toHaveCount(0);
+}
+
+test.describe("R4: desktop -- a vertical labelled stack", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test("every rail item shows its label as visible text, not tooltip-only", async ({ page }) => {
+    await gotoPublicShell(page);
+    await waitForHydration(page);
+    await dismissWelcome(page);
+
+    const items = page.locator("#rail-region .rail button.railitem");
+    await expect(items).toHaveCount(5);
+    for (const label of RAIL_LABELS) {
+      const btn = page.locator(`#rail-region button.railitem[aria-label="${label}"]`);
+      // the visible label text sits inside the button (a real, laid-out, non-empty text node) --
+      // not merely present in the accessible tree via aria-label/tooltip.
+      await expect(btn.locator(".railitem-label")).toHaveText(label);
+      await expect(btn.locator(".railitem-label")).toBeVisible();
+    }
+  });
+
+  test("the active tool's marker follows the clicked tool (aria-current)", async ({ page }) => {
+    await gotoPublicShell(page);
+    await waitForHydration(page);
+    await dismissWelcome(page);
+
+    const layers = page.locator('#rail-region button.railitem[aria-label="Layers"]');
+    const places = page.locator('#rail-region button.railitem[aria-label="Places"]');
+
+    await expect(layers).toHaveAttribute("aria-current", "true"); // default tool
+    await expect(places).not.toHaveAttribute("aria-current", /.*/);
+
+    await places.click();
+
+    await expect(places).toHaveAttribute("aria-current", "true");
+    await expect(layers).not.toHaveAttribute("aria-current", /.*/);
+
+    // the hex pip marker (RailButton.svelte's `.is-on::before`) actually paints something, not
+    // just a class name with no visible effect -- a `content: ""` pseudo-element with a real
+    // background is what "marked by a hexagon marker" means.
+    const pipBg = await places.evaluate((el) => getComputedStyle(el, "::before").backgroundColor);
+    expect(pipBg, "the active item's hex pip has no background paint").not.toBe("rgba(0, 0, 0, 0)");
+  });
+
+  test("arrow keys and Home/End move the roving-tabindex stop (roving.ts)", async ({ page }) => {
+    await gotoPublicShell(page);
+    await waitForHydration(page);
+    await dismissWelcome(page);
+
+    const rail = page.locator("#rail-region .rail");
+    await rail.locator("button.railitem").first().focus();
+    await expect(page.locator('button.railitem[aria-label="Layers"]')).toBeFocused();
+
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator('button.railitem[aria-label="Places"]')).toBeFocused();
+
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator('button.railitem[aria-label="Flower plot"]')).toBeFocused();
+
+    await page.keyboard.press("ArrowUp");
+    await expect(page.locator('button.railitem[aria-label="Places"]')).toBeFocused();
+
+    await page.keyboard.press("End");
+    await expect(page.locator('button.railitem[aria-label="Report"]')).toBeFocused();
+
+    await page.keyboard.press("Home");
+    await expect(page.locator('button.railitem[aria-label="Layers"]')).toBeFocused();
+
+    // wraps at both ends (roving.ts's own rule)
+    await page.keyboard.press("ArrowUp");
+    await expect(page.locator('button.railitem[aria-label="Report"]')).toBeFocused();
+  });
+});
+
+test.describe("R4: phone (390x844) -- a labelled bottom tab bar, same five tools", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  const DETENTS = ["Collapse to a peek", "Half height", "Full height"] as const;
+
+  test("the tab bar shows all five labels, in a row, at every sheet detent", async ({ page }) => {
+    await gotoPublicShell(page);
+    await waitForHydration(page);
+    await dismissWelcome(page);
+
+    const rail = page.locator("#rail-region .rail");
+    await expect(rail).toHaveCSS("flex-direction", "row");
+
+    for (const buttonLabel of DETENTS) {
+      await page.getByRole("button", { name: buttonLabel }).click();
+      for (const label of RAIL_LABELS) {
+        const btn = page.locator(`#rail-region button.railitem[aria-label="${label}"]`);
+        await expect(btn, `"${label}" at detent "${buttonLabel}"`).toBeVisible();
+        await expect(btn.locator(".railitem-label"), `"${label}" label text`).toHaveText(label);
+      }
+    }
+  });
+});

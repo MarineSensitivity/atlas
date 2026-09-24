@@ -16,13 +16,11 @@
   import { onMount, type Component } from "svelte";
   import "./shell.css";
   import { buildRailItems, TOOL_BODY, TOOL_LABEL, type ToolName } from "./tools";
-  // a plain `src="../lib/brand/vendor/mst-mark.svg"` in the template below would resolve against
-  // the PAGE's URL at runtime (index.html, mounted at site root), not this file's location, and a
-  // production build would ship it unrewritten -- a relative-base violation (CLAUDE.md) that also
-  // 404s, since dist/ never contains src/. Importing it as a `?url` asset routes it through Vite's
-  // normal pipeline (hashed, copied to dist/assets/, and rewritten relative to the page).
-  import markNavyUrl from "../lib/brand/vendor/mst-mark.svg?url";
-  import markPaperUrl from "../lib/brand/vendor/mst-mark-dark.svg?url";
+  // R5: the wave-in-hexagon mark replaces the old two-file "wave in a circle" pair
+  // (mst-mark.svg/mst-mark-dark.svg, kept vendored only for history -- Report.svelte moved to
+  // this same component too) -- inline, so ONE definition serves both themes through
+  // --border-accent rather than a `.mark--navy`/`.mark--paper` display:none swap.
+  import WaveHexMark from "../lib/brand/WaveHexMark.svelte";
   import Icon from "../lib/ui/Icon.svelte";
   import Rail from "../lib/ui/Rail.svelte";
   import Panel from "../lib/ui/Panel.svelte";
@@ -73,7 +71,6 @@
     pageUrlFromLocation,
     type FeedbackContext,
   } from "../lib/feedback/issueUrl";
-  import { postFeedback } from "../lib/feedback/postFeedback";
   // atlas-5: the species lens. Shell owns WHERE it mounts (the "layers" panel body, the topbar
   // search field, a legend region over the map) and the ONE composeStyle call; the lens owns what
   // to draw (docs/map.md / this file's own header comment). `state.svelte.ts` is the lens' pure
@@ -186,7 +183,7 @@
     const label = railItems.find((i) => i.name === name)?.label;
     if (!label) return;
     const btn = document.querySelector<HTMLButtonElement>(
-      `#rail-region button.hexbtn[aria-label="${CSS.escape(label)}"]`,
+      `#rail-region button.railitem[aria-label="${CSS.escape(label)}"]`,
     );
     btn?.focus();
   }
@@ -833,22 +830,38 @@
     viewport: `${viewportW}x${viewportH}`,
     theme: resolvedTheme,
   });
+  // kept as the anchor's plain `href` below: works with JS disabled/failed, and a middle-click /
+  // "open in new tab" still lands on a sensible zero-backend issue link even though a plain left
+  // click now opens the dialog instead (onclick below always preventDefault()s it).
   const feedbackHref = $derived(feedbackIssueUrl(feedbackCtx));
 
-  // set at build time only (VITE_FEEDBACK_URL); unset -> the control is a plain link to the GitHub
-  // issue above and this handler is never attached (see the template below).
-  const FEEDBACK_URL = import.meta.env.VITE_FEEDBACK_URL as string | undefined;
+  // U3: the resolved release's `access` field, read off the SAME `versions` rows the release
+  // picker already resolves (above) -- never `src/lib/release/access.ts`'s `accessOf()`
+  // (tests/shell/shell-invariants.test.ts: this file may not import from ../lib/release at all).
+  // Only the literal "restricted" ever matters to the dialog (payload.ts's own contract).
+  const releaseAccess = $derived(versions?.find((v) => v.ver === earlyVersion)?.access);
 
-  async function onFeedbackClick(e: MouseEvent) {
-    if (!FEEDBACK_URL) return; // plain <a>, default navigation to feedbackHref
-    e.preventDefault();
-    const ok = await postFeedback(FEEDBACK_URL, feedbackCtx, fetch);
-    if (ok) {
-      announce("Thanks — your feedback was sent.");
-    } else {
-      // falls back to the SAME GitHub link a plain click would have followed -- never silently
-      // swallows feedback because the configured endpoint failed.
-      window.open(feedbackHref, "_blank", "noopener");
+  // U3 (round 2): "Send feedback" -- the SAME action, now opening a real dialog
+  // (src/lib/feedback/FeedbackDialog.svelte, lazy) instead of navigating straight to the GitHub
+  // issue link above. `openFeedback()` is the ONE function every trigger calls (this deliverable's
+  // brief) -- until U1 lands its own top-bar "Feedback" control, the existing bottom-left "Report a
+  // problem" anchor below is the only caller; U1 wires a second one to the same function.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let FeedbackDialogComp = $state<Component<any> | null>(null);
+  let feedbackOpen = $state(false);
+  // snapshotted at the moment the control is used, never read reactively -- the hash is not
+  // tracked anywhere else in this file (nothing needs it continuously; the dialog only needs the
+  // value AS OF when it opens). Shell.svelte is allowed to read `location.hash` directly (the ban
+  // is on src/lib/feedback/** doing so -- see FeedbackDialog.svelte's own header); this is the
+  // exact same pattern `feedbackCtx.pageUrl` above already uses for `location.origin`/`.pathname`.
+  let feedbackHash = $state("");
+  function openFeedback(): void {
+    feedbackHash = location.hash;
+    feedbackOpen = true;
+    if (!FeedbackDialogComp) {
+      import("../lib/feedback/FeedbackDialog.svelte")
+        .then((mod) => (FeedbackDialogComp = mod.default))
+        .catch(() => announceChunkFailure("the feedback dialog"));
     }
   }
 
@@ -1017,8 +1030,7 @@
 
 <header class="topbar" data-tour="topbar">
   <span data-tour="brand" style="display:flex;align-items:center;gap:var(--space-2)">
-    <img class="mark mark--navy" src={markNavyUrl} alt="" />
-    <img class="mark mark--paper" src={markPaperUrl} alt="" />
+    <WaveHexMark size={28} />
     <h1 class="brand-title" id="app-title">Marine Sensitivity Atlas</h1>
   </span>
 
@@ -1162,7 +1174,7 @@
     releaseDate={currentVersionRow?.released ?? null}
     appVersion={__APP_VERSION__}
     {feedbackHref}
-    {onFeedbackClick}
+    onFeedbackClick={openFeedback}
     {onShare}
     onReportTop={onReport}
     helpDocsHref={docsHref}
@@ -1375,6 +1387,26 @@
     <Comp legend={scoresLens?.mapExtra.legend ?? null} />
   {/if}
 </main>
+
+{#if FeedbackDialogComp}
+  {@const Comp = FeedbackDialogComp}
+  <Comp
+    open={feedbackOpen}
+    onclose={() => (feedbackOpen = false)}
+    ver={earlyVersion}
+    access={releaseAccess}
+    lens={sel.lens}
+    appVersion={__APP_VERSION__}
+    appSha={__APP_SHA__}
+    viewport={`${viewportW}x${viewportH}`}
+    theme={resolvedTheme}
+    userAgent={typeof navigator === "undefined" ? "" : navigator.userAgent}
+    pageUrl={feedbackCtx.pageUrl}
+    hash={feedbackHash}
+    track={(name: string, params: Record<string, unknown>) =>
+      analytics.track(name as never, params as never)}
+  />
+{/if}
 
 {#if NotFoundModalComp}
   {@const Comp = NotFoundModalComp}

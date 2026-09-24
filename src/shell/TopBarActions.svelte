@@ -13,8 +13,12 @@
   // widget the way `src/lib/ui/*` components are.
   //
   // Feedback stays behind ONE function boundary (`onFeedbackClick`, Shell.svelte's existing
-  // handler -- unchanged here): a later U3 round replaces its implementation with the screenshot
-  // modal, and this file never has to change for that.
+  // handler): U3 (round 2) replaced its implementation with `openFeedback()` (the screenshot
+  // dialog, superseding the old webhook POST) -- Shell.svelte's mount line changed to pass that
+  // function under the SAME prop name, and `handleFeedback` below gained one `preventDefault()`
+  // (matching U3's own "Report a problem" anchor) so a click opens ONLY the dialog, never also
+  // navigating the tab to the GitHub fallback link in the background -- everything else here is
+  // unchanged, exactly the "this file never has to change for that" promise.
   //
   // tests/shell/shell-invariants.test.ts scans this file (alongside Shell.svelte) for its
   // data-control/data-tour anchors and the same "no src/lib/release, no history.pushState"
@@ -74,8 +78,13 @@
   let aboutOpen = $state(false);
 
   // --- Send feedback: a real <a>, not only a button (Deliverable 4's original zero-JS rationale,
-  // carried over from the old on-map link -- `feedbackHref` still works with JS disabled/failed). -
+  // carried over from the old on-map link -- `feedbackHref` still works with JS disabled/failed).
+  // U3 (round 2): `onFeedbackClick` is now Shell.svelte's `openFeedback` (the dialog, not a plain
+  // navigation) -- `preventDefault()` first, same as U3's own "Report a problem" anchor, so a
+  // normal click opens ONLY the dialog and never also navigates the tab to the GitHub fallback
+  // link in the background.
   function handleFeedback(e: MouseEvent) {
+    e.preventDefault();
     onFeedbackClick(e);
   }
 

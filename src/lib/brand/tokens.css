@@ -28,10 +28,12 @@
  * text    --text-accent     : --surface-panel-basis, --surface-raised
  * text    --text-link       : --surface-panel-basis, --surface-raised
  * text    --text-danger     : --surface-panel-basis, --surface-raised
- * text    --text-on-accent  : --fill-accent, --cat-bird, --cat-coral, --cat-fish, --cat-invertebrate, --cat-mammal, --cat-other, --cat-primprod, --cat-turtle
- * nontext --fill-accent     : --surface-panel-basis, --surface-map
+ * text    --text-on-accent  : --fill-accent
+ * text    --text-on-cat     : --cat-bird, --cat-coral, --cat-fish, --cat-invertebrate, --cat-mammal, --cat-other, --cat-primprod, --cat-turtle
+ * nontext --border-accent   : --surface-panel-basis, --surface-raised, --surface-map
  * nontext --border-control  : --surface-panel-basis, --surface-raised, --surface-map
  * nontext --focus-ring      : --surface-panel-basis, --surface-raised, --surface-map
+ * nontext --stroke-outline  : --surface-map
  * nontext --icon-muted      : --surface-panel-basis, --surface-raised
  * nontext --icon-inactive   : --fill-control, --surface-panel-basis
  * nontext --cat-bird        : --surface-panel-basis
@@ -50,6 +52,7 @@
  * exempt  --mma-steel       : raw palette
  * exempt  --mma-navy        : raw palette
  * exempt  --mma-crimson     : raw palette
+ * exempt  --fill-accent     : R5 y1 — adjacent fill; the active state's boundary is --border-accent
  * exempt  --fill-control    : adjacent fill of a control whose boundary is --border-control (paired)
  * exempt  --fill-track      : adjacent fill inside a control; the control's boundary is paired
  * exempt  --divider         : decorative rule between rows inside one surface (WCAG 1.4.11 exempts it)
@@ -159,6 +162,8 @@
   --text-link: #9cc8f2;
   --text-danger: #ff9c94;
   --text-on-accent: var(--mma-navy);
+  --text-on-cat: var(--mma-navy); /* R5 y1: label text drawn on a --cat-* fill */
+  --border-accent: var(--mma-gold); /* R5 y1: the ring that carries an active state's boundary */
 
   /* the accent that carries an ACTIVE state: Gold on dark, Steel on light. Gold on a white panel
      is 1.71:1 — it cannot carry a state on paper, so paper's active fill is Steel (the guide's own
@@ -169,6 +174,16 @@
   --border-control: #8494bd;
   --divider: #2a3d68;
   --focus-ring: var(--mma-gold);
+  /* R9 (owner, 2026-09-24): the Program-Area/Plan-Area zone outline stroke on the MAP itself
+     (src/lib/map/colors.ts's ZONE_LINE_WHITE, "verbatim" from msens's zone_line_args() table) --
+     white reads fine on the dark-matter basemap this token set was designed against, so navy
+     keeps that value unchanged. The paper theme's own light basemap is what changes underneath
+     it (see the paper block). Not itself painted by any component CSS; read once, by theme, at
+     map-compose time (src/lib/map/colors.ts's ZONE_OUTLINE_STROKE_BY_THEME mirrors it, the same
+     way MAP_BACKGROUND_BY_THEME already mirrors --surface-map -- a MapLibre style is not CSS and
+     cannot read a custom property, so the value is duplicated by necessity and a drift-guard test
+     keeps the duplicate honest). */
+  --stroke-outline: #ffffff;
   --icon-muted: #aab8d8;
   /* an INACTIVE control's glyph: the rail's Flower button in the Species lens fades to this instead
      of disappearing (Ben, 2026-09-21: removal is "jerky"). Still >= 3:1 on the control's own face,
@@ -212,26 +227,37 @@
   --surface-panel-basis: #e6f1f7; /* white glass over the ramp's DARKEST stop (#3288bd) */
   --surface-raised: #ffffff;
   --surface-seal-plate: #ffffff;
-  --surface-sunken: #f2f5f9;
+  --surface-sunken: #fbf6e6; /* R5 y1: cream, was slate #f2f5f9 */
 
   --text-primary: var(--mma-navy);
   --text-secondary: #3d4c74;
   --text-accent: var(--mma-steel); /* NOT gold: gold on white is 1.7:1 (guide p. 7 + measured) */
   --text-link: #15467f;
   --text-danger: var(--mma-crimson);
-  --text-on-accent: #ffffff;
+  --text-on-accent: var(--mma-navy); /* R5 y1: navy on gold, 9.53:1 (was white, for Steel) */
+  --text-on-cat: #ffffff; /* R5 y1: label text drawn on a --cat-* fill */
+  --border-accent: var(--mma-navy); /* R5 y1: the ring that carries an active state's boundary */
 
-  --fill-accent: var(--mma-steel); /* see the navy block: Gold cannot carry a state on white */
-  --fill-control: #eef2f8;
-  --fill-track: #dde5f0;
-  --border-control: #5d6d92;
-  --divider: #d7dfec;
-  --focus-ring: var(--mma-steel);
-  --icon-muted: #56658a;
-  --icon-inactive: #6b7793;
+  /* R5 y1: the same brand gold as the dark theme's active fill, so both themes coordinate — the
+     guide's own colour, not a slate substitute. On its own it is 1.49:1 against the panel (EXEMPT,
+     see the @contrast note above), so --border-accent (navy) carries the state at >= 3:1 instead,
+     per WCAG 1.4.11. y3 (`docs/design/candidates/tokens-y3.css`, `#876700`) is the drop-in
+     fallback if the ~10-selector ring round (docs/usability.md §7 R5) is ever unwanted. */
+  --fill-accent: var(--mma-gold);
+  --fill-control: #f8f1dc; /* R5 y1: cream, was slate #eef2f8 */
+  --fill-track: #ece0bd; /* R5 y1: wheat, was slate #dde5f0 */
+  --border-control: #7a6a45; /* R5 y1: warm bronze, was slate #5d6d92 */
+  --divider: #e6dab4; /* R5 y1: wheat, was slate #d7dfec */
+  --focus-ring: var(--mma-steel); /* unchanged: gold fails 3:1 as a focus ring on paper */
+  /* R9 (owner, 2026-09-24): the SAME zone outline stroke as the navy block's own note -- white
+     (msens's zone_line_args() value, unchanged there) is near-invisible on this theme's light
+     basemap, so paper substitutes brand navy ink instead of the data table's own literal. */
+  --stroke-outline: var(--mma-navy);
+  --icon-muted: #6a5c3a; /* R5 y1: warm bronze, was slate #56658a */
+  --icon-inactive: #7d7155; /* R5 y1: warm grey, was slate #6b7793 */
   --motif-color: var(--mma-steel);
-  --scrim: #223252;
-  --shadow-color: #8595b4;
+  --scrim: var(--mma-navy); /* R5 y1: brand navy, was slate #223252 */
+  --shadow-color: #b8a67a; /* R5 y1: warm, was slate #8595b4 */
 
   /* darkened one step from #1c7fb8 (still the same hue): the original passed its
      --surface-panel-basis pairing at 3.83:1 but only 4.4:1 against --text-on-accent (white) --
