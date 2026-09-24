@@ -1,31 +1,24 @@
 diff --git a/src/lens/scores/ScoresLens.svelte b/src/lens/scores/ScoresLens.svelte
-index 1e505a9..4d6b7e4 100644
+index 5fff8bb..b7eb42a 100644
 --- a/src/lens/scores/ScoresLens.svelte
 +++ b/src/lens/scores/ScoresLens.svelte
-@@ -46,15 +46,36 @@
-      * `unit`/`lyr`/`manifestOverlays`/`selection`/`mapSelection`/`showOutsidePra`/`mapExtra` all
-      * come from here now, not recomputed a second time. */
-     lens: ScoresLens;
+@@ -56,6 +56,10 @@
+      * and the map can never disagree about what the current stack is. */
+     layerStack: readonly LayerStackEntry[];
+     onLayerStackChange: (next: readonly LayerStackEntry[]) => void;
 +    // SEEDED FAULT (tests/faults/scores-state-panel-bound.patch): reinstates the 0.10.17 bug --
 +    // Shell.svelte reads this bucket instead of `lens.mapExtra` directly, so the map only ever
 +    // sees a value while THIS component is mounted.
 +    mapExtra?: import("./mapInputs").ScoresMapInputs | null;
    }
  
--  let { sel, selStore, boot, manifest, ver, mapHandle, activeTool, fallbackBody, lens }: Props =
--    $props();
-+  let {
-+    sel,
-+    selStore,
-+    boot,
-+    manifest,
-+    ver,
-+    mapHandle,
-+    activeTool,
-+    fallbackBody,
-+    lens,
+   let {
+@@ -70,12 +74,20 @@
+     lens,
+     layerStack,
+     onLayerStackChange,
 +    mapExtra = $bindable(null),
-+  }: Props = $props();
+   }: Props = $props();
  
    const unit = $derived(lens.unit);
    const lyr = $derived(lens.lyr);
@@ -42,10 +35,10 @@ index 1e505a9..4d6b7e4 100644
    // `flower.ts`/`species.ts` need it verbatim for titles and headers).
    const selection = $derived(lens.selection);
 diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
-index 51d50ae..9723544 100644
+index b0f0240..8054263 100644
 --- a/src/shell/Shell.svelte
 +++ b/src/shell/Shell.svelte
-@@ -327,6 +327,13 @@
+@@ -485,6 +485,13 @@
    // every read of it below is null-safe and falls back to "the shell's own base view", same as
    // the old `{}` default did.
    let scoresLens = $state<ScoresLensState | null>(null);
@@ -59,7 +52,7 @@ index 51d50ae..9723544 100644
  
    // G-25 fix: `Sel.out`'s ONE effect on the map, applied to whichever `zones` array (the shell's
    // own outline-only `zoneUnits`, or the scores lens' richer `scoresLens.mapExtra.zones`) is about
-@@ -339,7 +346,7 @@
+@@ -497,7 +504,7 @@
    // never mounted on a species view in the first place.
    const zonesForStyle = $derived<ZoneUnitSpec[]>(
      zoneUnitsWithOutline(
@@ -68,30 +61,33 @@ index 51d50ae..9723544 100644
        sel.out,
      ),
    );
-@@ -488,11 +495,11 @@
+@@ -713,11 +720,14 @@
      projection: sel.proj,
-     zones: zonesForStyle,
+     zones: ecoregionUnit ? [...zonesForStyle, ecoregionUnit] : zonesForStyle,
      raster:
 -      sel.lens === "scores" ? (scoresLens?.mapExtra.raster ?? null) : speciesLens.mapInputs.raster,
-+      sel.lens === "scores" ? (scoresPanelMapExtra?.raster ?? null) : speciesLens.mapInputs.raster,
++      sel.lens === "scores"
++        ? (scoresPanelMapExtra?.raster ?? null)
++        : speciesLens.mapInputs.raster,
      range: sel.lens === "species" ? speciesLens.mapInputs.range : null,
 -    overlays: sel.lens === "scores" ? (scoresLens?.mapExtra.overlays ?? []) : [],
 +    overlays: sel.lens === "scores" ? (scoresPanelMapExtra?.overlays ?? []) : [],
      selection:
 -      placesSelection ?? (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
-+      placesSelection ?? (sel.lens === "scores" ? (scoresPanelMapExtra?.selection ?? null) : null),
++      placesSelection ??
++      (sel.lens === "scores" ? (scoresPanelMapExtra?.selection ?? null) : null),
+     layerStack,
    });
  
-   $effect(() => {
-@@ -873,6 +880,7 @@
-             {activeTool}
-             fallbackBody={TOOL_BODY[activeTool]}
+@@ -1176,6 +1186,7 @@
              lens={scoresLens}
+             {layerStack}
+             {onLayerStackChange}
 +            bind:mapExtra={scoresPanelMapExtra}
            />
          {:else}
            <p>{TOOL_BODY[activeTool]}</p>
-@@ -902,7 +910,7 @@
+@@ -1205,7 +1216,7 @@
      <Comp legend={speciesLens.mapInputs.legend} />
    {:else if sel.lens === "scores" && ScoresLegendComp}
      {@const Comp = ScoresLegendComp}
