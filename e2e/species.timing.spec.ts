@@ -28,7 +28,7 @@
 //    e2e/species.smoke.spec.ts already use.
 import { expect, test } from "@playwright/test";
 import { collectConsoleErrors, collectRequests } from "./hermetic";
-import { BASEMAP_RGB, RASTER_RGB } from "./map-hermetic";
+import { BASEMAP_RGB_NAVY, RASTER_RGB } from "./map-hermetic";
 import { type AtlasMapForSpecies, LEATHERBACK_SP, gotoSpecies } from "./species-hermetic";
 
 test.skip(({ browserName }) => browserName !== "chromium", "WebGL gate: chromium only (S2)");
@@ -37,7 +37,14 @@ test.use({ viewport: { width: 1280, height: 800 } });
 
 // the raster paints at SPECIES_RASTER_OPACITY (0.8) OVER the basemap — an alpha-blended pixel, not
 // the pure raster colour: round(raster*0.8 + basemap*0.2) per channel.
-const BLENDED_RASTER_RGB = RASTER_RGB.map((c, i) => Math.round(c * 0.8 + BASEMAP_RGB[i] * 0.2));
+//
+// `gotoSpecies` below is called with a bare `/?sp=...&ver=v9` — no `?theme=` — so the app resolves
+// its own default (`DEFAULT_SEL.theme`, `src/lib/state/types.ts`), which is navy since 0.10.29's
+// U2a (dark-by-default), not the `paper` this constant assumed through 0.10.34. Blend against
+// `BASEMAP_RGB_NAVY`, the fixture colour the basemap actually paints under that default.
+const BLENDED_RASTER_RGB = RASTER_RGB.map((c, i) =>
+  Math.round(c * 0.8 + BASEMAP_RGB_NAVY[i] * 0.2),
+);
 
 // The plan's own gate: "first species pixel <= 2.5s cold" (atlas-8 budgets table), on the MEDIAN
 // of N >= 3 cold runs.
