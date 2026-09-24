@@ -95,7 +95,9 @@ async function gotoScoresArea(page: Page, search: string) {
 }
 
 function getMoveEndCount(page: Page): Promise<number> {
-  return page.evaluate(() => (window as unknown as { __moveEndCount?: number }).__moveEndCount ?? 0);
+  return page.evaluate(
+    () => (window as unknown as { __moveEndCount?: number }).__moveEndCount ?? 0,
+  );
 }
 
 function getBounds(page: Page) {
@@ -237,9 +239,7 @@ test.describe("S-01: the study area is a CAMERA — sel.area drives it on load a
     expect(contains(bounds, { lon: GA.lon, lat: GA.lat })).toBe(true);
   });
 
-  test("a user pan after the fly is kept — not fought back to the study area", async ({
-    page,
-  }) => {
+  test("a user pan after the fly is kept — not fought back to the study area", async ({ page }) => {
     await gotoScoresArea(page, "&area=AK");
     await waitForCameraNear(page, { lon: AK.lon, lat: AK.lat });
 

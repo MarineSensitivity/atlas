@@ -36,8 +36,15 @@ export const ZONES20_URL =
 // same fixture file `e2e/species-hermetic.ts` already reads for the species lens -- reused, never
 // re-typed, so the two lenses cannot silently drift onto different lon/lat/zoom presets.
 const STUDY_AREAS_FIXTURES = new URL("../tests/fixtures/species/", import.meta.url);
-export const STUDY_AREAS: Array<{ key: string; label: string; lon: number; lat: number; zoom: number }> =
-  JSON.parse(readFileSync(fileURLToPath(new URL("v7/study-areas.json", STUDY_AREAS_FIXTURES)), "utf8"));
+export const STUDY_AREAS: Array<{
+  key: string;
+  label: string;
+  lon: number;
+  lat: number;
+  zoom: number;
+}> = JSON.parse(
+  readFileSync(fileURLToPath(new URL("v7/study-areas.json", STUDY_AREAS_FIXTURES)), "utf8"),
+);
 
 const COMPOSITE_KEY = "score_extriskspcat_primprod_ecoregionrescaled_equalweights";
 const ZONE_KEYS = [

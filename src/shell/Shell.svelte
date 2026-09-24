@@ -40,7 +40,11 @@
   import { warmBasemapStyles, type CartoStyleLike } from "../lib/map/layers/basemap";
   import { zoneUnitsFromBoot, zoneUnitsWithOutline } from "../lib/map/layers/zones";
   import { studyAreaFromBoot } from "../lib/map/interaction";
-  import { INITIAL_AREA_CAMERA_STATE, shouldFlyToArea, type AreaCameraState } from "../lib/map/camera";
+  import {
+    INITIAL_AREA_CAMERA_STATE,
+    shouldFlyToArea,
+    type AreaCameraState,
+  } from "../lib/map/camera";
   import { createAnalytics } from "../lib/analytics/analytics";
   // atlas-8 Deliverable 4 (beta feedback, zero backend -- CLAUDE.md/GATES.md's "the CalCOFI
   // zero-backend fallback"): both pure functions take a snapshot the caller builds -- neither ever

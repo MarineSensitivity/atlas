@@ -490,7 +490,9 @@ const SHELL_STATES = [
 const PROJECTIONS = ["globe", "mercator"];
 const OUTLINES = ["programarea", "ecoregion", "none"];
 const AREAS = ["FULL", "GA"];
-const STUDY_AREA_BY_KEY = Object.fromEntries(BOOT_FIXTURE_SCORES.study_areas.map((a) => [a.key, a]));
+const STUDY_AREA_BY_KEY = Object.fromEntries(
+  BOOT_FIXTURE_SCORES.study_areas.map((a) => [a.key, a]),
+);
 
 /**
  * S-01 (owner report, 2026-09-24): `?area=X` used to render the DEFAULT camera regardless of X —
