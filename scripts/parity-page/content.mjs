@@ -189,16 +189,16 @@ export const INTENTIONAL = [
     id: "ID-10",
     title:
       "The Layers control lists the layers that exist — and MapLibre's own map chrome is not there yet",
-    what: "The Shiny apps' layers control carried switches (`pra_ln`, `pra_lbl`, `er_ln`) that controlled nothing. The atlas derives the list from the composed style, so a switch always has a layer. The other side of the same line: MapLibre's fullscreen / navigation / scale controls, the globe minimap and the Nominatim \"Go to location\" geocoder are NOT built in either lens.",
+    what: "The Shiny apps' layers control carried switches (`pra_ln`, `pra_lbl`, `er_ln`) that controlled nothing. The atlas derives the list from the composed style (R3: the real, interactive `LayersPanel.svelte` stack, one row per `LayerGroupId`, wired to `moveLayerStackEntry`/`composeStyle`'s own `layerStack` input), so a switch always has a layer. The other side of the same line: MapLibre's fullscreen / navigation / scale controls, the globe minimap and the Nominatim \"Go to location\" geocoder are NOT built in either lens.",
     why: 'The dead switches are a documented bug (§6.4). The missing chrome is a deliberate hold: those are real buttons that would nest inside `#map[role="img"]` and fail axe, so where map chrome lives is one cross-lens decision, recorded as gap G-02 rather than guessed at twice.',
     where: [
       {
-        file: "tests/map/style.test.ts",
-        name: "excludes page chrome, EVERY merged CARTO basemap layer, and the click-driven selection ring (never user-toggleable)",
+        file: "e2e/layers.spec.ts",
+        name: "M3: the Zone outlines row's eye hides programarea_ln's rendered features (>0 -> 0), never removes the layer",
       },
       {
-        file: "tests/map/style.test.ts",
-        name: "a bare background+basemap style (nothing selected yet) lists no items",
+        file: "e2e/layers.spec.ts",
+        name: "M3: the Land & water row's eye hides the basemap fill, showing the theme's plain background colour through",
       },
     ],
     rows: ["S-08", "P-07"],

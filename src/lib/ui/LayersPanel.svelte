@@ -39,6 +39,11 @@
    * expanding into today's controls"). Every other group is visible/opacity/reorder only. */
   const DATA_ROW_ID: LayerGroupId = "data-raster";
 
+  /** m6 (review round 1): `aria-controls` target for the Data row's expander button — only one
+   * `LayersPanel` is ever mounted at a time (the active lens owns the rail), so a static id is
+   * safe. */
+  const DATA_ROW_BODY_ID = "layers-data-row-body";
+
   // "the stack in draw order (top of the list = top of the map)" (Deliverable 3) -- the MODEL's own
   // array is bottom-to-top (style.ts#LAYER_ORDER's convention: index 0 paints first, i.e. lowest),
   // so the panel reverses it for DISPLAY only. `arrIndex` is kept alongside each row so a move
@@ -107,6 +112,7 @@
               type="button"
               class="row-name row-name--button"
               aria-expanded={expandedId === DATA_ROW_ID}
+              aria-controls={DATA_ROW_BODY_ID}
               onclick={() => toggleExpanded(DATA_ROW_ID)}
             >
               <Icon name={expandedId === DATA_ROW_ID ? "chevronUp" : "chevronDown"} size={16} />
@@ -122,6 +128,7 @@
           <Switch
             label={`${label} visible on the map`}
             checked={entry.visible}
+            disabled={!enabled}
             onchange={(v) => setVisible(entry.id, v)}
           />
 
@@ -134,7 +141,8 @@
               step="0.05"
               value={entry.opacity}
               disabled={!enabled}
-              oninput={(e) => setOpacity(entry.id, Number(e.currentTarget.value))}
+              aria-valuetext={`${Math.round(entry.opacity * 100)}%`}
+              onchange={(e) => setOpacity(entry.id, Number(e.currentTarget.value))}
             />
           </label>
 
@@ -143,7 +151,7 @@
               type="button"
               class="move-btn"
               aria-label={`Move ${label} up (toward the top of the map)`}
-              disabled={arrIndex === stack.length - 1}
+              disabled={!enabled || arrIndex === stack.length - 1}
               onclick={() => move(arrIndex, arrIndex + 1, label)}
             >
               <Icon name="chevronUp" size={18} />
@@ -152,7 +160,7 @@
               type="button"
               class="move-btn"
               aria-label={`Move ${label} down (toward the bottom of the map)`}
-              disabled={arrIndex === 0}
+              disabled={!enabled || arrIndex === 0}
               onclick={() => move(arrIndex, arrIndex - 1, label)}
             >
               <Icon name="chevronDown" size={18} />
@@ -161,7 +169,7 @@
         </div>
 
         {#if isData && expandedId === DATA_ROW_ID && dataControls}
-          <div class="row-body">
+          <div class="row-body" id={DATA_ROW_BODY_ID}>
             {@render dataControls()}
           </div>
         {/if}

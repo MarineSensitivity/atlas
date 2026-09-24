@@ -17,7 +17,6 @@ import {
   applyStyle,
   cartoStyleHasSymbolLayer,
   composeStyle,
-  layersControlItems,
   mergeCartoStyle,
   orderLayers,
   rankForStack,
@@ -451,92 +450,6 @@ describe("composeStyle + zoneUnitsWithOutline (G-25: Sel.out reaches the rendere
     expect(line && "layout" in line ? line.layout : null).toEqual({ visibility: "none" });
     // no ecoregion unit was ever IN `zones` to begin with -- nothing composed, not merely hidden.
     expect(s.layers.some((l) => l.id === "ecoregion_ln")).toBe(false);
-  });
-});
-
-// atlas-4 fix round 2: the ported Shiny app's known bug (parity doc §6.4) hardcoded its layers
-// control to `pra_ln`, `pra_lbl`, `er_ln`, `r_lyr`, `outside_pra_lyr` while the layers it actually
-// created were `programarea_ln`/`programarea_lbl`/`ecoregion_ln`/… -- three of five switches were
-// dead. This app's architecture already avoids that class of bug (composeStyle is the ONE place
-// layer ids are decided, and every id used elsewhere is one of its own exported id functions), but
-// had no NAMED test proving the control itself cannot regress to a hardcoded, stale id list.
-// `layersControlItems` derives its output FROM the style, so this is that test.
-describe("layersControlItems", () => {
-  function fullStack() {
-    return composeStyle({
-      theme: "navy",
-      basemapStyle: FAKE_CARTO_STYLE,
-      raster: SCORE,
-      overlays: [
-        {
-          id: "outside_pra_lyr",
-          tiles: [
-            titilerMaskTileTemplate({
-              url: "https://s3.example/cog/usa05/mask.tif",
-              colormap: OUTSIDE_PRA_COLORMAP,
-            }),
-          ],
-          opacity: OVERLAY_RASTER_OPACITY,
-          visible: false,
-        },
-      ],
-      zones: [
-        {
-          ...PRA,
-          fill: {
-            keyProperty: "programarea_key",
-            stops: [{ key: "GAA", color: "#111111" }],
-            defaultColor: "lightgrey",
-            opacity: 0.7,
-            outlineColor: "white",
-          },
-          labels: { points: { type: "FeatureCollection", features: [] }, textProperty: "key" },
-        },
-        ECO,
-      ],
-      selection: { features: { type: "FeatureCollection", features: [] } },
-    });
-  }
-
-  it("the three historically dead ids never appear (pra_ln, pra_lbl, er_ln)", () => {
-    const ids = layersControlItems(fullStack()).map((i) => i.id);
-    expect(ids).not.toContain("pra_ln");
-    expect(ids).not.toContain("pra_lbl");
-    expect(ids).not.toContain("er_ln");
-  });
-
-  it("every real composed data layer DOES appear", () => {
-    const ids = layersControlItems(fullStack()).map((i) => i.id);
-    expect(ids).toEqual([
-      "r_lyr",
-      "outside_pra_lyr",
-      "programarea_fill",
-      "programarea_ln",
-      "ecoregion_ln",
-      "programarea_lbl",
-    ]);
-  });
-
-  it("excludes page chrome, EVERY merged CARTO basemap layer, and the click-driven selection ring (never user-toggleable)", () => {
-    const ids = layersControlItems(fullStack()).map((i) => i.id);
-    expect(ids).not.toContain("background");
-    expect(ids.some((id) => id.startsWith(BASEMAP_LAYER_PREFIX))).toBe(false);
-    expect(ids).not.toContain("selection-fill");
-    expect(ids).not.toContain("selection-line");
-  });
-
-  it("labels the well-known raster/overlay ids exactly as the ported app named them", () => {
-    const items = layersControlItems(fullStack());
-    expect(items.find((i) => i.id === "r_lyr")?.label).toBe("Raster cell values");
-    expect(items.find((i) => i.id === "outside_pra_lyr")?.label).toBe(
-      "Cells outside Program Areas",
-    );
-  });
-
-  it("a bare background+basemap style (nothing selected yet) lists no items", () => {
-    expect(
-      layersControlItems(composeStyle({ theme: "navy", basemapStyle: FAKE_CARTO_STYLE })),
-    ).toEqual([]);
   });
 });
 
