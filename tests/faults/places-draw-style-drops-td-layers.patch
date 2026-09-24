@@ -1,0 +1,11 @@
+diff --git a/src/lib/map/style.ts b/src/lib/map/style.ts
+index dc0288d..08754a3 100644
+--- a/src/lib/map/style.ts
++++ b/src/lib/map/style.ts
+@@ -536,5 +536,5 @@ export function preserveDrawLayers(
+  * `addSource`, no `moveLayer`, no `before` id (CLAUDE.md).
+  */
+ export function applyStyle(map: StyleTarget, style: StyleSpecification): void {
+-  map.setStyle(preserveDrawLayers(map.getStyle?.(), style), { diff: true });
++  map.setStyle(style, { diff: true });
+ }

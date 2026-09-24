@@ -743,6 +743,46 @@ const FAULTS = [
       "footnote it should not (the original 'footnotes almost every cell' bug, replayed)",
     gate: ["npx", "vitest", "run", "tests/lib/report/scores.test.ts"],
   },
+  // P7 (0.10.46, "drawn places vanish from the map after the second draw"): terra-draw adds its
+  // OWN `td-*` sources/layers straight to the live map (draw.ts's own header), never through
+  // composeStyle -- `applyStyle()`'s `preserveDrawLayers()` call is what keeps a reactive
+  // `setStyle(diff:true)` from silently deleting them out from under it (live-reproduced: an
+  // uncaught `TypeError: Cannot read properties of undefined (reading 'setData')` inside terra-
+  // draw's own vendor chunk, the moment it next tried to update a source the diff had removed).
+  // This patch drops that call and must turn `preserveDrawLayers`'s own vitest gate red.
+  {
+    id: "places-draw-style-drops-td-layers",
+    patch: "tests/faults/places-draw-style-drops-td-layers.patch",
+    describe:
+      "applyStyle() stops preserving terra-draw's own td-* sources/layers across a recompose -- " +
+      "MapLibre's diff silently deletes them again, the same uncaught crash P7 live-reproduced",
+    gate: ["npx", "vitest", "run", "tests/map/style.test.ts", "-t", "preserves a live td-"],
+  },
+  // P7 fault 2 (Rule 3, "the circle tool bypasses writePlaces"): every drawable shape shares ONE
+  // terra-draw `finish` listener (`createDrawSession`'s own `draw.on("finish", onFinish)`), which
+  // is what makes `writePlaces()` the SAME path for a circle as a polygon. This patch drops the
+  // circle mode from the `modes` array terra-draw is constructed with (a plausible accidental
+  // regression, e.g. a refactor dropping one array entry) -- `setMode("circle")` then has no mode
+  // to switch to, so a circle session never finishes and never reaches `writePlaces()` at all. Must
+  // turn `e2e/places.spec.ts`'s own circle-draw test red.
+  {
+    id: "places-circle-mode-dropped",
+    patch: "tests/faults/places-circle-mode-dropped.patch",
+    describe:
+      "draw.ts's terra-draw instance is constructed with no TerraDrawCircleMode -- the circle " +
+      "tool can never finish a shape, so it never reaches writePlaces() at all",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/places.spec.ts",
+      "-g",
+      "the circle tool's completion path writes through the same writePlaces",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4397" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
