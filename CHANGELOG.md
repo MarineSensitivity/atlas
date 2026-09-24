@@ -1,3 +1,15 @@
+# atlas 0.10.55
+
+Round 2, Q7: the Sheet-log beacon actually reaches the Sheet.
+
+- **Fixed: setting `VITE_LOG_URL` did nothing.** `docs/analytics.md` and Ben's own instructions
+  said the analytics Sheet-log beacon (the same batched log the Shiny `scores`/`species` apps
+  write) was enabled by setting the repository variable `VITE_LOG_URL` — but neither construction
+  site ever passed a `logUrl` to `createAnalytics()`, and `pages.yml`'s build step never forwarded
+  the variable in the first place, so the beacon could never fire no matter what the variable was
+  set to. Both gaps are now closed (`src/lib/analytics/logUrl.ts`'s `analyticsLogUrl()`, wired into
+  `Shell.svelte`/`Report.svelte` and `pages.yml`); GA4 reporting is unaffected either way.
+
 # atlas 0.10.54
 
 Round 2, Q4: the feedback endpoint and preview-host link flags.

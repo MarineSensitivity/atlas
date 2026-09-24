@@ -78,12 +78,19 @@ jobs:
       # version picker's "Continue on the preview host" Atlas link on atlas-9 actually having
       # deployed that route -- also unset until then, so the modal falls back to linking the
       # Scores/Species apps that already exist on the preview host instead of a 404.
+      #
+      # round 2 Q7: VITE_LOG_URL (docs/analytics.md "Enabling the Sheet leg") is the SAME Apps
+      # Script `/exec` URL the Shiny apps use as `MSENS_LOG_URL` -- a repository variable for the
+      # same reason VITE_FEEDBACK_URL above is one. Unset here resolves to an empty string, which
+      # `analyticsLogUrl()` (src/lib/analytics/logUrl.ts) treats as "no Sheet leg" -- GA4 still
+      # receives events either way.
       - run: npx vite build
         env:
           VITE_SEAL: "1"
           VITE_AGENCY: MMA
           VITE_FEEDBACK_URL: ${{ vars.VITE_FEEDBACK_URL }}
           VITE_PREVIEW_ATLAS_ROUTE: ${{ vars.VITE_PREVIEW_ATLAS_ROUTE }}
+          VITE_LOG_URL: ${{ vars.VITE_LOG_URL }}
 
       # atlas-0 Deliverable 4 (F3 extended; budget relaxed 350->450 KB by plan D13, 2026-09-21):
       # fails on a >450 KB gzip static critical path, a >150 KB gzip runtime worker referenced from

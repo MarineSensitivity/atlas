@@ -1163,6 +1163,18 @@ const FAULTS = [
     env: { PW_PORT: "4429" },
     duckdbExt: true,
   },
+  // round 2, Q7: `logUrl` (src/lib/analytics/logUrl.ts's `analyticsLogUrl()`) reaching
+  // `createAnalytics()` -- docs/analytics.md and the orchestrator's own instructions to Ben both
+  // said setting the repository variable `VITE_LOG_URL` was enough, which was false while neither
+  // construction site passed a `logUrl` at all.
+  {
+    id: "analytics-logurl-unwired",
+    patch: "tests/faults/analytics-logurl-unwired.patch",
+    describe:
+      "Shell.svelte's createAnalytics({...}) call drops its `logUrl: analyticsLogUrl()` line -- " +
+      "the Sheet-log beacon goes back to a silent no-op no matter what VITE_LOG_URL is set to",
+    gate: ["npx", "vitest", "run", "tests/analytics/logUrl.wiring.test.ts"],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

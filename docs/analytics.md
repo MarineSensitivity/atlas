@@ -29,6 +29,29 @@ admin-console change to this property.
 **Where to check it:** GA4 Admin → Data Streams → the web stream for this property → **Enhanced
 measurement** (gear icon) → **Page changes based on browser history events**. Must read **Off**.
 
+## Enabling the Sheet leg
+
+The Sheet-log beacon (`analytics.ts`'s `flush()`) is a no-op until a build-time `logUrl` is
+supplied. That comes from **`VITE_LOG_URL`**, a *repository variable* on this repo (GitHub →
+`MarineSensitivity/atlas` → Settings → Secrets and variables → Actions → **Variables** tab, not
+Secrets — the URL ships in the public bundle either way, same reasoning as `VITE_FEEDBACK_URL`).
+`.github/workflows/pages.yml`'s `checks` job forwards it into `npx vite build`;
+`src/lib/analytics/logUrl.ts`'s `analyticsLogUrl()` reads it at build time (unset, empty, or
+anything not `https://...` resolves to `""`, which `analytics.ts` treats the same as "no Sheet leg
+configured" — GA4 still receives events).
+
+**Value**: the same Apps Script `/exec` URL the Shiny apps (`scores`/`species`) already use as the
+`MSENS_LOG_URL` server env var — no new Sheet or Apps Script deployment is needed. The atlas writes
+rows into the SAME Sheet, using the SAME 16 `ms_log_header()` columns, with `app = "atlas"`
+distinguishing its rows from the Shiny apps'. `apps/analytics/README.md` in the sibling
+`MarineSensitivity/apps` repo documents the Sheet + Apps Script setup itself.
+
+**How to confirm it's live**: after a Pages deploy with the variable set, open the deployed app,
+DevTools → Network, filter for `script.google.com`, and use the app for a few seconds (a batch
+flushes every 10 events or 15s, or on tab hide — `analytics.ts`'s `DEFAULT_BATCH`/
+`DEFAULT_INTERVAL_MS`). A request to that host, and a matching new row with `app = "atlas"` in the
+Sheet within ~15 s, confirms the wiring end to end.
+
 ## How to verify in the network panel
 
 However that setting is configured, the network panel is the ground truth. Open DevTools → Network,

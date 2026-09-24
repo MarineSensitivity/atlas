@@ -83,6 +83,7 @@
     phonePaddingFromMeasured,
   } from "../lib/map/chromePadding";
   import { createAnalytics } from "../lib/analytics/analytics";
+  import { analyticsLogUrl } from "../lib/analytics/logUrl";
   // atlas-8 Deliverable 4 (beta feedback, zero backend -- CLAUDE.md/GATES.md's "the CalCOFI
   // zero-backend fallback"): both pure functions take a snapshot the caller builds -- neither ever
   // reads `location`/`window.location` itself (tests/feedback/noHash.test.ts's source-scan gate).
@@ -130,7 +131,13 @@
   // GA4's own snippet already expects — see analytics.ts). `preview` is always false here: the
   // shell does not yet thread a resolved preview session down to a lens (a known gap, not this
   // phase's to close — see this component's own boot section below).
-  const analytics = createAnalytics({ appVersion: __APP_VERSION__, preview: false });
+  // round 2, Q7 fix: `logUrl` was never passed here, so the Sheet-log beacon (docs/analytics.md)
+  // could never fire no matter what Ben set `VITE_LOG_URL` to -- see src/lib/analytics/logUrl.ts.
+  const analytics = createAnalytics({
+    appVersion: __APP_VERSION__,
+    preview: false,
+    logUrl: analyticsLogUrl(),
+  });
 
   // --- theme: the SAME rule as index.html's pre-paint script, kept live afterward -------------
   let prefersDark = $state<boolean | null>(null);
