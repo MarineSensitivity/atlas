@@ -1301,6 +1301,37 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4436" },
   },
+  // --- V3 (P round, 2026-09-24, Ben's report: titiler-v8/the API down for an hour, live map --
+  // stayed silent) -- service-health detection. Two faults: one for the pure classifier (a real
+  // 5xx must never be treated as an empty/missing tile), one for the banner's own end-to-end
+  // wiring (the store can know a service is down and the banner still never render).
+  {
+    id: "health-5xx-treated-as-empty",
+    patch: "tests/faults/health-5xx-treated-as-empty.patch",
+    describe:
+      "classifyMapTileError folds any status >= 500 into the 403/404 'empty' (missing-tile) " +
+      "branch -- a real titiler-v8 outage would be silently ignored the same way a normal " +
+      "release-side gap already is, instead of raising the health banner",
+    gate: ["npx", "vitest", "run", "tests/health/mapError.test.ts"],
+  },
+  {
+    id: "health-banner-never-shown",
+    patch: "tests/faults/health-banner-never-shown.patch",
+    describe:
+      "HealthBanner.svelte's own `visible` derived is forced to `false` unconditionally -- the " +
+      "health store correctly knows the tiler is down, but nothing ever appears on screen",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.health-banner.spec.ts",
+      "-g",
+      "boot-time probe",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4451" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

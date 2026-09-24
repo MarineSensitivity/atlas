@@ -1,0 +1,15 @@
+diff --git a/src/lib/health/mapError.ts b/src/lib/health/mapError.ts
+index 14c983f..f5ee7ef 100644
+--- a/src/lib/health/mapError.ts
++++ b/src/lib/health/mapError.ts
+@@ -51,7 +51,9 @@ export function classifyMapTileError(
+   const url = typeof err?.url === "string" ? err.url : undefined;
+   if (!url || !url.startsWith(opts.tilerHost)) return { kind: "ignored" };
+   const status = typeof err?.status === "number" ? err.status : undefined;
+-  if (status === 403 || status === 404) return { kind: "empty", url, status };
++  if (status === 403 || status === 404 || (status !== undefined && status >= 500)) {
++    return { kind: "empty", url, status };
++  }
+   if (typeof status === "number") {
+     return { kind: "failure", service: "tiler", url, status, reason: `HTTP ${status}` };
+   }
