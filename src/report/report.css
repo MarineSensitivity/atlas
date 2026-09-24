@@ -39,6 +39,22 @@ table {
   font-variant-numeric: tabular-nums;
 }
 
+/* V1 fix (Opus eyes-on review, 2026-09-24, phone 390px): "the phone report page overflows
+   sideways" -- a table this wide (many score components, or a species table's Scientific-name
+   column) was never itself bounded by `#report-root`'s width; `table { width: 100% }` above is
+   only a PREFERRED width, and the auto layout algorithm still grows the table past its container
+   when a column's own minimum content width demands it, which then overflowed the whole PAGE
+   horizontally (no ancestor here clips it). Report.svelte now wraps every `<table>` in one of
+   these, so an overwide table scrolls WITHIN its own box instead of pushing the document wider
+   than the viewport. Print keeps the old behaviour (the table prints in full, no scrollbar,
+   `overflow: visible` below) -- pagination, not a scroll container, is how a printed table too
+   wide for one page is meant to read. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: 0.5rem;
+}
+
 th,
 td {
   padding: 0.35rem 0.6rem;
@@ -67,6 +83,12 @@ caption {
   font-size: 0.85em;
   color: var(--text-secondary, #55606f);
   margin-bottom: 0.35rem;
+  /* V1 fix: a long caption ("Top 20 highest-scoring species (by habitat-weighted extinction
+     risk).") is ordinary prose and wraps at word boundaries fine on its own -- this only matters
+     for one that happens to contain a single unbroken run of characters wider than the viewport
+     (a species' own long token/name a future caption might interpolate); `anywhere` is a no-op on
+     the common case and a safety net on that one. */
+  overflow-wrap: anywhere;
 }
 
 figure {
@@ -110,6 +132,18 @@ figure {
 .report-header .titles {
   flex: 1 1 auto;
   min-width: 14rem;
+}
+
+/* V1 fix (Opus eyes-on review, 2026-09-24, phone 390px): a raw URL shown as its own link text
+   (the permalink line's full `origin + pathname + ?ver=...#pl=...`, above the h1; a dataset
+   citation href, Sources and Method) is ONE unbroken run of characters with no spaces for the
+   browser's normal word-wrap to break on -- the permalink alone, with several picked places (each
+   contributing a zone key or a drawn polygon's encoded vertices to `#pl=`), easily read 100+
+   characters wide and pushed the whole document past a 390px viewport on its own, entirely
+   separate from any table. `anywhere` breaks mid-word/mid-token rather than overflowing; every
+   OTHER link in this document is short link TEXT (button/nav labels), which this never touches. */
+#report-root a {
+  overflow-wrap: anywhere;
 }
 
 .report-header h1 {
@@ -344,6 +378,13 @@ figure {
 
   table thead {
     display: table-header-group; /* repeats the header row on every page a table spans */
+  }
+
+  /* V1 fix: print keeps the pre-existing behaviour -- a wide table prints in full and wraps onto
+     the next page rather than sitting inside a scrollbar a printed page can never show. */
+  .table-scroll {
+    overflow: visible;
+    margin-bottom: 0;
   }
 
   .disclosure-body[hidden] {
