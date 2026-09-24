@@ -667,9 +667,19 @@ button.chip {
    visually hidden here, `.brand-title`'s own rule above) is the one purely decorative control left:
    hiding it reclaims its own width AND the gap beside it, the same "nothing here is hidden because
    every remaining control is load-bearing" note the file already made about this breakpoint, minus
-   the one exception that is not load-bearing. */
+   the one exception that is not load-bearing. Selector is `.wavehex` (R4/R5's `WaveHexMark.svelte`
+   root `<svg class="wavehex {klass}">`), not `.mark` -- R4 replaced the old `<img class="mark
+   mark--navy/paper">` pair with this ONE component, so a plain `.wavehex{display:none}` rule here
+   silently stopped matching anything until this merge caught it (verify.mjs's own `assertLayout`
+   re-failed "theme is off-screen at 320x800" after the R4/U1 merge -- the fix, not a new
+   regression) -- AND, once retargeted, still lost outright: WaveHexMark.svelte's OWN scoped style
+   sets `.wavehex { display: block; flex: none; }`, which Svelte compiles to `.wavehex.svelte-hash`
+   (specificity 0,2,0) -- a plain `.wavehex` here (0,1,0) cannot outrank it regardless of media
+   query or source order (the same "specificity beats source order" lesson as the `[hidden]` note
+   elsewhere in this file). `header.topbar .wavehex` (specificity 0,2,1 -- TWO classes, same as the scoped rule, PLUS one
+   element, which breaks the tie) comfortably outranks it without `!important`. */
 @media (max-width: 380px) {
-  .mark {
+  header.topbar .wavehex {
     display: none;
   }
   /* the two remaining topbar tools at this width (⋯ and theme) are both icon-only -- a few px off

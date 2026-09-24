@@ -83,11 +83,13 @@ async function gotoShell(page: import("@playwright/test").Page, theme: string, p
 //     pair (`--text-secondary` on the SAME rail glass background every other rail node already
 //     sat on) is one of the pairs `node scripts/contrast.mjs` independently resolves and passes;
 //     no new node cited a reason outside the two already allow-listed below.
-//   Combined, MEASURED on the real merged tree (never summed from the two deltas above): desktop
-//   29, phone 16 -- see this file's own re-run after the U1+R4 merge for the exact counts.
+//   Combined, MEASURED on the real merged tree (never summed from the two deltas above, and
+//   re-run twice for stability): desktop 24-25 observed (both themes, two runs), phone 16
+//   observed (all four theme/run combinations, zero variance) -- one point of headroom on each,
+//   the same margin the very first re-triage above left.
 const COLOR_CONTRAST_INCOMPLETE_CEILING: Record<string, number> = {
-  phone: 16,
-  desktop: 29,
+  phone: 17,
+  desktop: 26,
 };
 // `imgNode` joined `pseudoContent` in the same re-triage: axe reports it when the element's
 // background resolves to an IMAGE it cannot sample — here the map's WebGL canvas behind the glass
