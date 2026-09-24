@@ -30,7 +30,12 @@ import { BLENDED_RASTER_RGB, gotoScoresMap, OCEAN_PROBES, readPixel } from "./sc
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 800 } });
 
-const COLLAPSED_GEOMETRY: PanelGeometry = { collapsed: true, detent: "half" };
+const COLLAPSED_GEOMETRY: PanelGeometry = {
+  collapsed: true,
+  maximized: false,
+  dock: "right",
+  size: 380,
+};
 
 /** seeds the "shell" panel's desktop geometry as collapsed, BEFORE any app script runs (never
  * after `goto` — a post-load `localStorage.setItem` would not reproduce the bug, since

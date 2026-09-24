@@ -36,8 +36,14 @@ import {
 } from "./hermetic";
 import { blockWasm, routeBasemapStyle, routeGlyphs, routeTitilerTiles } from "./map-hermetic";
 import { STUDY_AREAS, bootFor, routeZones20 } from "./scores-hermetic";
-import { panelStorageKey, type PanelGeometry } from "../src/lib/ui/panelGeometry";
+import {
+  DEFAULT_PANEL_GEOMETRY,
+  panelStorageKey,
+  type PanelGeometry,
+} from "../src/lib/ui/panelGeometry";
 import { tileUrlLeaksStudyArea } from "../src/lib/map/layers/titiler";
+import { desktopPanelPadding } from "../src/lib/map/chromePadding";
+import { paddedStudyAreaCenter } from "../src/lib/map/camera";
 
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 800 } });
@@ -153,7 +159,12 @@ async function flyAndWaitForMoveEnd(page: Page, action: () => Promise<unknown>) 
   await expect.poll(() => getMoveEndCount(page), { timeout: 10_000 }).toBeGreaterThan(before);
 }
 
-const COLLAPSED_GEOMETRY: PanelGeometry = { collapsed: true, detent: "half" };
+const COLLAPSED_GEOMETRY: PanelGeometry = {
+  collapsed: true,
+  maximized: false,
+  dock: "right",
+  size: 380,
+};
 
 /** seeds the "shell" panel's desktop geometry as collapsed, BEFORE any app script runs — same
  * technique e2e/scores.collapsed-panel.spec.ts's own `seedCollapsedShellPanel` uses, reproduced
@@ -208,7 +219,20 @@ test.describe("S-01: the study area is a CAMERA — sel.area drives it on load a
     page,
   }) => {
     await gotoScoresArea(page, "");
-    await waitForCameraNear(page, { lon: FULL.lon, lat: FULL.lat });
+    // R1 (usability M4, merged into this round after this spec was first written): the shell's
+    // DEFAULT desktop panel (undocked, right, 380px -- DEFAULT_PANEL_GEOMETRY, no geometry seeded
+    // by this test) pads the FIRST-paint camera so the study area is not hidden behind it
+    // (`Shell.svelte#initialStudyArea`/`paddedStudyAreaCenter`) -- at FULL's own low zoom (2.16)
+    // that reserved 380px is a large fraction of the visible world, so the settled camera lands
+    // well away from FULL's raw, unpadded point. Compute the SAME padded point the shell computes
+    // (never re-hardcode the shift) so this still proves "the initial camera settled and stayed
+    // put" -- this test's own concern -- without asserting a value M4 has since made stale.
+    const paddedFull = paddedStudyAreaCenter(
+      FULL,
+      FULL.zoom,
+      desktopPanelPadding(DEFAULT_PANEL_GEOMETRY),
+    );
+    await waitForCameraNear(page, paddedFull);
 
     await flyAndWaitForMoveEnd(page, () => page.getByLabel("Study area").selectOption(AK.key));
 
@@ -226,6 +250,13 @@ test.describe("S-01: the study area is a CAMERA — sel.area drives it on load a
     await waitForCameraNear(page, { lon: AK.lon, lat: AK.lat });
 
     await flyAndWaitForMoveEnd(page, () => page.getByLabel("Study area").selectOption(FULL.key));
+    // WebKit-only flake, found under repeat: a native <select> change can fire the `flyTo`
+    // animation's OWN moveend more than once before the camera has actually finished travelling
+    // (e.g. an intermediate easing tick), so `flyAndWaitForMoveEnd`'s "count went up once" check
+    // can resolve on a MID-FLIGHT frame -- reproduced 2/3 runs, camera still partway to AK's own
+    // longitude. `waitForCameraNear` (poll until settled, not "a moveend fired at all") is the
+    // same fix this file's own default-camera assertions already use for the identical race.
+    await waitForCameraNear(page, { lon: FULL.lon, lat: FULL.lat });
 
     const camera = await getCamera(page);
     expect(camera.lng).toBeCloseTo(FULL.lon, 0);

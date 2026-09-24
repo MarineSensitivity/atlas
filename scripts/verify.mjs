@@ -43,6 +43,11 @@ const { zoneHighlightId } = await import("../src/lib/map/layers/zones.ts");
 const { SPECIES_RASTER_OPACITY } = await import("../src/lens/species/mapInputs.ts");
 const { gotoSpecies, LEATHERBACK_SP, WALRUS_AM_MDL_KEY, WRYBILL_SP } =
   await import("../e2e/species-hermetic.ts");
+const { paddedStudyAreaCenter } = await import("../src/lib/map/camera.ts");
+const { desktopPanelPadding, phonePadding } = await import("../src/lib/map/chromePadding.ts");
+const { DEFAULT_PANEL_GEOMETRY } = await import("../src/lib/ui/panelGeometry.ts");
+const { DEFAULT_SHEET_DETENT } = await import("../src/lib/ui/sheetGeometry.ts");
+const { DEFAULT_SEL } = await import("../src/lib/state/types.ts");
 
 export const VIEWPORTS = {
   desktop: { width: 1280, height: 800 },
@@ -555,11 +560,34 @@ const STUDY_AREA_BY_KEY = Object.fromEntries(
  * `scoresOutlineProbe`/`scoresRasterProbe` never noticed because neither reads the CAMERA at all,
  * only what painted. This is the positive check that the map actually flew: `map.getCenter()` must
  * settle near `area`'s own `lon`/`lat` (`src/lib/map/camera.ts#shouldFlyToArea`'s contract).
+ *
+ * usability M4 (a later round than S-01): when `areaKey` equals `DEFAULT_SEL.area` ("FULL"),
+ * `shouldFlyToArea`'s OWN contract is a deliberate no-op on the first resolution (its header:
+ * "the map was already constructed pointed roughly there... flying again would... silently UN-PAD
+ * it for no reason") -- so the settled camera for `?area=FULL` is Shell.svelte's PADDED default
+ * fit (`initialStudyArea`/`paddedStudyAreaCenter`, reserving the shell's default undocked-panel
+ * width), never the raw fixture point, and asserting the raw point here is exactly the same stale
+ * assumption `e2e/scores.studyarea.spec.ts` already had to fix. A non-default `?area=` (GA below)
+ * is unaffected: `shouldFlyToArea` re-flies it to its own raw point once `boot` arrives, which is
+ * still what this probe expects.
+ *
+ * Viewport-aware for the same reason Shell.svelte's own `initialChromePadding` is: this state
+ * runs at all THREE of `VIEWPORTS` (the outer loop, `main()` below), and phone width pads with
+ * the SHEET's own default detent/height, never the desktop panel's.
  */
 function cameraNearAreaProbe(areaKey, tolDeg = 1) {
   return async (page) => {
     const area = STUDY_AREA_BY_KEY[areaKey];
     if (!area) return [`no fixture study area "${areaKey}"`];
+    let expected = { lon: area.lon, lat: area.lat };
+    if (areaKey === DEFAULT_SEL.area) {
+      const viewport = page.viewportSize();
+      const isPhone = !viewport || viewport.width <= 899;
+      const padding = isPhone
+        ? phonePadding(DEFAULT_SHEET_DETENT, viewport?.height ?? 800)
+        : desktopPanelPadding(DEFAULT_PANEL_GEOMETRY);
+      expected = paddedStudyAreaCenter(area, area.zoom, padding);
+    }
     let center = null;
     for (let i = 0; i < 20; i++) {
       center = await page.evaluate(() => {
@@ -568,11 +596,13 @@ function cameraNearAreaProbe(areaKey, tolDeg = 1) {
         const c = map.getCenter();
         return [c.lng, c.lat];
       });
-      if (center && Math.hypot(center[0] - area.lon, center[1] - area.lat) < tolDeg) return [];
+      if (center && Math.hypot(center[0] - expected.lon, center[1] - expected.lat) < tolDeg) {
+        return [];
+      }
       await page.waitForTimeout(250);
     }
     return [
-      `camera never reached study area "${areaKey}" (${area.lon},${area.lat}) — stuck at ` +
+      `camera never reached study area "${areaKey}" (${expected.lon},${expected.lat}) — stuck at ` +
         `${center ? center.join(",") : "no map"}`,
     ];
   };

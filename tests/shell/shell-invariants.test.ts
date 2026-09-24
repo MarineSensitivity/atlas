@@ -10,6 +10,11 @@ const INDEX_HTML = readFileSync("index.html", "utf8");
 const MAIN_TS = readFileSync("src/main.ts", "utf8");
 const SHELL_SVELTE = readFileSync("src/shell/Shell.svelte", "utf8");
 const TOOLS_TS = readFileSync("src/shell/tools.ts", "utf8");
+// R2 (docs/usability.md §7, U1): About/Feedback/the phone ⋯ menu live in their OWN component, not
+// inline in Shell.svelte (this round's own instructions: a new file so U5/U6 stay additive) --
+// its data-control/data-tour anchors are still part of "the shell", so the round-trip check below
+// reads it alongside Shell.svelte, never JUST Shell.svelte on its own.
+const TOP_BAR_ACTIONS_SVELTE = readFileSync("src/shell/TopBarActions.svelte", "utf8");
 
 describe('the shell never calls history.pushState -- only src/lib/state\'s replaceState does (CLAUDE.md "URL-is-the-view")', () => {
   it("src/main.ts never calls .pushState(", () => {
@@ -60,16 +65,22 @@ function dataAttrValues(source: string, attr: string): string[] {
 }
 
 describe("the skeleton and the hydrated shell agree on every data-control/data-tour anchor", () => {
-  it("every data-control in the skeleton also appears in Shell.svelte, and vice versa", () => {
+  it("every data-control in the skeleton also appears in Shell.svelte + TopBarActions.svelte, and vice versa", () => {
     const skeleton = new Set(dataAttrValues(INDEX_HTML, "data-control"));
-    const hydrated = new Set(dataAttrValues(SHELL_SVELTE, "data-control"));
+    const hydrated = new Set([
+      ...dataAttrValues(SHELL_SVELTE, "data-control"),
+      ...dataAttrValues(TOP_BAR_ACTIONS_SVELTE, "data-control"),
+    ]);
     expect([...skeleton].sort()).toEqual([...hydrated].sort());
     expect(skeleton.size).toBeGreaterThan(0);
   });
 
-  it("every data-tour anchor in the skeleton also appears in Shell.svelte, and vice versa", () => {
+  it("every data-tour anchor in the skeleton also appears in Shell.svelte + TopBarActions.svelte, and vice versa", () => {
     const skeleton = new Set(dataAttrValues(INDEX_HTML, "data-tour"));
-    const hydrated = new Set(dataAttrValues(SHELL_SVELTE, "data-tour"));
+    const hydrated = new Set([
+      ...dataAttrValues(SHELL_SVELTE, "data-tour"),
+      ...dataAttrValues(TOP_BAR_ACTIONS_SVELTE, "data-tour"),
+    ]);
     expect([...skeleton].sort()).toEqual([...hydrated].sort());
     expect(skeleton.size).toBeGreaterThan(0);
   });

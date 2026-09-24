@@ -121,7 +121,7 @@
      (spec.md §2: "brand colors are chrome"; tests/raster/ramps.wiring.test.ts also forbids a bare
      hex literal anywhere under src/lens/**). */
   .layer-bar.is-merged {
-    border-left-color: var(--fill-accent);
+    border-left-color: var(--border-accent);
   }
 
   .layer-bar.is-input {
@@ -191,7 +191,7 @@
 
   .layer-pill.active {
     background: var(--fill-accent);
-    border-color: var(--fill-accent);
+    border-color: var(--border-accent);
     color: var(--text-on-accent);
     font-weight: 700;
   }

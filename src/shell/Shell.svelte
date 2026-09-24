@@ -26,32 +26,51 @@
   import Panel from "../lib/ui/Panel.svelte";
   import Sheet from "../lib/ui/Sheet.svelte";
   import Segmented from "../lib/ui/Segmented.svelte";
-  import About from "../lib/ui/About.svelte";
   import VersionBadge from "../lib/ui/VersionBadge.svelte";
   import Announcer from "../lib/ui/Announcer.svelte";
+  import Honeycomb from "../lib/ui/Honeycomb.svelte";
+  import LegendChip from "../lib/ui/LegendChip.svelte";
   import { announce } from "../lib/ui/announcer";
+  // R2 (docs/usability.md §7): About + Feedback + the phone ⋯ menu -- a NEW component, so this
+  // file's own change is one mount line (see the template below) while U5/U6 touch the rail and
+  // the Report/Help/theme controls in parallel. See TopBarActions.svelte's own header.
+  import TopBarActions from "./TopBarActions.svelte";
+  import {
+    DEFAULT_PANEL_GEOMETRY,
+    loadPanelGeometry,
+    viewportBucket,
+    type PanelGeometry,
+  } from "../lib/ui/panelGeometry";
+  import { loadSheetDetent } from "../lib/ui/sheetGeometry";
   import { createSelStore } from "../lib/state/sel.svelte";
   import { formatSel } from "../lib/state/codec";
   import { DEFAULT_SEL, defaultOut, resolveTheme, type LayerStackEntry } from "../lib/state/types";
   import { createMap, type MapHandle } from "../lib/map/map";
-  import { composeStyle } from "../lib/map/style";
+  import { composeStyle, BASEMAP_LAYER_PREFIX } from "../lib/map/style";
   // R3 (round-2 plan §5 U4): the layer stack — resolved here (the SAME resolved object both
   // `composeStyleInput` and each lens's `LayersPanel` mount read, per this task's own instructions
   // to keep Shell.svelte's edits to exactly "the panel mount and the composeStyle input").
   import { defaultLayerStackEntries, isDefaultLayerStack } from "../lib/map/layerStack";
-  import { warmBasemapStyles, type CartoStyleLike } from "../lib/map/layers/basemap";
+  import {
+    warmBasemapStyles,
+    BASEMAP_ATTRIBUTION,
+    type CartoStyleLike,
+  } from "../lib/map/layers/basemap";
   import { zoneUnitsFromBoot, zoneUnitsWithOutline } from "../lib/map/layers/zones";
   // R3 orchestrator audit item 2: the standalone ecoregion outline, read from the release's
   // MANIFEST (never `boot.units[]`, which stays exactly one row per D17) -- a plain `.ts` reader,
   // not a `.svelte` SFC, so it is exempt from `tests/shell/lazy-lens-imports.test.ts`'s static-
   // import ban the same way `state.svelte.ts` already is (that file's own header explains why).
   import { ecoregionZoneUnitFromManifest } from "../lens/scores/boot";
-  import { studyAreaFromBoot } from "../lib/map/interaction";
+  import { studyAreaFromBoot, type StudyArea } from "../lib/map/interaction";
   import {
     INITIAL_AREA_CAMERA_STATE,
+    paddedStudyAreaCenter,
     shouldFlyToArea,
     type AreaCameraState,
+    type ChromePadding,
   } from "../lib/map/camera";
+  import { desktopPanelPadding, phonePadding } from "../lib/map/chromePadding";
   import { createAnalytics } from "../lib/analytics/analytics";
   // atlas-8 Deliverable 4 (beta feedback, zero backend -- CLAUDE.md/GATES.md's "the CalCOFI
   // zero-backend fallback"): both pure functions take a snapshot the caller builds -- neither ever
@@ -156,6 +175,11 @@
   // `expand()` (the same instance-method pattern `Toast.svelte`'s own `push()` uses) so a rail
   // click always un-collapses it. Undefined on the phone, where `<Sheet>` renders instead.
   let panelRef = $state<ReturnType<typeof Panel> | undefined>(undefined);
+  // R1: Panel.svelte is the source of truth for its own dock/size/maximized geometry (this shell
+  // never sets it) -- it reports every change through `ongeometry`, and THIS mirror is what lets
+  // shell.css position `#panel-region` (data-dock/data-maximized/`--panel-size`, below), per this
+  // file's "the shell owns WHERE it floats" convention (docs/map.md's sibling rule for the map).
+  let panelGeom = $state<PanelGeometry>(DEFAULT_PANEL_GEOMETRY);
   let railFocusObserver: MutationObserver | undefined;
   let railFocusDeadline = 0;
   // the observer below is created ONCE and lives for the shell's whole lifetime; this is what it
@@ -240,6 +264,9 @@
     }
   }
 
+  // R2 (docs/usability.md §7): "About this release" moved from the on-map bottom-left card into
+  // the top bar (`data-control="about"`, TopBarActions.svelte) -- there is no longer a stub `onHelp`
+  // here pointing a keyboard/AT user at it; U6's own real Help menu (below) owns `onHelp` outright.
   function onReport() {
     const action = reportAction(sel, earlyVersion);
     if (action.kind === "open") {
@@ -520,6 +547,73 @@
       : null,
   );
 
+  // usability M4: "the default camera frames Canada; panel/sheet cover the study area" -- the
+  // FALLBACK study area's own center+zoom never accounted for the panel/sheet's own reserved
+  // space, so the point it frames could render partly or wholly BEHIND the chrome. Applied only
+  // when there is no explicit `?map=` (a real, user-chosen camera is never second-guessed): reads
+  // the SAME localStorage keys Panel.svelte/Sheet.svelte themselves read (chromePadding.ts), so it
+  // works before either component has mounted, and shifts the center via `paddedStudyAreaCenter`
+  // (camera.ts) -- never MapLibre's own persisted `padding` (see that function's own header for
+  // why: it would also reshape every LATER flyTo/flyToBounds on top of their own zoom math).
+  function storage(): Storage | null {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  function initialChromePadding(): ChromePadding {
+    if (isPhone) {
+      return phonePadding(loadSheetDetent(storage(), "shell"), window.innerHeight);
+    }
+    return desktopPanelPadding(
+      loadPanelGeometry(storage(), "shell", viewportBucket(window.innerWidth)),
+    );
+  }
+
+  function initialStudyArea(area: StudyArea): StudyArea {
+    if (sel.map) return area; // an explicit URL camera is never second-guessed
+    const padded = paddedStudyAreaCenter(area, area.zoom, initialChromePadding());
+    return { ...area, ...padded };
+  }
+
+  // usability M4's OTHER half: a light loader over the map until the first raster/basemap tile
+  // paints (the release's own load time, 8-21s measured, had NO loading indicator at all). Purely
+  // an overlay (`pointer-events: none`, see the template) -- it never delays or blocks a click, and
+  // being `position: absolute` over `.stage` it never shifts sibling boxes when it appears or
+  // disappears (the shell.cls CLS gate's own budget is about elements that MOVE, not ones that are
+  // added/removed on top of an unrelated canvas). "idle" is the map's OWN "every source has
+  // settled" event -- the same backstop docs/map.md's styleQueue.ts uses elsewhere in this file --
+  // plus a fixed safety timeout, so a spec/host that never actually loads a tile (most hermetic
+  // e2e fixtures do not route one) still clears the loader rather than leaving it up forever.
+  let mapLoading = $state(true);
+  const MAP_LOADING_TIMEOUT_MS = 8000;
+
+  function hideMapLoader() {
+    if (!mapLoading) return;
+    mapLoading = false;
+    announce("Map ready");
+  }
+
+  // the map's FIRST "idle" fires almost instantly, on the empty/blank style it is constructed
+  // with (0.10.20's own basemap fix: the real CARTO style.json arrives later, asynchronously, and
+  // recomposes -- see layers/basemap.ts#warmBasemapStyles / this file's own composeStyleInput
+  // header). Hiding the loader on THAT idle would clear it before the basemap (or a raster) has
+  // painted anything at all -- this listens on every idle and only clears once the CURRENTLY
+  // applied style actually carries basemap/raster/range/overlay layers (`layers/basemap.ts`'s own
+  // `basemap-` source prefix; `raster`/`range`/`overlay` are this file's own `LAYER_ORDER` roles).
+  function onMapIdle(map: { getStyle(): { sources?: Record<string, unknown> } | undefined }) {
+    const sources = Object.keys(map.getStyle()?.sources ?? {});
+    // the blank CONSTRUCTION style has none; the FIRST composed style already has "background"
+    // (style.ts) before the async CARTO fetch resolves -- so ">1" (basemap-* landed) is the real
+    // signal, not merely ">0". `BASEMAP_LAYER_PREFIX` is the precise case; the count is the
+    // fallback for a raster/range/overlay source (an arbitrary, model-specific id) landing first.
+    if (sources.some((id) => id.startsWith(BASEMAP_LAYER_PREFIX)) || sources.length > 1) {
+      hideMapLoader();
+    }
+  }
+
   onMount(() => {
     if (!mapEl) return;
     // `boot` (read a few lines up) is ALWAYS still `null` here regardless of what is passed below:
@@ -530,13 +624,21 @@
     const handle = createMap(mapEl, {
       theme: resolveTheme(sel.theme, prefersDark),
       camera: sel.map,
-      area: studyAreaFromBoot(boot, sel.area),
+      // usability M4's padding applies to the FIRST paint only (before `boot` resolves -- see the
+      // "study-area camera" effect just below for why `null` is passed here on purpose, and how a
+      // later effect corrects an EXPLICIT `?area=` to its real, unpadded boot-resolved camera once
+      // boot arrives -- the merged precedence this round's own CHANGELOG entry documents: an
+      // explicit `area=` always wins over this padded default fit).
+      area: initialStudyArea(studyAreaFromBoot(null, sel.area)),
       projection: sel.proj,
       // URL-is-the-view: the camera goes back through selStore, i.e. history.replaceState, and
       // only for user-driven moves (src/lib/map/camera.ts).
       onCamera: (map) => selStore.set({ map }),
     });
     mapHandle = handle;
+    const handleMapIdle = () => onMapIdle(handle.map);
+    handle.map.on("idle", handleMapIdle);
+    const loaderTimeout = window.setTimeout(hideMapLoader, MAP_LOADING_TIMEOUT_MS);
     // atlas-5 §6.5: the species click. The shared map's raw click event -- never a second map
     // instance, never a second `on("click")` owner; a non-species lens ignores its own clicks
     // inside `handleMapClick` itself (checks `sel.lens` first).
@@ -591,6 +693,8 @@
       delete (window as unknown as { __atlasMap?: unknown }).__atlasMap;
       delete (window as unknown as { __atlasSpecies?: unknown }).__atlasSpecies;
       handle.map.off("click", onMapClick);
+      handle.map.off("idle", handleMapIdle);
+      window.clearTimeout(loaderTimeout);
       handle.destroy();
       mapHandle = undefined;
     };
@@ -721,10 +825,15 @@
   $effect(() => {
     mapHandle?.applyStyle(composeStyle(composeStyleInput));
   });
-  const releaseNote = $derived(
-    `Marine Sensitivity Atlas · release ${earlyVersion ?? "—"} · scores and species from the ` +
-      `published marine-atlas release. Basemap © OpenStreetMap contributors.`,
-  );
+
+  // R2's About popover: "restricted watermark note". A plain inline lookup over the SAME
+  // `EarlyVersionRow[]` this file already holds off `window.__early.versions` -- never
+  // `src/lib/release/access.ts#accessOf` (tests/shell/shell-invariants.test.ts's source-scan gate:
+  // the shell reads the release resolution result off `window.__early`, never `src/lib/release`
+  // directly). `undefined`/no matching row/anything but the literal `"public"` reads as restricted,
+  // the same fail-closed rule that module's own `accessOf` follows.
+  const currentVersionRow = $derived(versions?.find((v) => v.ver === earlyVersion) ?? null);
+  const releaseRestricted = $derived(currentVersionRow?.access !== "public");
 
   // --- Deliverable 4: "Report a problem" -> a prefilled GitHub issue, zero backend --------------
   // `viewport` is the one field with no existing reactive source (unlike lens/ver/theme, all read
@@ -949,6 +1058,16 @@
   });
 </script>
 
+<!-- spec.md §11: the shell's ONE polite live region (SC 4.1.3) -- every component (Rail's
+     onAnnounce below, this file's own onShare/onHelp/onVersionClick, Honeycomb's own on-mount
+     announcement) calls the shared `announce()` from src/lib/ui/announcer.ts; nothing else in the
+     shell renders a region of its own. Mounted FIRST (document order governs onMount order): the
+     honeycomb loader (below, inside `.stage`) announces "Map loading" in ITS OWN onMount, and a
+     pub-sub subscriber that mounts AFTER a publisher's first call misses it -- announcer.ts's
+     `getLastAnnouncerMessage()` covers a LATE mount reading history, never an announce() that
+     fires before ANYONE has subscribed at all. -->
+<Announcer />
+
 <header class="topbar" data-tour="topbar">
   <span data-tour="brand" style="display:flex;align-items:center;gap:var(--space-2)">
     <WaveHexMark size={28} />
@@ -1029,7 +1148,10 @@
        (index.html) has no wrapping element around the help tool at all, so at phone width it
        contributes NOTHING to the topbar's flex layout. Without this class here, the wrapper stayed
        `display:inline-flex` (its child hidden, but the span itself still a flex ITEM), adding one
-       extra gap the skeleton never has -- the CLS geometry-equality gate's phone-only mismatch. -->
+       extra gap the skeleton never has -- the CLS geometry-equality gate's phone-only mismatch.
+       R2's phone ⋯ menu (below) therefore does NOT reuse this disclosure at phone width (it would
+       be invisible, hidden along with this whole wrapper) -- its own "Help" item opens the docs
+       link directly instead (`helpDocsHref`), a simpler but fully phone-visible equivalent. -->
   <span class="help-wrap topbar-desktop-only">
     <button
       type="button"
@@ -1079,6 +1201,24 @@
       </a>
     </div>
   </span>
+  <!-- R2 (docs/usability.md §7): About + Feedback + the phone ⋯ menu -- ONE mount line, per this
+       round's own instructions (U5/U6 touch the rail and Report/Help/theme in parallel; see
+       TopBarActions.svelte's header for why this stays a separate component). Its "Help" overflow
+       item opens `docsHref` directly (`helpDocsHref`) rather than toggling the desktop Help
+       disclosure just above, which is `topbar-desktop-only` and so invisible at the width the ⋯
+       menu itself only exists at -- see that disclosure's own comment. -->
+  <TopBarActions
+    {earlyVersion}
+    restricted={releaseRestricted}
+    releaseStatus={currentVersionRow?.status ?? null}
+    releaseDate={currentVersionRow?.released ?? null}
+    appVersion={__APP_VERSION__}
+    {feedbackHref}
+    onFeedbackClick={openFeedback}
+    {onShare}
+    onReportTop={onReport}
+    helpDocsHref={docsHref}
+  />
   <!-- U2a (round 2): sun/moon, CalCOFI's convention (src/App.tsx's `.cc-theme-toggle`) -- the
        icon shown is the DESTINATION theme (a sun while dark invites switching to light, a moon
        while light invites switching to dark), and the accessible name states the action in ONE
@@ -1117,6 +1257,37 @@
     Every zone's score is also in the Zones table, under the Table tool.
   </p>
 
+  <!-- usability M4: a light loader until the first raster/basemap tile paints (8-21s measured,
+       previously with no indicator at all) -- `pointer-events: none` (shell.css) so it never
+       blocks a click meant for the map underneath, and being `position: absolute` it never shifts
+       a sibling box when it appears/disappears (the shell.cls CLS budget is about elements that
+       MOVE, not ones added/removed on top of an unrelated canvas). -->
+  {#if mapLoading}
+    <div class="map-loading-overlay" data-testid="map-loading">
+      <Honeycomb label="Map loading" />
+    </div>
+  {/if}
+
+  <!-- map-chrome parity audit (2026-09-24): `attributionControl: false` (map.ts) means MapLibre
+       injects nothing itself -- Shiny shows "MapLibre | © CARTO, © OpenStreetMap contributors" on
+       the map and the Atlas showed neither. DECISION: a labelled region OUTSIDE `#map`, never a
+       MapLibre-injected in-map control -- `#map` carries `role="img"` (a leaf image role; ARIA
+       forbids a role=img element having any accessible descendants at all, controls included), so
+       an attribution control living INSIDE it would itself be an axe violation. A plain sibling
+       `<div>` in `.stage`, always visible (no interaction needed, per the audit's own ask), keeps
+       `#map` clean. `BASEMAP_ATTRIBUTION` is the SAME string composeStyle()'s own basemap input
+       carries (layers/basemap.ts) -- never a second, hand-typed copy of the CARTO/OSM credit. -->
+  <div
+    class="map-attribution"
+    role="group"
+    aria-label="Map data attribution"
+    data-testid="map-attribution"
+  >
+    <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre</a>
+    <span aria-hidden="true">|</span>
+    {BASEMAP_ATTRIBUTION}
+  </div>
+
   <!-- fix list #6 (SC 2.4.1), FIREFOX: `tabindex="-1"` on the skip targets -- without it,
        activating "Skip to the tools" only moved the sequential-focus STARTING POINT to this
        `<nav>`, and Firefox (unlike chromium/webkit) places that point AFTER the target's whole
@@ -1142,8 +1313,22 @@
   </nav>
 
   <!-- fix list #6 (SC 2.4.1): the "Skip to the details panel" link's own target -- same
-       `tabindex="-1"` remedy as #rail-region above, for the same reason. -->
-  <div class="panel-region" id="panel-region" tabindex="-1" data-tour="panel" data-control="panel">
+       `tabindex="-1"` remedy as #rail-region above, for the same reason.
+       R1: `data-dock`/`data-maximized`/`--panel-size` mirror Panel.svelte's own reported geometry
+       (`panelGeom`, above) -- shell.css's `.panel-region[data-dock=...]`/`[data-maximized]` rules
+       read them. Absent on the phone (Panel never mounts there; Sheet.svelte keeps its own
+       detents), which is also why the desktop-only CSS rules never need an `isPhone` guard of
+       their own. -->
+  <div
+    class="panel-region"
+    id="panel-region"
+    tabindex="-1"
+    data-tour="panel"
+    data-control="panel"
+    data-dock={isPhone ? undefined : panelGeom.dock}
+    data-maximized={isPhone ? undefined : panelGeom.maximized}
+    style={isPhone ? undefined : `--panel-size: ${panelGeom.size}px`}
+  >
     <!-- the ONE panel body: places owns its tool on either lens; otherwise the active lens
          decides what the tool's panel shows (the scores lens takes every tool and falls back to
          the tool's own text; the species lens takes "layers" only). -->
@@ -1201,51 +1386,48 @@
         {@render panelBody()}
       </Sheet>
     {:else}
-      <Panel id="shell" title={TOOL_LABEL[activeTool]} bind:this={panelRef}>
+      <Panel
+        id="shell"
+        title={TOOL_LABEL[activeTool]}
+        bind:this={panelRef}
+        ongeometry={(g) => (panelGeom = g)}
+      >
         {@render panelBody()}
       </Panel>
     {/if}
   </div>
 
-  <!-- atlas-4 defect fix: ONE floating "lens legend" region, keyed on `sel.lens` -- spec.md's "one
-       legend on screen at a time". Species used to be the only lens with a floating legend at
-       all; the scores lens' copy used to live INSIDE LayersPanel.svelte (only visible with that
-       tool open, and never for the zone-choropleth branch) -- both branches now render here,
-       lazy, the same way every other lens component in this file is. -->
-  {#if sel.lens === "species" && SpeciesLegendComp}
+  <!-- atlas-4 defect fix, R2 (usability M14): ONE floating "lens legend" region, keyed on
+       `sel.lens` -- spec.md's "one legend on screen at a time". Species used to be the only lens
+       with a floating legend at all; the scores lens' copy used to live INSIDE LayersPanel.svelte
+       (only visible with that tool open, and never for the zone-choropleth branch) -- both
+       branches render here, lazy, the same way every other lens component in this file is. On the
+       phone the desktop-only floating legends (`display:none` below 900px, "no room beside the
+       sheet") are replaced by ONE compact chip (LegendChip.svelte) sharing the SAME legend object
+       -- `isPhone` gates the two branches, so exactly one ever renders, never both. -->
+  {#if isPhone}
+    {@const legend =
+      sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresLens?.mapExtra.legend ?? null)}
+    {#if legend}
+      <div class="legend-chip-region">
+        <LegendChip title={legend.title}>
+          {#if sel.lens === "species" && SpeciesLegendComp}
+            {@const Comp = SpeciesLegendComp}
+            <Comp {legend} />
+          {:else if sel.lens === "scores" && ScoresLegendComp}
+            {@const Comp = ScoresLegendComp}
+            <Comp {legend} />
+          {/if}
+        </LegendChip>
+      </div>
+    {/if}
+  {:else if sel.lens === "species" && SpeciesLegendComp}
     {@const Comp = SpeciesLegendComp}
     <Comp legend={speciesLens.mapInputs.legend} />
   {:else if sel.lens === "scores" && ScoresLegendComp}
     {@const Comp = ScoresLegendComp}
     <Comp legend={scoresLens?.mapExtra.legend ?? null} />
   {/if}
-
-  <div class="about-region" id="about-region" data-tour="about" data-control="about">
-    <About {releaseNote} />
-    <!-- U3 (round 2): a real <a>, not a button, so it degrades to the zero-backend GitHub link
-         with JS disabled/failed -- `href` stays the plain `$derived` (feedbackHref, above), always
-         the CURRENT lens/ver/theme. A normal click now opens the dialog instead (openFeedback(),
-         the ONE function every trigger calls -- U1's own top-bar "Feedback" control will call the
-         same one); e2e/feedback.spec.ts's existing href/keyboard/rel assertions are unaffected by
-         that, since they never simulate a click. Desktop-only, same as the About card it sits
-         beside (shell.css's `.about-region { display:none }` below 899px) -- no room next to the
-         phone bottom rail. -->
-    <a
-      class="feedback-link"
-      data-tour="feedback"
-      data-control="feedback"
-      href={feedbackHref}
-      target="_blank"
-      rel="noopener"
-      onclick={(e) => {
-        e.preventDefault();
-        openFeedback();
-      }}
-    >
-      <Icon name="alert" size={14} />
-      Report a problem
-    </a>
-  </div>
 </main>
 
 {#if FeedbackDialogComp}
@@ -1276,12 +1458,6 @@
     onclose={() => speciesLens.dismissNotFound()}
   />
 {/if}
-
-<!-- spec.md §11: the shell's ONE polite live region (SC 4.1.3) -- every component (Rail's
-     onAnnounce below, this file's own onShare/onHelp/onVersionClick) calls the shared
-     `announce()` from src/lib/ui/announcer.ts; nothing else in the shell renders a region of
-     its own. -->
-<Announcer />
 
 <!-- atlas-4 step 3: app-wide chrome, not gated on `sel.lens` -- the release picker and the
      welcome modal apply to either lens, exactly as the ported app's own modals did. Both load as

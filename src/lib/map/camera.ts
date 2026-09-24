@@ -104,6 +104,46 @@ export function boundsToCameraView(
   return { center: [mercatorXToLng(cx), mercatorYToLat(cy)], zoom };
 }
 
+/** CSS px reserved on each edge of the viewport by shell chrome (a docked panel, the phone sheet,
+ * the bottom tab bar) -- never MapLibre's own persisted `padding` state (see `paddedStudyAreaCenter`
+ * below for why). */
+export interface ChromePadding {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export const NO_PADDING: ChromePadding = { top: 0, right: 0, bottom: 0, left: 0 };
+
+/**
+ * usability M4 ("the panel/sheet cover the study area... frame the study area with padding for
+ * the panel/sheet"): shifts a center+zoom camera so the SAME geographic point instead appears at
+ * the middle of the VISIBLE (unobscured) rectangle of the viewport, not the middle of the whole
+ * canvas. Deliberately NOT `map.setPadding()` (MapLibre's own persisted padding state): that would
+ * also silently reshape every LATER `flyTo`/`flyToBounds` call (the species camera, `boundsToCameraView`
+ * above) on top of their own, independently-computed zoom -- this is a one-time initial-view
+ * adjustment, so it returns a plain `{lon,lat}` the caller bakes into the camera it constructs the
+ * map with, and nothing else in the app ever reads MapLibre's padding state (`docs/map.md`: "no
+ * fitBounds, anywhere" carries the same "no antimeridian-unsafe native camera math" spirit).
+ *
+ * Pure Mercator-space arithmetic (the same projection helpers `boundsToCameraView` above uses):
+ * letting `worldPx = MERCATOR_TILE_SIZE * 2^zoom`, the shift is `((frontPad - backPad) / 2) /
+ * worldPx` in normalized world units, on each axis independently. Small-shift-safe at any zoom;
+ * exact (not a linear approximation) because it operates in the map's own Mercator space, the same
+ * one `zoom`/`worldPx` already describe.
+ */
+export function paddedStudyAreaCenter(
+  center: { lon: number; lat: number },
+  zoom: number,
+  padding: ChromePadding,
+): { lon: number; lat: number } {
+  const worldPx = MERCATOR_TILE_SIZE * 2 ** zoom;
+  const x = lngToMercatorX(center.lon) - (padding.left - padding.right) / 2 / worldPx;
+  const y = latToMercatorY(center.lat) - (padding.top - padding.bottom) / 2 / worldPx;
+  return { lon: mercatorXToLng(x), lat: mercatorYToLat(y) };
+}
+
 // --- sel.area -> camera, the fly-on-load/fly-on-change decision -------------------------------
 //
 // The defect this fixes (owner report, 2026-09-24, live v7): `?area=AK` rendered the DEFAULT

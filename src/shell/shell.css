@@ -136,6 +136,76 @@ a {
   background: var(--surface-map);
 }
 
+/* usability M4: the first-load honeycomb -- see Shell.svelte's own comment. `pointer-events: none`
+   is the load-bearing rule (never blocks a click meant for the map beneath it, whether or not the
+   loader has actually cleared yet in a given hermetic fixture); `position: absolute` keeps it out
+   of `.stage`'s normal flow, so removing it never shifts `#rail-region`/`#panel-region`/etc. */
+/* z-index 1: strictly below the floating legend (z-index 5, ScoresLegend.svelte/SpeciesLegend.
+   svelte) and everything else in `.stage` -- ONLY above the plain `#map` canvas (no z-index of its
+   own, the default stacking order). Measured (axe, shell.a11y.spec.ts): at z-index 10 (above the
+   legend) this translucent overlay visually sat OVER the legend's own text while a hermetic
+   fixture's basemap fetch never actually resolves (no route for it in that spec), which is a
+   real, axe-caught "bgOverlap" -- two elements over one another with no way to resolve a single
+   contrast pair -- not a false positive to allow-list around. */
+.map-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--surface-map) 55%, transparent);
+}
+
+/* map-chrome parity audit: MapLibre/CARTO/OSM credit, always visible, no interaction needed
+   (Shell.svelte's own header comment explains the role="group" OUTSIDE #map decision). Bottom-left
+   -- the one corner no other floating region claims (rail is top-left/bottom-center, panel is
+   top-right, the legend/legend-chip are bottom-right/bottom-center). Small and unobtrusive, the
+   same visual weight a basemap credit line conventionally has. Also kept below the legend (z-index
+   5) for the same reason as the loader above -- it never spatially overlaps it (bottom-left vs
+   bottom-right/bottom-center) but there is no reason for it to outrank chrome that does. */
+.map-attribution {
+  position: absolute;
+  left: var(--space-2);
+  bottom: var(--space-2);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--surface-raised) 80%, transparent);
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.map-attribution a {
+  color: var(--text-secondary);
+  text-decoration: underline;
+}
+
+.map-attribution a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* phone: compact -- BOTH credits (MapLibre + CARTO/OSM) stay, only smaller and tighter (the parity
+   audit's own ask: "both credits visible... at 390x844"), and it sits above the rail row instead
+   of under it. */
+@media (max-width: 899px) {
+  .map-attribution {
+    left: var(--space-1);
+    bottom: calc(var(--size-rail-row, 64px) + var(--space-1));
+    max-width: calc(100vw - var(--space-4));
+    padding: 1px var(--space-1);
+    font-size: 9px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
 /* --- top bar, 48 px, wave lower edge (guide p. 10) --------------------------------------------- */
 .topbar {
   position: relative;
@@ -247,8 +317,19 @@ button.chip {
    theme toggle 0.7px past the right edge (scripts/verify.mjs's assertLayout caught it on the
    species lens, where a v9 preview session is the only way to view a restricted release). Small
    and compact, not hidden: the badge is the one visual cue that this release is not the public
-   one, so it must survive down to 320 px, just narrower. */
+   one, so it must survive down to 320 px, just narrower.
+
+   R2/U1 fix (owner decision, 2026-09-24): that margin did not survive this round's OWN 320px
+   reclamation (hiding the brand mark below) -- re-measured, the chip is 97.78px with the badge
+   at this 9px size (v9 preview) vs 84px without (v7 public), and the mark-hiding fix was tuned
+   with zero slack for the no-badge case (verify.mjs: 17 of 17 species-lens phoneNarrow states
+   caught it). Below, `.ms-preview-badge-short` ("PRE") replaces the full word at <= 380px --
+   `aria-label`/`title` on the outer span keep BOTH the accessible name and the hover tooltip at
+   "Preview release" regardless of which form is visually shown, and neither inner span is ever
+   removed from the accessibility tree (`aria-hidden`, not `{#if}` -- a pure CSS swap). */
 .ms-preview-badge {
+  display: inline-flex;
+  align-items: center;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -258,6 +339,11 @@ button.chip {
   background: var(--fill-accent);
   color: var(--text-on-accent);
   flex: none;
+}
+/* the compact form is inert until the <= 380px query below flips which one is visible; both
+   always render (see VersionBadge.svelte's own header on why). */
+.ms-preview-badge-short {
+  display: none;
 }
 
 .search-field {
@@ -316,6 +402,17 @@ button.chip {
   .tool {
     height: var(--size-touch);
     min-width: var(--size-touch);
+  }
+}
+
+/* R2: the inverse of `.topbar-desktop-only` (below, in the phone media query) -- the ⋯ overflow
+   trigger (TopBarActions.svelte) is the one topbar control that exists ONLY on the phone. */
+.topbar-phone-only {
+  display: none;
+}
+@media (max-width: 899px) {
+  .topbar-phone-only {
+    display: inline-flex;
   }
 }
 
@@ -417,64 +514,77 @@ button.chip {
   z-index: 15;
 }
 
+/* R1 (docs/usability.md §7, owner decision 2026-09-24): a dockable panel. `Panel.svelte` reports
+   its live geometry through its `ongeometry` prop; Shell.svelte mirrors it onto THIS element as
+   `data-dock`/`data-maximized`/`--panel-size` (never the other way around -- Panel.svelte still
+   never sets its own position/top/right/bottom, per this file's header rule; it is simply the
+   source of truth for a plain data attribute the shell reads). The default (no attributes: the
+   skeleton's own state, and the hydrated frame's state before its first geometry report) is
+   dock=right, matching `panelGeometry.ts`'s `DEFAULT_PANEL_GEOMETRY`.
+
+   Unlike the pre-R1 rule (content-height, top only), this now spans top-to-bottom: a resizable,
+   maximizable panel wants a FIXED frame with its own internal scroll, not a box that grows with
+   its content -- usability M6 ("wide tables scroll inside 380px"; the zones table must be usable
+   at the widest dock and in maximize), which a fixed frame + `.panel-body{overflow:auto}` (Panel.
+   svelte) solves directly. */
 .panel-region {
   position: absolute;
   top: var(--space-3);
+  bottom: var(--space-3);
   right: var(--space-3);
   z-index: 16;
-  /* atlas-3 step 4 fix round 1 changed Panel.svelte's `.panel` to `width:100%;max-width:380px`
-     (so it can reflow narrower at 320px) instead of a fixed `width:380px` -- but `width:100%`
-     needs a CONCRETE basis to resolve against. Without an explicit width here, this element (
-     absolutely positioned, `left:auto`, `width:auto`, only `right` given) falls back to the
-     shrink-to-fit algorithm, which (with a 100%-width child) bottoms out on the PANEL BODY TEXT's
-     own intrinsic content width -- 314.5 px for this step's placeholder text, not 380 -- an
-     unpredictable width the geometry-equality gate caught. Supplying it explicitly here removes
-     the ambiguity and matches what the component's own `max-width` clearly intends. */
-  width: min(var(--size-panel), calc(100vw - var(--space-3) * 2));
+  /* `min(...)`: `--panel-size` is Panel.svelte's OWN reported width (320-720px, panelGeometry.ts),
+     with the pre-hydration/pre-report fallback the skeleton also uses (`--size-panel`, 380px) --
+     the same shrink-to-fit-ambiguity fix as before (a bare `width:100%` child would otherwise
+     resolve against its own content's intrinsic width). */
+  width: min(var(--panel-size, var(--size-panel)), calc(100vw - var(--space-3) * 2));
 }
 
-.about-region {
-  position: absolute;
-  left: calc(var(--size-rail) + var(--space-4));
+.panel-region[data-dock="left"] {
+  right: auto;
+  left: var(--space-3);
+}
+
+.panel-region[data-dock="bottom"] {
+  top: auto;
+  left: var(--space-3);
+  right: var(--space-3);
   bottom: var(--space-3);
-  z-index: 14;
-  /* same shrink-to-fit ambiguity, and the same fix, as .panel-region above: atlas-3 step 4 fix
-     round 1 changed About.svelte's `.about` to `width:100%;max-width:372px` (its own hardcoded
-     value -- no shared token exists for it), which otherwise resolves against the release-note
-     paragraph's intrinsic content width instead of 372px. This card is `display:none` below the
-     900px breakpoint (see below), so 372px is always reachable here -- no min() needed. */
-  width: 372px;
+  width: auto;
+  height: min(
+    var(--panel-size, var(--size-panel)),
+    calc(100vh - var(--size-topbar) - var(--space-3) * 2)
+  );
 }
 
-/* atlas-8 Deliverable 4: "Report a problem" -- a small pill below the About card, same region
-   (bottom-anchored: `.about-region` has no `top`, only `bottom`, so its OWN height determines
-   where it starts -- adding this pushes the About card's top edge up by exactly this box's height
-   + margin. `.sk-feedback-link` below reproduces that same height/margin in the skeleton so BOTH
-   sides shift the About card up by the same amount -- e2e/shell.cls.spec.ts's "about-frame" key
-   compares only the FIRST child (the About card itself), so equal totals is what keeps it green;
-   see index.html's own comment on `.sk-feedback-link`). Explicit `height`, not just padding, for
-   the same reason `.tool`/`.chip` are: content changes (a longer/shorter label) must never move
-   this box's own footprint. */
-.feedback-link {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin-top: var(--space-2);
-  height: 28px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-pill);
-  background: var(--surface-raised);
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  text-decoration: none;
-}
-.feedback-link:hover {
-  color: var(--text-primary);
-  background: var(--fill-control);
+/* maximize: the whole STAGE (edge to edge -- `.stage` is this element's positioned ancestor), not
+   the whole viewport -- the topbar is a separate grid row above `.stage` and stays visible. Above
+   the backdrop Panel.svelte itself renders (z-index 30, its own scoped style). */
+.panel-region[data-maximized="true"] {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  height: auto;
+  z-index: 40;
 }
 
 @media (max-width: 899px) {
+  /* set on `.stage` (not `.panel-region` alone, and not `:root`) so BOTH `.panel-region` (a
+     descendant, via `.sheet`'s `detent-full` rule) and `.legend-chip-region` (a SIBLING of
+     `.panel-region`, both direct children of `.stage`) inherit the identical value -- see the
+     comment where it used to live, on `.panel-region`, for what the formula itself measures. */
+  .stage {
+    /* R4 (the labelled RailButton stack): the rail's real footprint is now CONTENT-driven, not
+       `--size-touch` -- see `.sk-railitem`'s own comment above for the 48.1px math -- plus the
+       rail's own 6px top/bottom padding (Rail.svelte's `.rail`) plus its `bottom` offset plus a
+       small gap. Kept HERE, not on `.panel-region` (where R4's own patch first landed it), for
+       the reason directly above: `.legend-chip-region` is a SIBLING of `.panel-region`, and a
+       custom property only inherits down the tree, never across siblings. */
+    --size-rail-row: calc(48.1px + 12px + var(--space-3) + var(--space-2));
+  }
+
   .rail-region {
     left: 50%;
     top: auto;
@@ -492,18 +602,15 @@ button.chip {
      rail. Raising the rail's z-index instead was rejected: at "peek" the rail's box lands almost
      exactly over the sheet's OWN grab handle / detent controls, so it would only have swapped
      which control became unreachable. The sheet now gets its own reserved row instead: `--size-
-     rail-row` is the rail's real footprint (a RailButton's own height -- content-driven, not the
-     `--size-touch` floor, see shell.css's `.sk-railitem` comment above for the 48.1px math --
-     plus the rail's own 6px top/bottom padding, Rail.svelte's `.rail` -- plus its `bottom` offset
-     plus a small gap), so it can never drift from the rail's actual size. It is set HERE (not on
-     `:root`) so it inherits down to `.sheet` itself (Sheet.svelte's root renders as this element's
-     own DOM child) -- see that component's `detent-full` rule, which reads it back to shrink "Full
-     height" so the sheet never grows back down over the reserved row the way a flat `92svh` did. */
+     rail-row` (set on `.stage`, above -- content-driven, a RailButton's own height, not the
+     `--size-touch` floor; see `.sk-railitem`'s own comment for the 48.1px math) is the rail's
+     real footprint, so it can never drift from the rail's actual size -- see `.sheet`'s
+     `detent-full` rule, which reads it back to shrink "Full height" so the sheet never grows
+     back down over the reserved row the way a flat `92svh` did. */
   .panel-region {
     top: auto;
     right: 0;
     left: 0;
-    --size-rail-row: calc(48.1px + 12px + var(--space-3) + var(--space-2));
     bottom: var(--size-rail-row);
     /* `left`, `right` AND an explicit `width` together over-constrain an absolutely positioned
        box (CSS 2.1 10.3.7) -- the desktop rule's `width` above would otherwise win and `right`
@@ -511,17 +618,11 @@ button.chip {
     width: auto;
   }
 
-  /* the on-map About card is a desktop-only affordance at this step: the phone viewport has no
-     room for a 372 px opaque card alongside the sheet and the bottom rail (open item, not blocking:
-     docs/design/spec.md §14). */
-  .about-region {
-    display: none;
-  }
-
-  /* the phone top bar drops search/Share/Report/Help (the reviewed phone mockup,
-     docs/design/mockups/phone-sheet-half.html): the lens switch, the version chip and the theme
-     toggle are what is left, and the title collapses to the mark alone (spec.md §10) -- the
-     accessible name stays on the <h1>, only visually hidden. */
+  /* the phone top bar drops search/Share/Report/Help/About/Feedback (the reviewed phone mockup,
+     docs/design/mockups/phone-sheet-half.html; R2 adds About/Feedback to the same drop): the lens
+     switch, the version chip and the theme toggle are what is left, plus the ⋯ overflow trigger
+     (`.more-menu-region`, below) that reaches the dropped controls -- and the title collapses to
+     the mark alone (spec.md §10) -- the accessible name stays on the <h1>, only visually hidden. */
   .brand-title {
     position: absolute;
     width: 1px;
@@ -535,15 +636,86 @@ button.chip {
   }
 }
 
+/* R2 (docs/usability.md §7): the phone legend chip, above the bottom tab bar -- the phone's
+   substitute for the desktop floating legend (ScoresLegend.svelte/SpeciesLegend.svelte, both
+   `display:none` below 900px, "no room beside the sheet"). Shares the rail's own reserved-row
+   custom property (`--size-rail-row`, set on `.stage` above) by being a sibling of `.panel-region`
+   inside the same `.stage`, so it never drifts from the rail's actual footprint either. Desktop
+   never renders
+   this element at all (Shell.svelte gates it on `isPhone`), so no `@media` guard is needed to hide
+   it there. */
+.legend-chip-region {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--size-rail-row, 64px) + var(--space-2));
+  z-index: 17;
+  transform: translateX(-50%);
+  max-width: calc(100vw - var(--space-4) * 2);
+}
+
+/* the phone ⋯ overflow menu trigger + its menu -- the one door to Share/Report/Feedback/About/Help
+   on a viewport with no room for all of them in the top bar (usability M14). Positioned as a plain
+   topbar child (see index.html/Shell.svelte -- it sits among the other topbar controls, not a
+   separate floating region), so no rule is needed here beyond what `.tool`/`button.chip` already
+   give every other topbar control; `TopBarActions.svelte` owns its own popover-menu styling. */
+
 /* very narrow phones (320 px, the smallest viewport verify.mjs covers): even with search/Share/
    Report/Help and the title already dropped above, the mark + version chip + lens switch + theme
    toggle's own min-content widths plus the default gap/padding still add up to ~356 px -- wider
    than the viewport. Nothing here is hidden (every remaining control is load-bearing), so the fix
    is to reclaim space from the topbar's own gap and padding rather than any control's content. */
-@media (max-width: 380px) {
+/* R2: was `max-width: 380px` (only the narrowest phones needed the reclaimed space) -- the ⋯
+   overflow trigger (`.topbar-phone-only`) adds a 6th persistent topbar control below 900px, and at
+   390px that alone pushed the theme toggle off-screen (verify.mjs's assertLayout, measured). Every
+   phone width needs the tighter gap/padding now, not just 320px; harmless at wider phone widths,
+   where there was already slack. */
+@media (max-width: 899px) {
   .topbar {
     gap: var(--space-1);
     padding: 0 var(--space-1);
+  }
+}
+
+/* the smallest viewport verify.mjs covers (320px): even with the tightened gap/padding above, the
+   fixed-content total (mark + version chip + lens switch + ⋯ + theme, no more slack to reclaim
+   from gap/padding alone -- measured, the "spacer" flex item bottoms out at 0px width first) still
+   exceeds 320px by ~34px once the ⋯ trigger is added. The brand MARK (not its name -- already
+   visually hidden here, `.brand-title`'s own rule above) is the one purely decorative control left:
+   hiding it reclaims its own width AND the gap beside it, the same "nothing here is hidden because
+   every remaining control is load-bearing" note the file already made about this breakpoint, minus
+   the one exception that is not load-bearing. Selector is `.wavehex` (R4/R5's `WaveHexMark.svelte`
+   root `<svg class="wavehex {klass}">`), not `.mark` -- R4 replaced the old `<img class="mark
+   mark--navy/paper">` pair with this ONE component, so a plain `.wavehex{display:none}` rule here
+   silently stopped matching anything until this merge caught it (verify.mjs's own `assertLayout`
+   re-failed "theme is off-screen at 320x800" after the R4/U1 merge -- the fix, not a new
+   regression) -- AND, once retargeted, still lost outright: WaveHexMark.svelte's OWN scoped style
+   sets `.wavehex { display: block; flex: none; }`, which Svelte compiles to `.wavehex.svelte-hash`
+   (specificity 0,2,0) -- a plain `.wavehex` here (0,1,0) cannot outrank it regardless of media
+   query or source order (the same "specificity beats source order" lesson as the `[hidden]` note
+   elsewhere in this file). `header.topbar .wavehex` (specificity 0,2,1 -- TWO classes, same as the scoped rule, PLUS one
+   element, which breaks the tie) comfortably outranks it without `!important`. */
+@media (max-width: 380px) {
+  header.topbar .wavehex {
+    display: none;
+  }
+  /* the two remaining topbar tools at this width (⋯ and theme) are both icon-only -- a few px off
+   * `.tool`'s own padding closes the last of the ~34px deficit above (hiding the mark alone
+   * reclaimed all but ~2px). A real coarse-pointer device is unaffected: `@media (pointer:
+   * coarse) { .tool { min-width: var(--size-touch) } }` (above) still forces the full 44px touch
+   * target regardless of this padding -- measured here (viewport width alone, no `pointer:
+   * coarse`) is exactly the gap this closes. */
+  .tool {
+    padding: 0 var(--space-2);
+  }
+  /* a v9 preview session's chip (VersionBadge.svelte's own header) is ~14px wider than this --
+     "PREVIEW" swaps for "PRE" here, never hidden or removed from the accessibility tree (both
+     spans keep `aria-hidden`; the OUTER span's `aria-label`/`title` already fix the accessible
+     name/tooltip at "Preview release" regardless of which one is showing). */
+  .ms-preview-badge-full {
+    display: none;
+  }
+  .ms-preview-badge-short {
+    display: inline;
   }
 }
 
@@ -611,6 +783,10 @@ button.chip {
 
 .sk-panel {
   width: var(--size-panel);
+  /* R1: the real `.panel`/`.panel-surface` now spans `#panel-region`'s own top-to-bottom height
+     (a fixed, resizable frame -- see shell.css's `.panel-region` header comment), not a
+     content-driven box -- this mirrors that for the CLS gate's "panel-frame" key. */
+  height: 100%;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-control);
@@ -647,7 +823,9 @@ button.chip {
 }
 .sk-panel-head {
   position: relative;
-  padding: var(--space-3) 116px var(--space-3) var(--space-4);
+  /* 188px: matches Panel.svelte's own `.panel-head` reservation for its 5 R1 controls -- see that
+     file's comment for the arithmetic. */
+  padding: var(--space-3) 188px var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--divider);
   flex: none;
 }
@@ -696,10 +874,32 @@ button.chip {
   height: 32px;
   flex: none;
 }
-@media (pointer: coarse), (max-width: 899px) {
+@media (pointer: coarse) {
   .sk-panel-ctrl {
     width: var(--size-touch);
     height: var(--size-touch);
+  }
+}
+/* R1: Panel (and its 5 controls) never renders below 900px -- Sheet does, with its OWN unchanged
+   3-control model (`.sk-sheet-ctrl`, the mirror rule right below). Before R1 both real components
+   used the SAME 3-control order (collapse/half/full), so one shared skeleton position could stand
+   in for either; Panel's order and count diverged (dock left/bottom/right, maximize, collapse),
+   so this file now needs two disjoint placeholder sets, exactly like the real components. */
+@media (max-width: 899px) {
+  .sk-panel-ctrl {
+    display: none;
+  }
+}
+
+.sk-sheet-ctrl {
+  display: none;
+}
+@media (max-width: 899px) {
+  .sk-sheet-ctrl {
+    display: inline-grid;
+    width: var(--size-touch);
+    height: var(--size-touch);
+    flex: none;
   }
 }
 .sk-panel-body {
@@ -745,39 +945,12 @@ button.chip {
   flex: none;
 }
 
-.sk-about {
-  width: 372px;
-  padding: var(--space-3);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-card);
-  background: var(--surface-raised);
-  box-shadow: var(--elev-2);
-}
-.sk-about-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.sk-about-head h2 {
-  flex: 1;
-  font-size: var(--text-sm);
-  margin: 0;
-}
-.sk-about-tool {
-  width: var(--size-touch);
-  height: var(--size-touch);
-  flex: none;
-}
-
-/* mirrors `.feedback-link`'s box model exactly (height + margin-top only -- width/content are
-   irrelevant to the geometry-equality gate, which never keys "feedback" itself, only the About
-   card's own box; see this file's `.feedback-link` comment and index.html's skeleton markup). */
-.sk-feedback-link {
-  display: block;
-  width: 140px;
-  height: 28px;
-  margin-top: var(--space-2);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-pill);
-  background: var(--surface-raised);
-}
+/* R2: About + Feedback moved from the on-map bottom-left card into the top bar -- same `.tool`
+   box model as Share/Report/Help (reusing `.sk-icon-tool` for the icon, exactly as those three
+   already do), so NEITHER needs a skeleton class of its own: giving one its OWN `display`
+   (even an identical value) put it LATER than `.topbar-desktop-only`'s hide rule in source order,
+   which is what decides a tie in specificity -- the skeleton stayed visible at phone width while
+   the real button correctly hid (the geometry-equality gate's own "share.x drifted 2px" and
+   "theme.x drifted 159px" catches, atlas-8-style: measured, not assumed). The ⋯ overflow trigger
+   (phone-only) is `.tool.topbar-phone-only` for the identical reason -- see index.html's markup
+   for all three; nothing below this comment styles them specially any more. */

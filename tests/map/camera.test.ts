@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CAMERA_WRITE_DELAY_MS,
   INITIAL_AREA_CAMERA_STATE,
+  NO_PADDING,
   boundsToCameraView,
   cameraEqual,
   createCameraWriter,
+  paddedStudyAreaCenter,
   roundCamera,
   shouldFlyToArea,
   type AreaCameraState,
@@ -198,6 +200,69 @@ describe("boundsToCameraView", () => {
       { minZoom: 3, maxZoom: 18 },
     );
     expect(zoom).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// usability M4: "frame the study area with padding for the panel/sheet". `paddedStudyAreaCenter`
+// is what map.ts bakes into the INITIAL camera (never MapLibre's own persisted `padding` state --
+// see the function's own header for why); these fixtures assert the geometry directly, independent
+// of MapLibre.
+describe("paddedStudyAreaCenter", () => {
+  const CENTER = { lon: -101.304, lat: 46.9 };
+  const ZOOM = 2.16;
+
+  it("no padding: the center is unchanged", () => {
+    const out = paddedStudyAreaCenter(CENTER, ZOOM, NO_PADDING);
+    expect(out.lon).toBeCloseTo(CENTER.lon, 9);
+    expect(out.lat).toBeCloseTo(CENTER.lat, 9);
+  });
+
+  it("symmetric padding (equal left/right, equal top/bottom) is still unchanged", () => {
+    const out = paddedStudyAreaCenter(CENTER, ZOOM, {
+      top: 40,
+      right: 40,
+      bottom: 40,
+      left: 40,
+    });
+    expect(out.lon).toBeCloseTo(CENTER.lon, 9);
+    expect(out.lat).toBeCloseTo(CENTER.lat, 9);
+  });
+
+  it("a right-docked panel (padding.right only) moves the center EAST, so the study area renders further left on screen", () => {
+    const out = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 380 });
+    expect(out.lon).toBeGreaterThan(CENTER.lon);
+    expect(out.lat).toBeCloseTo(CENTER.lat, 6); // right-only padding must not move latitude
+  });
+
+  it("a left-docked panel (padding.left only) moves the center WEST, mirroring the right-docked case", () => {
+    const right = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 380 });
+    const left = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, left: 380 });
+    expect(left.lon).toBeLessThan(CENTER.lon);
+    // same MAGNITUDE of shift, opposite direction -- the formula is symmetric in left vs right.
+    expect(Math.abs(left.lon - CENTER.lon)).toBeCloseTo(Math.abs(right.lon - CENTER.lon), 9);
+  });
+
+  it("a bottom-docked panel (padding.bottom only) moves the center SOUTH, so the study area renders higher on screen", () => {
+    const out = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, bottom: 300 });
+    expect(out.lat).toBeLessThan(CENTER.lat);
+  });
+
+  it("a bigger reservation shifts the center further, monotonically", () => {
+    const small = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 200 });
+    const big = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 500 });
+    expect(big.lon - CENTER.lon).toBeGreaterThan(small.lon - CENTER.lon);
+  });
+
+  it("a higher zoom (a smaller world-px shift per degree) shifts the center LESS for the same padding", () => {
+    const lowZoom = paddedStudyAreaCenter(CENTER, 2, { ...NO_PADDING, right: 380 });
+    const highZoom = paddedStudyAreaCenter(CENTER, 8, { ...NO_PADDING, right: 380 });
+    expect(Math.abs(highZoom.lon - CENTER.lon)).toBeLessThan(Math.abs(lowZoom.lon - CENTER.lon));
+  });
+
+  it("returns finite numbers even for degenerate input (zero zoom)", () => {
+    const out = paddedStudyAreaCenter(CENTER, 0, { ...NO_PADDING, right: 380, bottom: 200 });
+    expect(Number.isFinite(out.lon)).toBe(true);
+    expect(Number.isFinite(out.lat)).toBe(true);
   });
 });
 

@@ -1,0 +1,16 @@
+diff --git a/src/lib/ui/Panel.svelte b/src/lib/ui/Panel.svelte
+index acf076a..b7aaf01 100644
+--- a/src/lib/ui/Panel.svelte
++++ b/src/lib/ui/Panel.svelte
+@@ -73,6 +73,11 @@
+     geometry = next;
+     savePanelGeometry(storage(), id, viewportBucket(window.innerWidth), next);
+     ongeometry?.(next);
++    // SEEDED FAULT (tests/faults/panel-geometry-in-url.patch): layout leaking into the URL --
++    // R1's "chrome, never the URL" rule, broken.
++    const u = new URL(window.location.href);
++    u.searchParams.set("panelDock", next.dock);
++    window.history.replaceState(window.history.state, "", u);
+   }
+ 
+   async function collapse() {

@@ -447,6 +447,28 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4400" },
   },
+  // U1 (docs/usability.md §7, R1): the panel's dock/resize/maximize model. "Layout is chrome,
+  // never the URL" is the load-bearing rule the round's own e2e/shell.panel.spec.ts asserts on
+  // every dock/resize/maximize action (`location.search`/`hash` unchanged) -- this fault reinstates
+  // exactly the regression that rule exists to catch.
+  {
+    id: "panel-geometry-in-url",
+    patch: "tests/faults/panel-geometry-in-url.patch",
+    describe:
+      "Panel.svelte's persist() also writes the chosen dock into the URL (?panelDock=) -- R1's " +
+      "'layout is chrome, never the URL' rule, broken",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.panel.spec.ts",
+      "-g",
+      "dock left: the button is pressed, and #panel-region reports it",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4373" },
+  },
   // atlas-4 fix round 2 (owner-reported defect, 2026-09-24, "Flower plot, nothing selected"): the
   // flower drew only ~3-4 of 8 real petals, root-caused to a hub disc drawn on top of full
   // pie-slice petals silently covering any component scoring <= the hub's own radius (24) --

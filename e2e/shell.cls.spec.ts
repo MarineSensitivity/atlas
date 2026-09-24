@@ -89,22 +89,65 @@ const KEYS: KeySpec[] = [
     hydrated: '#rail-region button[aria-label="Report"]',
   },
   { key: "panel-frame", skeleton: "#panel-region > *", hydrated: "#panel-region > *" },
+  // R1: the panel's controls, in their real DOM order -- dock left/bottom/right, maximize, THEN
+  // collapse (the old 3-control "collapse/half/full" order had collapse first; R1's collapse
+  // moved last, see Panel.svelte's own template).
+  {
+    key: "panel-dock-left",
+    skeleton: ".sk-panel-controls .sk-panel-ctrl:nth-child(1)",
+    hydrated: '#panel-region button[aria-label="Dock left"]',
+  },
+  {
+    key: "panel-dock-bottom",
+    skeleton: ".sk-panel-controls .sk-panel-ctrl:nth-child(2)",
+    hydrated: '#panel-region button[aria-label="Dock bottom"]',
+  },
+  {
+    key: "panel-dock-right",
+    skeleton: ".sk-panel-controls .sk-panel-ctrl:nth-child(3)",
+    hydrated: '#panel-region button[aria-label="Dock right"]',
+  },
+  {
+    key: "panel-maximize",
+    skeleton: ".sk-panel-controls .sk-panel-ctrl:nth-child(4)",
+    hydrated: '#panel-region button[aria-label="Full screen"]',
+  },
   {
     key: "panel-collapse",
-    skeleton: ".sk-panel-controls .sk-panel-ctrl:nth-child(1)",
-    hydrated: '#panel-region button[aria-label^="Collapse to a"]',
+    skeleton: ".sk-panel-controls .sk-panel-ctrl:nth-child(5)",
+    // scoped to `.panel-surface` (Panel's own root), never a bare `[aria-label^="Collapse to a"]`
+    // -- Sheet's own collapse control carries the identical prefix, and an unscoped selector would
+    // match IT at the phone viewport (where `.sk-panel-ctrl` is `display:none`, correctly null),
+    // making this key wrongly "hydrated-only" there instead of the null/null the loop expects.
+    hydrated: '#panel-region .panel-surface button[aria-label^="Collapse to a"]',
+  },
+  // Sheet's OWN 3 (collapse/half/full), unchanged by R1 -- desktop-null/phone-real, the mirror of
+  // the 5 Panel keys above (desktop-real/phone-null).
+  {
+    key: "sheet-collapse",
+    skeleton: ".sk-panel-controls .sk-sheet-ctrl:nth-child(6)",
+    hydrated: '#panel-region .sheet button[aria-label^="Collapse to a"]',
   },
   {
-    key: "panel-half",
-    skeleton: ".sk-panel-controls .sk-panel-ctrl:nth-child(2)",
-    hydrated: '#panel-region button[aria-label="Half height"]',
+    key: "sheet-half",
+    skeleton: ".sk-panel-controls .sk-sheet-ctrl:nth-child(7)",
+    hydrated: '#panel-region .sheet button[aria-label="Half height"]',
   },
   {
-    key: "panel-full",
-    skeleton: ".sk-panel-controls .sk-panel-ctrl:nth-child(3)",
-    hydrated: '#panel-region button[aria-label="Full height"]',
+    key: "sheet-full",
+    skeleton: ".sk-panel-controls .sk-sheet-ctrl:nth-child(8)",
+    hydrated: '#panel-region .sheet button[aria-label="Full height"]',
   },
-  { key: "about-frame", skeleton: "#about-region > *", hydrated: "#about-region > *" },
+  // R2: About/Feedback moved off the map into the top bar (TopBarActions.svelte); the ⋯ overflow
+  // is phone-only, so it and About/Feedback are null/null at the OTHER viewport -- the loop below
+  // already treats "consistently absent at this viewport" as a pass (see its own comment).
+  { key: "feedback", skeleton: '[data-control="feedback"]', hydrated: '[data-control="feedback"]' },
+  { key: "about", skeleton: '[data-control="about"]', hydrated: '[data-control="about"]' },
+  {
+    key: "more-menu",
+    skeleton: '[data-control="more-menu"]',
+    hydrated: '[data-control="more-menu"]',
+  },
 ];
 
 interface Box {
