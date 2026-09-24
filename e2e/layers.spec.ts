@@ -279,6 +279,56 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     expect(errors).toEqual([]);
   });
 
+  // m4 (review round 1): a move that lands its row at the very top/bottom of the stack disables
+  // the button just pressed -- a disabled element cannot hold focus, so a keyboard user's focus
+  // used to silently revert to <body>, breaking the natural "press again to keep moving" flow.
+  // `LayersPanel.svelte#move` now refocuses a real button in the SAME row after the DOM settles
+  // (`tick()`): the SAME direction's button when it is still enabled, the OPPOSITE direction's
+  // once the row hits the edge. Walks BOTH paths with `.press("Enter")` (a real keyboard
+  // activation, not `.click()`) on "Move Boundaries down" -- `basemap-boundaries` starts at
+  // arrIndex 2 (DEFAULT_LAYER_STACK), two presses from the very BOTTOM (arrIndex 0), where
+  // "down" becomes html-disabled (`arrIndex === 0`). Land & water (arrIndex 0) or Selection
+  // (pinned at the top, M7) would each only ever exercise ONE of the two paths -- Boundaries'
+  // own two-step trip to the floor exercises "still enabled, same button" on the first press and
+  // "now disabled, refocus the other direction" on the second, and checks all three signals the
+  // review named: the URL (`layers=` changes), the aria-live region (announces each move), and
+  // `document.activeElement` (never reverts to <body>).
+  test("m4: repeatedly moving a row by keyboard never loses focus to <body>, even once its own button becomes disabled", async ({
+    page,
+  }) => {
+    const errors = collectConsoleErrors(page);
+    await gotoLayersScores(page, "");
+    const downBtn = page.getByRole("button", {
+      name: "Move Boundaries down (toward the bottom of the map)",
+    });
+    const upBtn = page.getByRole("button", { name: "Move Boundaries up (toward the top of the map)" });
+    const liveRegion = page.locator(".layers-stack [aria-live]");
+    const activeElementLabel = () =>
+      page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? null);
+
+    // arrIndex 2 -> position 6 of 8 initially ("1 = top of the list", LayersPanel.svelte's own
+    // convention: displayPosition = stack.length - arrIndex).
+    await downBtn.focus();
+    await downBtn.press("Enter"); // arrIndex 2 -> 1, position 6 -> 7; "down" still enabled
+    await expect.poll(() => page.url(), { timeout: 10_000 }).toContain("layers=");
+    await expect(liveRegion).toHaveText("Boundaries moved to position 7 of 8");
+    await expect(downBtn).toBeEnabled();
+    await expect.poll(activeElementLabel, { timeout: 10_000 }).toBe(
+      "Move Boundaries down (toward the bottom of the map)",
+    );
+
+    await downBtn.press("Enter"); // arrIndex 1 -> 0, position 7 -> 8 (the very bottom)
+    await expect(liveRegion).toHaveText("Boundaries moved to position 8 of 8");
+    // ITS OWN "down" button is now disabled (nothing left below it) -- focus must have moved to
+    // "up" instead of silently reverting to <body>.
+    await expect(downBtn).toBeDisabled();
+    await expect.poll(activeElementLabel, { timeout: 10_000 }).toBe(
+      "Move Boundaries up (toward the top of the map)",
+    );
+    expect(await upBtn.evaluate((el) => el === document.activeElement)).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
   // orchestrator audit item 1: "each row's eye toggle must be gated by an e2e where toggling makes
   // that layer's rendered features disappear" -- the REAL `Switch` control (not a `layers=` URL
   // shortcut), proving the panel's own accessible name wires through to `onChange` -> `composeStyle`

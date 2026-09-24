@@ -10,7 +10,7 @@
   // `LayerStackEntry[]` (`../map/layerStack.ts`, the pure model `style.ts#composeStyle` consumes via
   // its `layerStack` input). `Shell.svelte` owns turning a change here into `selStore.set({layers})`
   // (URL-is-the-view, CLAUDE.md) — this component only calls `onChange`.
-  import type { Snippet } from "svelte";
+  import { tick, type Snippet } from "svelte";
   import Switch from "./Switch.svelte";
   import Icon from "./Icon.svelte";
   import {
@@ -75,15 +75,43 @@
     onChange(stack.map((e) => (e.id === id ? { ...e, opacity } : e)));
   }
 
+  // m4 (review round 1): a move that lands its row at the very top/bottom of the stack disables
+  // the button just clicked (it reached the end it moves toward) -- a keyboard/screen-reader user
+  // who just pressed it then has a DISABLED element under focus, which browsers cannot keep
+  // focused, so focus silently reverts to `<body>` and the next Tab press restarts from the top of
+  // the page instead of continuing from this row. `panelEl` + a stable `data-move-id`/
+  // `data-move-dir` pair on each button (not a `bind:this` array -- rows are reordered, not
+  // recreated, but keeping a ref array in sync with THAT is more moving parts than one DOM query)
+  // let the handler refocus something real in the SAME row after Svelte re-renders it.
+  let panelEl = $state<HTMLDivElement | undefined>();
+
+  function refocusRow(id: LayerGroupId, preferredDir: "up" | "down") {
+    if (!panelEl) return;
+    const preferred = panelEl.querySelector<HTMLButtonElement>(
+      `[data-move-id="${id}"][data-move-dir="${preferredDir}"]`,
+    );
+    if (preferred && !preferred.disabled) return preferred.focus();
+    const otherDir = preferredDir === "up" ? "down" : "up";
+    const other = panelEl.querySelector<HTMLButtonElement>(
+      `[data-move-id="${id}"][data-move-dir="${otherDir}"]`,
+    );
+    if (other && !other.disabled) return other.focus();
+    // both move buttons are disabled (a one-entry stack, never true today, but not this
+    // function's assumption to make) -- the row's own switch (or, for the Data row, its expander
+    // button) is always focusable, scoped by the row's own data-row-id.
+    panelEl.querySelector<HTMLButtonElement>(`[data-row-id="${id}"] button`)?.focus();
+  }
+
   /** ▲ (toward the top of the LIST) moves toward the END of the model array (toward the top of the
    * MAP); ▼ is the reverse. `label` is only for the `aria-live` announcement's wording. */
-  function move(arrIndex: number, toArrIndex: number, label: string) {
+  function move(arrIndex: number, toArrIndex: number, label: string, dir: "up" | "down") {
     const id = stack[arrIndex].id;
     const next = moveLayerStackEntry(stack, arrIndex, toArrIndex);
     onChange(next);
     const newArrIndex = next.findIndex((e) => e.id === id);
     const displayPosition = next.length - newArrIndex; // 1 = top of the list
     announce = `${label} moved to position ${displayPosition} of ${next.length}`;
+    tick().then(() => refocusRow(id, dir));
   }
 
   function reset() {
@@ -92,7 +120,7 @@
   }
 </script>
 
-<div class="layers-stack">
+<div class="layers-stack" bind:this={panelEl}>
   <!-- fix list #10 (SC 1.3.1, e2e/keyboard-walk.spec.ts): a plain `div` (never a landmark) so this
        never becomes a SECOND `region` nested inside Panel.svelte's own "Layers" region — the same
        fix the pre-R3 non-interactive bullet list carried, kept here now that this IS "what's on the
@@ -105,7 +133,7 @@
       {@const enabled = LAYER_GROUP_ENABLED[entry.id]}
       {@const label = LAYER_GROUP_LABEL[entry.id]}
       {@const isData = entry.id === DATA_ROW_ID}
-      <li class="stack-row" class:stack-row--disabled={!enabled}>
+      <li class="stack-row" class:stack-row--disabled={!enabled} data-row-id={entry.id}>
         <div class="row-head">
           {#if isData}
             <button
@@ -152,7 +180,9 @@
               class="move-btn"
               aria-label={`Move ${label} up (toward the top of the map)`}
               disabled={!enabled || arrIndex === stack.length - 1}
-              onclick={() => move(arrIndex, arrIndex + 1, label)}
+              data-move-id={entry.id}
+              data-move-dir="up"
+              onclick={() => move(arrIndex, arrIndex + 1, label, "up")}
             >
               <Icon name="chevronUp" size={18} />
             </button>
@@ -161,7 +191,9 @@
               class="move-btn"
               aria-label={`Move ${label} down (toward the bottom of the map)`}
               disabled={!enabled || arrIndex === 0}
-              onclick={() => move(arrIndex, arrIndex - 1, label)}
+              data-move-id={entry.id}
+              data-move-dir="down"
+              onclick={() => move(arrIndex, arrIndex - 1, label, "down")}
             >
               <Icon name="chevronDown" size={18} />
             </button>
