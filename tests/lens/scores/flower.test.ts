@@ -9,6 +9,7 @@ import {
   zoneFlowerComponents,
 } from "../../../src/lens/scores/flower";
 import { computeFlowerGeometry } from "../../../src/lib/ui/flowerGeometry";
+import { categoryFor, NO_DATA_CATEGORY } from "../../../src/lib/ui/categories";
 import { BOOT_V7, BOOT_V1_PLANAREA, BOOT_V9 } from "./fixtures";
 
 describe("componentLabel", () => {
@@ -76,9 +77,14 @@ describe("zoneFlowerComponents", () => {
 describe("defaultFlowerComponents", () => {
   it("reads boot.flower_default[zoneAllKey]", () => {
     expect(defaultFlowerComponents(BOOT_V7, "FULL")!.components).toEqual([
-      { key: "bird", score: 45.67 },
-      { key: "other", score: 15.18 },
-      { key: "primprod", score: 10.38 },
+      { key: "bird", score: 45.6671707107685 },
+      { key: "coral", score: 10.4494142116047 },
+      { key: "fish", score: 15.9570514927416 },
+      { key: "invertebrate", score: 14.7345085163167 },
+      { key: "mammal", score: 41.668393775248 },
+      { key: "other", score: 15.1784428369187 },
+      { key: "turtle", score: 38.8176408891894 },
+      { key: "primprod", score: 10.3787489146688 },
     ]);
   });
 
@@ -205,5 +211,59 @@ describe("flowerTitle", () => {
 
   it("nothing selected: Full study area", () => {
     expect(flowerTitle(null)).toBe("Full study area");
+  });
+});
+
+// atlas-4 fix round 2 (owner-reported defect, 2026-09-24): "Flower plot, nothing selected" on live
+// v7 listed eight components under centre 24 but drew only ~3-4 visible petals -- 5 of the 8
+// (Coral, Fish, Invertebrate, Other, Primary producer, each <= 24) were real, correctly-colored
+// shapes silently covered by the hub disc drawn on top of them (see flowerGeometry.ts's header for
+// the full root cause). This was never a color/category MAPPING gap -- every real category already
+// resolved to a defined `--cat-*` token -- but the property below (every real component gets a
+// defined, non-"no data" color AND a petal whose annular band actually clears the hub) is exactly
+// what a mapping gap WOULD have broken, so it is asserted directly against the real fixtures rather
+// than assumed from "the path string is non-empty" (which the pre-fix pie-slice geometry also
+// satisfied for every one of the 5 invisible petals).
+describe("atlas-4 fix round 2: every real component resolves to a defined color and a real petal", () => {
+  function assertRealPetals(components: { key: string; score: number | null }[], n: number) {
+    const g = computeFlowerGeometry(components);
+    expect(g.petals).toHaveLength(n);
+    for (const p of g.petals) {
+      expect(p.category.color, `${p.key} has no defined --cat-* color token`).toMatch(
+        /^--cat-[a-z]+$/,
+      );
+      expect(p.category.color, `${p.key} fell back to the "no data" token`).not.toBe(
+        NO_DATA_CATEGORY.color,
+      );
+      // a real, present score always produces a band whose outer edge clears the shared hub --
+      // the property the pre-fix "pie slice under a hub disc" geometry violated for any score at
+      // or below the hub's own radius (24 of the default 100-unit outerRadius).
+      expect(p.radius, `${p.key}'s petal never clears the hub (innerRadius)`).toBeGreaterThan(
+        p.innerRadius,
+      );
+    }
+  }
+
+  it("v7's real flower_default.FULL (8 components, Other included)", () => {
+    const flower = defaultFlowerComponents(BOOT_V7, "FULL")!;
+    expect(flower.components).toHaveLength(8);
+    assertRealPetals(flower.components, 8);
+  });
+
+  it("v9's real flower_default.AK, de-duplicated to 7 (the primprod/primary producer collision)", () => {
+    const flower = defaultFlowerComponents(BOOT_V9, "AK")!;
+    expect(flower.components).toHaveLength(7);
+    assertRealPetals(flower.components, 7);
+  });
+
+  // manual seeded-fault proof (CLAUDE.md: "a check that cannot fail is not a check"), mirroring the
+  // committed `tests/faults/flower-petal-colour-dropped.patch` (wired into `npm run test:faults`,
+  // PW_PORT 4393): temporarily deleting categories.ts's `other: "other"` SYNONYMS row makes
+  // `categoryFor("other")` return `NO_DATA_CATEGORY` and turns the v7 test above red on its
+  // "fell back to the 'no data' token" assertion -- verified by hand while writing this fix,
+  // reverted before committing (the patch file is the permanent, applied proof).
+  it("categoryFor('other') resolves to the real category today (the fault this guards against)", () => {
+    expect(categoryFor("other").color).toBe("--cat-other");
+    expect(categoryFor("other").color).not.toBe(NO_DATA_CATEGORY.color);
   });
 });

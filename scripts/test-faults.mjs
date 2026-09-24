@@ -411,6 +411,35 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4400" },
   },
+  // atlas-4 fix round 2 (owner-reported defect, 2026-09-24, "Flower plot, nothing selected"): the
+  // flower drew only ~3-4 of 8 real petals, root-caused to a hub disc drawn on top of full
+  // pie-slice petals silently covering any component scoring <= the hub's own radius (24) --
+  // NEVER a color/category mapping gap (every real category already had a defined `--cat-*`
+  // token, `flowerGeometry.ts`'s header). This patch drops exactly one such mapping (categories.ts's
+  // `other: "other"` SYNONYMS row), which makes `categoryFor("other")` fall back to
+  // `NO_DATA_CATEGORY` (the grey "not reportable" token, label "No data") -- a DIFFERENT, adjacent
+  // failure mode from the geometry bug this round actually fixed, but one `e2e/scores.flower.spec.ts`
+  // is positioned to catch directly (its own "no petal's accessible name reads 'No data'" case) and
+  // one this fix's real v7 fixture (which has an "Other" component) makes newly reachable.
+  {
+    id: "flower-petal-colour-dropped",
+    patch: "tests/faults/flower-petal-colour-dropped.patch",
+    describe:
+      "categories.ts loses the 'other' SYNONYMS row -- the flower's real 'Other' component " +
+      "silently falls back to the grey NO_DATA_CATEGORY token instead of its own color " +
+      "(atlas-4 fix round 2's real v7 flower_default.FULL fixture has an Other component)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.flower.spec.ts",
+      "-g",
+      "no petal's accessible name reads 'No data'",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4393" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

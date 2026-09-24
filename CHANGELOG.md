@@ -1,3 +1,51 @@
+# atlas 0.10.34
+
+Owner-reported live defect (v7, 2026-09-24, "Flower plot, nothing selected") plus two follow-on
+review items (Opus 5.5 audit; owner decision R8).
+
+- **The flower drew only the petals whose category happened to score above 24** — not a
+  color/category mapping gap (every one of the eight real categories already had a defined,
+  distinct `--cat-*` token). Root cause: every petal was a full PIE SLICE from the true centre
+  (`radius = score` when `outerRadius = 100`), and a solid hub disc of a hardcoded `r="24"` was
+  then drawn ON TOP of it to host the centre number — any component scoring `<= 24` (on the
+  reported case: Coral 10.4, Fish 16.0, Invertebrate 14.7, Other 15.2, Primary producer 10.4 of
+  8 real components) produced a slice that fit entirely inside the hub and was completely covered
+  by it, leaving only Bird/Mammal/Turtle visible. Fixed by drawing every petal as an ANNULAR
+  SECTOR (a donut-ring wedge) from a shared `innerRadius` (matching the hub) out to a score-scaled
+  outer radius, mirroring how `msens::ggplot_flower()` offsets its own polar axis
+  (`xlim(c(-10, max(height)))`) so a real, present score is never fully covered by the centre
+  annotation — `src/lib/ui/flowerGeometry.ts#computeFlowerGeometry`/`sectorPath`, applied in all
+  three renderers that share it: the live panel (`src/lib/ui/Flower.svelte`), the exported
+  docx/HTML report's standalone SVG (`src/report/flowerSvg.ts`), and the on-screen Report
+  document's own inline SVG (`src/report/Report.svelte`).
+- **Every reported score is now rounded to exactly ONE decimal place** (`src/lib/format.ts#formatScore`):
+  the summary sentence, the accessible per-petal name, the "Show table" table, and both report
+  SVGs' tooltips — the reported defect's other half ("the values text under the flower prints full
+  double precision", e.g. `45.6671707107685`). The summary's trailing sentence no longer claims a
+  page POSITION ("See the component table **below**"), since that toggle/table sits ABOVE it in
+  `Flower.svelte` and there is no table at all beside the exported report's narrative text.
+- **The exported/on-screen Report document's own flower** gets the same fix (hub radius, never
+  covering a real petal) plus two review items: petal `opacity` corrected to `0.5` (was `0.92`,
+  the ported app's own `alpha = 0.5`) and a category LEGEND (swatch + label) beneath each flower —
+  its `<title>` tooltip is unreachable in a printed page or the static docx/HTML export
+  (`docs/parity/checklists/atlas-7-report.md:24`).
+- **The composition treemap now sizes boxes by SPECIES COUNT**, matching the ported Shiny app
+  (owner decision R8) — it previously summed `suit_er_area` (suitability × extinction-risk ×
+  area), which drew a real selection's Mammal box as the LARGEST even though Shiny (sizing by
+  count) draws it small. `compositionTree()`'s new default is `measure: "count"`; the prior
+  weighted measure is kept as an internal, not-yet-exposed option
+  (`{ measure: "suit_er_area" }`). `Composition.svelte`'s `valueLabel` is now `"n species"`.
+- **The parity page's own S-13/S-14 evidence was a "check that cannot fail"**: the 3-component
+  hermetic fixture (`e2e/scores.firstpaint.spec.ts`) never exercised a petal small enough to be
+  covered, and `e2e/gallery.spec.ts`'s "8 distinct petal categories (colors)" read
+  `getComputedStyle(path).fill` directly, which is true and defined for a COVERED petal exactly as
+  for a visible one. Both hermetic fixtures (`e2e/scores-hermetic.ts`,
+  `tests/lens/scores/fixtures.ts`) now carry v7's REAL 8-component `flower_default.FULL` (read off
+  the live release, full double precision); new `e2e/scores.flower.spec.ts` probes each petal's own
+  geometric centroid via `document.elementFromPoint()` — real occlusion-aware hit-testing — for the
+  default flower AND a selected zone's own flower. Seeded fault
+  `tests/faults/flower-petal-colour-dropped.patch` (`scripts/test-faults.mjs`, PW_PORT 4393).
+
 # atlas 0.10.28
 
 Six fixes from the atlas-8 phase review round 2 (`workflows/.claude/plans_todo/atlas-refs/2026-09-23

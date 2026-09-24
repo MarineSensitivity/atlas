@@ -25,10 +25,24 @@ export interface TreemapInputNode {
   children?: TreemapInputNode[];
 }
 
-/** one `sql/composition.sql` row, as much of it as this module reads. */
+/** one `sql/composition.sql` row, as much of it as this module reads. Each row is ONE species
+ * (one `mdl_key`, the SQL's own header) -- which is what makes `measure: "count"` below a plain
+ * row count per category, no new SQL column needed. */
 export interface CompositionRow {
   sp_cat: string;
   suit_er_area: unknown;
+}
+
+/** which quantity a category's box is sized by. `"count"` (the default, owner decision R8,
+ * 2026-09-24) is the NUMBER OF SPECIES in the category -- what the ported Shiny app's own treemap
+ * sizes by, and why Mammal (few, high-suitability species) reads as a SMALL box there even though
+ * it summed to the largest `suit_er_area` here. `"suit_er_area"` is the measure this module used
+ * exclusively before R8 (suitability x extinction-risk x area, `sql/composition.sql`'s own
+ * header) -- kept as an internal option, not wired to any UI toggle yet. */
+export type CompositionMeasure = "count" | "suit_er_area";
+
+export interface CompositionTreeOptions {
+  measure?: CompositionMeasure;
 }
 
 const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
@@ -36,15 +50,20 @@ const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ?
 /**
  * `rows` grouped by `sp_cat` (normalized through `categories.ts`'s `categoryKeyFor` — the same
  * "primary_producer"/"primary producer"/"primprod" fold the flower already applies, so a category
- * never splits into two boxes over a spelling difference), summed by `suit_er_area`, one leaf per
- * category with a real (positive) sum. A category with none gets no leaf, matching
- * `Treemap.svelte`'s own "value <= 0 is dropped" rule downstream.
+ * never splits into two boxes over a spelling difference), one leaf per category with a real
+ * (positive) measure. A category with none gets no leaf, matching `Treemap.svelte`'s own
+ * "value <= 0 is dropped" rule downstream.
  */
-export function compositionTree(rows: readonly CompositionRow[]): TreemapInputNode {
+export function compositionTree(
+  rows: readonly CompositionRow[],
+  options: CompositionTreeOptions = {},
+): TreemapInputNode {
+  const measure = options.measure ?? "count";
   const sums = new Map<string, number>(); // keyed by the RAW label used for both display and categoryKey
   for (const r of rows) {
     const key = categoryKeyFor(r.sp_cat) ?? r.sp_cat;
-    sums.set(key, (sums.get(key) ?? 0) + n(r.suit_er_area));
+    const amount = measure === "count" ? 1 : n(r.suit_er_area);
+    sums.set(key, (sums.get(key) ?? 0) + amount);
   }
   const byKey = new Map(CATEGORIES.map((c) => [c.key, c]));
   const children: TreemapInputNode[] = [];
