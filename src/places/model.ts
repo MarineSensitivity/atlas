@@ -24,6 +24,7 @@ import {
   type ZoneSet,
 } from "../lib/geo/placeCodec";
 import type { AreaGeometry } from "../lib/geo/types";
+import { densifyGeometry } from "./densify";
 
 /** Deliverable 1: "up to 20 places". */
 export const MAX_PLACES = 20;
@@ -94,8 +95,11 @@ export function featureCollectionOf(geometry: AreaGeometry): FeatureCollection {
  * resolved from `sel.pl`/`sel.sel` ALONE -- no `boot`, no pick/draw-mode context, nothing that
  * requires `Places.svelte` to be mounted. `null` for anything but a `kind: "geom"` place (a zone
  * place's highlight is drawn elsewhere; an upload place carries no geometry to draw at all, see
- * `UploadPlace`'s own doc comment in placeCodec.ts) -- the SAME restriction `placesMap.svelte.ts`'s
- * `baseline` (which calls this) applies to the WHOLE store's outline.
+ * `UploadPlace`'s own doc comment in placeCodec.ts).
+ *
+ * No longer what `placesMap.svelte.ts`'s baseline calls (see {@link allGeomPlacesOutline}'s own
+ * header, P7) -- kept as a small, independently-tested pure function in case a future feature wants
+ * "just the selected place's own geometry" specifically.
  */
 export function selectedGeomPlaceGeometry(
   pl: string | undefined,
@@ -108,18 +112,49 @@ export function selectedGeomPlaceGeometry(
 }
 
 /**
- * atlas-8 review round 2, item m3: `placesMap.svelte.ts`'s composed `outline` — an interaction
- * override (pick mode's highlight, a draw's live preview) wins whenever one is set; `null` falls
- * straight through to the baseline (the selected place's own outline, restored from `sel.pl`/
- * `sel.sel` alone). Pulled out as a plain function so the precedence rule has a real unit test
- * (`tests/places/placesMap.test.ts`) independent of Svelte's runtime — `placesMap.svelte.ts`
- * itself only wires `$state`/`$derived` around this.
+ * P7 fix ("drawn places vanish from the map after the second draw, and are 'not analysed yet'"):
+ * EVERY `kind: "geom"` place in the list, resolved from `sel.pl` ALONE -- no `boot`, no pick/draw
+ * -mode context, nothing that requires `Places.svelte` to be mounted, matching
+ * `selectedGeomPlaceGeometry`'s own no-dependencies rule (0.10.21) but over the WHOLE list instead
+ * of the one selected row. Before this fix, `placesMap.svelte.ts`'s baseline called
+ * `selectedGeomPlaceGeometry` -- exactly ONE place, whichever row `sel.sel` happened to name -- so
+ * drawing a second place (which auto-selects it, `Places.svelte#writePlaces`) moved the map's ONLY
+ * visible outline onto the new place and silently dropped the one drawn just before it. Every rule
+ * (Program-Area picks, uploads with no client-side geometry) `selectedGeomPlaceGeometry` already
+ * applied still applies here, per-place. Each feature is densified (`densify.ts`'s own header:
+ * "what is displayed is what is analyzed") so the globe projection cannot bow a straight analysed
+ * edge into a visibly different shape.
+ */
+export function allGeomPlacesOutline(pl: string | undefined): FeatureCollection | null {
+  const geometries = placesFromHash(pl)
+    .filter((p): p is GeomPlace => p.kind === "geom")
+    .map((p) => densifyGeometry(p.geometry));
+  if (!geometries.length) return null;
+  return {
+    type: "FeatureCollection",
+    features: geometries.map((geometry) => ({ type: "Feature", geometry, properties: {} })),
+  };
+}
+
+/**
+ * atlas-8 review round 2, item m3 (extended by the P7 fix): `placesMap.svelte.ts`'s composed
+ * `outline` — the baseline (P7: every drawn/uploaded-with-geometry place in the list, ALWAYS, not
+ * just the selected one) plus, layered on top when set, an interaction override (pick mode's own
+ * highlight of what is about to be added, a draw's just-finished live preview). P7: this used to be
+ * "interaction wins, baseline never shows through" — which was correct back when baseline was ONE
+ * place, but silently hid every OTHER already-listed place while a pick-mode preview or a draw's own
+ * live outline was active. It is now a UNION: nothing already on the map is ever displaced by a
+ * transient preview. Pulled out as a plain function so the precedence rule has a real unit test
+ * (`tests/places/placesMap.test.ts`) independent of Svelte's runtime — `placesMap.svelte.ts` itself
+ * only wires `$state`/`$derived` around this.
  */
 export function composeOutline(
   interaction: FeatureCollection | null,
   baseline: FeatureCollection | null,
 ): FeatureCollection | null {
-  return interaction ?? baseline;
+  if (!interaction) return baseline;
+  if (!baseline) return interaction;
+  return { type: "FeatureCollection", features: [...baseline.features, ...interaction.features] };
 }
 
 function ok(places: Place[]): MutationResult {

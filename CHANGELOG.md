@@ -1,3 +1,28 @@
+# atlas 0.10.46
+
+P7 (Ben, live 0.10.43, "Places" tool, dark theme): after drawing a second place, BOTH places'
+outlines disappeared from the map — the list still showed both rows, each stuck on "not analysed
+yet" / "—".
+
+- **Every place in the list is now drawn on the map at all times** — after the first draw, after
+  the second, after a reload from a shared `#pl=` link, and after any style recomposition. The map
+  used to draw only the SELECTED place's outline (`placesMap.svelte.ts`'s baseline called
+  `selectedGeomPlaceGeometry`, one place); drawing a second place auto-selects it, so the map's one
+  visible outline moved onto it and the place drawn just before silently vanished. Fixed by drawing
+  every `kind: "geom"` place always (`model.ts#allGeomPlacesOutline`); a pick-mode/draw preview now
+  layers ON TOP of the already-drawn places instead of replacing them.
+- **Fixed a real, reproducible crash in the draw tool itself.** terra-draw manages its own map
+  layers directly, and this app's own `setStyle(diff:true)` cycle — fired on every finished draw —
+  was silently deleting them, since they were never part of the composed style. terra-draw's next
+  redraw then threw an uncaught `TypeError`, and a second shape's own edit handles could stop
+  appearing. `applyStyle()` now preserves terra-draw's own layers across a recompose.
+- **A drawn or entered place is analysed automatically**, the same way a Program-Area pick already
+  shows numbers with no visible step — every row now shows its real composite/coverage as soon as
+  it exists, not only the one currently selected.
+- **A place that genuinely cannot be analysed (a release object the bucket doesn't have) now says
+  so honestly** — "analysis unavailable for this release: `<object>` (HTTP `<code>`)" — instead of
+  sitting on "not analysed yet" forever or showing a raw, stack-shaped error message.
+
 # atlas 0.10.43
 
 P4 (Ben, phone, "Report" tool, live 0.10.37): the Report map was duplicated and seemingly empty
