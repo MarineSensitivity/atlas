@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   desktopPanelPadding,
+  LEGEND_CHIP_HEIGHT_PX,
+  phoneLiveChromePadding,
   phonePadding,
   phonePaddingFromMeasured,
 } from "../../src/lib/map/chromePadding";
@@ -117,5 +119,45 @@ describe("phonePaddingFromMeasured (P2 round 2)", () => {
     const estimate = phonePadding("half", 844);
     const measured = phonePaddingFromMeasured(388); // a real sheet height close to 844*0.46
     expect(Math.abs(measured.bottom - estimate.bottom)).toBeLessThan(50);
+  });
+});
+
+// V1 fix (Opus eyes-on review, 2026-09-24): "the walrus model view sits under the legend chip and
+// the sheet" -- the species camera's LIVE re-fit padding (Shell.svelte's `currentChromePadding`,
+// which the species lens' `applyCamera` now reads instead of a flat 40px). Unlike phonePadding/
+// phonePaddingFromMeasured above (called ONCE, before Sheet.svelte mounts), this runs on every
+// species-change/zoomToLayer re-fit, so it must react to whatever the sheet/chip are doing RIGHT
+// NOW.
+describe("phoneLiveChromePadding (V1 fix: the species camera pads for the sheet + chip)", () => {
+  it("uses the MEASURED sheet height once one is reported (> 0), not the estimate", () => {
+    const measured = phoneLiveChromePadding(388, "half", 844, false);
+    expect(measured).toEqual(phonePaddingFromMeasured(388));
+  });
+
+  it("falls back to the ESTIMATE while no measurement has landed yet (height 0)", () => {
+    const estimate = phoneLiveChromePadding(0, "half", 844, false);
+    expect(estimate).toEqual(phonePadding("half", 844));
+  });
+
+  it("adds the legend chip's own height on top of the sheet's when the chip is floating", () => {
+    const withoutChip = phoneLiveChromePadding(388, "half", 844, false);
+    const withChip = phoneLiveChromePadding(388, "half", 844, true);
+    expect(withChip.bottom).toBe(withoutChip.bottom + LEGEND_CHIP_HEIGHT_PX);
+    // only `bottom` changes -- the chip floats over the map, not to either side or the top.
+    expect(withChip.top).toBe(withoutChip.top);
+    expect(withChip.left).toBe(withoutChip.left);
+    expect(withChip.right).toBe(withoutChip.right);
+  });
+
+  it("never adds the chip's height when it is not showing, regardless of the flag's own name implying otherwise is wrong", () => {
+    expect(phoneLiveChromePadding(388, "half", 844, false).bottom).toBe(
+      phonePaddingFromMeasured(388).bottom,
+    );
+  });
+
+  it("a taller reserved bottom (sheet + chip together) is never smaller than either alone", () => {
+    const sheetOnly = phoneLiveChromePadding(500, "full", 844, false);
+    const withChip = phoneLiveChromePadding(500, "full", 844, true);
+    expect(withChip.bottom).toBeGreaterThan(sheetOnly.bottom);
   });
 });
