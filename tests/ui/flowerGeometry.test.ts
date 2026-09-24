@@ -6,9 +6,12 @@ import { describe, expect, it } from "vitest";
 import {
   computeFlowerGeometry,
   describeFlowerSummary,
+  flowerViewBox,
+  petalLabelText,
   sectorPath,
   type FlowerComponentInput,
 } from "../../src/lib/ui/flowerGeometry";
+import { categoryFor } from "../../src/lib/ui/categories";
 
 const EIGHT: FlowerComponentInput[] = [
   { key: "bird", score: 62 },
@@ -259,5 +262,41 @@ describe("describeFlowerSummary (SC 1.1.1: the text summary must not contradict 
     ]);
     const roundedCenter = Math.round(geometry.centerValue!);
     expect(describeFlowerSummary("Cell 1", geometry)).toContain(`mean ${roundedCenter}`);
+  });
+});
+
+// atlas-4 fix round 3 (owner, phone/dark/Scores/Flower, 2026-09-24): "Flower plot should be
+// centered", a stray focus rectangle, no petal values on tap/hover, values in prose instead of a
+// list. `flowerViewBox`/`petalLabelText` are the two pure pieces of that fix vitest CAN exercise
+// directly -- this repo's vitest runs under `environment: "node"` (vitest.config.ts), so it cannot
+// render Flower.svelte itself to check the CSS centering rule or the DOM outline; those are
+// e2e/scores.flower.spec.ts's job.
+describe("flowerViewBox (the SVG's fixed drawing-coordinate box, independent of the `size` CSS prop)", () => {
+  it("defaults to '0 0 200 200' -- outerRadius 100, matching Flower.svelte's own petal math", () => {
+    expect(flowerViewBox()).toBe("0 0 200 200");
+  });
+
+  it("scales with a custom outerRadius (2x every dimension)", () => {
+    expect(flowerViewBox(50)).toBe("0 0 100 100");
+  });
+});
+
+describe("petalLabelText (the tap/hover/focus label -- one decimal, the SAME text as the petal's own accessible name)", () => {
+  it("formats 'Category: score' with formatScore's one-decimal rule, never a raw double", () => {
+    const bird = computeFlowerGeometry([{ key: "bird", score: 45.6671707107685 }]).petals[0];
+    expect(petalLabelText(bird)).toBe("Bird: 45.7");
+  });
+
+  it("a whole-number score still gets exactly one decimal place ('10' -> '10.0')", () => {
+    const coral = computeFlowerGeometry([{ key: "coral", score: 10 }]).petals[0];
+    expect(petalLabelText(coral)).toBe("Coral: 10.0");
+  });
+
+  it("uses the category's own label, not the raw input key", () => {
+    // "primary producer" normalizes to the SAME category as "primprod" (categories.ts) -- the
+    // label in the text must be the canonical one ("Primary producer"), not whatever spelling the
+    // caller happened to pass in.
+    const petal = computeFlowerGeometry([{ key: "primary producer", score: 5 }]).petals[0];
+    expect(petalLabelText(petal)).toBe(`${categoryFor("primprod").label}: 5.0`);
   });
 });
