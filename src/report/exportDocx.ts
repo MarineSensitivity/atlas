@@ -7,7 +7,7 @@
 // counts cross-tab, the Top 20) plus a rasterized flower per place and the map PNG when the caller
 // already captured one (mapPng.ts) -- Word has no vector surface, so both go in as `ImageRun`s.
 import type { ReportModel } from "../lib/report/model";
-import { formatCoveragePct, formatCount, formatErScore, formatScore0 } from "../lib/report/format";
+import { formatCount, formatErScore, formatScore0 } from "../lib/report/format";
 import { flowerStandaloneSvg } from "./flowerSvg";
 import { rasterizeSvg } from "./svgToPng";
 // type-only: erased at compile time, so this never becomes a static runtime import of `docx`
@@ -54,6 +54,24 @@ export async function buildDocxBlob(model: ReportModel, opts: DocxExportOptions)
         new Paragraph({
           alignment: opts.right ? AlignmentType.RIGHT : AlignmentType.LEFT,
           children: [new TextRun({ text, bold: opts.bold })],
+        }),
+      ],
+    });
+
+  // P4: the Table of Scores' own footnote marker -- a real Word superscript run appended after the
+  // value, same information as the screen's `<sup>{id}</sup>` (Report.svelte). `footnoteId: null`
+  // (the common case -- most cells carry none, P4's whole point) renders exactly like `cell()`.
+  const scoreCell = (text: string, footnoteId: number | null, opts: { right?: boolean } = {}) =>
+    new TableCell({
+      children: [
+        new Paragraph({
+          alignment: opts.right ? AlignmentType.RIGHT : AlignmentType.LEFT,
+          children: [
+            new TextRun(text),
+            ...(footnoteId !== null
+              ? [new TextRun({ text: String(footnoteId), superScript: true })]
+              : []),
+          ],
         }),
       ],
     });
@@ -124,17 +142,55 @@ export async function buildDocxBlob(model: ReportModel, opts: DocxExportOptions)
   }
 
   children.push(heading("Table of Scores", HeadingLevel.HEADING_1));
+  // P4: built by hand (not the generic `table()` helper above) because a component cell needs its
+  // OWN footnote marker -- the same `cell.footnotes[0]` id the screen's `<sup>` reads
+  // (`Report.svelte`'s Table of Scores section), never re-derived here.
   children.push(
-    table(
-      ["Area", "N cells", ...model.scores.components, "Overall"],
-      model.scores.rows.map((r) => [
-        r.name,
-        formatCount(r.nCells),
-        ...r.cells.map((c) => (c.score === null ? "—" : formatScore0(c.score))),
-        r.overall === null ? "—" : formatScore0(r.overall),
-      ]),
-    ),
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new TableRow({
+          children: ["Area", "N cells", ...model.scores.components, "Overall"].map((h) =>
+            cell(h, { bold: true }),
+          ),
+        }),
+        ...model.scores.rows.map(
+          (r) =>
+            new TableRow({
+              children: [
+                cell(r.name),
+                cell(formatCount(r.nCells), { right: true }),
+                ...r.cells.map((c) =>
+                  scoreCell(
+                    c.score === null ? "—" : formatScore0(c.score),
+                    c.footnotes[0] ?? null,
+                    {
+                      right: true,
+                    },
+                  ),
+                ),
+                cell(r.overall === null ? "—" : formatScore0(r.overall), {
+                  right: true,
+                  bold: true,
+                }),
+              ],
+            }),
+        ),
+      ],
+    }),
   );
+  // P4: the SAME grouped footnotes the screen's `<ol class="footnotes">` lists (Report.svelte) --
+  // absent entirely (no paragraphs at all) when nothing in this report is below the coverage floor.
+  for (const fn of model.scores.footnotes) {
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({ text: `${fn.id}. `, superScript: true }),
+          new TextRun({ text: fn.text, size: 18 }),
+        ],
+      }),
+    );
+  }
 
   children.push(heading("Summary of Species", HeadingLevel.HEADING_1));
   for (const species of model.species) {
@@ -186,8 +242,6 @@ export async function buildDocxBlob(model: ReportModel, opts: DocxExportOptions)
         `Generated ${model.provenance.generatedAt}. App ${model.provenance.appSha}. DuckDB-WASM ${model.provenance.duckdbWasm ?? "—"}.`,
     ),
   );
-
-  void formatCoveragePct; // reserved for a future footnote row in the DOCX table (not yet ported)
 
   const doc = new Document({
     styles: {

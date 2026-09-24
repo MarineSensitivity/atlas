@@ -991,7 +991,7 @@ export const STATUS = {
       },
       {
         file: "tests/lib/report/model.test.ts",
-        name: "splits keys, names them from boot, and re-encodes a one-key token each",
+        name: "splits keys, names them 'Full Name (KEY)' from boot (P3: paLabel), and re-encodes a one-key token each",
       },
       {
         file: "e2e/report.spec.ts",

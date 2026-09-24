@@ -85,8 +85,8 @@ and the Atlas side by side at the same view. <b>atlas-9's cutover is gated on th
 
 <div class="meta">
 <dl>
-  <dt>Atlas version</dt><dd>0.10.38 · generated against commit <code data-volatile="sha">unknown</code> (the commit that ADDS this page is its child)</dd>
-  <dt>Generated</dt><dd><span data-volatile="generated">2026-09-24 05:29 UTC</span></dd>
+  <dt>Atlas version</dt><dd>0.10.43 · generated against commit <code data-volatile="sha">unknown</code> (the commit that ADDS this page is its child)</dd>
+  <dt>Generated</dt><dd><span data-volatile="generated">2026-09-24 06:31 UTC</span></dd>
   <dt>Release compared</dt><dd><b>v7</b> — today's <code>latest.txt</code>, the only release both hosts serve publicly</dd>
   <dt>Shiny host</dt><dd><code>https://app.marinesensitivity.org/v7</code></dd>
   <dt>Atlas host</dt><dd><code>https://marinesensitivity.org/atlas</code></dd>
@@ -924,7 +924,7 @@ retyped). Evidence links go to <code>https://github.com/MarineSensitivity/atlas/
   <td class="id"><a href="#R-02">R-02</a></td>
   <td class="text">Multiple areas → tab-set (HTML), one ### &lt;label&gt; per area under Plot of Scores and Summary of Species, in submission order.<div class="note">tabs on screen, sequential in print (the print stylesheet flattens them).</div></td>
   <td class="status"><span class="pill done">done</span></td>
-  <td class="evidence"><a href="https://github.com/MarineSensitivity/atlas/blob/main/tests/lib/report/scores.test.ts"><code>lib/report/scores.test.ts</code></a> <span class="tname">keeps the places in the order given -- no sorting, no row limit (report.qmd:326-349)</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/tests/lib/report/model.test.ts"><code>lib/report/model.test.ts</code></a> <span class="tname">splits keys, names them from boot, and re-encodes a one-key token each</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/e2e/report.spec.ts"><code>report.spec.ts</code></a> <span class="tname">two Program Areas: header, table of scores and per-place flowers all render</span></td>
+  <td class="evidence"><a href="https://github.com/MarineSensitivity/atlas/blob/main/tests/lib/report/scores.test.ts"><code>lib/report/scores.test.ts</code></a> <span class="tname">keeps the places in the order given -- no sorting, no row limit (report.qmd:326-349)</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/tests/lib/report/model.test.ts"><code>lib/report/model.test.ts</code></a> <span class="tname">splits keys, names them 'Full Name (KEY)' from boot (P3: paLabel), and re-encodes a one-key token each</span><br><a href="https://github.com/MarineSensitivity/atlas/blob/main/e2e/report.spec.ts"><code>report.spec.ts</code></a> <span class="tname">two Program Areas: header, table of scores and per-place flowers all render</span></td>
 </tr>
 <tr id="R-03">
   <td class="id"><a href="#R-03">R-03</a></td>

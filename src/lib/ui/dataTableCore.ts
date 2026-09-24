@@ -14,6 +14,48 @@ export interface DataTableColumn<T> {
   /** numeric columns compare with plain subtraction (never string/locale compare -- see
    * `compareValues()`), so "10" never sorts before "9". */
   numeric?: boolean;
+  /** P3 fix (owner-reported, 2026-09-24): a column whose content is always short (a boolean
+   * Yes/No, a two-letter code) and can fit narrower than the text-column minimum -- see
+   * `columnWidthPx()`. Defaults to `numeric`'s own width when unset. */
+  narrow?: boolean;
+}
+
+// P3 fix (owner-reported, 2026-09-24): "Table is an absurdity of unintelligible ellipses" -- 12
+// species-table columns divided evenly across a 390px phone panel gave each ~2 characters before
+// an ellipsis. Text columns now get a READABLE minimum width and the table scrolls horizontally
+// instead of squeezing; numeric/boolean columns (short, fixed-vocabulary content) fit narrower.
+//
+// PIXELS, not `ch` (a "~10ch" text minimum is the intent, and these approximate it at this app's
+// UI font size) -- `table-layout: fixed` only honours a `<colgroup>`'s widths once the `<table>`
+// itself has a DEFINITE width (CSS 2.1 SS17.5.2: "if the used value of 'width' is 'auto', the
+// layout algorithm used may be either the fixed or the automatic"). `width: max-content` (what
+// this used to be) is NOT a definite length, so it does not satisfy that rule -- measured on real
+// Chromium: with `width: max-content` (or plain `auto`), fixed-layout `<col>` widths were IGNORED
+// outright and every column sized itself from its own CONTENT instead (a 10-row bare-HTML repro,
+// no app code involved, showed the exact same thing). The caller must therefore give the `<table>`
+// an explicit pixel `width` -- the SUM of its own visible columns' `columnWidthPx()`, paired with
+// `min-width: 100%` so it still stretches (proportionally) to fill a panel wide enough to hold
+// every column with room to spare.
+export const TEXT_COLUMN_WIDTH_PX = 88;
+export const NARROW_COLUMN_WIDTH_PX = 60;
+
+/** the CSS column width, in px, for a column: `numeric` or `narrow` columns fit their short
+ * content; every other column never goes below the readable minimum. Consumed via a `<colgroup>`
+ * (an explicit per-column width, rather than dividing the container evenly) AND summed by the
+ * caller into the `<table>`'s own explicit `width` -- see this module's header for why both are
+ * required for `table-layout: fixed` to actually honour it. */
+export function columnWidthPx(col: Pick<DataTableColumn<unknown>, "numeric" | "narrow">): number {
+  return col.numeric || col.narrow ? NARROW_COLUMN_WIDTH_PX : TEXT_COLUMN_WIDTH_PX;
+}
+
+/** the `<table>`'s own explicit width: the sum of every visible column's `columnWidthPx()`, plus
+ * any fixed-width leading column (e.g. a selection checkbox, in px) a caller renders outside the
+ * `DataTableColumn` list. */
+export function totalTableWidthPx(
+  columns: readonly Pick<DataTableColumn<unknown>, "numeric" | "narrow">[],
+  leadingPx = 0,
+): number {
+  return columns.reduce((sum, col) => sum + columnWidthPx(col), leadingPx);
 }
 
 export type SortDirection = "asc" | "desc" | null;

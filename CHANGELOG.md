@@ -21,6 +21,92 @@
   other select-like control. The phone ⋯ menu's "Take a tour" now has its own icon, distinct from
   "Docs".
 
+# atlas 0.10.43
+
+P4 (Ben, phone, "Report" tool, live 0.10.37): the Report map was duplicated and seemingly empty
+(or at least never zoomed to the selected place), and the Table of Scores printed a footnote on
+nearly every cell.
+
+- **The Report map is ONE figure again.** The static print/export snapshot (`.map-print`) is now
+  hidden on screen by default (it only shows for print or the downloaded HTML) — previously it sat
+  visible right below the live interactive map, reading as two stacked, mostly-empty map boxes.
+- **A Program-Area place now draws its real polygon and the camera fits it.** The report map used
+  to draw a zone place only as a circle at its `label_pt` — a field no published release actually
+  carries, so the place was silently dropped and the camera never left its default view ("not
+  zoomed to selected/drawn areas"). It now draws the place's real polygon from the release's own
+  PMTiles (the same source the live Atlas already uses) and flies the camera to its real extent.
+- **Table of Scores footnotes are grouped, one per area, and only for genuinely partial coverage.**
+  The floor moved from "anything under ~100 % coverage" (which footnoted almost every cell) to
+  99 %, and every component below it — plus any component the release's own 5 % coverage floor
+  dropped entirely — now joins ONE sentence per area ("ALA: turtle scored over 88.3% of the
+  area.") instead of a separate near-duplicate footnote per component. A mean-where-scored note is
+  appended only when it differs from the displayed value. Every export (HTML, DOCX, ZIP) reflects
+  the same footnotes as the screen.
+
+# atlas 0.10.42
+
+R2, round 3 (owner finding on live at 390x844: Scores → Table → Species for cell 3092526, and
+the Places tool's Program Area list).
+
+- **The species/zones tables no longer squeeze every column to ~2 characters.** Columns get a
+  readable minimum width (text) or fit their short content (numeric/boolean); the TABLE now
+  scrolls horizontally when it doesn't fit (the panel itself never does), with the identifying
+  column (Scientific name / Zone) and the header row both sticky. Header labels wrap instead of
+  truncating. The same min-width/sticky/scroll treatment applies to `src/lib/ui/DataTable.svelte`
+  (the Places panel's Components/Species tables).
+- **Phone-width (< 900px) species table**: opens with a compact six-column default (Category,
+  Scientific name, Common name, ER code, ER score, Area) and a new "Columns" control to add/remove
+  any column; the choice persists for the session. Desktop is unchanged (every column, still with
+  the new min-width/scroll behavior).
+- **Program Area names**: everywhere a Program Area is presented (the Places panel's list, the
+  zones table), the label now reads "Full Name (KEY)" when the release publishes a name, falling
+  back to the bare key otherwise (`paLabel()`) — never the bare key alone when a name exists.
+
+# atlas 0.10.41
+
+P2 (owner finding on live 0.10.37, phone/dark theme, Scores lens, Flower plot tool): the flower
+plot sat left of centre in its panel, tabbing to or tapping a petal drew a stray focus rectangle
+around it, petal values never showed on tap/hover, and the values under the plot were a prose
+paragraph instead of a list.
+
+- **Centred.** The flower figure is centred in its panel, and its SVG is centred within its own
+  wrapper, instead of sitting flush left with empty space on the right.
+- **No more stray outline rectangle.** `outline` on an SVG petal always painted the element's
+  bounding box, not its actual wedge shape — replaced with a purpose-drawn stroke highlight that
+  follows the petal's own geometry, shown only on a real tap/click or keyboard focus (never on a
+  bounding-box rectangle).
+- **Tap (or hover, on desktop) a petal to see its value.** A small label with the component's name
+  and its score (one decimal) appears near the hub; tapping the same petal again, or elsewhere,
+  dismisses it; desktop hovering shows the same label without a click.
+- **Values are a table now, not a paragraph.** Component swatch, name and score are listed under
+  the plot as a real table, ordered as the petals are, with the composite mean as the last row; the
+  prose summary sentence is now a screen-reader-only alternative rather than a second, visible copy
+  of the same "Cell ID … (x, y)" line the panel's own header already shows once.
+
+# atlas 0.10.40
+
+P1, round 2 (owner finding on the LIVE app, 390x844, dark, v7, Scores lens, 2026-09-24): the
+phone legend chip overlapped the bottom sheet, and the legend it opened was blank.
+
+- **The legend chip no longer overlaps the sheet, at any detent.** It used to float at a FIXED
+  distance from the bottom regardless of the sheet's state — squarely on top of the sheet's own
+  collapse/half/full buttons when collapsed ("peek"), and over the last row of whatever the sheet
+  was scrolled to at "half"/"full". It now tracks the sheet's REAL measured height (`Sheet.svelte`'s
+  new `ongeometry`) and floats just above its top edge at every detent except "full", where it
+  moves INSIDE the sheet's own header block instead (a real, non-scrolling row under the drag
+  handle/title — never over the header buttons, never lost in the scrolling body).
+- **Tapping the chip now opens a real legend, not a blank dialog.** `ScoresLegend.svelte`/
+  `SpeciesLegend.svelte` used to hide their own root below 900px ("no room beside the sheet" on
+  desktop) — but the phone modal reuses that same component verbatim, so the same rule blanked the
+  modal's body on the one viewport it was built to serve. The desktop-only hiding now lives in a
+  wrapper class the shell owns (`shell.css`'s `.lens-legend-region`) instead of inside the
+  components themselves. Fixing that also exposed the legend's own desktop `position: absolute`
+  placement spilling its ramp past the (narrower) modal's edge — neutralized to normal flow inside
+  the modal so it now renders fully contained, ramp + both endpoint labels.
+- The chip's own label is now the short, fixed word **"Legend"**, with the metric name shown after
+  it only as space allows (never wrapping to a second line); the full title is unaffected in the
+  modal.
+
 # atlas 0.10.38
 
 **U4 — the Layers model (round-2 plan §5 U4, `docs/usability.md` §7 R3, Ben's decision 2026-09-24):

@@ -208,10 +208,22 @@
   let mapStarted = false;
 
   $effect(() => {
-    if (mapStarted || !mapEl || !model || model.map.places.length === 0) return;
+    // P4: dropped the old `model.map.places.length === 0` exclusion -- a report with NO places
+    // (reachable only by hand-editing the URL today, but the brief's own rule: "the study-area-wide
+    // report fits the study area") used to leave `mapEl` permanently unmounted, an inert empty box
+    // forever. `mountMap()` itself now branches on an empty `stubs` to fly to the full study area
+    // with no place layers, rather than this effect silently skipping the section altogether.
+    if (mapStarted || !mapEl || !model) return;
     mapStarted = true;
     void mountMap();
   });
+
+  /** the map's fitted bounds, written to `mapEl.dataset.fittedBounds` once the camera settles on
+   * its FINAL view -- the e2e seam `e2e/report.map.spec.ts` reads instead of racing the `flyTo`
+   * animation itself (P4). `null` (as the JSON literal `"null"`) when nothing to fit. */
+  function writeFittedBoundsAttr(bounds: [[number, number], [number, number]] | null) {
+    if (mapEl) mapEl.dataset.fittedBounds = JSON.stringify(bounds);
+  }
 
   async function mountMap() {
     if (!mapEl || !model) return;
@@ -220,9 +232,11 @@
     // the app's real antimeridian-aware bounds fitting instead of MapLibre's own `fitBounds`
     // (m8, atlas-8 review round 2: no trailing "()" here on purpose -- `no-fitbounds.test.ts`'s
     // scan now covers this directory too, and its regex would otherwise flag this comment).
-    const [mapMod, { createMap }] = await Promise.all([
+    const [mapMod, { createMap }, zonesMod, interactionMod] = await Promise.all([
       import("./reportMap"),
       import("../lib/map/map"),
+      import("../lib/map/layers/zones"),
+      import("../lib/map/interaction"),
     ]);
     const paletteStops = paletteStopsFromBoot(boot as { palettes?: unknown }, "spectral_r");
     const features = stubs.map((s, i) => ({
@@ -234,15 +248,76 @@
           ? (mapMod.zonePointFromBoot(boot, s.unit ?? s.place.set, s.zoneKey ?? "") ?? undefined)
           : undefined,
     }));
+
+    // P4 (B1, "the report map draws no place"): a zone place's REAL Program-Area polygon, from the
+    // release's own PMTiles archive -- grouped by unit, each unit carrying only the keys THIS
+    // report asked about, coloured with this report's OWN ramp (never the release's).
+    const zoneUnits = zonesMod.zoneUnitsFromBoot(boot);
+    const zoneGroups = zoneUnits
+      .map((unit) => {
+        const entries = stubs
+          .map((s, i) => ({ s, i }))
+          .filter(({ s }) => s.place.kind === "zone" && (s.unit ?? s.place.set) === unit.unit)
+          .map(({ s, i }) => ({
+            key: s.zoneKey ?? (s.place.kind === "zone" ? s.place.keys[0] : ""),
+            score: model!.map.places[i]?.score ?? null,
+          }));
+        return { unit, keyColors: mapMod.zoneKeyColors(entries, model!.map.domain, paletteStops) };
+      })
+      .filter((g) => Object.keys(g.keyColors).length > 0);
+
     const { style } = await mapMod.buildReportMapStyle({
       places: features,
       domain: model.map.domain,
       paletteStops,
+      zoneGroups,
     });
     const handle = createMap(mapEl, { theme: "paper", projection: "mercator" });
     handle.applyStyle(style);
-    const bounds = mapMod.combinedBbox(features);
-    if (bounds) handle.flyToBounds(bounds, { padding: 40 });
+    // the map's public test/automation seam (docs/map.md's convention -- Shell.svelte's own
+    // `window.__atlasMap`, mirrored here): exposes nothing a viewer could not already read off the
+    // page.
+    (window as unknown as { __reportMap?: unknown }).__reportMap = { handle };
+
+    const geomBounds = mapMod.combinedBbox(features.filter((f) => f.geometry));
+    if (zoneGroups.length === 0 && stubs.length > 0) {
+      // no zone place needs its polygon queried (custom/drawn places only, or a zone place whose
+      // point-only fallback is all `combinedBbox` can offer) -- the OLD one-shot path, unchanged.
+      const bounds = geomBounds ?? mapMod.combinedBbox(features);
+      if (bounds) handle.flyToBounds(bounds, { padding: 40 });
+      writeFittedBoundsAttr(bounds);
+    } else {
+      // a zone place (or no place at all -- "the study-area-wide report fits the study area"):
+      // fly PROVISIONALLY to the full study area first, wide enough that every unit's low-zoom
+      // tiles are guaranteed to cover it, then refine to the REAL rendered polygon bbox once the
+      // pmtiles source has settled.
+      const full = interactionMod.studyAreaFromBoot(boot, "FULL");
+      handle.flyTo(full);
+      // TWICE, with a real wall-clock gap between -- the SAME pattern `captureMapPng` (reportMap.ts)
+      // already needs and documents: "idle" fires once a tile's NETWORK FETCH resolves, not once a
+      // vector tile's WORKER-SIDE PARSE finishes, so a query fired the instant the first "idle"
+      // lands can still read a layer with zero features even though the matching data is already in
+      // flight -- measured directly (report.map.spec.ts's own red run against a single wait).
+      await mapMod.waitForIdle(handle.map as never);
+      await new Promise((r) => setTimeout(r, mapMod.CAPTURE_DECODE_SETTLE_MS));
+      await mapMod.waitForIdle(handle.map as never);
+      let finalBounds = geomBounds;
+      if (zoneGroups.length > 0) {
+        const layers = zoneGroups.map((g) => `report-zone-fill-${g.unit.unit}`);
+        const rendered = (
+          handle.map as unknown as {
+            queryRenderedFeatures(opts: {
+              layers: string[];
+            }): { geometry: { type: string; coordinates: unknown } }[];
+          }
+        ).queryRenderedFeatures({ layers });
+        const zoneBounds = mapMod.bboxFromRenderedFeatures(rendered);
+        finalBounds = mapMod.unionBounds(geomBounds, zoneBounds ?? mapMod.combinedBbox(features));
+      }
+      if (finalBounds) handle.flyToBounds(finalBounds, { padding: 40 });
+      writeFittedBoundsAttr(finalBounds);
+    }
+
     try {
       const png = await mapMod.captureMapPng(handle.map as never);
       mapPngUrl = png.dataUrl;

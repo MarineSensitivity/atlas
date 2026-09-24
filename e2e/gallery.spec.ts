@@ -369,19 +369,22 @@ test.describe("atlas-3 step 2b: the data components (Flower, DataTable, Treemap)
     await expect(page.locator("#treemap-empty .cell")).toHaveCount(0);
   });
 
-  test("Flower: the data-table toggle shows the SAME numbers as the petals' tooltips", async ({
+  test("Flower: the always-visible values table shows the SAME numbers as the petals' tooltips", async ({
     page,
   }) => {
+    // atlas-4 fix round 3: the "Show table" toggle is gone -- the table is now always rendered
+    // alongside the chart (owner: values "lined up in a table or bulleted list", not hidden behind
+    // a click), so this no longer needs to open anything first.
     await gotoGallery(page, "navy");
     const flower = page.locator("#flower-eight");
     const petalLabels = await flower
       .locator(".petal")
       .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
-    await flower.getByRole("button", { name: "Show table" }).click();
     const rows = await flower.locator(".flower-table tbody tr:not(.mean-row)").evaluateAll((trs) =>
       trs.map((tr) => {
+        // the swatch cell (first <td>) carries no text -- component name/score are cells 2 and 3.
         const cells = tr.querySelectorAll("td");
-        return `${cells[0]?.textContent}: ${cells[1]?.textContent}`;
+        return `${cells[1]?.textContent}: ${cells[2]?.textContent}`;
       }),
     );
     expect(rows).toEqual(petalLabels);

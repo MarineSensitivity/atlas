@@ -696,21 +696,45 @@ button.chip {
   }
 }
 
-/* R2 (docs/usability.md §7): the phone legend chip, above the bottom tab bar -- the phone's
-   substitute for the desktop floating legend (ScoresLegend.svelte/SpeciesLegend.svelte, both
-   `display:none` below 900px, "no room beside the sheet"). Shares the rail's own reserved-row
+/* R2 (docs/usability.md §7): the phone legend chip -- the phone's substitute for the desktop
+   floating legend (ScoresLegend.svelte/SpeciesLegend.svelte). Shares the rail's own reserved-row
    custom property (`--size-rail-row`, set on `.stage` above) by being a sibling of `.panel-region`
    inside the same `.stage`, so it never drifts from the rail's actual footprint either. Desktop
-   never renders
-   this element at all (Shell.svelte gates it on `isPhone`), so no `@media` guard is needed to hide
-   it there. */
+   never renders this element at all (Shell.svelte gates it on `isPhone`), so no `@media` guard is
+   needed to hide it there.
+
+   P1 fix (Ben's phone report, 2026-09-24): this used to sit at a FIXED `bottom` regardless of the
+   sheet's detent, which put it on top of the sheet's own header controls at "peek" (a 96px-tall
+   sheet reaches well past this offset) and the last table row at "half"/"full". `bottom` now adds
+   `--legend-chip-sheet-height` -- the sheet's REAL measured height, Shell.svelte's own
+   `sheetGeom.height` (Sheet.svelte's `ongeometry`, sheetGeometry.ts's `SheetGeometry`) turned into
+   an inline custom property on this element -- so the chip's bottom edge always lands just above
+   the sheet's actual top edge, moving with it at every detent Shell.svelte still floats it at
+   (`legendChipMode` returns "inline" at "full" instead: Shell.svelte then doesn't render this
+   region at all, and the chip moves inside the sheet's own header block, `.sheet-header-extra`,
+   Sheet.svelte). The `0px` fallback is what "no sheet mounted yet" degrades to -- the sheet's own
+   default `.sheet` height applies before its first real layout, same as before this fix. */
 .legend-chip-region {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--size-rail-row, 64px) + var(--space-2));
+  bottom: calc(var(--size-rail-row, 64px) + var(--legend-chip-sheet-height, 0px) + var(--space-2));
   z-index: 17;
   transform: translateX(-50%);
   max-width: calc(100vw - var(--space-4) * 2);
+}
+
+/* P1 fix: the desktop floating legend's OWN "no room on the phone" hiding now lives here, Shell-
+   owned (the wrapper Shell.svelte puts around ScoresLegend.svelte/SpeciesLegend.svelte in their
+   desktop branch), instead of inside those components themselves -- they used to hide their own
+   root below 900px, which broke LegendChip.svelte's modal reuse of the SAME component (the modal
+   rendered on the phone by definition, so the component's own rule made its body blank, "Legend"
+   with nothing under it). Shell.svelte already never MOUNTS this branch on the phone (`isPhone`
+   gates it in the template) -- this is defense in depth for the moment between a viewport crossing
+   900px and that gate re-rendering, not the primary mechanism. */
+@media (max-width: 899px) {
+  .lens-legend-region {
+    display: none;
+  }
 }
 
 /* the phone ⋯ overflow menu trigger + its menu -- the one door to Share/Report/Feedback/About/Help
