@@ -13,8 +13,21 @@
        tokens like `--cat-primprod`) overflowed the PAGE at 320 CSS px -- SC 1.4.10 (Reflow)
        explicitly exempts data tables from the no-2D-scroll rule, so the fix is a scroll container
        around just the table, not squeezing the table itself: the page never gets a horizontal
-       scrollbar, and the table's own content never truncates or wraps mid-token. -->
-  <div class="cat-table-scroll">
+       scrollbar, and the table's own content never truncates or wraps mid-token.
+
+       gallery axe ceilings fix: that containment never actually engaged until `.col`'s own
+       `min-width: 0` (this round's fix, above) stopped the overflow being silently absorbed by
+       `#gallery-main` instead -- so this div was never genuinely internally scrollable before, and
+       axe's `scrollable-region-focusable` rule (serious: "Scrollable region must have keyboard
+       access") never had anything to flag. Now that it IS the thing that scrolls, a plain
+       read-only table gives it no focusable descendant of its own (unlike DataTable.svelte's
+       `.scroll-region`, whose sortable/filterable grid always has one) -- `tabindex="0"` makes the
+       region itself a keyboard stop (native arrow-key scroll once focused); `role="group"` (never
+       `region`) + `aria-label` names that stop without nesting a second landmark inside the
+       section's own (`Sheet.svelte`'s `.sheet-body` / `Panel.svelte`'s `.panel-body` fix, same
+       idiom). -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <div class="cat-table-scroll" role="group" aria-label="Species categories table" tabindex="0">
     <table class="cat-table">
       <caption>The eight species categories (docs/design/spec.md "Data color")</caption>
       <thead>

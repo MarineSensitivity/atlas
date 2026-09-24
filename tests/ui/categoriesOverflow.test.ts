@@ -15,7 +15,7 @@ const SOURCE = readFileSync(
 
 describe("Categories.svelte's table sits inside a scroll container", () => {
   it("the table is wrapped in .cat-table-scroll", () => {
-    expect(SOURCE).toMatch(/<div class="cat-table-scroll">[\s\S]*<table class="cat-table">/);
+    expect(SOURCE).toMatch(/<div class="cat-table-scroll"[^>]*>[\s\S]*<table class="cat-table">/);
   });
 
   it(".cat-table-scroll caps its own width and scrolls horizontally, not the page", () => {
@@ -23,14 +23,37 @@ describe("Categories.svelte's table sits inside a scroll container", () => {
     expect(styleBlock).toMatch(/\.cat-table-scroll\s*{[^}]*max-width:\s*100%/);
     expect(styleBlock).toMatch(/\.cat-table-scroll\s*{[^}]*overflow-x:\s*auto/);
   });
+
+  // gallery axe ceilings fix: `.cat-table-scroll` only became genuinely internally scrollable
+  // once `.col` got its own `min-width: 0` (this round) -- before that the overflow was silently
+  // absorbed by `#gallery-main` instead, so this div's scrollWidth never actually exceeded its
+  // clientWidth and axe's `scrollable-region-focusable` rule ("Scrollable region must have
+  // keyboard access", serious) had nothing to flag. A plain read-only table gives the region no
+  // focusable descendant of its own (unlike DataTable.svelte's `.scroll-region`, whose
+  // sortable/filterable grid always has one), so the region itself must be the keyboard stop.
+  it("is keyboard-focusable with an accessible name, not a second nested landmark", () => {
+    expect(SOURCE).toMatch(/<div class="cat-table-scroll"[^>]*\btabindex="0"/);
+    // role="group", never "region" -- the gallery section (App.svelte's aria-labelledby
+    // <section>) is already an implicit region; a nested region here would be a second landmark
+    // with a near-duplicate name (Sheet.svelte's .sheet-body / Panel.svelte's .panel-body fix,
+    // same idiom).
+    expect(SOURCE).toMatch(/<div class="cat-table-scroll"[^>]*\brole="group"/);
+    expect(SOURCE).not.toMatch(/<div class="cat-table-scroll"[^>]*\brole="region"/);
+    expect(SOURCE).toMatch(/<div class="cat-table-scroll"[^>]*\baria-label="[^"]+"/);
+  });
 });
 
 describe("the gate can fail (seeded fault)", () => {
   it("catches the ORIGINAL unwrapped table (no scroll container at all)", () => {
-    const faulted = SOURCE.replace(/<div class="cat-table-scroll">\s*/, "").replace(
+    const faulted = SOURCE.replace(/<div class="cat-table-scroll"[^>]*>\s*/, "").replace(
       /\s*<\/div>\n(\s*<p class="label">)/,
       "\n$1",
     );
-    expect(faulted).not.toMatch(/<div class="cat-table-scroll">/);
+    expect(faulted).not.toMatch(/<div class="cat-table-scroll"/);
+  });
+
+  it("catches the scrollable region losing its keyboard focusability (tabindex dropped)", () => {
+    const faulted = SOURCE.replace(/(<div class="cat-table-scroll"[^>]*)\s+tabindex="0"/, "$1");
+    expect(faulted).not.toMatch(/<div class="cat-table-scroll"[^>]*\btabindex="0"/);
   });
 });
