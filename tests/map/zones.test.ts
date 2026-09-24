@@ -121,16 +121,37 @@ describe("sources and ids", () => {
 
 describe("layers", () => {
   it("the line layer carries the table's paint and a dash only where the table has one", () => {
-    expect(zoneLineLayer(PRA)).toMatchObject({
+    expect(zoneLineLayer(PRA, "navy")).toMatchObject({
       id: "programarea_ln",
       type: "line",
       source: "programarea_src",
       "source-layer": "programarea",
       paint: { "line-color": "#ffffff", "line-width": 1, "line-opacity": 1 },
     });
-    expect(zoneLineLayer(PRA).paint).not.toHaveProperty("line-dasharray");
-    const sub = zoneLineLayer({ ...PRA, unit: "subregion" });
+    expect(zoneLineLayer(PRA, "navy").paint).not.toHaveProperty("line-dasharray");
+    const sub = zoneLineLayer({ ...PRA, unit: "subregion" }, "navy");
     expect(sub.paint).toMatchObject({ "line-dasharray": [3, 3] });
+  });
+
+  // R9 (owner, 2026-09-24): white reads fine on the dark-matter basemap the zone_style table was
+  // designed against, but is near-invisible on the paper theme's light one -- programarea/planarea
+  // (and the "anything else" default row) recolor by theme; ecoregion (already black) and
+  // subregion (already grey) do not, because they were never the near-basemap case.
+  it("paper substitutes brand navy ink for a white stroke; navy is unchanged", () => {
+    expect(zoneLineLayer(PRA, "paper").paint).toMatchObject({ "line-color": "#001a57" });
+    expect(zoneLineLayer(PRA, "navy").paint).toMatchObject({ "line-color": "#ffffff" });
+    expect(zoneLineLayer({ ...PRA, unit: "planarea" }, "paper").paint).toMatchObject({
+      "line-color": "#001a57",
+    });
+    const fallback = zoneLineLayer({ ...PRA, unit: "some-future-unit" }, "paper");
+    expect(fallback.paint).toMatchObject({ "line-color": "#001a57" }); // the default row is white too
+  });
+
+  it("ecoregion (black) and subregion (grey) do not change with theme", () => {
+    expect(zoneLineLayer(ECO, "paper").paint).toMatchObject({ "line-color": "#000000" });
+    expect(zoneLineLayer(ECO, "navy").paint).toMatchObject({ "line-color": "#000000" });
+    const sub = zoneLineLayer({ ...PRA, unit: "subregion" }, "paper");
+    expect(sub.paint).toMatchObject({ "line-color": "#d9d9d9" });
   });
 
   it("no fill layer unless the lens supplied values (outline-only is the default)", () => {

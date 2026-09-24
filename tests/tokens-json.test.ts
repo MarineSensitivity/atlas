@@ -36,10 +36,16 @@ describe("tokens.json (atlas-3 step 2)", () => {
     expect(Object.keys(paper).sort()).toEqual(Object.keys(navy).sort());
   });
 
-  it("disagrees on --fill-accent (Gold on navy, Steel on paper — spec.md §14.1)", () => {
+  it("agrees on --fill-accent (Gold in both themes — R5 y1, docs/usability.md §7)", () => {
     const { navy, paper } = exportTokens(CSS);
     expect(navy["--fill-accent"]).toBe("#e8c24a");
-    expect(paper["--fill-accent"]).toBe("#173d6d");
+    expect(paper["--fill-accent"]).toBe("#e8c24a");
+  });
+
+  it("disagrees on --border-accent (Gold on navy, Navy on paper — R5 y1's ring)", () => {
+    const { navy, paper } = exportTokens(CSS);
+    expect(navy["--border-accent"]).toBe("#e8c24a");
+    expect(paper["--border-accent"]).toBe("#001a57");
   });
 
   it("goes red when a token changes without a matching re-export (the seeded fault)", () => {

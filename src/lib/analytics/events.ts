@@ -42,6 +42,13 @@ export const EVENT_NAMES = [
   "tour_step",
   "tour_end",
   "open_help",
+  // U3 (round 2): "Send feedback" (FeedbackDialog.svelte). Only `kind` and `restricted` ever ride
+  // on these -- never the text, the email or the URL (the same privacy rule
+  // tests/analytics/noRawLocation.wiring.test.ts already enforces for the page location; here it
+  // is enforced by these two events' own param shape below, which has no field for any of those
+  // three).
+  "feedback_open",
+  "feedback_sent",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -115,4 +122,6 @@ export interface EventParamsMap {
   tour_step: { lens: string; step: string; index: number };
   tour_end: { lens: string; completed: boolean };
   open_help: Record<string, never>;
+  feedback_open: { kind: string; restricted: boolean };
+  feedback_sent: { kind: string; restricted: boolean };
 }

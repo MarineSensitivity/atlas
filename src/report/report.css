@@ -180,8 +180,13 @@ figure {
 
 .flower-tabs button[aria-selected="true"] {
   background: var(--fill-accent, #1b6e7a);
-  color: #fff;
-  border-color: transparent;
+  /* R5 y1: report.html is always the paper theme, where --fill-accent is now brand gold -- a
+     literal white here (this file predates that token, and lives outside src/lib/{brand,ui}'s
+     check-hex-literals scan) was 1.71:1 (matrix.a11y caught it: "Gulf of America" tab, real
+     content). --text-on-accent and --border-accent are the SAME tokens the app's own active
+     controls now carry for this exact reason. */
+  color: var(--text-on-accent, #fff);
+  border-color: var(--border-accent, transparent);
 }
 
 .flower-panel[hidden] {

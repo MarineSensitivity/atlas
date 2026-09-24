@@ -1,53 +1,202 @@
-# Beta feedback: zero backend
+# Send feedback
 
-atlas-8 Deliverable 4. "Report a problem" (the About card, bottom-left over the map, desktop only —
-see `src/shell/Shell.svelte`'s `.about-region`) opens a prefilled GitHub issue in
-`MarineSensitivity/atlas`, labeled `beta-feedback`. No server: the same fallback CalCOFI Explorer
-used (`atlas-refs/"calcofi explore review.md"`'s own citation).
+U3 (round 2). The "Report a problem" control (About card, bottom-left over the map — see
+`src/shell/Shell.svelte`'s `.about-region`; U1's top-bar "Feedback" control will call the same
+function once it lands) opens `src/lib/feedback/FeedbackDialog.svelte`: a screenshot of the current
+view, an optional hand-drawn annotation, a kind (bug / idea / question / data), a short text, an
+optional email, and a privacy checkbox. It posts to a Google Apps Script endpoint that writes a
+Sheet row, mails the team, and (for a **public** release only) files a GitHub issue with the
+screenshot. With no endpoint configured, or when the release is **restricted**, it degrades
+gracefully rather than failing silently — see "What happens without an endpoint" below.
 
-## What the issue body carries
+This replaces the atlas-8 "beta feedback, zero backend" control (0.10.16); the zero-backend
+GitHub-issue path is kept as the fallback, not removed. The control's own anchor `href` (a plain
+prefilled GitHub issue link, `src/lib/feedback/issueUrl.ts`) still degrades gracefully with
+JS disabled — a normal click now opens the dialog instead (`Shell.svelte`'s `openFeedback()`).
 
-`src/lib/feedback/issueUrl.ts`'s `feedbackIssueUrl(ctx)` — a pure function, unit-tested in
-`tests/feedback/issueUrl.test.ts` — composes:
+## What the dialog composes
 
-- the app version (`__APP_VERSION__`) and the git SHA (`__APP_SHA__`, `vite.config.ts`'s `define`;
-  `"unknown"` when git is unavailable, e.g. a CI fixture build)
-- the resolved release (`ver`)
-- the lens (`scores`/`species`)
-- the page URL, **fragment stripped, query kept** (`origin + pathname + search`) — never
-  `location.href`. The fragment carries a drawn place (`#pl=`) or the report title (`#t=`); plan D8's
-  privacy rule ("geometry never leaves the browser, not even to analytics") applies here too.
-  `src/lib/feedback/**` never reads the live page location itself — the caller (`Shell.svelte`)
-  builds the query from the reactive `Sel` (`formatSel(sel).search`, not `location.search`) so the
-  link's `href` stays current across a lens/release/theme change, and hands in a plain object with no
-  `hash`/`href` field at all. `tests/feedback/noHash.test.ts` is the source-scan gate that keeps it
-  that way (the same technique `tests/analytics/noRawLocation.wiring.test.ts` uses).
-- the browser's user agent, viewport size and resolved theme
-- a short "What happened / What you expected" template
+`src/lib/feedback/payload.ts`'s `buildFeedbackPayload(input)` — a pure function, unit-tested in
+`tests/feedback/payload.test.ts` — composes the exact JSON body the endpoint receives:
 
-The whole URL is encoded with `URLSearchParams` and kept under ~7,500 characters (GitHub truncates a
-`new/…` issue URL around 8 KB): the user agent is trimmed first, then the template is dropped —
-never an identifier (version, SHA, release, lens, URL).
+```
+{ app: "atlas", kind, title, text, email, url?, release, version, sha, lens, viewport, theme,
+  user_agent, image?, website, restricted }
+```
 
-## `VITE_FEEDBACK_URL` (optional, build-time)
+- **`kind`** is one of `bug` / `idea` / `question` / `data` (Ben's R6 decision) — it becomes both
+  the segmented control's selection and, verbatim, the GitHub issue's label.
+- **`url`** is present **only if the reporter ticks "Include my current view link"** (off by
+  default) — the privacy rule (plan D8, the same one `issueUrl.ts`'s zero-backend link already
+  enforced): the URL fragment (a drawn place's geometry, `#pl=`) never leaves the device unless the
+  reporter deliberately opts in. Unticked, the `url` key is **absent from the payload entirely** —
+  not just hash-stripped, not present-but-empty. `src/lib/feedback/**` never reads the live page
+  location itself; `Shell.svelte` builds `pageUrl` (fragment-stripped, query kept) and a snapshot of
+  the raw hash the same way it always has for the zero-backend link, and hands both to the dialog as
+  plain props. `tests/feedback/noHash.test.ts` is this directory's own source-scan gate for that
+  (extended from the original Deliverable 4 gate — still the same forbidden literal tokens).
+- **`restricted`** comes from the resolved release's `versions.json` `access` field (`"restricted"`
+  → `true`; `"public"`, `"unknown"`, or unresolved → `false`) — read in `Shell.svelte` off the SAME
+  `versions` rows the release picker already resolves, **never** `src/lib/release/access.ts`'s
+  `accessOf()` (`tests/shell/shell-invariants.test.ts`: `Shell.svelte` may not import
+  `../lib/release` at all — the early-fetch script is the one place that logic runs before any
+  bundle parses).
+- **`image`** is a `data:image/...` URL, present only when a screenshot was captured, kept
+  ("Include screenshot" stays checked), and fits under `MAX_IMAGE_DATA_URL_LENGTH` (~4.5 MB of
+  base64 text — `capture.ts`'s own `fitBytes()` already keeps the PNG itself under ~3 MB before it
+  ever reaches the payload builder).
+- **`website`** is the honeypot: a visually-hidden `<input>` a real person never fills; the SERVER
+  (`Code.gs`) is what actually rejects a non-empty value, not this pure function.
 
-Unset (the default): the control is a plain `<a target="_blank" rel="noopener">` to the GitHub link
-above.
+## The screenshot and the annotator
 
-Set to an Apps Script (or similar) `/exec` endpoint: clicking the control instead `fetch`es the same
-context there as JSON, `keepalive: true`, `Content-Type: text/plain` (keeps it a CORS "simple
-request" — an Apps Script endpoint answers no `OPTIONS`, so a JSON preflight would be dropped; see
-`src/lib/analytics/transport.ts`'s identical reasoning). On any failure (network error, non-`ok`
-response) it falls back to opening the same GitHub issue link a plain click would have — feedback is
-never silently swallowed. See `src/lib/feedback/postFeedback.ts`.
+`src/lib/feedback/capture.ts` captures the current view (`#shell`, index.html's app root) with
+**html-to-image**'s `toCanvas` — never html2canvas, which rejects on `color-mix()` (the light
+theme's palette uses it; the identical reason `../../CalCOFI/explore/src/capture.ts` picked
+html-to-image). The map's MapLibre canvas needs `preserveDrawingBuffer: true` for its pixels to
+survive the readback — `src/lib/map/map.ts` already sets it. Any currently-**open** `<dialog>`
+(the feedback dialog's own Modal element, mid-capture) is filtered out of the capture, so the
+screenshot never draws itself.
+
+`src/lib/feedback/annotate.ts` is a hand-rolled canvas annotator (arrow / circle / rectangle / pen /
+text, three colours, undo, clear) — no third-party library (marker.js is commercial; fabric.js and
+tldraw are hundreds of KB for far more than five tools need). Colour/tool selection, undo and clear
+are ordinary `<button>`s (keyboard-reachable, `role="group"`/`aria-pressed`); the canvas itself
+carries an `aria-describedby` pointing at a plain-text usage hint, since freehand drawing has no
+keyboard equivalent.
+
+Both `capture.ts` (and the `html-to-image` package it imports) and `annotate.ts` are reached **only**
+through `FeedbackDialog.svelte`'s own dynamic `import()` — never on the static critical path.
+`scripts/size-budget-core.mjs`'s `FORBIDDEN_LAZY_MARKERS` now lists `"html-to-image"` (the build-time
+half of that gate); `tests/feedback/lazy.test.ts` is the source-level half (a wiring gate proving
+the dynamic-only wiring holds even before a build). The three annotator marker colours (and
+`capture.ts`'s background fallback) live in `src/lib/feedback/colors.ts` — the one place this
+directory may write a hex literal (a `<canvas>` 2D context does not read a CSS custom property;
+`tests/raster/ramps.wiring.test.ts` names this file as its third such exception, alongside
+`src/lib/map/colors.ts` and `src/report/colors.ts`).
+
+## Sending
+
+`src/lib/feedback/postFeedback.ts` POSTs the payload as `text/plain` JSON (keeps the request a CORS
+"simple request" — an Apps Script `/exec` endpoint answers no `OPTIONS`, so an `application/json`
+preflight would be dropped). **No `keepalive: true`** — the original Deliverable 4 control set it
+because the same click could open a new tab; U3's dialog stays open through the whole send, and a
+`keepalive` fetch is capped at a 64 KiB combined body quota (WHATWG fetch spec) that a
+screenshot-carrying payload routinely exceeds, causing an immediate, silent rejection with **no**
+network request Playwright (or a real browser's network panel) ever sees — this was a real defect
+caught writing `e2e/feedback.spec.ts`, not a hypothetical one; see `postFeedback.ts`'s own header.
+
+### `VITE_FEEDBACK_URL` / the local override
+
+Build-time `VITE_FEEDBACK_URL` (a Pages repository variable) names the deployed Apps Script `/exec`
+URL. `src/lib/feedback/endpoint.ts`'s `feedbackEndpoint()` also honours a `localStorage` override,
+**`atlas.feedback_url`** — set it in the browser console (or via a test's `page.addInitScript`) to
+point a running build at a different deployment or a local fixture without a rebuild:
+
+```js
+localStorage.setItem("atlas.feedback_url", "https://script.google.com/macros/s/.../exec");
+```
+
+### What happens without an endpoint
+
+Unset (the build default): the dialog still works — every field, the screenshot, the annotator —
+but "Send" stays disabled and the dialog says so. The zero-backend fallback, **"Open as GitHub
+issue"**, opens a prefilled `github.com/MarineSensitivity/atlas/issues/new` link built from the
+CURRENT form state (`src/lib/feedback/githubIssue.ts`, labelled with the chosen `kind`) and copies
+the screenshot (if kept) to the clipboard so it can be pasted into the issue — GitHub's `new/…` URL
+cannot embed an image directly.
+
+**Restricted release:** "Open as GitHub issue" is not offered at all, on the client — the button
+is absent, and the dialog says the report goes to the team only. This is a client-side convenience,
+not the enforcement point: the payload's own `restricted` field is what `Code.gs` checks
+server-side before ever calling the GitHub API, so a modified or replayed request cannot bypass the
+rule by omitting or lying about the flag from a build that otherwise has it right.
+
+### Analytics
+
+Two events, `feedback_open` and `feedback_sent` (`src/lib/analytics/events.ts`), each carrying only
+`{ kind, restricted }` — never the text, the email, or the URL. `tests/analytics/noRawLocation.wiring.test.ts`
+is unaffected (it scans `src/lib/analytics/**` for the live location global, not for what a
+component's `track()` calls pass — those are separately typed, so an event carrying `pl`/`url`/`t`
+would be a compile error against `EventParamsMap`).
+
+## The Apps Script endpoint (once, by a maintainer)
+
+`scripts/feedback/Code.gs` is the generated-by-hand JavaScript for the bound Apps Script project —
+ported from CalCOFI Explorer's own generator
+(`../../CalCOFI/calcofi4r/R/feedback.R#cc_feedback_script()`) and adapted to atlas's payload shape
+and its two rules (the kind IS the label; a restricted release gets no public issue). Setup:
+
+1. **Create the Sheet** as `ben@oceanmetrics.io` (R6's owner decision) — e.g. "Atlas feedback".
+   Add two tabs:
+   - **`feedback`** — first row exactly the header `Code.gs`'s own `FEEDBACK_HEADER` constant
+     defines (`ts, id, app, kind, title, text, email, url, release, version, sha, lens, viewport,
+theme, user_agent, website, restricted, image_url, issue_url, status`).
+   - **`recipients`** — `A1 = "email"`, one address per row. Seed it with the two R6 addresses:
+     `ben@oceanmetrics.io` and `timothy.white@boem.gov`. Edit a cell to add or remove someone later
+     — no redeploy needed.
+2. **Extensions → Apps Script**, delete the default `Code.gs` stub, paste the contents of this
+   repo's `scripts/feedback/Code.gs` verbatim.
+3. **Project Settings → Script properties**:
+   - `GITHUB_TOKEN` (optional but expected in production) — a fine-grained personal access token
+     scoped to `MarineSensitivity/atlas` only, with **Contents: Read and write** and **Issues: Read
+     and write** permissions. Without it, every submission still reaches the Sheet and mail; the
+     `status` column says `"issue skipped: no GITHUB_TOKEN"`.
+   - `DRIVE_FOLDER_ID` (optional) — a Drive folder id to file screenshots under. Without it, the
+     script makes (or reuses) a folder named "atlas feedback" beside the Sheet itself.
+4. **Deploy → New deployment → type "Web app"** — execute as **Me**, who has access **Anyone**.
+   Copy the `/exec` URL.
+5. **Give the app the URL**: set it as the repository variable `VITE_FEEDBACK_URL` in
+   `MarineSensitivity/atlas`'s GitHub Pages workflow so the built site picks it up.
+   `.github/workflows/pages.yml`'s `checks` job already builds with two env vars on its
+   `npx vite build` step (`VITE_SEAL`/`VITE_AGENCY`, plan D10) — add the new one alongside them,
+   exactly this shape:
+
+   ```yaml
+   - run: npx vite build
+     env:
+       VITE_SEAL: "1"
+       VITE_AGENCY: MMA
+       VITE_FEEDBACK_URL: ${{ vars.VITE_FEEDBACK_URL }}
+   ```
+
+   (Add `vars.VITE_FEEDBACK_URL` under **Settings → Secrets and variables → Actions → Variables**
+   with the `/exec` URL as its value — a plain repository _variable_, not a _secret_: it is an
+   endpoint URL that ships in the public bundle either way, the same category `VITE_AGENCY`
+   already is.) This runbook does **not** edit `pages.yml` itself — that is a separate change,
+   reviewed like any other workflow edit.
+
+6. **Re-paste `Code.gs`** after any change to this file (a Sheet's bound script is not "installed"
+   from `main` automatically — there is no build step for Apps Script).
+
+### Testing without a real deployment
+
+Point a running build (dev server or a local `npm run preview`) at any endpoint you can inspect —
+your own test deployment, or a `page.route`-intercepted fixture URL in a script — via the
+`localStorage` override above. `e2e/feedback.spec.ts` does exactly this: it seeds
+`atlas.feedback_url` with a fake `https://script.google.com/...` URL via `page.addInitScript` and
+routes that exact URL with Playwright, asserting the posted JSON body (the hash-inclusion rule, the
+`restricted` flag) end-to-end against the real dialog.
+
+### The privacy statement (what the dialog itself tells the reporter)
+
+> What is sent: your text, this view's release and lens, the viewport and theme, and the screenshot
+> (unless you turn it off) — the page link only if you tick the box above. It goes to the team by
+> mail and, without your email, as a public GitHub issue in `MarineSensitivity/atlas` labelled
+> `{kind}` — unless this release is under review, in which case no public issue is filed.
 
 ## Seeded fault
 
-`tests/faults/feedback-location-href.patch` (`npm run test:faults`): `pageUrlFromLocation` rewritten
-to ignore its argument and `return location.href` instead — in a real browser this is the SAME live
-page location `Shell.svelte` already holds, so it silently starts leaking the hash into the "Report a
-problem" link. Turns `tests/feedback/noHash.test.ts` red (the literal token is now in the shipped
-file) **and** `e2e/feedback.spec.ts` red (the control's real `href` now contains the hash) — the
-`test:faults` entry proves the first; the second was verified by hand (see this deliverable's report)
-and is not re-run automatically, the same way this repo's other Playwright-based seeded faults are
-committed-but-manual until a later phase wires `e2e` into `test:faults` itself (`GATES.md`).
+`tests/faults/feedback-hash-leak.patch` (`npm run test:faults`): `buildFeedbackPayload()` rewritten
+to place the hash on `payload.url` **unconditionally**, ignoring `includeUrl` — silently starts
+leaking a drawn place's geometry (and any other page state in the fragment) on every submission,
+ticked or not. Turns `tests/feedback/payload.test.ts` red (the pure-function assertion) and
+`e2e/feedback.spec.ts`'s `'ticking "include my current view link"...'` test red (the unticked case
+now finds a `#` in the posted body) — see `tests/GATES.md`'s own row for this entry and
+`scripts/test-faults.mjs`'s `feedback-hash-leak` manifest entry (`PW_PORT=4388`).
+
+## For the docs site (Quarto)
+
+`docs/feedback-quarto-include.md` describes the small standalone include (JS + the same endpoint
+variable) for `MarineSensitivity/docs` to add its own "Send feedback" control — that repo is
+separate and is not touched here.

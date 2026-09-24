@@ -30,6 +30,10 @@ const MAP_COLORS_FILE = join("src", "lib", "map", "colors.ts");
 // src/report/colors.ts's own header) -- a standalone SVG/canvas/MapLibre-style color with no
 // stylesheet to read a custom property from.
 const REPORT_COLORS_FILE = join("src", "report", "colors.ts");
+// U3 (round 2): the feedback annotator's own twin -- the three marker colours it draws directly
+// onto a <canvas> 2D context (src/lib/feedback/colors.ts's own header), which does not read a CSS
+// custom property either.
+const FEEDBACK_COLORS_FILE = join("src", "lib", "feedback", "colors.ts");
 /** an ARRAY of two or more hex stops is a ramp, whatever it is called — the shape the exempt file
  * may never contain. (A count ceiling would not do: the file legitimately holds ~8 unrelated
  * single-purpose colours, and a palette is exactly 11.) */
@@ -84,6 +88,7 @@ export function findRampLiteralsOutsideRamps(
     if (rel.startsWith(BRAND_PREFIX)) continue;
     if (rel === MAP_COLORS_FILE) continue;
     if (rel === REPORT_COLORS_FILE) continue;
+    if (rel === FEEDBACK_COLORS_FILE) continue;
     if (rel === RAMPS_FILE) continue;
     if (!/\.(ts|svelte|js)$/.test(file)) continue;
     const content = readFileSync(file, "utf8");
@@ -141,6 +146,11 @@ describe("raster/ramps.ts is the only ramp/palette definition under src/ (brand/
 
   it("the exempt REPORT colour file defines nothing ramp-shaped either", () => {
     const content = readFileSync(join(REPO_ROOT, REPORT_COLORS_FILE), "utf8");
+    expect(RAMP_ARRAY_RE.test(content)).toBe(false);
+  });
+
+  it("the exempt FEEDBACK colour file defines nothing ramp-shaped either (3 marker colours, not a palette)", () => {
+    const content = readFileSync(join(REPO_ROOT, FEEDBACK_COLORS_FILE), "utf8");
     expect(RAMP_ARRAY_RE.test(content)).toBe(false);
   });
 });

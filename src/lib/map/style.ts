@@ -405,7 +405,9 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
       const role = (u.fill?.stops.length ?? 0) > 0 ? "choropleth" : "zone-fill";
       roled.push({ role, layer: fill });
     }
-    roled.push({ role: "zone-line", layer: zoneLineLayer(u) });
+    // U5: the outline's own stroke colour is theme-aware (`ZONE_OUTLINE_STROKE_BY_THEME`) --
+    // `zoneLineLayer` now takes the resolved theme to pick it.
+    roled.push({ role: "zone-line", layer: zoneLineLayer(u, input.theme) });
   }
   for (const u of zones) {
     const label = zoneLabelLayer(u);

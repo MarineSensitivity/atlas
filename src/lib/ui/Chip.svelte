@@ -67,7 +67,9 @@
 
   .chip--accent {
     background: var(--fill-accent);
-    border-color: var(--fill-accent);
+    /* R5 y1: --fill-accent alone is 1.49:1 on paper (exempt) -- the chip's own border is the
+       boundary that carries the state at >= 3:1, per WCAG 1.4.11. */
+    border-color: var(--border-accent);
     color: var(--text-on-accent);
   }
 

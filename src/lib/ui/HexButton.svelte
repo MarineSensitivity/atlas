@@ -161,6 +161,13 @@
     background: var(--fill-accent);
   }
 
+  /* R5 y1: --fill-accent alone is 1.49:1 on paper (exempt) -- the pressed state's own outer hex
+     layer (already the 2px band --before insets from) becomes the boundary that carries it, per
+     WCAG 1.4.11. Navy: --border-accent === --fill-accent (gold), so this is a no-op there. */
+  .hexbtn[aria-pressed="true"]::before {
+    background: var(--border-accent);
+  }
+
   .hexbtn[aria-pressed="true"] :global(.icon) {
     color: var(--text-on-accent);
   }
