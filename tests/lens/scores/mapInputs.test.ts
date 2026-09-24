@@ -88,7 +88,13 @@ describe("scoresMapInputs — cell branch", () => {
 // published manifest short label, `workflows/dev/gen_v7_artifacts.R:49`), not synthetic ones, so
 // a fixture drift between the two files would show up here.
 describe("scoresMapInputs — legend title precedence (M6)", () => {
-  const PRIMPROD_LONG_LABEL = "Primary productivity VGPM/VIIRS npp_avg (mg C/m2/day)"; // BOOT_V7
+  // M6 re-check (round 2): v7's REAL LIVE long label (BOOT_V7's own primprod row), fetched
+  // verbatim from the live v7/app/boot.json -- round 1's string was v8's own paraphrase.
+  const PRIMPROD_LONG_LABEL =
+    "Primary productivity: Oregon State Vertically Generalized Production Model (VGPM) " +
+    "from Visible Infrared Imaging Radiometer Suite (VIIRS) satellite data (mg C / m^2 / day) " +
+    "from daily averages available as monthly averaged to annual and averaged to overall for " +
+    "the most recently available full years of data 2014 to 2023";
   const PRIMPROD_SHORT_LABEL = "prim prod, 2014-2023 avg (mg C/m^2/day)"; // v7's manifest.metrics
 
   it("no metricLabels at all (manifest not loaded yet): falls back to the LONG boot.layers label", () => {

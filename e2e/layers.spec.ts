@@ -508,7 +508,14 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
 // builds its own boot (`bootFor("v7")` + one added raw layer) rather than changing that shared
 // fixture for every other spec in this file.
 test.describe("M6: the Data row's short label wins over the long description, which is hidden when redundant", () => {
-  const PRIMPROD_LONG_LABEL = "Primary productivity VGPM/VIIRS npp_avg (mg C/m2/day)"; // v7's real boot.layers label
+  // M6 re-check (round 2): v7's REAL LIVE long label, fetched verbatim from the live
+  // v7/app/boot.json (2026-09-24) -- round 1's string was v8's own paraphrase, not what v7
+  // actually publishes.
+  const PRIMPROD_LONG_LABEL =
+    "Primary productivity: Oregon State Vertically Generalized Production Model (VGPM) " +
+    "from Visible Infrared Imaging Radiometer Suite (VIIRS) satellite data (mg C / m^2 / day) " +
+    "from daily averages available as monthly averaged to annual and averaged to overall for " +
+    "the most recently available full years of data 2014 to 2023";
   const PRIMPROD_SHORT_LABEL = "prim prod, 2014-2023 avg (mg C/m^2/day)"; // v7's real manifest.metrics label
 
   function bootWithPrimprod() {
