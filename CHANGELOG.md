@@ -17,6 +17,7 @@ Round 2, Q4: the feedback endpoint and preview-host link flags.
   restores today's direct link with no code change.
 
 <<<<<<< HEAD
+
 # atlas 0.10.53
 
 Places: choosing a Program Area now opens the same results panel a drawn or uploaded place gets --
@@ -27,6 +28,7 @@ per-zone cell data is published to the app yet) and now says so plainly instead 
 disabled button with a misleading reason. Also: fixed a rare race where "Show analysis cells"
 could paint the wrong place's cells if the selection moved while a load was in flight.
 =======
+
 # atlas 0.10.51
 
 Q1: **the top-bar search now works in the Scores lens.** It was a stub `<input>` that did nothing
@@ -44,7 +46,8 @@ already publishes):
 Results are a keyboard-navigable list (Arrow keys, Enter to select, Esc to close), same accessible
 pattern as the species search. Available on both the desktop top-bar field and the phone search
 modal.
->>>>>>> main
+
+> > > > > > > main
 
 # atlas 0.10.50
 
