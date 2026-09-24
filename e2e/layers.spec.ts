@@ -90,9 +90,11 @@ declare global {
 }
 
 /** the fully-ordered default token, spelled out (never a PARTIAL token in these tests — a partial
- * one deliberately reorders via `layerStack.ts`'s own forward-compat "missing groups append at the
- * end" rule, tested at the unit level in `tests/map/layerStack.test.ts`; a geometry-asserting e2e
- * test always wants the reorder it names and nothing else). */
+ * one deliberately reorders via `layerStack.ts`'s own forward-compat "a missing group is inserted
+ * at its own default relative position" rule (M2/round 2's fix to `normalizeLayerStack` — it used
+ * to bare-append at the array's end, which this comment used to (incorrectly) describe as the
+ * rule), tested at the unit level in `tests/map/layerStack.test.ts`; a geometry-asserting e2e test
+ * always wants the reorder it names and nothing else). */
 const DEFAULT_ORDER = [
   "basemap-land",
   "basemap-bathymetry",

@@ -69,10 +69,12 @@ raster:o50` used to bury the raster it named under every other group, including 
   ring >0 -> 0; Land & water: the theme's plain background colour shows through once both Data and
   Land & water are hidden) — every one proves the layer stays registered (`getLayer` still
   resolves), never merely removed.
-- **M4**: a move that lands its own button at the stack's edge (top/bottom) disables that button;
-  since a disabled element cannot hold focus, a keyboard user's focus used to silently revert to
-  `<body>`. `move()` now refocuses a real button in the same row after the DOM settles (the same
-  direction if still enabled, otherwise the opposite one).
+- **m4** (a MINOR, mislabeled "M4" here through round 2 — the review's own **M4** is the
+  order-test/fault-gate finding folded into the seeded-fault bullet below, a different thing
+  entirely): a move that lands its own button at the stack's edge (top/bottom) disables that
+  button; since a disabled element cannot hold focus, a keyboard user's focus used to silently
+  revert to `<body>`. `move()` now refocuses a real button in the same row after the DOM settles
+  (the same direction if still enabled, otherwise the opposite one).
 - **M5**: a real zone choropleth fill (computed stops) now classifies as role `"choropleth"` ->
   group `data-raster` ("the lens's data"), not `data-zones` — dimming "Program Areas" used to
   silently ALSO dim a real choropleth's fill, which is the lens's data, not the outline row. The
@@ -107,6 +109,53 @@ raster:o50` used to bury the raster it named under every other group, including 
   at its default.
 - Version bumped 0.10.35 -> 0.10.36; merged `main` (F1a, U6, flower, study-area camera) per the
   review's own merge notes.
+
+**Fix round 2 (last, Opus 5.5 re-check on branch `9d2d47b`), merged onto main `147d2d2`:**
+
+- **M7 re-check**: the MODEL was already fixed round 1, but two real gaps around it. (1) The panel
+  never disabled a rejected move — the ▲/▼ buttons only checked the array BOUNDARY, blind to the
+  pin/fixed-order rules, so Selection's own DOWN button (never at the boundary; it sits at the top)
+  stayed enabled and a click announced a phantom "moved to position N". New exported
+  `canMoveLayerStackEntry()` reports whether a move would actually change anything; the panel
+  disables on that instead. (2) `parseLayerStack` never enforced
+  `data-raster < data-zones < data-places` on groups a token ALREADY names explicitly (only ever
+  repaired MISSING ones) — a crafted `?layers=data-places,data-zones,data-raster` put Selection
+  under the raster, live, repairable only by "Reset layers". New `enforceDataOrder()` (shared by
+  `parseLayerStack` and `normalizeLayerStack`) pins `data-places` to the end and swaps a
+  `data-raster`/`data-zones` inversion's two slots. `normalizeLayerStack` also stopped
+  bare-APPENDING missing groups at the array's end — it now inserts each one at its own default
+  position (the SAME algorithm `parseLayerStack`'s M2 fix already used), which `docs/map.md`
+  incorrectly already claimed it did.
+- **M6 re-check**: swapped in v7's REAL LIVE long primprod label (fetched verbatim from the live
+  `v7/app/boot.json`) in place of round 1's v8 paraphrase — "Primary productivity: Oregon State
+  Vertically Generalized Production Model (VGPM) from Visible Infrared Imaging Radiometer Suite
+  (VIIRS) satellite data (mg C / m^2 / day) from daily averages available as monthly averaged to
+  annual and averaged to overall for the most recently available full years of data 2014 to 2023".
+- **ID-11 (parity page)**: documented the standalone manifest ecoregion outline's actual behaviour
+  (scores draws it always, even `out=none`; species never draws it, gated structurally in
+  `Shell.svelte`) — the page's prose only ever described the unrelated, legacy Shiny "Ecoregions"
+  outline-select option and could be read as implying the opposite.
+- **B1 re-check**: the e2e suite had no pixel probe INSIDE a real zone polygon (every
+  `OCEAN_PROBES` point lies outside this fixture's 20 Program Areas) — added one at a Program
+  Area's centre, dimming "Zone outlines" to 50% in cell mode and asserting the plain raster blend;
+  verified red-first by hand against a planted replacing implementation.
+- **M5 decision**: hiding "Zone outlines" used to ALSO hide the invisible B3 query-fill placeholder
+  (`layout.visibility: "none"` excludes a layer from `queryRenderedFeatures`), silently breaking
+  zone click/pick while the row was hidden. Decided and implemented: the query fill (role
+  "zone-fill", which after M5 round 1 is ALWAYS that placeholder) stays composed and queryable
+  regardless of the group's own visibility — `fill-opacity: 0` alone already keeps it invisible.
+  Hiding "Data" in zone mode still hides a REAL choropleth with no exception, which is simply
+  correct.
+- Ride-along comment/doc corrections: `layerStack.ts`'s `OPACITY_PAINT_KEYS` doc (described the
+  PRE-B1 "sets directly, never multiplies" behaviour) and `LAYER_GROUP_LABEL` doc (referenced the
+  deleted `style.ts#layersControlLabel`); `layers.spec.ts`'s `DEFAULT_ORDER` doc ("missing groups
+  append at the end", now "inserted at default position"); `docs/map.md`'s `LAYER_ORDER` listing
+  (missing `choropleth`), "Five lines" (now eight, point 8 added), and the `normalizeLayerStack`
+  paragraph (now says it actually inserts at default position, not merely claims to);
+  `test-faults.mjs`'s M4 fault-gate comment (verified empirically that the order-only test ALSO
+  catches this fault — the pixel probe is targeted for being the stronger proof, not because the
+  order test fails to); this file's own "M4" mislabel, above (that bullet is the MINOR m4, not the
+  review's own M4 finding, which is the fault-gate comment just described).
 
 # atlas 0.10.35
 

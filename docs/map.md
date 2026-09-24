@@ -72,8 +72,9 @@ it belongs, and a unit test for the builder. `orderLayers()` throws on a role th
 name, so there is no way to add a layer without deciding where it sits.
 
 **Layer order is declared, bottom to top:** `background · basemap-land · basemap-bathymetry ·
-basemap-boundaries · basemap-roads · basemap-labels · raster · range · overlay · zone-fill ·
-zone-line · zone-label · selection-fill · selection-line`. Because the order is a table rather than
+basemap-boundaries · basemap-roads · basemap-labels · raster · range · overlay · choropleth ·
+zone-fill · zone-line · zone-label · selection-fill · selection-line` (`choropleth` added by M5,
+review round 1 — see point 7 below). Because the order is a table rather than
 a chain of `before` ids, a missing layer removes exactly itself — the v1 failure where one absent
 `before_id` cascaded into "a map with nothing but labels" cannot happen here. `range` (atlas-5,
 `map/layers/ranges.ts`) is a species PMTiles presence fill, filtered to one `mdl_key` — distinct
@@ -87,7 +88,7 @@ so CARTO's own place/road labels always painted UNDER the score raster, invisibl
 three data groups (`raster`+`range`+`overlay` folded into `data-raster` — "the lens's data"; the
 three zone roles into `data-zones`; the selection pair into `data-places`), each a `LayerGroupId` a
 viewer can reorder and dim from the Layers panel (`src/lib/ui/LayersPanel.svelte`, shared by both
-lenses — the panel IS the stack, its "Data" row expanding into the lens's own controls). Five lines:
+lenses — the panel IS the stack, its "Data" row expanding into the lens's own controls). Eight lines:
 
 1. **The model is an ordered `LayerStackEntry[]`** (`{id, visible, opacity}`), bottom-to-top —
    `DEFAULT_LAYER_STACK` is exactly today's rendering (every basemap sub-role still under the
@@ -124,7 +125,13 @@ lenses — the panel IS the stack, its "Data" row expanding into the lens's own 
    default stack. `composeStyle` itself gets the same safety net one layer down
    (`normalizeLayerStack`, m10): any group a `layerStack` input omits ENTIRELY (not only
    `parseLayerStack`'s well-formed-but-partial case — a hand-built array bypassing the URL layer
-   too) is appended at its default position rather than making `orderLayers` throw.
+   too) is inserted at its own default position (review round 2 fix — this line used to claim that
+   and the code did not yet match it: `normalizeLayerStack` bare-APPENDED every missing group at
+   the array's end instead, via the SAME `insertMissingAtDefaultPosition` algorithm as M2 above,
+   not a separate one). Both functions also now enforce `data-raster < data-zones < data-places`
+   on the groups ALREADY present (`enforceDataOrder`, round 2's other fix) — a URL or hand-built
+   stack naming every group but in a violating order used to sail through unrepaired, painting
+   Selection under the raster.
 4. **`isDefaultLayerStack()`** is the one "is this a deviation?" check both `formatLayerStack` (omit
    the key) and the panel's "Reset layers" button (disabled at the default) share.
 5. **Scope note**: "places" (a drawn/picked outline) and the click-driven "selection" ring both draw
@@ -149,6 +156,18 @@ lenses — the panel IS the stack, its "Data" row expanding into the lens's own 
    "Zone outlines") holding only the outline/label roles and B3's invisible query-fill placeholder
    (M5, review round 1: before this, dimming "Program Areas" silently ALSO dimmed a real zone
    choropleth's fill, which is `data-raster`'s content, not `data-zones`'s).
+8. **Two round-2 re-check fixes, both about the gap between the MODEL being correct and the app
+   actually enforcing it end to end.** The panel's ▲/▼ buttons now disable whenever
+   `canMoveLayerStackEntry()` reports the move would be a no-op (M7's own pin/fixed-order rules,
+   not just the array boundary `arrIndex === 0`/`length-1`) — before this, Selection's own DOWN
+   button (never at the boundary; it sits at the top) stayed enabled and announced a phantom
+   "moved to position N" for a move `moveLayerStackEntry` silently rejected. Separately, hiding
+   "Zone outlines" (data-zones) no longer hides the invisible query-fill placeholder (role
+   `"zone-fill"`, which after M5 is ALWAYS that placeholder): it stays composed and queryable —
+   `fill-opacity: 0` already keeps it invisible — so zone click/pick keeps working while the
+   outline row is hidden. The mirror case needs no exception: hiding "Data" (data-raster) in zone
+   mode hides a REAL choropleth, which is simply correct (nothing else reads through it the way
+   pick-mode depends on the query fill).
 
 ## Rules with teeth
 

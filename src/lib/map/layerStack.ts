@@ -53,9 +53,11 @@ export function isLayerGroupId(v: string): v is LayerGroupId {
   return (ALL_LAYER_GROUPS as readonly string[]).includes(v);
 }
 
-/** the panel's row label for each group — plain title case, not a release-derived string (unlike
- * `style.ts#layersControlLabel`, which reads real layer ids): the STACK is chrome the app defines,
- * not data the release publishes. */
+/** the panel's row label for each group — plain title case, hand-written per GROUP, not derived
+ * from a real composed layer id: the STACK is chrome the app defines, not data the release
+ * publishes (review round 1's m7 deleted the old `style.ts#layersControlItems`/`layersControlLabel`
+ * — a per-layer-id label derived from `style.layers` — as dead code with no caller since R3 built
+ * this coarser, GROUP-level panel instead). */
 export const LAYER_GROUP_LABEL: Record<LayerGroupId, string> = {
   "basemap-land": "Land & water",
   "basemap-bathymetry": "Bathymetry",
@@ -256,12 +258,14 @@ export function classifyBasemapLayer(layer: ClassifiableLayer): BasemapGroupId {
 
 // --- applying a group's visible/opacity onto one composed layer ---------------------------------
 
-/** the paint propert(y/ies) each MapLibre layer TYPE uses for "how opaque" — `applyLayerGroupStyling`
- * sets these DIRECTLY (never multiplies an existing expression: CARTO's own paint can be a
- * zoom-dependent `interpolate` expression, and this app has no general expression-algebra to fold a
- * flat opacity into one correctly) whenever a group's opacity is not the default `1`. A `symbol`
- * layer may carry an icon, text, or both — both keys are set; MapLibre ignores a paint property a
- * layer's `layout` never uses (e.g. `icon-opacity` on a text-only symbol layer costs nothing). */
+/** the paint propert(y/ies) each MapLibre layer TYPE uses for "how opaque" — which key(s)
+ * `applyLayerGroupStyling` below passes through {@link scaleOpacity} (B1 fix, review round 1: it
+ * SCALES whatever the layer already had, never replaces it outright — CARTO's own paint can be a
+ * zoom-dependent `interpolate`/`step` expression, and `scaleOpacity` folds a flat opacity into
+ * every shape that appears in practice rather than discarding it) whenever a group's opacity is
+ * not the default `1`. A `symbol` layer may carry an icon, text, or both — both keys are set;
+ * MapLibre ignores a paint property a layer's `layout` never uses (e.g. `icon-opacity` on a
+ * text-only symbol layer costs nothing). */
 const OPACITY_PAINT_KEYS: Record<string, readonly string[]> = {
   background: ["background-opacity"],
   raster: ["raster-opacity"],

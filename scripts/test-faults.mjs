@@ -522,10 +522,13 @@ const FAULTS = [
   // `basemap-land` above `data-raster` no longer changes `map.getStyle()`'s order or the probed
   // pixel).
   //
-  // M4 (Opus 5.5 review): retargeted from the vacuous `queryRenderedFeatures >= 0` assertion to the
-  // "promoted basemap layer painting OVER the raster" pixel-probe test, which is the one this fault
-  // ACTUALLY falsifies (the order-only test can pass even with the fault applied, since
-  // `map.getStyle()` still reflects SOME order -- the pixel is the real proof).
+  // M4 (Opus 5.5 review): retargeted from the ORDER-only test (which used to also assert the
+  // vacuous `queryRenderedFeatures >= 0` -- never able to fail, deleted) to the "promoted basemap
+  // layer painting OVER the raster" pixel-probe test right after it. Verified empirically (round 2
+  // ride-along), not assumed: planting this exact patch turns BOTH tests red today -- the pixel
+  // probe is targeted not because the order test fails to catch the fault, but because it is the
+  // stronger, harder-to-satisfy-by-coincidence proof (a viewer moving a layer up expects to SEE it
+  // painted on top, not merely find its id at a different array index).
   {
     id: "layerstack-order-ignored",
     patch: "tests/faults/layerstack-order-ignored.patch",
