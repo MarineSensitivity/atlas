@@ -1,1 +1,0 @@
-var e=`#0b1635`,t=`#eaeef3`,n=`#ffffff`,r=`#000000`,i={navy:n,paper:`#001a57`},a=`#d9d9d9`,o=`#ffffff`,s=`rgba(0,0,0,0.75)`,c=`#000000`,l=`rgba(255,255,255,0.85)`,u=`#ff00aa`,d=[34,34,34,255],f=`#000000`,p=`#3388ff`;export{p as a,s as c,r as d,a as f,f as i,l,i as m,t as n,u as o,n as p,d as r,c as s,e as t,o as u};
