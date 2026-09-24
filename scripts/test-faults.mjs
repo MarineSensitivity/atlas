@@ -75,12 +75,21 @@ const FAULTS = [
     // HexButton.svelte as its own button shape (RailButton.svelte replaced it; HexButton stays,
     // shown only in the gallery), so the old patch (dropping HexButton's aria-label) no longer
     // touched anything the rail's own axe scan could see and would have stayed silently GREEN
-    // with the fault applied -- exactly "a check that cannot fail is not a check". This patch
-    // strikes the SAME property at its new home instead.
+    // with the fault applied -- exactly "a check that cannot fail is not a check".
+    //
+    // First replacement attempt (dropping ONLY `aria-label`) measured the SAME failure mode this
+    // rewrite documents: RailButton now carries its label as VISIBLE TEXT (R4's whole point --
+    // "meaning only in tooltips"), so the browser's own accessible-name computation falls back to
+    // that text content the moment `aria-label` is absent -- the button never actually lost its
+    // name, and `npm run test:faults` caught its own fault staying green. This version also hides
+    // the label's text from the accessibility tree (`aria-hidden="true"` on the label span, on
+    // top of the dropped `aria-label`), so the button is truly nameless, the way an icon-only
+    // control with no fallback text used to be.
     id: "railbutton-unnamed",
     patch: "tests/faults/railbutton-unnamed.patch",
     describe:
-      "the tool rail's RailButton loses its aria-label -- an icon+label button with no accessible name",
+      "the tool rail's RailButton loses its aria-label AND its visible label is hidden from the " +
+      "accessibility tree -- an icon+label button with no accessible name at all",
     gate: [
       "npx",
       "playwright",
