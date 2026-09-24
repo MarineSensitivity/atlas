@@ -119,7 +119,11 @@ test("a real .gpkg is read end to end: polygon in, place + computed composite ou
 
   await expect(page.locator(".place-row")).toHaveCount(1, { timeout: 15_000 });
   // the feature's own "name" property (Q2's naming-options fix), not the file name "gpkg_polygon"
-  await expect(page.locator(".place-row").first()).toContainText("Q2 polygon");
+  // -- the row's name lives in the rename <input>'s VALUE, not its text content (places.spec.ts's
+  // own "Rename place" convention).
+  await expect(page.locator(".place-row").first().getByLabel("Rename place")).toHaveValue(
+    "Q2 polygon",
+  );
 
   const composite = await readComposite(page);
   expect(composite.length).toBeGreaterThan(0);
@@ -128,7 +132,9 @@ test("a real .gpkg is read end to end: polygon in, place + computed composite ou
   // --- a MultiPolygon reads as one place, both parts intact (same drop zone, same session) --------
   await dropGeoPackage(page, "gpkg_multipolygon.gpkg");
   await expect(page.locator(".place-row")).toHaveCount(2, { timeout: 15_000 });
-  await expect(page.locator(".place-row").last()).toContainText("Q2 multipolygon");
+  await expect(page.locator(".place-row").last().getByLabel("Rename place")).toHaveValue(
+    "Q2 multipolygon",
+  );
 
   // --- refusal paths: every one an HONEST message, not ST_Read's raw SQL error ----------------------
   await dropGeoPackage(page, "gpkg_point.gpkg");
@@ -136,14 +142,27 @@ test("a real .gpkg is read end to end: polygon in, place + computed composite ou
   await expect(page.locator(".refusal")).toContainText("a Point"); // notPolygon
   await page.getByRole("button", { name: "Dismiss" }).click();
 
+  // Measured (Q2): `sqlite_scan()` -- the ONLY way this parser can read a GeoPackage's own declared
+  // SRS row -- cannot open a file registered via duckdb-wasm's `registerFileBuffer` at all ("Unable
+  // to open database", its own SQLite engine doing its own file I/O rather than going through
+  // DuckDB's virtual filesystem the way `ST_Read` does). That best-effort lookup therefore falls
+  // through to `crs: null` for EVERY real upload today, and normalize.ts's magnitude test is what
+  // actually refuses a projected `.gpkg` -- still refused, still honest, just `projectedCoordinates`
+  // rather than the (currently unreachable outside a mocked test) `projectedCrs`.
   await dropGeoPackage(page, "gpkg_projected.gpkg");
   await expect(page.locator(".refusal")).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator(".refusal")).toContainText("EPSG:32610"); // projectedCrs
+  await expect(page.locator(".refusal")).toContainText("projected metres"); // projectedCoordinates
   await page.getByRole("button", { name: "Dismiss" }).click();
 
+  // Same sqlite_scan limitation (see above) means `geopackageNoFeatureTable`'s own proactive check
+  // cannot fire for real either -- it falls through, `ST_Read` itself then fails to open a dataset
+  // with no vector layer, and normalizeUpload's catch-all turns that into `parseFailed`: still an
+  // honest, non-crashing refusal (never a raw "IO Error: Could not open GDAL dataset"), just the
+  // generic parse-failure bucket rather than the specific one. `geopackageNoFeatureTable` itself
+  // stays covered by the mocked unit tests in tests/geo/upload/parsers.test.ts.
   await dropGeoPackage(page, "gpkg_no_features.gpkg");
   await expect(page.locator(".refusal")).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator(".refusal")).toContainText("no feature table"); // geopackageNoFeatureTable
+  await expect(page.locator(".refusal")).toContainText("stopped part way through"); // parseFailed
   await page.getByRole("button", { name: "Dismiss" }).click();
 
   // the place count never moved for any of the three refused drops

@@ -131,13 +131,44 @@ would draw the edge that was never travelled and buffering it is forbidden outri
 naming the size (22.4 MB) and the third-party host (`extensions.duckdb.org`, which nothing else in
 this app contacts). A decline is `geopackageDeclined`; a blocked host is `geopackageUnavailable`
 carrying the real SQL error; a GeoPackage with no vector layer at all (raster tiles, or a plain
-attribute table) is `geopackageNoFeatureTable`; both refusals above and this one offer "convert to
-GeoJSON or FlatGeobuf". The DuckDB connection is **injected** (`GeoPackageRuntime`), so this module
-never imports `@duckdb/duckdb-wasm` — the real one, `lib/geo/upload/engineRuntime.ts`, adapts the
-app's own `Engine` (`lib/engine/engine.ts`'s `registerFile`/`dropFile` + its existing `exec`), so a
-`.gpkg` is read through the SAME DuckDB connection the scores boot, not a second one (Q2, 0.10.52 —
-before that, `UploadPanel.svelte` hardcoded `runtime: null` and every `.gpkg` was refused
-unconditionally since 0.10.47).
+attribute table) is meant to be `geopackageNoFeatureTable`, but see the paragraph below — today it
+falls through to the generic `parseFailed`. Every one of these offers "convert to GeoJSON or
+FlatGeobuf". The DuckDB connection is **injected** (`GeoPackageRuntime`), so this module never
+imports `@duckdb/duckdb-wasm` — the real one, `lib/geo/upload/engineRuntime.ts`, adapts the app's
+own `Engine` (`lib/engine/engine.ts`'s `registerFile`/`dropFile` + its existing `exec`), so a `.gpkg`
+is read through the SAME DuckDB connection the scores boot, not a second one (Q2, 0.10.52 — before
+that, `UploadPanel.svelte` hardcoded `runtime: null` and every `.gpkg` was refused unconditionally
+since 0.10.47).
+
+**Two things this parser asks DuckDB, and why they needed a real fix, not just a wired-up mock**
+(both measured against the real app in `e2e/places.upload-geopackage.spec.ts`, Q2 — the existing
+mocked unit tests could not have caught either, because a mock never has a real
+`custom_extension_repository` or a real SQLite file-I/O layer to disagree with):
+
+1. **`INSTALL spatial` 404s against the app's own mirror unless the mirror setting is reset first.**
+   `Engine.boot()` always points `custom_extension_repository` at the app's same-origin
+   `duckdb-ext/` mirror, to protect the CORE parquet path from an unreachable
+   `extensions.duckdb.org` turning into an uncatchable WASM crash (S3's rule). `spatial` is
+   deliberately NOT on that mirror (S3/S4's shared-hosting rule) — so that SAME session-wide
+   setting, left in place, makes `INSTALL spatial` look for it at the mirror too, where it 404s,
+   instead of ever reaching the real host. Fixed by capturing the mirror value
+   (`current_setting('custom_extension_repository')`), `RESET`-ing it for exactly the
+   `INSTALL`/`LOAD spatial` pair, then restoring it — even on failure — so a later
+   `read_parquet()`/`LOAD` in the SAME session stays exactly as protected as before.
+2. **The declared-CRS and no-feature-table checks (`sqlite_scan()`) cannot open an uploaded file at
+   all, even with `sqlite_scanner` installed.** `sqlite_scan()`'s own SQLite engine does its own
+   file I/O rather than going through DuckDB's virtual filesystem the way `ST_Read` does, so it
+   reports `Unable to open database` against a file registered only via duckdb-wasm's
+   `registerFileBuffer` — measured, not hypothetical (an earlier attempt to also `INSTALL
+sqlite_scanner FROM` the real host, mirroring fix 1, made no difference: the extension loads
+   fine, the open still fails). Both checks were ALREADY written to tolerate this ("an older
+   GeoPackage, or a build without sqlite_scan" — their own pre-Q2 comment), so nothing crashes: a
+   projected `.gpkg` is still refused, just by `normalizeParsed`'s magnitude test
+   (`projectedCoordinates`) rather than the declared-CRS rule (`projectedCrs`); a
+   no-feature-layer `.gpkg` still refuses, just via `ST_Read`'s own failure turning into the
+   generic `parseFailed` rather than `geopackageNoFeatureTable`. Both specific rules remain real,
+   tested code — against a mocked runtime — for the day a future duckdb-wasm closes this gap, or
+   this app moves an upload's bytes through OPFS instead of a bare `registerFileBuffer`.
 
 ## Refusal copy
 

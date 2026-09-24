@@ -262,11 +262,74 @@ describe("GeoPackage (DuckDB spatial, consented and best-effort)", () => {
     const sql = (rt.query as unknown as { mock: { calls: string[][] } }).mock.calls.map(
       (c) => c[0],
     );
-    expect(sql[0]).toContain("INSTALL spatial");
-    expect(sql[1]).toContain("LOAD spatial");
+    const installIdx = sql.findIndex((s) => s.includes("INSTALL spatial"));
+    const loadIdx = sql.findIndex((s) => s.includes("LOAD spatial"));
+    expect(installIdx).toBeGreaterThanOrEqual(0);
+    expect(loadIdx).toBeGreaterThan(installIdx);
     expect(p.crs).toEqual({ raw: "EPSG:4326", kind: "geographic", reprojected: false });
     expect(p.features[0].geometry?.type).toBe("Polygon");
     expect(rt.dropFile).toHaveBeenCalled();
+  });
+
+  // Q2 fix, found by the real-DuckDB Playwright spec, not the mocked tests above: `Engine.boot()`
+  // always points `custom_extension_repository` at the app's OWN same-origin mirror (S3's rule, to
+  // protect the core parquet path) -- and since that mirror never carries `spatial` (S3/S4's
+  // shared-hosting rule), leaving the setting in place made `INSTALL spatial` 404 against the
+  // mirror instead of ever reaching extensions.duckdb.org. These two tests lock in the fix: RESET
+  // around the install, and restore afterward -- even on failure.
+  it("Q2: RESETs custom_extension_repository before INSTALL/LOAD spatial, and restores the mirror afterward", async () => {
+    const calls: string[] = [];
+    const MIRROR = "http://localhost:4425/duckdb-ext";
+    const rt = runtime({
+      query: vi.fn(async (sql: string) => {
+        calls.push(sql);
+        if (/current_setting\('custom_extension_repository'\)/.test(sql)) {
+          return [{ v: MIRROR }] as never;
+        }
+        if (/ST_Read\(/.test(sql)) return rows as never;
+        if (/count\(\*\) AS n FROM sqlite_scan/.test(sql)) return [{ n: 1 }] as never;
+        if (/gpkg_spatial_ref_sys/.test(sql)) {
+          return [{ auth_name: "EPSG", auth_srid: 4326, definition: "" }] as never;
+        }
+        return [] as never;
+      }),
+    });
+    await parseGeoPackage("place.gpkg", new Uint8Array([1]), {
+      consent: async () => true,
+      runtime: rt,
+    });
+    const resetIdx = calls.findIndex((s) => /^RESET custom_extension_repository/.test(s));
+    const installIdx = calls.findIndex((s) => s.includes("INSTALL spatial"));
+    const setBackIdx = calls.findIndex(
+      (s) => /^SET custom_extension_repository/.test(s) && s.includes(MIRROR),
+    );
+    expect(resetIdx).toBeGreaterThanOrEqual(0);
+    expect(installIdx).toBeGreaterThan(resetIdx); // RESET happens BEFORE the install
+    expect(setBackIdx).toBeGreaterThan(installIdx); // the mirror is restored AFTER, not skipped
+  });
+
+  it("Q2: restores the mirror even when INSTALL/LOAD itself fails", async () => {
+    const calls: string[] = [];
+    const MIRROR = "http://localhost:4425/duckdb-ext";
+    const rt = runtime({
+      query: vi.fn(async (sql: string) => {
+        calls.push(sql);
+        if (/current_setting\('custom_extension_repository'\)/.test(sql)) {
+          return [{ v: MIRROR }] as never;
+        }
+        if (/^LOAD spatial/.test(sql)) throw new Error("boom");
+        return [] as never;
+      }),
+    });
+    await expect(
+      parseGeoPackage("place.gpkg", new Uint8Array([1]), {
+        consent: async () => true,
+        runtime: rt,
+      }),
+    ).rejects.toMatchObject({ refusal: { rule: "geopackageUnavailable" } });
+    expect(
+      calls.some((s) => /^SET custom_extension_repository/.test(s) && s.includes(MIRROR)),
+    ).toBe(true);
   });
 
   it("an unreadable CRS table is not a reason to fail the read", async () => {
