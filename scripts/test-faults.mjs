@@ -859,13 +859,23 @@ const FAULTS = [
       "fly-to and stays on the whole study area",
     gate: ["npx", "vitest", "run", "tests/lens/species/camera.test.ts", "-t", "D8"],
   },
+  // RETIRED (P9, 0.10.49): "phone-zoom-boost-neutered" patched `PHONE_STUDY_AREA_ZOOM_BOOST` to 0,
+  // proving the phone's initial camera stayed zoomed in. P9 found the deeper bug that mechanism
+  // never caught: the boosted camera was still centred on `FALLBACK_FULL_STUDY_AREA`'s own
+  // centroid (central North Dakota), so the "correctly zoomed-in" frame showed Canada/the Great
+  // Lakes -- 0% scored cells -- with every P2 test green. `PHONE_STUDY_AREA_ZOOM_BOOST` is no
+  // longer wired into Shell.svelte's phone default-view path at all (superseded by
+  // `phoneDefaultCamera`/`PHONE_DEFAULT_BOUNDS`, a real bbox fit), so this fault's own patch would
+  // now apply to dead code and the gate it names would stay green regardless -- "a check that
+  // cannot fail is not a check" (CLAUDE.md). Replaced by "phone-default-camera-reverted" below,
+  // which targets the actual mechanism and the actual bug (the WRONG ANCHOR, not merely the zoom).
   {
-    id: "phone-zoom-boost-neutered",
-    patch: "tests/faults/phone-zoom-boost-neutered.patch",
+    id: "phone-default-camera-reverted",
+    patch: "tests/faults/phone-default-camera-reverted.patch",
     describe:
-      "PHONE_STUDY_AREA_ZOOM_BOOST zeroed out -- the phone's initial camera goes back to the " +
-      "study-area preset's own low zoom, so the globe projection renders the whole sphere again " +
-      "(P2 round 2's real-build defect: Canada/Greenland dominant, reproduced)",
+      "PHONE_DEFAULT_BOUNDS reverted to a tiny box around the OLD broken FALLBACK centroid " +
+      "(central North Dakota) -- the phone's default view frames Canada/the Great Lakes again, " +
+      "0% scored cells (P9's own live-measured defect, reproduced)",
     gate: [
       "npx",
       "playwright",
@@ -874,7 +884,7 @@ const FAULTS = [
       "e2e/shell.firstview.phone.spec.ts",
       "--workers=1",
     ],
-    env: { PW_PORT: "4393" },
+    env: { PW_PORT: "4412" },
   },
   {
     id: "bounds-narrow-longitude-skipped",
@@ -973,6 +983,25 @@ const FAULTS = [
       "--workers=1",
     ],
     env: { PW_PORT: "4402" },
+  },
+  {
+    id: "places-drag-duplicates",
+    patch: "tests/faults/places-drag-duplicates.patch",
+    describe:
+      "onDrawFinish() reverts to treating every terra-draw finish as a new shape (editIndex " +
+      "forced to undefined) -- dragging a just-drawn rectangle's corner appends a SECOND place " +
+      "instead of updating the first (P9's own live-verified defect, reproduced)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/places.spec.ts",
+      "-g",
+      "dragging a drawn shape's corner",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4412" },
   },
   {
     id: "gallery-categories-min-width-dropped",
