@@ -780,12 +780,12 @@ const FAULTS = [
     gate: ["npx", "vitest", "run", "tests/lens/species/camera.test.ts", "-t", "D8"],
   },
   {
-    id: "study-area-shift-uncapped",
-    patch: "tests/faults/study-area-shift-uncapped.patch",
+    id: "phone-zoom-boost-neutered",
+    patch: "tests/faults/phone-zoom-boost-neutered.patch",
     describe:
-      "MAX_STUDY_AREA_SHIFT_PX raised past any real padding -- the phone first-view camera shift " +
-      "goes back to rotating the low-zoom globe past the free area (P2's own ~100 CSS px empty-sky " +
-      "defect, reproduced)",
+      "PHONE_STUDY_AREA_ZOOM_BOOST zeroed out -- the phone's initial camera goes back to the " +
+      "study-area preset's own low zoom, so the globe projection renders the whole sphere again " +
+      "(P2 round 2's real-build defect: Canada/Greenland dominant, reproduced)",
     gate: [
       "npx",
       "playwright",
