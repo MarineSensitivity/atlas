@@ -9,10 +9,11 @@ Access) with no code change between the two — see
 for the full architecture and decisions, and [`CLAUDE.md`](./CLAUDE.md) for the rules that don't
 change phase to phase (relative URLs, URL-is-the-view, the size budget, the testing pyramid).
 
-**Status:** scaffold only (plan phase `atlas-0`). There is no map, no scores lens, no species lens,
-and no places yet — just the shell, the CI pipeline, and the harnesses those later phases build on.
-Nothing is deployed: this repo is not yet public, has no remote configured, and GitHub Pages has
-not been enabled.
+**Status:** built and live at <https://marinesensitivity.org/atlas/> (GitHub Pages, published by CI
+after the fast checks job). Scores and species lenses, places (pick, draw, coordinates, upload,
+share), flower plot, tables, and the client-side report with HTML/ZIP/DOCX exports are all in;
+round 2 (usability) is in progress — see `docs/status.md` for what is live, in flight and decided,
+and `CHANGELOG.md` for the user-facing changes per version.
 
 ## Getting started
 
