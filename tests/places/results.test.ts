@@ -4,9 +4,14 @@ import {
   cellModelTilePath,
   computeScoreResults,
   computeSpeciesResults,
+  describeAnalysisError,
+  fetchFailureFromError,
   placeCellsInStudyArea,
+  placeRowAnalysis,
   speciesTilePlan,
+  type ScoreResults,
 } from "../../src/places/results";
+import { PUBLIC_DATA_BASE } from "../../src/lib/release/dataBase";
 import { TEMPLATES } from "../../src/lib/analysis/templates";
 import type { SqlRunner } from "../../src/lib/analysis/queries";
 import type { DataEngineContext } from "../../src/places/dataEngine";
@@ -174,6 +179,109 @@ describe("placeCellsInStudyArea", () => {
     const cells = await placeCellsInStudyArea(ctx, SQUARE);
     const result = await computeScoreResults(ctx, {}, SQUARE);
     expect(cells.length).toBeLessThanOrEqual(result.coverage.nCellsTotal);
+  });
+});
+
+// P7 addendum: reproduced live against v7 (`-170,50,-130,60`, a box that runs past the populated
+// footprint) -- `.../v7/app/cell/tile=593/data_0.parquet` answers 403 while its neighbours 588-592
+// answer 200. `engine/materialize.ts#fetchWithSizeGuard` throws `Error("fetch <url>: HTTP 403")`,
+// `engine.ts` wraps every failure as `EngineUnavailableError("data engine unavailable: <cause>")`.
+describe("fetchFailureFromError / describeAnalysisError", () => {
+  const url = `${PUBLIC_DATA_BASE}v7/app/cell/tile=593/data_0.parquet`;
+  const wrapped = new Error(`data engine unavailable: fetch ${url}: HTTP 403`);
+
+  it("names the release-relative OBJECT, not the whole https:// URL", () => {
+    expect(fetchFailureFromError(wrapped)).toEqual({
+      path: "v7/app/cell/tile=593/data_0.parquet",
+      status: 403,
+    });
+  });
+
+  it("describeAnalysisError names the release + object + status, live-reproduced wording", () => {
+    expect(describeAnalysisError(wrapped)).toBe(
+      "analysis unavailable for this release: v7/app/cell/tile=593/data_0.parquet (HTTP 403)",
+    );
+  });
+
+  it("is null/falls back to the raw message for anything that is not a fetch failure", () => {
+    const other = new Error("data engine unavailable: RuntimeError: function signature mismatch");
+    expect(fetchFailureFromError(other)).toBeNull();
+    expect(describeAnalysisError(other)).toBe(other.message);
+  });
+
+  it("falls back to a generic sentence for a non-Error throw", () => {
+    expect(fetchFailureFromError("boom")).toBeNull();
+    expect(describeAnalysisError("boom")).toBe("Couldn't compute scores for this place.");
+  });
+
+  it("keeps a URL outside PUBLIC_DATA_BASE verbatim (never mangled)", () => {
+    const custom = new Error(
+      "fetch https://example.com/v9/app/cell/tile=1/data_0.parquet: HTTP 404",
+    );
+    expect(fetchFailureFromError(custom)).toEqual({
+      path: "https://example.com/v9/app/cell/tile=1/data_0.parquet",
+      status: 404,
+    });
+  });
+});
+
+// P7: `Places.svelte`'s row chip used to hard-code `composite: null` for EVERY `kind: "geom"` row,
+// unconditionally -- so a place stayed "not analysed yet" forever even once ResultsPanel had
+// computed a real composite for it. `placeRowAnalysis` is what a row now reads instead.
+describe("placeRowAnalysis", () => {
+  const scored: ScoreResults = {
+    coverage: { nCellsTotal: 200, nCellsStudyArea: 150, coveragePct: 75 },
+    components: [],
+    composite: 27.8,
+  };
+
+  it("undefined (not yet triggered) reads as 'not analysed yet' -- no status at all", () => {
+    expect(placeRowAnalysis(undefined)).toEqual({ coveragePct: null, composite: null });
+  });
+
+  it("'loading' shows neither a number nor a stale one", () => {
+    expect(placeRowAnalysis("loading")).toEqual({
+      coveragePct: null,
+      composite: null,
+      status: "loading",
+    });
+  });
+
+  it("a real ScoreResults shows the actual composite/coverage", () => {
+    expect(placeRowAnalysis(scored)).toEqual({ coveragePct: 75, composite: 27.8 });
+  });
+
+  it("zero study-area coverage is 'outside', distinct from 'not analysed yet' or an error", () => {
+    const outside: ScoreResults = {
+      coverage: { nCellsTotal: 40, nCellsStudyArea: 0, coveragePct: 0 },
+      components: [],
+      composite: NaN,
+    };
+    expect(placeRowAnalysis(outside)).toEqual({
+      coveragePct: 0,
+      composite: null,
+      status: "outside",
+    });
+  });
+
+  it("a NaN composite (meanScore of zero components) never renders as a number", () => {
+    const noComponents: ScoreResults = {
+      coverage: { nCellsTotal: 40, nCellsStudyArea: 40, coveragePct: 100 },
+      components: [],
+      composite: NaN,
+    };
+    expect(placeRowAnalysis(noComponents).composite).toBeNull();
+  });
+
+  it("a described failure surfaces its own message, not a generic flag", () => {
+    expect(
+      placeRowAnalysis({ error: "analysis unavailable for this release: v7/x (HTTP 403)" }),
+    ).toEqual({
+      coveragePct: null,
+      composite: null,
+      status: "error",
+      errorMessage: "analysis unavailable for this release: v7/x (HTTP 403)",
+    });
   });
 });
 

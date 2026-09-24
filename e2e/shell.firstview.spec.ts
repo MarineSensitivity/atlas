@@ -129,7 +129,11 @@ test.describe("usability M4: the loading honeycomb", () => {
     await expect(loader).toContainText("Map loading");
     // `pointer-events: none` -- it must never intercept a click meant for the map/topbar beneath.
     await expect(loader).toHaveCSS("pointer-events", "none");
-    const liveRegion = page.locator('[role="status"]');
+    // this loader's OWN dedicated region, not the shared Announcer's -- see Shell.svelte's
+    // `hideMapLoader` for why (CI run 35956406448: the shared one raced three unrelated specs'
+    // own announcements). Both carry `role="status"`, so a bare `[role="status"]` locator here
+    // would match two elements.
+    const liveRegion = page.locator('[data-testid="map-loading-status"]');
     await expect(liveRegion).toContainText("Map loading");
 
     await expect(loader).toBeHidden({ timeout: 15_000 });

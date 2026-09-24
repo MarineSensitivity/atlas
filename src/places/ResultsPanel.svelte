@@ -16,6 +16,7 @@
     cellModelEnabled,
     computeScoreResults,
     computeSpeciesResults,
+    describeAnalysisError,
     speciesTilePlan,
     type ScoreResults,
   } from "./results";
@@ -66,8 +67,10 @@
       const result = await computeScoreResults(ctx, boot, geometry);
       if (token === run) scoreResults = result;
     } catch (err) {
-      if (token === run)
-        scoreError = err instanceof Error ? err.message : "Couldn't compute scores for this place.";
+      // P7: the SAME honest sentence `Places.svelte`'s row chip shows for this failure
+      // (results.ts#describeAnalysisError) -- a missing release object names itself, instead of a
+      // raw, stack-shaped `Error#message`.
+      if (token === run) scoreError = describeAnalysisError(err);
     } finally {
       if (token === run) loadingScores = false;
     }
@@ -110,9 +113,9 @@
       speciesRows = result.rows;
       announce(`Species table loaded, ${result.rows.length} rows.`);
     } catch (err) {
-      if (token === run)
-        speciesError =
-          err instanceof Error ? err.message : "Couldn't compute species for this place.";
+      // P7: same honest-sentence helper `loadScores` above uses -- species reads
+      // `serve/cell_model/tile=*` tiles, the SAME class of possibly-missing release object.
+      if (token === run) speciesError = describeAnalysisError(err);
     } finally {
       if (token === run) loadingSpecies = false;
     }

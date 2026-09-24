@@ -1,3 +1,28 @@
+# atlas 0.10.46
+
+P7 (Ben, live 0.10.43, "Places" tool, dark theme): after drawing a second place, BOTH places'
+outlines disappeared from the map — the list still showed both rows, each stuck on "not analysed
+yet" / "—".
+
+- **Every place in the list is now drawn on the map at all times** — after the first draw, after
+  the second, after a reload from a shared `#pl=` link, and after any style recomposition. The map
+  used to draw only the SELECTED place's outline (`placesMap.svelte.ts`'s baseline called
+  `selectedGeomPlaceGeometry`, one place); drawing a second place auto-selects it, so the map's one
+  visible outline moved onto it and the place drawn just before silently vanished. Fixed by drawing
+  every `kind: "geom"` place always (`model.ts#allGeomPlacesOutline`); a pick-mode/draw preview now
+  layers ON TOP of the already-drawn places instead of replacing them.
+- **Fixed a real, reproducible crash in the draw tool itself.** terra-draw manages its own map
+  layers directly, and this app's own `setStyle(diff:true)` cycle — fired on every finished draw —
+  was silently deleting them, since they were never part of the composed style. terra-draw's next
+  redraw then threw an uncaught `TypeError`, and a second shape's own edit handles could stop
+  appearing. `applyStyle()` now preserves terra-draw's own layers across a recompose.
+- **A drawn or entered place is analysed automatically**, the same way a Program-Area pick already
+  shows numbers with no visible step — every row now shows its real composite/coverage as soon as
+  it exists, not only the one currently selected.
+- **A place that genuinely cannot be analysed (a release object the bucket doesn't have) now says
+  so honestly** — "analysis unavailable for this release: `<object>` (HTTP `<code>`)" — instead of
+  sitting on "not analysed yet" forever or showing a raw, stack-shaped error message.
+
 # atlas 0.10.45
 
 **P6 — map + lens defects from the Opus 5.5 eyes-on assessment (D3, D4, D8, D12, P2).**
@@ -39,6 +64,29 @@
   the Layers sheet's own measured height at its default detent is known, rather than assuming a
   constant. The same asymmetric, chrome-aware padding is available to any `fitBounds`-style camera
   fit (`boundsToCameraView`'s new `ChromePadding` option), reused by D8's model-selection fly-to.
+
+# atlas 0.10.44
+
+**P5 — shell defects from the Opus 5.5 eyes-on assessment (2026-09-24):**
+
+- **Fixed: the desktop legend was invisible.** `ScoresLegend.svelte`/`SpeciesLegend.svelte` were
+  pinned bottom-right at a fixed z-index below the default right-docked panel, which fully covered
+  that corner — every desktop map showed color with no key. The legend now reads the panel's live
+  dock/maximized state (mirrored onto `.stage` by `Shell.svelte`) and repositions to stay clear of
+  it at any dock side, and hides while the panel is maximized.
+- **Fixed: two broken select styles in the Layers panel.** `lib/ui/Select.svelte`'s box used to
+  shrink to its label text while its chevron floated at the far right of the field, at both
+  desktop and phone widths — it now spans its container with the chevron inside the box. The
+  native Layer `<select>` (`lens/scores/LayersPanel.svelte`) no longer clips a long layer name
+  mid-word with no ellipsis.
+- **Added: search is reachable on the phone.** The topbar search field (which also hosts the
+  species picker) was desktop-only, so a phone visitor could not search a place or change species
+  at all. A new search button beside the ⋯ menu opens the same search content as a focused,
+  near-full-width modal.
+- **Fixed: minor top-bar/menu inconsistencies.** "Feedback" no longer renders underlined next to
+  its button-styled neighbours; the version chip's chevron now sits after "v7", matching every
+  other select-like control. The phone ⋯ menu's "Take a tour" now has its own icon, distinct from
+  "Docs".
 
 # atlas 0.10.43
 
@@ -125,6 +173,40 @@ phone legend chip overlapped the bottom sheet, and the legend it opened was blan
 - The chip's own label is now the short, fixed word **"Legend"**, with the metric name shown after
   it only as space allows (never wrapping to a second line); the full title is unaffected in the
   modal.
+
+# atlas 0.10.39
+
+Fix round for CI run 35956406448 (job 107495562810), the first clean-runner three-engine suite
+after merging U1 (0.10.36): 9 tests red, 876 passed. All four root causes below reproduced red on
+current `main` first, then fixed and confirmed green on three engines.
+
+- **PREVIEW badge textContent**: U1's compact-form fix for verify.mjs's 320px species-lens states
+  kept BOTH "PREVIEW" and "PRE" always in the DOM (one hidden via a CSS media query) -- visually
+  correct, but `.textContent` (what `toHaveText`/a scraper reads) concatenates both regardless of
+  `display: none`, so `e2e/shell.smoke.spec.ts` read "PREVIEW PRE" on all three engines. Fixed
+  the honest way: `VersionBadge.svelte` now tracks its own `compact` state via the SAME
+  `matchMedia` pattern `Shell.svelte`'s `isPhone` already uses, and renders exactly ONE text value
+  at a time -- `textContent` and the accessible name always agree with what is rendered.
+- **`e2e/shell.url-state.spec.ts`**: the panel-size control walk still clicked "Full height"/"Half
+  height" -- buttons R1's dockable panel replaced with dock left/bottom/right + maximize/restore.
+  `locator.click` timed out finding either (three engines). Updated to walk R1's own control set.
+- **A shared live region race** (`e2e/scores.popup.spec.ts`, `species-popup.spec.ts`,
+  `shell.chunk-error.spec.ts`): the first-view map loader's "Map ready" announcement went through
+  the ONE shared `announce()` region (`src/lib/ui/announcer.ts`) -- but that loader is PERSISTENT
+  and its own "idle" event can fire at any later, unpredictable moment, clobbering an unrelated
+  feature's own announcement made in between (a popup's description, a chunk-load failure). Fixed
+  with a SEPARATE, dedicated `role="status"` region for the loader alone
+  (`[data-testid="map-loading-status"]`) -- `Honeycomb.svelte` gained an `announceOnMount` prop
+  (default `true`, unchanged for its other caller, the gallery demo) so `Shell.svelte` can opt its
+  own mount-time announcement out of the shared channel entirely.
+- **`matrix.a11y.spec.ts` "rail tool: Flower plot"** (chromium): `RailButton.svelte`'s `.railitem`
+  transitioned `background`/`color` together over `--motion-fast` (150ms) on every tool switch --
+  found by a direct DOM sweep mid-transition: the OUTGOING (deselected) button briefly renders a
+  near-transparent gold background tint (`rgba(232,194,74,0.04)`) while its text is still close to
+  `--text-secondary`, a genuine sub-4.5:1 intermediate frame worse than either the idle or active
+  end state (axe: `#c7d2e8` on `#e8c24a`, 1.12:1). Dropped the transition on this one element --
+  the switch is now instant/discrete between the two known-good end states, so no frame in between
+  can ever be under-contrast. `--motion-fast` itself is untouched everywhere else.
 
 # atlas 0.10.38
 

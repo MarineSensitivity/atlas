@@ -73,7 +73,13 @@
   import { cellsInPolygon } from "../lib/geo/coverage";
   import { gridFromBoot } from "../lib/grid/grid";
   import { getDataEngine } from "./dataEngine";
-  import { placeCellsInStudyArea } from "./results";
+  import {
+    computeScoreResults,
+    describeAnalysisError,
+    placeCellsInStudyArea,
+    placeRowAnalysis,
+    type PlaceScoreState,
+  } from "./results";
   import { noopTrack, placeDrawParams, placeShareParams, type Track } from "./analytics";
   import type { AreaGeometry } from "../lib/geo/types";
   import type { NormalizedPlace } from "../lib/geo/upload/normalize";
@@ -362,6 +368,49 @@
       : undefined,
   );
 
+  // --- P7 fix: a drawn/entered place is analysed automatically, the row shows numbers --------------
+  // ("the same path a Program-Area pick uses" -- a zone row's composite/coverage read straight off
+  // `boot` with no async step at all, `rowFigures()` below; a geom place has no such precomputed
+  // row to read, so getting the SAME "numbers, not a placeholder" outcome means actually RUNNING the
+  // analysis, same as `ResultsPanel.svelte` already does for whichever ONE place is selected).
+  // `rowFigures()` used to hard-code `composite: null` for every `kind: "geom"` row, unconditionally
+  // -- Deliverable 5's own comment called this out as a placeholder ("...show as 'not analysed yet'
+  // until then") that nothing ever came back to wire up once the SQL twins existed. Keyed by the
+  // geometry itself (`JSON.stringify`, the SAME key `ResultsPanel.svelte`'s own `placeKey` uses) so
+  // a rename/duplicate/reorder never re-triggers a query for a geometry already analysed, and a
+  // duplicated place (identical geometry) gets its cached result for free. Every `computeScoreResults`
+  // call already runs through `exclusive()` (`lib/analysis/exclusive.ts`'s own per-db FIFO), so
+  // analysing several places back to back -- including the one `ResultsPanel` is independently
+  // analysing for its own flower/species view -- is queued, never raced or corrupted.
+  //
+  // P7 addendum: a place can cover ground this release never published a tile for (land, or past
+  // the populated footprint) -- `results.ts#describeAnalysisError`'s own header has the live
+  // reproduction (a missing `app/cell/tile=*` object, S3 403). The cache keeps the DESCRIBED
+  // failure, not a bare "error" flag, so the row can say what actually went wrong
+  // (`results.ts#PlaceScoreState`/`placeRowAnalysis`).
+  let placeScores = $state<Record<string, PlaceScoreState>>({});
+
+  $effect(() => {
+    if (!dataEngineFn) return; // no release resolved yet -- nothing to analyse against
+    const engine = dataEngineFn;
+    for (const p of places) {
+      if (p.kind !== "geom") continue;
+      const key = JSON.stringify(p.geometry);
+      if (key in placeScores) continue; // already analysed, loading, or errored -- never re-run
+      const geometry = p.geometry;
+      placeScores = { ...placeScores, [key]: "loading" };
+      (async () => {
+        try {
+          const ctx = await engine();
+          const result = await computeScoreResults(ctx, boot, geometry);
+          placeScores = { ...placeScores, [key]: result };
+        } catch (err) {
+          placeScores = { ...placeScores, [key]: { error: describeAnalysisError(err) } };
+        }
+      })();
+    }
+  });
+
   // --- "show analysis cells" (Deliverable 2/3): places <= MAX_ANALYSIS_CELLS only ----------------
   // item m4 (atlas-8 review round 2): the toggle's own on/off state now lives in `mapStore`
   // (`mapStore.showCells`/`setShowCells`), not local `$state` -- it used to read "off" after a
@@ -436,8 +485,10 @@
       if (token !== cellsToken) return; // the selection moved on while this was loading -- drop it
       mapStore.setShowCells(true);
       mapStore.setCells(cellsFeatureCollection(cells, grid));
-    } catch {
-      if (token === cellsToken) announce("Couldn't compute the analysed cells for this place.");
+    } catch (err) {
+      // P7: same honest-sentence helper the score/species panels use -- this reads `app/cell`
+      // tiles too, so the SAME missing-release-object class can fail it.
+      if (token === cellsToken) announce(describeAnalysisError(err));
     } finally {
       if (token === cellsToken) loadingCells = false;
     }
@@ -479,6 +530,12 @@
     areaKm2: number | null;
     coveragePct: number | null;
     composite: number | null;
+    /** P7: only ever set for a `kind: "geom"` row -- what to say in place of a composite chip while
+     * `placeScores` above doesn't (yet, or ever) have a real number for it. `errorMessage` is
+     * `describeAnalysisError()`'s own sentence (results.ts) -- a missing release object names
+     * itself, so the chip's `title` can say exactly what failed, not just that something did. */
+    status?: "loading" | "error" | "outside";
+    errorMessage?: string;
   }
 
   function rowFigures(p: Place): RowFigures {
@@ -487,9 +544,12 @@
       return summarizeZoneStats(stats);
     }
     if (p.kind === "geom") {
-      // area is a fast client-side estimate (area.ts); coverage/composite need the SQL twins
-      // (Deliverable 5, a later step's commit) and show as "not analysed yet" until then.
-      return { areaKm2: approxAreaKm2(p.geometry), coveragePct: null, composite: null };
+      // area is a fast client-side estimate (area.ts); coverage/composite/status come from
+      // `placeRowAnalysis()` (results.ts) over `placeScores` (above) -- the SAME SQL twins
+      // `ResultsPanel.svelte` runs for the selected place, now run for every geom place as soon as
+      // it exists, not only the one row currently selected.
+      const areaKm2 = approxAreaKm2(p.geometry);
+      return { areaKm2, ...placeRowAnalysis(placeScores[JSON.stringify(p.geometry)]) };
     }
     return { areaKm2: null, coveragePct: null, composite: null }; // upload: geometry not held here
   }
@@ -766,6 +826,15 @@
           >
           {#if figures.composite !== null}
             <Chip label={`${fmt(figures.composite, 1)} composite`} variant="accent" />
+          {:else if figures.status === "loading"}
+            <Chip label="analysing…" />
+          {:else if figures.status === "error"}
+            <!-- P7: Chip itself forwards no `title` -- a plain wrapper carries the FULL honest
+                 message (results.ts#describeAnalysisError) so hovering/inspecting the row shows
+                 exactly what failed, not just that something did. -->
+            <span title={figures.errorMessage}><Chip label="couldn't analyse" /></span>
+          {:else if figures.status === "outside"}
+            <Chip label="outside the study area" />
           {:else}
             <Chip label="not analysed yet" />
           {/if}

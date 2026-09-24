@@ -1,0 +1,12 @@
+diff --git a/src/lib/ui/Select.svelte b/src/lib/ui/Select.svelte
+index 24da75f..61dfcc3 100644
+--- a/src/lib/ui/Select.svelte
++++ b/src/lib/ui/Select.svelte
+@@ -82,7 +82,6 @@
+        content-sized even once `.select-wrap` above spanned the full field, which is exactly what
+        let the chevron (absolutely positioned against the now-wide wrapper) drift away from the
+        box it is meant to sit inside. */
+-    width: 100%;
+   }
+ 
+   .select:focus-visible {

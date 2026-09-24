@@ -332,8 +332,17 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
   // (pinned at the top, M7) would each only ever exercise ONE of the two paths -- Boundaries'
   // own two-step trip to the floor exercises "still enabled, same button" on the first press and
   // "now disabled, refocus the other direction" on the second, and checks all three signals the
-  // review named: the URL (`layers=` changes), the aria-live region (announces each move), and
+  // review named: the URL (`layers=` changes), the live region (announces each move), and
   // `document.activeElement` (never reverts to <body>).
+  //
+  // P5 fix (post-merge finding): `LayersPanel.svelte` used to render its own private
+  // `.layers-stack [aria-live]` region -- a real SC 4.1.3 regression (the shell's own rule is
+  // ONE live region for the whole page, `src/lib/ui/announcer.ts`'s header) that
+  // e2e/shell.a11y.spec.ts's "exactly one live region" test caught. This now reads the SAME
+  // shared `[role="status"]` region every other announced confirmation in the app uses
+  // (e2e/species.smoke.spec.ts's "announces the result count" test, e2e/scores.popup.spec.ts's
+  // popup echo) -- `toContainText`, not `toHaveText`: `announce()` appends an alternating
+  // zero-width space so two identical announcements in a row still change the region's text.
   test("m4: repeatedly moving a row by keyboard never loses focus to <body>, even once its own button becomes disabled", async ({
     page,
   }) => {
@@ -345,7 +354,7 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     const upBtn = page.getByRole("button", {
       name: "Move Boundaries up (toward the top of the map)",
     });
-    const liveRegion = page.locator(".layers-stack [aria-live]");
+    const liveRegion = page.locator('[role="status"]').first();
     const activeElementLabel = () =>
       page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? null);
 
@@ -354,14 +363,14 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     await downBtn.focus();
     await downBtn.press("Enter"); // arrIndex 2 -> 1, position 6 -> 7; "down" still enabled
     await expect.poll(() => page.url(), { timeout: 10_000 }).toContain("layers=");
-    await expect(liveRegion).toHaveText("Boundaries moved to position 7 of 8");
+    await expect(liveRegion).toContainText("Boundaries moved to position 7 of 8");
     await expect(downBtn).toBeEnabled();
     await expect
       .poll(activeElementLabel, { timeout: 10_000 })
       .toBe("Move Boundaries down (toward the bottom of the map)");
 
     await downBtn.press("Enter"); // arrIndex 1 -> 0, position 7 -> 8 (the very bottom)
-    await expect(liveRegion).toHaveText("Boundaries moved to position 8 of 8");
+    await expect(liveRegion).toContainText("Boundaries moved to position 8 of 8");
     // ITS OWN "down" button is now disabled (nothing left below it) -- focus must have moved to
     // "up" instead of silently reverting to <body>.
     await expect(downBtn).toBeDisabled();
@@ -380,6 +389,14 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
   // changed nothing. Proves BOTH halves: the button is disabled on load (no click needed to find
   // out), and forcing a click through anyway (bypassing the disabled attribute) confirms the
   // underlying model really is a no-op -- the URL never gains `layers=`.
+  //
+  // P5 fix (post-merge finding): the shared `[role="status"]` region (see the m4 test above's own
+  // comment on why this moved off `.layers-stack [aria-live]`) is NOT pristine at page load, and
+  // NOT quiescent either -- Shell.svelte's own honeycomb loader announces "Map loading" on mount,
+  // then independently "Map ready" once the basemap settles, on its OWN timing unrelated to this
+  // click (measured: a before/after snapshot equality check was flaky against exactly that race).
+  // "nothing new was announced" is instead proven by the region never carrying THIS action's own
+  // wording, not by its text staying byte-identical.
   test("review round 2: Selection's own move buttons are disabled on load, not just at a boundary -- clicking (bypassing disabled) is a genuine no-op", async ({
     page,
   }) => {
@@ -394,13 +411,16 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     await expect(selectionDown).toBeDisabled();
     await expect(selectionUp).toBeDisabled();
 
-    const liveRegion = page.locator(".layers-stack [aria-live]");
+    const liveRegion = page.locator('[role="status"]').first();
     const urlBefore = page.url();
     // force-click through the disabled attribute (Playwright's own escape hatch) -- if
     // moveLayerStackEntry is truly a no-op here, the URL/live-region stay untouched regardless.
     await selectionDown.click({ force: true });
     expect(page.url()).toBe(urlBefore);
-    await expect(liveRegion).toHaveText("");
+    // a real wait, not a poll-until: proving an ABSENCE needs the negative to hold for a while,
+    // not just at the first instant checked.
+    await page.waitForTimeout(500);
+    await expect(liveRegion).not.toContainText(/moved to position/);
     expect(errors).toEqual([]);
   });
 

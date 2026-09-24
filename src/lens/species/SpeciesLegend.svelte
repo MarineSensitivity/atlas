@@ -54,6 +54,27 @@
     box-shadow: var(--elev-2);
   }
 
+  /* D1 (Opus eyes-on assessment, 2026-09-24): the SAME fix as ScoresLegend.svelte's own copy of
+     this rule (see its header comment for the full reasoning) -- the default bottom-right corner
+     above is exactly where a right-docked `.panel-region` (z-index 16) sits, so the legend used to
+     render invisibly under it. `.stage`'s `data-panel-dock`/`data-panel-maximized` (mirrored by
+     Shell.svelte off `panelGeom`, the same source `.panel-region` itself reads) let this float
+     clear of the panel at any dock. */
+  :global(.stage[data-panel-dock="right"]) .species-legend {
+    /* the map-attribution chip (shell.css: `left: var(--space-2)`, `bottom: var(--space-2)`,
+       ~18px tall) already claims this corner -- see ScoresLegend.svelte's own copy of this rule
+       for the measured overlap red-first caught. */
+    right: auto;
+    left: var(--space-3);
+    bottom: calc(var(--space-2) + 22px + var(--space-2));
+  }
+  :global(.stage[data-panel-dock="bottom"]) .species-legend {
+    bottom: calc(var(--panel-size, var(--size-panel)) + var(--space-3) * 2);
+  }
+  :global(.stage[data-panel-maximized="true"]) .species-legend {
+    display: none;
+  }
+
   /* P1 fix (Ben's phone report, 2026-09-24): a `display:none` used to live HERE for "no room
      beside the sheet" below 900px -- but Shell.svelte reuses this exact component's markup inside
      LegendChip.svelte's phone modal (the SAME `<Comp {legend} />`), so this rule also blanked the

@@ -477,15 +477,64 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
 }
 
 /** the narrow slice of MapLibre's `Map` this module needs — so `applyStyle` is unit-testable with
- * a two-line fake and `style.ts` never imports maplibre-gl at runtime. */
+ * a two-line fake and `style.ts` never imports maplibre-gl at runtime. `getStyle` is OPTIONAL: a
+ * fake that omits it (every existing test) gets the old behaviour byte-for-byte — see
+ * `preserveDrawLayers`'s own header for why a REAL map needs it. */
 export interface StyleTarget {
   setStyle(style: StyleSpecification, options: { diff: boolean }): unknown;
+  getStyle?(): StyleSpecification | undefined;
+}
+
+/** terra-draw-maplibre-gl-adapter's own default `prefixId` ("td", `draw.ts` never overrides it) --
+ * every source/layer id it `addSource`/`addLayer`s directly onto the live map starts with this. */
+export const DRAW_LAYER_PREFIX = "td-";
+
+/**
+ * 0.10.46 fix (P7 — "drawn places vanish from the map after the second draw"): terra-draw manages
+ * its OWN sources/layers on the live map, calling `addSource`/`addLayer` directly (`draw.ts`'s own
+ * header: "the one sanctioned exception to 'a lens never touches MapLibre directly'"), on the
+ * assumption that this app's own `setStyle(diff:true)` cycle would leave them alone. It does not:
+ * `composeStyle()`'s own style object never mentions terra-draw's ids, so MapLibre's diff — which
+ * removes anything present in the CURRENT style but absent from the NEW one — silently deleted
+ * terra-draw's `td-*` sources/layers on the very first recompose after a draw finished (finishing a
+ * shape calls `writePlaces()`, which changes `sel.pl`/`sel.sel`, which is exactly what triggers
+ * Shell.svelte's `composeStyle` effect). Terra-draw has no idea: its next internal render — showing
+ * the just-finished shape's edit handles, or the next shape's live preview — calls
+ * `map.getSource("td-point").setData(...)`, the source is gone, and `.setData` on `undefined`
+ * throws (`TypeError: Cannot read properties of undefined (reading 'setData')`, uncaught, inside
+ * terra-draw's own vendor chunk) — measured: a SECOND drawn shape after this never got its own
+ * edit-mode chrome, and the crash repeats on every subsequent pointer move.
+ *
+ * The fix: `applyStyle()` reads whatever the map's CURRENT style already has (`getStyle()`) and
+ * copies any `td-`-prefixed source/layer that `next` doesn't already carry back into what actually
+ * gets applied — so MapLibre's diff sees them as unchanged and never touches them. Preserved layers
+ * are APPENDED (terra-draw always adds without a `before` id, so they already paint on top of
+ * everything composeStyle declares) — this never reorders anything `orderLayers()` decided.
+ */
+export function preserveDrawLayers(
+  current: StyleSpecification | undefined,
+  next: StyleSpecification,
+): StyleSpecification {
+  const extraSources = Object.entries(current?.sources ?? {}).filter(
+    ([id]) => id.startsWith(DRAW_LAYER_PREFIX) && !(id in next.sources),
+  );
+  const nextLayerIds = new Set(next.layers.map((l) => l.id));
+  const extraLayers = (current?.layers ?? []).filter(
+    (l) => l.id.startsWith(DRAW_LAYER_PREFIX) && !nextLayerIds.has(l.id),
+  );
+  if (!extraSources.length && !extraLayers.length) return next;
+  return {
+    ...next,
+    sources: { ...next.sources, ...Object.fromEntries(extraSources) },
+    layers: [...next.layers, ...extraLayers],
+  };
 }
 
 /**
- * Apply a composed style. This is the ONLY `setStyle` in the app, and it does nothing else:
- * no `addLayer`, no `addSource`, no `moveLayer`, no `before` id (CLAUDE.md).
+ * Apply a composed style. This is the ONLY `setStyle` in the app, and it does nothing else beyond
+ * preserving terra-draw's own live layers (`preserveDrawLayers`, above): no `addLayer`, no
+ * `addSource`, no `moveLayer`, no `before` id (CLAUDE.md).
  */
 export function applyStyle(map: StyleTarget, style: StyleSpecification): void {
-  map.setStyle(style, { diff: true });
+  map.setStyle(preserveDrawLayers(map.getStyle?.(), style), { diff: true });
 }

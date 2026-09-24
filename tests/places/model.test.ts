@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addPlace,
   addZonePlace,
+  allGeomPlacesOutline,
   duplicatePlaceAt,
   fallbackZoneLabel,
   featureCollectionOf,
@@ -17,6 +18,7 @@ import {
   unitForZoneSet,
   zoneSetForUnit,
 } from "../../src/places/model";
+import { densifyGeometry } from "../../src/places/densify";
 import type { GeomPlace, Place, ZonePlace } from "../../src/lib/geo/placeCodec";
 import { parseSel } from "../../src/lib/state/codec";
 
@@ -216,6 +218,54 @@ describe("selectedGeomPlaceGeometry", () => {
     expect(selectedGeomPlaceGeometry(hash, undefined)).toBeNull();
     expect(selectedGeomPlaceGeometry(hash, "place:9")).toBeNull();
     expect(selectedGeomPlaceGeometry(undefined, "place:0")).toBeNull();
+  });
+});
+
+// P7 ("drawn places vanish from the map after the second draw"): `placesMap.svelte.ts`'s baseline
+// used to call `selectedGeomPlaceGeometry` -- ONE place -- so drawing a second place silently
+// dropped the outline of the one drawn just before it (the new place auto-selects itself,
+// `Places.svelte#writePlaces`). `allGeomPlacesOutline` is the fix: every geom place, always.
+describe("allGeomPlacesOutline", () => {
+  const TRIANGLE: GeomPlace = {
+    kind: "geom",
+    name: "Triangle",
+    geometry: {
+      type: "Polygon",
+      coordinates: [
+        [
+          [2, 2],
+          [3, 2],
+          [2, 3],
+          [2, 2],
+        ],
+      ],
+    },
+  };
+
+  it("draws EVERY geom place in the list -- not just the selected/last one", () => {
+    const hash = hashFromPlaces([ZONE, SQUARE, TRIANGLE]);
+    const result = allGeomPlacesOutline(hash);
+    expect(result?.features.map((f) => f.geometry)).toEqual([
+      densifyGeometry(SQUARE.geometry),
+      densifyGeometry(TRIANGLE.geometry),
+    ]);
+  });
+
+  it("P7 regression: a SECOND drawn place does not drop the first one's outline", () => {
+    const first = allGeomPlacesOutline(hashFromPlaces([SQUARE]));
+    const both = allGeomPlacesOutline(hashFromPlaces([SQUARE, TRIANGLE]));
+    expect(first?.features).toHaveLength(1);
+    expect(both?.features).toHaveLength(2); // NOT 1 -- SQUARE must still be there
+    expect(both?.features[0].geometry).toEqual(densifyGeometry(SQUARE.geometry));
+  });
+
+  it("skips zone places -- their highlight is drawn elsewhere, and uploads carry no geometry", () => {
+    expect(allGeomPlacesOutline(hashFromPlaces([ZONE]))).toBeNull();
+  });
+
+  it("is null with no places at all", () => {
+    expect(allGeomPlacesOutline(undefined)).toBeNull();
+    expect(allGeomPlacesOutline("")).toBeNull();
   });
 });
 
