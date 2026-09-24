@@ -81,6 +81,58 @@ describe("scoresMapInputs — cell branch", () => {
   });
 });
 
+// M6 (review round 1, "short-label test missing" — code already had this precedence, only the
+// test did not): `state.metricLabels` is the manifest's own SHORT label
+// (`boot.ts#metricLabelsFromManifest`), keyed by `metric_key`; `layer?.label` is `boot.json`'s
+// LONG description text. Real v7 strings (`BOOT_V7`'s "primprod" row + the release's actual
+// published manifest short label, `workflows/dev/gen_v7_artifacts.R:49`), not synthetic ones, so
+// a fixture drift between the two files would show up here.
+describe("scoresMapInputs — legend title precedence (M6)", () => {
+  const PRIMPROD_LONG_LABEL = "Primary productivity VGPM/VIIRS npp_avg (mg C/m2/day)"; // BOOT_V7
+  const PRIMPROD_SHORT_LABEL = "prim prod, 2014-2023 avg (mg C/m^2/day)"; // v7's manifest.metrics
+
+  it("no metricLabels at all (manifest not loaded yet): falls back to the LONG boot.layers label", () => {
+    const out = scoresMapInputs({
+      boot: BOOT_V7,
+      overlays: MANIFEST_OVERLAYS_V7,
+      unit: "cell",
+      lyr: "primprod",
+      palette: "spectral_r",
+      showOutsidePra: false,
+      selection: null,
+    });
+    expect(out.legend?.title).toBe(PRIMPROD_LONG_LABEL);
+  });
+
+  it("metricLabels has no row for THIS metric_key: still falls back to the LONG label, not blank", () => {
+    const out = scoresMapInputs({
+      boot: BOOT_V7,
+      overlays: MANIFEST_OVERLAYS_V7,
+      unit: "cell",
+      lyr: "primprod",
+      palette: "spectral_r",
+      showOutsidePra: false,
+      selection: null,
+      metricLabels: { extrisk_bird: "bird: ext. risk" },
+    });
+    expect(out.legend?.title).toBe(PRIMPROD_LONG_LABEL);
+  });
+
+  it("metricLabels publishes a SHORT label for this metric_key: it wins over the long boot.layers label", () => {
+    const out = scoresMapInputs({
+      boot: BOOT_V7,
+      overlays: MANIFEST_OVERLAYS_V7,
+      unit: "cell",
+      lyr: "primprod",
+      palette: "spectral_r",
+      showOutsidePra: false,
+      selection: null,
+      metricLabels: { primprod: PRIMPROD_SHORT_LABEL },
+    });
+    expect(out.legend?.title).toBe(PRIMPROD_SHORT_LABEL);
+  });
+});
+
 describe("scoresMapInputs — zone-choropleth branch", () => {
   it("raster/overlay cleared, the current unit gets a fill, others stay outline-only", () => {
     const out = scoresMapInputs({

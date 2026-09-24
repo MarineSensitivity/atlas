@@ -18,9 +18,11 @@
 // `data-raster`), just probed with a layer type this hermetic harness can actually paint.
 //
 // M8 fix (Opus 5.5 review): `main`'s default theme is now DARK (`DEFAULT_SEL.theme`), not "auto"
-// resolving to paper — every `gotoLayersScores`/`gotoScoresWithEcoregion` navigation below passes
-// `&theme=light` explicitly so the PAPER pixel expectations (`BASEMAP_RGB`, `BLENDED_RASTER_RGB`,
-// both defined for the paper theme in `map-hermetic.ts`) still hold.
+// resolving to paper — `gotoLayersScores` below passes `&theme=light` explicitly so the PAPER
+// pixel expectations (`BASEMAP_RGB`, `BLENDED_RASTER_RGB`, both defined for the paper theme in
+// `map-hermetic.ts`) still hold. `gotoScoresWithEcoregion` (the ecoregion describe block below)
+// asserts feature counts and layer presence only, never a colour, so it does not need the theme
+// pinned.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
@@ -398,6 +400,106 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     expect(await page.evaluate(() => !!window.__atlasMap!.handle.map.getLayer("basemap-water"))).toBe(
       true,
     );
+    expect(errors).toEqual([]);
+  });
+});
+
+// M6 (review round 1, "short-label test missing"): the manifest's own SHORT metric label
+// (`manifest.metrics[]`, `boot.ts#metricLabelsFromManifest`) wins over `boot.layers[].label`'s
+// LONG description for the Data row's <select> OPTION text (`LayersPanel.svelte#layerOptionLabel`)
+// -- unit-tested at the `scoresMapInputs` level in `tests/lens/scores/mapInputs.test.ts`; this is
+// the end-to-end proof that the real DOM shows the short text in the dropdown and the long text
+// as the description underneath, ONCE, never duplicated, and that the description disappears
+// entirely when the release publishes no short label of its own (both texts would otherwise be
+// identical). `bootFor("v7")`'s own one-layer fixture has no `primprod` row at all, so this block
+// builds its own boot (`bootFor("v7")` + one added raw layer) rather than changing that shared
+// fixture for every other spec in this file.
+test.describe("M6: the Data row's short label wins over the long description, which is hidden when redundant", () => {
+  const PRIMPROD_LONG_LABEL = "Primary productivity VGPM/VIIRS npp_avg (mg C/m2/day)"; // v7's real boot.layers label
+  const PRIMPROD_SHORT_LABEL = "prim prod, 2014-2023 avg (mg C/m^2/day)"; // v7's real manifest.metrics label
+
+  function bootWithPrimprod() {
+    const boot = bootFor("v7") as { layers: unknown[] };
+    return {
+      ...boot,
+      layers: [
+        ...boot.layers,
+        { metric_key: "primprod", label: PRIMPROD_LONG_LABEL, category: "raw", order: 2 },
+      ],
+    };
+  }
+
+  /** overrides `routeBucket`'s own manifest fixture (`{ver, capabilities: {}}`, no `metrics`) --
+   * registered AFTER `routeBucket`, matching the ecoregion describe block's own
+   * `routeManifestWithEcoregion` convention (Playwright tries routes in reverse registration
+   * order, so this exact-URL route wins). `metrics: null` (the default-fixture case) publishes NO
+   * `metrics` key at all, matching a real release manifest that predates short labels. */
+  async function routeManifestWithMetrics(
+    page: Page,
+    ver: string,
+    metrics: { metric_key: string; label: string }[] | null,
+  ) {
+    await page.route(
+      `${BUCKET}${ver}/manifest.json`,
+      safeRoute((route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ ver, capabilities: {}, ...(metrics ? { metrics } : {}) }),
+        }),
+      ),
+    );
+  }
+
+  async function gotoLayersScoresPrimprod(
+    page: Page,
+    metrics: { metric_key: string; label: string }[] | null,
+  ) {
+    await blockWasm(page);
+    await routeBucket(page, "v7", bootWithPrimprod());
+    await routeManifestWithMetrics(page, "v7", metrics);
+    await routeSession(page, null);
+    await routeSealFixture(page);
+    await routeZones20(page);
+    await routeBasemapStyle(page);
+    await routeTitilerTiles(page);
+    await routeGlyphs(page);
+    await page.goto("/?proj=mercator&theme=light&lyr=primprod");
+    await waitForHydration(page);
+    await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
+    // no "open the Layers tool" click here -- the shared LayersPanel's Data row starts EXPANDED
+    // (`src/lib/ui/LayersPanel.svelte`'s `expandedId = $state(DATA_ROW_ID)`), same as every other
+    // test in this file that finds a row's switch with no preceding click.
+  }
+
+  test("no manifest.metrics published: the option text falls back to the long label, and the description is HIDDEN (identical text, not repeated)", async ({
+    page,
+  }) => {
+    const errors = collectConsoleErrors(page);
+    await gotoLayersScoresPrimprod(page, null);
+    await expect(
+      page.getByRole("option", { name: PRIMPROD_LONG_LABEL, exact: true }),
+    ).toBeAttached();
+    await expect(page.getByTestId("layer-description")).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+
+  test("manifest.metrics publishes a short label: the option shows the SHORT text, and the long text still shows ONCE as the description", async ({
+    page,
+  }) => {
+    const errors = collectConsoleErrors(page);
+    await gotoLayersScoresPrimprod(page, [
+      { metric_key: "primprod", label: PRIMPROD_SHORT_LABEL },
+    ]);
+    await expect(
+      page.getByRole("option", { name: PRIMPROD_SHORT_LABEL, exact: true }),
+    ).toBeAttached();
+    await expect(page.getByRole("option", { name: PRIMPROD_LONG_LABEL, exact: true })).toHaveCount(
+      0,
+    );
+    const description = page.getByTestId("layer-description");
+    await expect(description).toHaveCount(1);
+    await expect(description).toHaveText(PRIMPROD_LONG_LABEL);
     expect(errors).toEqual([]);
   });
 });

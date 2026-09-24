@@ -64,14 +64,23 @@
   const note = $derived(primaryUnitNote(boot, ver));
   const groups = $derived(layerGroups(boot));
 
-  /** the CURRENT layer's long description (`boot.layers[].label`) — "What is this layer?"
-   * (docs/usability.md §7 R3's own recommendation for the expanded Data row). `null` before a
-   * layer has resolved, or for a `metric_key` the release does not publish. */
-  const currentLayerDescription = $derived(layerByKey(boot, lyr)?.label ?? null);
-
   function layerOptionLabel(l: { metric_key: string; label?: string }): string {
     return metricLabels[l.metric_key] ?? l.label ?? l.metric_key;
   }
+
+  /** the CURRENT layer's long description (`boot.layers[].label`) — "What is this layer?"
+   * (docs/usability.md §7 R3's own recommendation for the expanded Data row). `null` before a
+   * layer has resolved, for a `metric_key` the release does not publish, OR (M6, review round 1)
+   * when the manifest publishes no SHORT label of its own — `layerOptionLabel()` then falls back
+   * to this SAME `label` text for the option, and repeating it verbatim as a description under
+   * the dropdown is redundant, not informative (e.g. a release with no `manifest.metrics` row for
+   * a layer at all: both texts are `boot.layers[].label`). */
+  const currentLayerDescription = $derived.by(() => {
+    const l = layerByKey(boot, lyr);
+    const desc = l?.label ?? null;
+    if (desc === null) return null;
+    return desc === layerOptionLabel({ metric_key: l!.metric_key, label: l!.label }) ? null : desc;
+  });
 
   const PALETTE_OPTIONS = [
     { value: "spectral_r", label: "Spectral" },

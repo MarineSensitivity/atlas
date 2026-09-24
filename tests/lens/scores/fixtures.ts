@@ -32,7 +32,12 @@ export const BOOT_V7 = {
   layers: [
     {
       metric_key: "primprod",
-      label: "Primary productivity",
+      // M6 (review round 1): v7's REAL long label (`workflows/score_cell_metrics.qmd:141`,
+      // `mseq("primprod", "Primary productivity VGPM/VIIRS npp_avg (mg C/m2/day)")`), not a
+      // shortened stand-in -- this is the exact text `LayersPanel.svelte`'s
+      // `currentLayerDescription` falls back to/compares against when the manifest publishes no
+      // short label of its own.
+      label: "Primary productivity VGPM/VIIRS npp_avg (mg C/m2/day)",
       category: "raw",
       order: 1,
       colormap: "spectral_r",
