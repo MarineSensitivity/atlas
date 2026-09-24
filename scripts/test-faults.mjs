@@ -1124,6 +1124,45 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4421" },
   },
+  {
+    id: "places-zone-results-panel-gated",
+    patch: "tests/faults/places-zone-results-panel-gated.patch",
+    describe:
+      'Places.svelte\'s results-panel gate reverts to `kind === "geom"` only -- selecting a ' +
+      "Program Area place opens no ResultsPanel again (Q3 item 1's own live-verified defect: the " +
+      "row shows a real composite, but no coverage note or flower)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/places.spec.ts",
+      "-g",
+      "choosing a Program Area shows its results panel",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4429" },
+  },
+  {
+    id: "places-cells-token-guard-dropped",
+    patch: "tests/faults/places-cells-token-guard-dropped.patch",
+    describe:
+      "toggleAnalysisCells()'s `if (token !== cellsToken) return;` guard removed -- a late " +
+      "'show analysis cells' result is applied unconditionally again, painting the PREVIOUS " +
+      "place's cells once the selection has moved on (item 3b, atlas-8 review round 2)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/places.spec.ts",
+      "-g",
+      "item 3b",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4429" },
+    duckdbExt: true,
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

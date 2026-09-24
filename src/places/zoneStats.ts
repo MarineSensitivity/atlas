@@ -24,6 +24,8 @@
 
 import type { Point } from "geojson";
 import { zoneLabelsFromBoot } from "../lib/map/layers/zones";
+import { componentMetricKeys } from "../lib/analysis/queries";
+import { componentLabel } from "../lens/scores/flower";
 
 export interface ZoneStat {
   key: string;
@@ -46,6 +48,7 @@ interface BootZoneRow {
   composite?: unknown;
   score?: unknown;
   metrics?: unknown;
+  n_cells?: unknown;
 }
 
 function num(v: unknown): number | null {
@@ -212,3 +215,89 @@ export function zoneCenterFromBoot(
   }
   return { lon: lon / pts.length, lat: lat / pts.length };
 }
+
+// --- Q3 (P round, 2026-09-24): "Selecting a Program Area place opens no results panel in
+// Places" -- the same `ResultsPanel.svelte` a drawn/uploaded place gets now renders for a
+// `kind: "zone"` place too, reading everything below straight off `boot` (published, synchronous
+// -- unlike a custom place's own SQL-computed scores, there is no engine round trip for a zone's
+// coverage/flower/components). Species is the one piece that still needs the engine (the
+// `zone_taxon` table `speciesForZone` reads); n_cells/area/composite/flower/components do not.
+
+/** `boot.zones[unit][*].n_cells` (the module header's real v7 shape), summed over every key of a
+ * (possibly multi-pick) zone place -- the coverage note's "N cells" figure. `null` when the
+ * release publishes no `n_cells` for any of `keys` (never a throw: an old/synthetic bundle that
+ * predates this field just shows "--", matching every other unpublished-number convention here). */
+export function zoneNCellsFor(boot: unknown, unit: string, keys: readonly string[]): number | null {
+  const zones = (boot as { zones?: Record<string, unknown> } | null | undefined)?.zones;
+  const rows = zones && typeof zones === "object" ? zones[unit] : undefined;
+  if (!Array.isArray(rows)) return null;
+  const wanted = new Set(keys.map(String));
+  let total = 0;
+  let any = false;
+  for (const raw of rows as BootZoneRow[]) {
+    if (!raw || typeof raw !== "object" || !wanted.has(String(raw.key))) continue;
+    const n = num(raw.n_cells);
+    if (n !== null) {
+      total += n;
+      any = true;
+    }
+  }
+  return any ? total : null;
+}
+
+export interface ZoneComponentScore {
+  metric_key: string;
+  /** `flower.ts#componentLabel()`'s label -- the SAME text the flower's own petals use, so the
+   * table beside it can never disagree about a component's name. */
+  component: string;
+  score: number;
+}
+
+/**
+ * ONE zone's component table (Deliverable 5's zone twin, item 1): every one of this release's
+ * component `metric_key`s (`componentMetricKeys(boot)` -- the identical list `scoresForCells()`
+ * substitutes for a custom place, `analysis/queries.ts`) that the zone's own published `metrics`
+ * actually carries a finite number for. Unlike the FLOWER (which collapses a v8/v9 category
+ * collision to one petal, `flower.ts`'s own header), this keeps every key: both terms genuinely
+ * feed the published composite, and the table's job is to show what fed it, not to draw a shape.
+ * `[]` for an unknown zone/unit or a release with no component layers (never a throw).
+ */
+export function zoneComponentScores(
+  boot: unknown,
+  unit: string,
+  key: string,
+): ZoneComponentScore[] {
+  const zones = (boot as { zones?: Record<string, unknown> } | null | undefined)?.zones;
+  const rows = zones && typeof zones === "object" ? zones[unit] : undefined;
+  if (!Array.isArray(rows)) return [];
+  const raw = (rows as BootZoneRow[]).find((r) => r && String(r.key) === key);
+  const metrics = raw?.metrics;
+  if (!metrics || typeof metrics !== "object") return [];
+  const out: ZoneComponentScore[] = [];
+  for (const metricKey of componentMetricKeys(boot)) {
+    const v = num((metrics as Record<string, unknown>)[metricKey]);
+    if (v !== null)
+      out.push({ metric_key: metricKey, component: componentLabel(metricKey), score: v });
+  }
+  return out;
+}
+
+/**
+ * "Show analysis cells" for a ZONE place would paint the zone's own cell set from a `zone_cell`
+ * source, the same way it already paints a drawn place's D7b-clipped cells (item 1's rule: "if the
+ * data path exists"). It does not exist yet -- confirmed by grep, nothing under `src/places/**` or
+ * `src/lib/analysis/**` mounts a `zone_cell` object, and the workflows pipeline that would publish
+ * it (`tests/fixtures/report/README.md`'s own reference to "the zone's own `zone_cell` rows") is a
+ * SEPARATE, not-yet-wired dataset. This always returns `false` today; the day a `zone_cell` reader
+ * lands, this is the one place that flips, and every caller (`Places.svelte`'s toggle) already
+ * reads it rather than hard-coding "zone places never get this button".
+ */
+export function zoneCellsAvailable(boot: unknown): boolean {
+  void boot;
+  return false;
+}
+
+/** the one-line reason `Places.svelte` shows in place of the "Show analysis cells" button for a
+ * selected zone place, while {@link zoneCellsAvailable} is false. */
+export const ZONE_CELLS_UNAVAILABLE_REASON =
+  "Show analysis cells isn't available for Program Area places yet — this release doesn't publish per-zone cell data to the app.";

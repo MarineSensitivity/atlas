@@ -1,0 +1,13 @@
+diff --git a/src/places/Places.svelte b/src/places/Places.svelte
+index 223c08a..85ab73f 100644
+--- a/src/places/Places.svelte
++++ b/src/places/Places.svelte
+@@ -962,7 +962,7 @@
+          drawn/uploaded place does -- ResultsPanel.svelte's own header explains why its
+          coverage/flower/components branch differs (published, synchronous) while species still
+          goes through the engine. -->
+-    {#if selectedPlace?.kind === "geom" || selectedPlace?.kind === "zone"}
++    {#if selectedPlace?.kind === "geom"}
+       <ResultsPanel place={selectedPlace} {boot} {ver} dataEngine={dataEngineFn} />
+     {/if}
+   {/if}
