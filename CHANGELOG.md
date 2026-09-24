@@ -62,7 +62,7 @@ layers (place names, bathymetry)."**
   paints nothing differently.
 - **M2**: a KNOWN group missing from a `layers=` token is now inserted right after the nearest
   EARLIER default id present in the token (not appended at the array's end/top) — `?layers=data-
-  raster:o50` used to bury the raster it named under every other group, including a fully-opaque
+raster:o50` used to bury the raster it named under every other group, including a fully-opaque
   land fill.
 - **M3**: three new pixel/feature-proof e2e tests for the Layers panel eyes beyond the Data row's
   (Zone outlines: `programarea_ln` rendered-feature count >0 -> 0; Selection: the picked cell's

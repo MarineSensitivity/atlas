@@ -301,7 +301,9 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     const downBtn = page.getByRole("button", {
       name: "Move Boundaries down (toward the bottom of the map)",
     });
-    const upBtn = page.getByRole("button", { name: "Move Boundaries up (toward the top of the map)" });
+    const upBtn = page.getByRole("button", {
+      name: "Move Boundaries up (toward the top of the map)",
+    });
     const liveRegion = page.locator(".layers-stack [aria-live]");
     const activeElementLabel = () =>
       page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? null);
@@ -313,18 +315,18 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     await expect.poll(() => page.url(), { timeout: 10_000 }).toContain("layers=");
     await expect(liveRegion).toHaveText("Boundaries moved to position 7 of 8");
     await expect(downBtn).toBeEnabled();
-    await expect.poll(activeElementLabel, { timeout: 10_000 }).toBe(
-      "Move Boundaries down (toward the bottom of the map)",
-    );
+    await expect
+      .poll(activeElementLabel, { timeout: 10_000 })
+      .toBe("Move Boundaries down (toward the bottom of the map)");
 
     await downBtn.press("Enter"); // arrIndex 1 -> 0, position 7 -> 8 (the very bottom)
     await expect(liveRegion).toHaveText("Boundaries moved to position 8 of 8");
     // ITS OWN "down" button is now disabled (nothing left below it) -- focus must have moved to
     // "up" instead of silently reverting to <body>.
     await expect(downBtn).toBeDisabled();
-    await expect.poll(activeElementLabel, { timeout: 10_000 }).toBe(
-      "Move Boundaries up (toward the top of the map)",
-    );
+    await expect
+      .poll(activeElementLabel, { timeout: 10_000 })
+      .toBe("Move Boundaries up (toward the top of the map)");
     expect(await upBtn.evaluate((el) => el === document.activeElement)).toBe(true);
     expect(errors).toEqual([]);
   });
@@ -386,9 +388,9 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     await page.getByRole("switch", { name: "Zone outlines visible on the map" }).click();
 
     await expect.poll(() => zoneFeatureCount(page), { timeout: 20_000 }).toBe(0);
-    expect(await page.evaluate(() => !!window.__atlasMap!.handle.map.getLayer("programarea_ln"))).toBe(
-      true,
-    );
+    expect(
+      await page.evaluate(() => !!window.__atlasMap!.handle.map.getLayer("programarea_ln")),
+    ).toBe(true);
     expect(errors).toEqual([]);
   });
 
@@ -418,9 +420,9 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     await page.getByRole("switch", { name: "Selection visible on the map" }).click();
 
     await expect.poll(() => ringCount("selection-line"), { timeout: 20_000 }).toBe(0);
-    expect(await page.evaluate(() => !!window.__atlasMap!.handle.map.getLayer("selection-line"))).toBe(
-      true,
-    );
+    expect(
+      await page.evaluate(() => !!window.__atlasMap!.handle.map.getLayer("selection-line")),
+    ).toBe(true);
   });
 
   test("M3: the Land & water row's eye hides the basemap fill, showing the theme's plain background colour through", async ({
@@ -443,13 +445,14 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
 
     await expect
       .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
-        message: "expected the theme's plain background colour once both Data and Land & water were hidden",
+        message:
+          "expected the theme's plain background colour once both Data and Land & water were hidden",
         timeout: 20_000,
       })
       .toBe(MAP_BACKGROUND_PAPER_RGB.join(","));
-    expect(await page.evaluate(() => !!window.__atlasMap!.handle.map.getLayer("basemap-water"))).toBe(
-      true,
-    );
+    expect(
+      await page.evaluate(() => !!window.__atlasMap!.handle.map.getLayer("basemap-water")),
+    ).toBe(true);
     expect(errors).toEqual([]);
   });
 });
@@ -538,9 +541,7 @@ test.describe("M6: the Data row's short label wins over the long description, wh
     page,
   }) => {
     const errors = collectConsoleErrors(page);
-    await gotoLayersScoresPrimprod(page, [
-      { metric_key: "primprod", label: PRIMPROD_SHORT_LABEL },
-    ]);
+    await gotoLayersScoresPrimprod(page, [{ metric_key: "primprod", label: PRIMPROD_SHORT_LABEL }]);
     await expect(
       page.getByRole("option", { name: PRIMPROD_SHORT_LABEL, exact: true }),
     ).toBeAttached();

@@ -113,6 +113,7 @@ lenses — the panel IS the stack, its "Data" row expanding into the lens's own 
    `tests/map/style.test.ts`'s "M1: a real CARTO-shaped interleaving is UNCHANGED..." pins this
    against a literal fixture; `docs/parity.html`/`layers.spec.ts` never assert an intra-basemap
    reorder produces a different pixel, because it does not.
+
 3. **`layers=` is the URL key** (`parseLayerStack`/`formatLayerStack`, called from
    `state/codec.ts`): `<id>[:h][:oNN],...`, order = draw order bottom-to-top; `:h` = hidden,
    `:oNN` = opacity NN% (01–99; 100/opacity 1 is the default and is never written); a KNOWN group
