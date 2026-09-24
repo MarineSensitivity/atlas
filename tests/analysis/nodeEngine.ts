@@ -91,18 +91,24 @@ export class CsvTableStore extends MemoryTableStore {
 
 /**
  * A fresh real `Engine` over `bindings` (its catalog reset first), whose `fetch` answers from
- * `files` (keyed by the path after `base`) a macrotask later, and 404s anything else.
+ * `files` (keyed by the path after `base`) a macrotask later, and 404s anything else -- UNLESS
+ * `opts.statusFor(path)` names a different status for that path (P8 item 1's "a REAL failure must
+ * still surface" test: a 500, not the release-side-gap 403/404, on a specific tile).
  */
 export function nodeEngine(
   bindings: NodeDuckdb,
   base: string,
   files: ReadonlyMap<string, Uint8Array>,
+  opts: { statusFor?: (path: string) => number | undefined } = {},
 ): Engine {
   const fetchImpl = (async (input: RequestInfo | URL) => {
     await macrotask();
     const url = String(input instanceof Request ? input.url : input);
-    const body = url.startsWith(base) ? files.get(url.slice(base.length)) : undefined;
-    return body ? new Response(body.slice()) : new Response(null, { status: 404 });
+    const path = url.startsWith(base) ? url.slice(base.length) : undefined;
+    const body = path ? files.get(path) : undefined;
+    if (body) return new Response(body.slice());
+    const status = (path !== undefined ? opts.statusFor?.(path) : undefined) ?? 404;
+    return new Response(null, { status });
   }) as typeof fetch;
   return new Engine({
     createDb: async () => {

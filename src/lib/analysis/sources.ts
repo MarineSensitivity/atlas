@@ -9,10 +9,29 @@
 // httpfs range reads. A `cell` tile is ~110-250 KB and a `cell_model` tile p50 2.1 MB / max 23.7 MB,
 // all under the 25 MB materialize guard.
 import { MAX_CELL_MODEL_TILES, batchTiles } from "./place";
-import { cellModelKeySql, type SqlRunner, type Templates } from "./queries";
+import { cellModelKeySql, componentMetricKeys, type SqlRunner, type Templates } from "./queries";
 import { ident } from "../engine/sql";
 import { noDigestKey } from "../engine/store/policy";
 import type { Engine } from "../engine/engine";
+
+// P8 item 1: `placeCells`/`tilesForCells` (`analysis/place.ts`) compute tile indices GEOMETRICALLY,
+// from the grid -- not from the release's actual object list -- so a place that touches land or
+// runs past a release's published footprint asks for a tile the release never generated. S3
+// answers a GetObject on a missing key with 403 (no ListBucket permission to disclose 404 vs
+// "forbidden"); a plain 404 means the same thing. Reproduced live (v7, `-170,50,-130,60`):
+// `.../v7/app/cell/tile=593/data_0.parquet` 403s while neighbours 588-592 answer 200. That is a
+// release-side gap, not a failure -- the tile has no scored cells, so the two per-tile loops below
+// skip it and keep going. Anything else (5xx, a network error, a malformed response) is a REAL
+// failure and must still reject (`describeAnalysisError`, `places/results.ts`), so this checks the
+// status, not just "did the fetch throw". `engine/materialize.ts#fetchWithSizeGuard` throws
+// `Error("fetch <url>: HTTP <code>")`, and `engine.ts` wraps every failure as
+// `EngineUnavailableError("data engine unavailable: <cause>")` -- both shapes end in "HTTP <code>",
+// so a suffix match survives either layer of wrapping.
+export function isMissingTileStatus(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  const m = /HTTP (\d+)\s*$/.exec(msg);
+  return m !== null && (m[1] === "403" || m[1] === "404");
+}
 
 /** the `boot.tables` entry shape atlas-1 publishes. */
 interface BootTable {
@@ -105,7 +124,10 @@ export class AnalysisSources {
     if (this.idField === "mdl_key") await this.table("model", "tables/model.parquet");
   }
 
-  /** the wide cell tiles covering a place, as the `cell` view. */
+  /** the wide cell tiles covering a place, as the `cell` view. P8 item 1: a tile that 403/404s is
+   * skipped (no scored cells there), not a failure -- see the module header. If EVERY tile of the
+   * place's footprint is missing, `#emptyCellView` builds a typed, permanently-empty `cell` so the
+   * caller still gets a real (zero-coverage) answer instead of `#view`'s "not registered" error. */
   async cellTiles(tiles: readonly number[]): Promise<void> {
     const names: string[] = [];
     const cell = (this.boot.tables as Record<string, BootTable> | undefined)?.cell?.digest;
@@ -117,10 +139,16 @@ export class AnalysisSources {
       // digest invalidates every cell tile of the release. With no published digest it falls to
       // `noDigestKey`, which already carries the path (tile included), so no `:${t}` suffix.
       const digest = published ? `${published}:${t}` : noDigestKey(this.boot, file);
-      await this.engine.load(file, this.#url(path), digest);
-      names.push(file);
+      try {
+        await this.engine.load(file, this.#url(path), digest);
+        names.push(file);
+      } catch (err) {
+        if (isMissingTileStatus(err)) continue;
+        throw err;
+      }
     }
-    await this.#view("cell", names);
+    if (names.length) await this.#view("cell", names);
+    else await this.#emptyCellView();
   }
 
   /**
@@ -136,10 +164,19 @@ export class AnalysisSources {
     for (const t of tiles) {
       const path = `serve/cell_model/tile=${t}/data_0.parquet`;
       const file = `${this.ver}/${path}`;
-      await this.engine.load(file, this.#url(path), noDigestKey(this.boot, file));
-      names.push(file);
+      try {
+        await this.engine.load(file, this.#url(path), noDigestKey(this.boot, file));
+        names.push(file);
+      } catch (err) {
+        // P8 item 1: the same release-side gap `cellTiles` sees -- `cell_model`'s own tile is the
+        // "twin" P7 found missing alongside `cell`'s (module header). No species live in a tile
+        // that was never published.
+        if (isMissingTileStatus(err)) continue;
+        throw err;
+      }
     }
-    await this.#view("cell_model", names);
+    if (names.length) await this.#view("cell_model", names);
+    else await this.#emptyCellModelView();
     await this.engine.exec(
       `CREATE OR REPLACE VIEW cell_model_key AS ${cellModelKeySql(this.templates, this.idField).replace(/;\s*$/, "").trimEnd()};`,
     );
@@ -180,6 +217,40 @@ export class AnalysisSources {
     });
     await this.engine.exec(
       `CREATE OR REPLACE VIEW ${ident(name)} AS ${parts.join(" UNION ALL BY NAME ")};`,
+    );
+  }
+
+  /**
+   * P8 item 1: every tile the place's footprint touches was missing (403/404) -- a real, if
+   * empty, result (an off-grid or unpublished-footprint place genuinely has zero cell data), not a
+   * `#view`-throws-"not registered" crash. A typed, permanently-empty `SELECT ... WHERE FALSE`
+   * carries exactly the columns every `sql/*.sql` twin that reads `cell` needs: the four fixed
+   * ones (`cells_in_study_area.sql`'s `in_usa`, `species_for_cells.sql`'s `area_km2`,
+   * `cell_components.sql`'s `in_pra`) plus this release's own component metric keys
+   * (`queries.ts#componentMetricKeys` -- the same list `scores_for_cells.sql`'s `{{cols}}`
+   * substitutes), so a downstream JOIN/UNPIVOT sees the columns it expects and just matches zero
+   * rows.
+   */
+  async #emptyCellView(): Promise<void> {
+    const cols = [
+      "NULL::INTEGER AS cell_id",
+      "NULL::DOUBLE AS area_km2",
+      "NULL::BOOLEAN AS in_usa",
+      "NULL::BOOLEAN AS in_pra",
+      ...componentMetricKeys(this.boot).map((k) => `NULL::DOUBLE AS ${ident(k)}`),
+    ];
+    await this.engine.exec(`CREATE OR REPLACE VIEW cell AS SELECT ${cols.join(", ")} WHERE FALSE;`);
+  }
+
+  /** the `cell_model` twin of {@link #emptyCellView}, for `mountCellModel` when every tile of a
+   * batch was missing. Columns match `sql/cell_model_key.sql` (v8+, `mdl_id`) /
+   * `cell_model_seq.sql` (v1-v7, `mdl_seq`), chosen the same way `mountCellModel` chooses which
+   * twin to run: `this.idField`. */
+  async #emptyCellModelView(): Promise<void> {
+    const idCol = this.idField === "mdl_key" ? "mdl_id" : "mdl_seq";
+    const cols = ["NULL::INTEGER AS cell_id", "NULL::DOUBLE AS val", `NULL::INTEGER AS ${idCol}`];
+    await this.engine.exec(
+      `CREATE OR REPLACE VIEW cell_model AS SELECT ${cols.join(", ")} WHERE FALSE;`,
     );
   }
 }
