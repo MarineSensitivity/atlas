@@ -48,6 +48,7 @@ import {
   describeFlowerSummary,
   type FlowerGeometry,
 } from "../ui/flowerGeometry";
+import { categoryLabel } from "../ui/categories";
 import {
   componentLabel as componentLabelOf,
   dedupeFlowerComponents,
@@ -217,8 +218,8 @@ export interface ReportFlower {
   centreOfDrawnPetals: number | null;
   /** components the ring could not draw because they resolved to an already-taken category. */
   droppedLabels: string[];
-  /** the accessibility gate's phrasing (atlas-7 Gates): "GAA: highest component fish 71, lowest
-   * turtle 3; overall 42." */
+  /** the accessibility gate's phrasing (atlas-7 Gates): "GAA: highest component Fish 71, lowest
+   * Turtle 3; overall 42." */
   summary: string;
   /** the fuller listing, from the SAME shared function the lens's flower panel uses. */
   detail: string;
@@ -442,7 +443,10 @@ function appHref(ver: string, patch: Partial<Sel> = {}): string {
   return `./index.html${search}${hash}`;
 }
 
-/** "GAA: highest component fish 71, lowest turtle 3; overall 42." (atlas-7 Gates, verbatim shape) */
+/** "GAA: highest component Fish 71, lowest Turtle 3; overall 42." (atlas-7 Gates shape, P round V2
+ * fix: `hi`/`lo`'s raw keys now go through `categoryLabel()` -- this sentence is printed VISIBLY in
+ * the report, `<p>{f.summary}</p>`, never sr-only, so "highest component primprod" read exactly as
+ * jarring as the report's own table header did (Opus eyes-on). */
 export function describeFlower(
   name: string,
   geometry: FlowerGeometry,
@@ -458,8 +462,8 @@ export function describeFlower(
   }
   const overallText = overall === null ? "no data" : formatScore0(overall);
   return (
-    `${name}: highest component ${hi.key} ${formatScore0(hi.score)}, ` +
-    `lowest ${lo.key} ${formatScore0(lo.score)}; overall ${overallText}.`
+    `${name}: highest component ${categoryLabel(hi.key)} ${formatScore0(hi.score)}, ` +
+    `lowest ${categoryLabel(lo.key)} ${formatScore0(lo.score)}; overall ${overallText}.`
   );
 }
 
@@ -515,12 +519,18 @@ const MAP_NARRATIVE =
 
 /** fix round 2, item 1 (spec §2.5, CORRECTED): names `components` (this report's own, from
  * `scores.components` -- never a hardcoded list, and never the retired "reptile"/"other"), states
- * the equal-weight/mean rule, and -- only when a category collision folded a component -- says so. */
+ * the equal-weight/mean rule, and -- only when a category collision folded a component -- says so.
+ * P round V2 fix: `components`/`droppedLabels` are raw keys ("bird", "primprod") -- this sentence is
+ * printed VISIBLY (`<p class="narrative">`, never sr-only), so each name goes through
+ * `categoryLabel()` before joining (Opus eyes-on: "components (bird, coral, fish, invertebrate,
+ * mammal, other, turtle, primprod)" read straight off the raw metric-key spellings). */
 function describeFlowerNarrative(
   components: readonly string[],
   droppedLabels: readonly string[],
 ): string {
-  const list = components.length ? components.join(", ") : "no components";
+  const list = components.length
+    ? components.map((c) => categoryLabel(c)).join(", ")
+    : "no components";
   let text =
     `Flower plot where each petal represents one of this release's species-sensitivity ` +
     `components (${list}). Petal length reflects the component sensitivity score (0–100); ` +
@@ -528,8 +538,8 @@ function describeFlowerNarrative(
     `weighted components.`;
   if (droppedLabels.length) {
     text +=
-      ` ${droppedLabels.join(", ")} duplicated an already-drawn category in this release and ` +
-      `was folded into the total rather than drawn as its own petal.`;
+      ` ${droppedLabels.map((c) => categoryLabel(c)).join(", ")} duplicated an already-drawn ` +
+      `category in this release and was folded into the total rather than drawn as its own petal.`;
   }
   return text;
 }
