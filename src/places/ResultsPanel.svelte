@@ -18,6 +18,7 @@
   import Flower from "../lib/ui/Flower.svelte";
   import DataTable from "../lib/ui/DataTable.svelte";
   import { announce } from "../lib/ui/announcer";
+  import { categoryLabel } from "../lib/ui/categories";
   import type { GeomPlace, ZonePlace } from "../lib/geo/placeCodec";
   import type { AreaGeometry } from "../lib/geo/types";
   import type { DataEngineContext } from "./dataEngine";
@@ -221,7 +222,15 @@
   );
 
   const componentColumns = [
-    { key: "component", label: "Component", value: (r: ComponentScore) => r.component },
+    // P round V2 fix (Opus eyes-on: raw keys like "primprod" show in the UI): `value` stays the
+    // raw component key (CSV export -- csv.ts's own toCsv reads `value`, never `format`) while
+    // `format` is what DataTable.svelte actually renders on screen.
+    {
+      key: "component",
+      label: "Component",
+      value: (r: ComponentScore) => r.component,
+      format: (r: ComponentScore) => categoryLabel(r.component),
+    },
     {
       key: "score",
       label: "Score",
@@ -255,7 +264,12 @@
       value: (r: SpeciesRow) => r.sp_common ?? r.sp_scientific,
     },
     { key: "sp_scientific", label: "Scientific name", value: (r: SpeciesRow) => r.sp_scientific },
-    { key: "sp_cat", label: "Category", value: (r: SpeciesRow) => r.sp_cat },
+    {
+      key: "sp_cat",
+      label: "Category",
+      value: (r: SpeciesRow) => r.sp_cat,
+      format: (r: SpeciesRow) => categoryLabel(r.sp_cat),
+    },
     {
       key: "avg_suit",
       label: "Avg. suitability",
@@ -278,7 +292,12 @@
   // published zone's `metrics` carry no per-component coverage/mean-where-present the way a
   // custom place's live SQL blend does (`ZoneComponentScore`'s own header, zoneStats.ts).
   const zoneComponentColumns = [
-    { key: "component", label: "Component", value: (r: ZoneComponentScore) => r.component },
+    {
+      key: "component",
+      label: "Component",
+      value: (r: ZoneComponentScore) => r.component,
+      format: (r: ZoneComponentScore) => categoryLabel(r.component),
+    },
     {
       key: "score",
       label: "Score",

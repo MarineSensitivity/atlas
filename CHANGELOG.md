@@ -1,3 +1,28 @@
+# atlas 0.10.57
+
+Round 2, V2: report flower colours/centring, raw category keys cleaned up, and the eyes-on
+screenshot harness fixed (Opus eyes-on review of 0.10.55).
+
+- **Fixed: the report's flower petals were visibly PALER than their own legend swatches.** Both the
+  on-screen flower (`Report.svelte`) and the exported DOCX/standalone-HTML flower
+  (`report/flowerSvg.ts`) drew petals at reduced opacity (0.5 / 0.92) while the legend swatch a few
+  lines below read the SAME `--cat-*` color at full opacity — one document, two different renderings
+  of the identical color. Petals now render at full opacity, matching the live app's own flower.
+- **Fixed: the report's flower was left-aligned instead of centred**, most visible on a phone where
+  one flower panel fills nearly the full content width.
+- **Fixed: raw internal keys ("primprod", lowercase category names) showed up as display text** in
+  the report's Table of Scores header, its Summary of Species Category column, the Places panel's
+  Component/Category columns, the Species table's Category column, and the Scores lens's Zones
+  table — all now show a proper label ("Primary producer", "Bird", …) via one shared
+  `categoryLabel()` helper. Sorting, filtering and CSV export are unchanged (they still use the raw
+  key).
+- **Fixed 3 false results in `scripts/eyes-shots.mjs`** (the eyes-on screenshot harness, dev-only):
+  the flower-petal tap now targets a real petal and waits for its label before shooting; the
+  species-table shot now waits (bounded) for "Loading species…" to clear instead of shooting
+  mid-load; the "map" state now collapses the default-open Layers panel/sheet first, so it is no
+  longer byte-identical to the "layers" state; and the phone tap points moved higher in the map, off
+  the legend chip's band.
+
 # atlas 0.10.56
 
 Round 2, V1: five defects an eyes-on review of the live phone build found that every automated

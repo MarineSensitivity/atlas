@@ -59,6 +59,55 @@ test.describe("report.html renders zone places from boot.json", () => {
     await expect(page.locator(".progress-line")).toContainText("Done");
   });
 
+  // P round V2 fix (Opus eyes-on, phone/desktop-14-report-scrolled: "petals are pale while the
+  // legend swatches are dark"). REVERTED (this fix alone) -> RED: a petal's `opacity` reads "0.5"
+  // and its resolved `fill` no longer equals its own legend swatch's resolved `background-color`.
+  test("a flower petal renders at the SAME opacity and resolved color as its own legend swatch", async ({
+    page,
+  }) => {
+    await gotoReport(page, { ver: "v9", preview: true });
+    const firstPanel = page.locator("figure.flower-panel").first();
+    const petal = firstPanel.locator("svg path").first();
+    await expect(petal).toBeVisible();
+
+    const petalOpacity = await petal.evaluate((el) => getComputedStyle(el).opacity);
+    expect(
+      petalOpacity,
+      "a flower petal must render at full opacity -- the report's own .flower-legend swatch " +
+        "beside it reads the SAME --cat-* token at opacity 1",
+    ).toBe("1");
+
+    const swatch = firstPanel.locator(".flower-legend .swatch").first();
+    const [petalColor, swatchColor] = await Promise.all([
+      petal.evaluate((el) => getComputedStyle(el).fill),
+      swatch.evaluate((el) => getComputedStyle(el).backgroundColor),
+    ]);
+    expect(
+      petalColor,
+      `petal fill (${petalColor}) must equal its legend swatch's background (${swatchColor}) -- ` +
+        "both resolve the SAME --cat-* token, and only opacity (asserted above) may differ",
+    ).toBe(swatchColor);
+  });
+
+  // P round V2 fix (Opus eyes-on: "the flower is left-aligned"). REVERTED (report.css's
+  // `.flower-panel svg` rule alone) -> RED: the svg sits flush at the figure's left edge, so the
+  // left gap is ~0 while the right gap is whatever space the panel has left over.
+  test("the flower svg is horizontally centred in its panel, not left-aligned", async ({
+    page,
+  }) => {
+    await gotoReport(page, { ver: "v9", preview: true });
+    const firstPanel = page.locator("figure.flower-panel").first();
+    const svg = firstPanel.locator("svg").first();
+    const [panelBox, svgBox] = await Promise.all([firstPanel.boundingBox(), svg.boundingBox()]);
+    if (!panelBox || !svgBox) throw new Error("could not measure the flower panel/svg boxes");
+    const leftGap = svgBox.x - panelBox.x;
+    const rightGap = panelBox.x + panelBox.width - (svgBox.x + svgBox.width);
+    expect(
+      Math.abs(leftGap - rightGap),
+      `left gap ${leftGap}px vs right gap ${rightGap}px -- the svg must be centred, not flush left`,
+    ).toBeLessThan(4);
+  });
+
   test("the permalink round-trips ver and pl", async ({ page }) => {
     await gotoReport(page, { ver: "v9", preview: true });
     const link = page.locator(".report-header a");

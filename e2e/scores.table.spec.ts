@@ -13,6 +13,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession, waitForHydration } from "./hermetic";
 import { blockWasm, routeBasemapStyle, routeGlyphs } from "./map-hermetic";
+import { categoryLabel } from "../src/lib/ui/categories";
 
 test.describe.configure({ mode: "serial" });
 
@@ -32,11 +33,17 @@ const COMPONENT_KEYS = [
   "extrisk_invertebrate_and_coral_ecoregion_rescaled",
   "extrisk_diving_seabird_ecoregion_rescaled",
 ];
+// P round V2 fix (Opus eyes-on, 2026-09-24): ZonesTable.svelte now runs each raw label through
+// `categoryLabel()` before displaying it (never the raw lowercase `componentLabel()` string) -- the
+// SAME transform here, so this stays a real assertion against what the header shows rather than a
+// stale expectation of the pre-fix raw text.
 const COMPONENT_LABELS = COMPONENT_KEYS.map((k) =>
-  k
-    .replace(/^extrisk_/, "")
-    .replace(/_ecoregion_rescaled$/, "")
-    .replace(/_/g, " "),
+  categoryLabel(
+    k
+      .replace(/^extrisk_/, "")
+      .replace(/_ecoregion_rescaled$/, "")
+      .replace(/_/g, " "),
+  ),
 );
 const N_ZONES = 12;
 
@@ -142,10 +149,13 @@ test.describe("P3 phone (390x844): the table scrolls, the panel does not; nothin
       ).toBeLessThanOrEqual(metrics.clientWidth + 1);
     }
     // the regression this guards: the OLD rule divided every column evenly, which for a label this
-    // long ("invertebrate and coral") always ellipsized it down to a couple of characters -- the
+    // long ("Invertebrate and coral" -- categoryLabel()'s sentence-cased text for this unrecognized,
+    // compound raw label, P round V2) always ellipsized it down to a couple of characters -- the
     // FULL text must still be findable somewhere in the header, not just "not overflowing an
-    // invisible box" (a truncated "in…" would also pass the scrollWidth check above).
-    await expect(page.locator(".zones-table thead")).toContainText("invertebrate and coral");
+    // invisible box" (a truncated "In…" would also pass the scrollWidth check above).
+    await expect(page.locator(".zones-table thead")).toContainText(
+      categoryLabel("invertebrate and coral"),
+    );
   });
 
   // fault-registry entry (tests/faults/datatable-min-width-drop.patch, PW_PORT 4375): this is the

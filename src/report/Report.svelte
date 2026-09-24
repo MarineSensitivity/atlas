@@ -11,6 +11,7 @@
   // `window.__early`, exactly like Shell.svelte does, so a restricted release is refused here in
   // the same place it is refused there: before this component's own script ever runs.
   import { onMount } from "svelte";
+  import { categoryLabel } from "../lib/ui/categories";
   import Announcer from "../lib/ui/Announcer.svelte";
   import { announce } from "../lib/ui/announcer";
   import Legend from "../lib/ui/Legend.svelte";
@@ -648,14 +649,13 @@
                  for the live app, `src/lib/ui/flowerGeometry.ts`'s header), never a pie slice from
                  the true centre -- this file used to draw a hub circle of a hardcoded `r="24"` ON
                  TOP of full pie slices, which covered any component scoring <= 24 exactly the way
-                 the live app's own bug did. `opacity="0.5"` matches the ported app's own
-                 `geom_rect_interactive(..., alpha = 0.5)` (msens viz.R) --
-                 docs/parity/checklists/atlas-7-report.md:24. -->
+                 the live app's own bug did. V2 (2026-09-24 eyes-on): no `opacity="0.5"` --
+                 the petals must render the SAME `--cat-*` colour as the `.flower-legend .swatch`
+                 swatches below them (Flower.svelte's own full-opacity rule). -->
             {#each f.geometry.petals as p (p.key)}
               <path
                 d={p.path}
                 style={`fill: var(${p.category.color})`}
-                opacity="0.5"
                 stroke="white"
                 stroke-width="1"
               >
@@ -705,7 +705,7 @@
             <th scope="col">Area</th>
             <th scope="col" class="num">N cells</th>
             {#each model.scores.components as c (c)}
-              <th scope="col" class="num">{c}</th>
+              <th scope="col" class="num">{categoryLabel(c)}</th>
             {/each}
             <th scope="col" class="num">Overall</th>
           </tr>
@@ -763,7 +763,7 @@
               <tbody>
                 {#each species.counts.rows as row (row.category)}
                   <tr>
-                    <th scope="row">{row.category}</th>
+                    <th scope="row">{categoryLabel(row.category)}</th>
                     {#each row.counts as c, j (j)}
                       <td class="num">{formatCount(c)}</td>
                     {/each}
@@ -800,7 +800,7 @@
                 <tbody>
                   {#each species.top.rows as row, j (row.mdl_key)}
                     <tr>
-                      <td>{row.sp_cat}</td>
+                      <td>{categoryLabel(row.sp_cat)}</td>
                       <td>
                         {#if row.sp_common}
                           <a href={species.top.hrefs[j]}>{row.sp_common}</a>

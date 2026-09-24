@@ -107,7 +107,9 @@ describe("item 1: the four static section narratives", () => {
     it("names exactly this release's components, and neither 'reptile' nor 'other'", () => {
       const m = build();
       const narrative = m.flowers[0].narrative;
-      expect(narrative).toContain("bird, turtle, fish");
+      // P round V2 fix: this sentence is printed VISIBLY in the report, so each raw component key
+      // now reads through categoryLabel() -- "Bird, Turtle, Fish", not the raw lowercase spelling.
+      expect(narrative).toContain("Bird, Turtle, Fish");
       expect(narrative).not.toContain("reptile");
       expect(narrative).not.toMatch(/\bother\b/);
       expect(narrative).toContain("mean of the equally weighted components");

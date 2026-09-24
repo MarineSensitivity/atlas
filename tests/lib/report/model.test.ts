@@ -293,8 +293,10 @@ describe("map", () => {
 
 describe("flowers", () => {
   it("the text summary is the accessibility gate's own phrasing", () => {
+    // P round V2 fix: this sentence is printed VISIBLY in the report (never sr-only), so the raw
+    // "bird"/"turtle" component keys now read through categoryLabel() -- "Bird"/"Turtle".
     expect(build().flowers[0].summary).toBe(
-      "My box: highest component bird 71, lowest turtle 3; overall 42.",
+      "My box: highest component Bird 71, lowest Turtle 3; overall 42.",
     );
   });
 

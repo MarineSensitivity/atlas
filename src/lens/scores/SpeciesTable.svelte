@@ -31,6 +31,7 @@
   import { viewportBucket } from "../../lib/ui/panelGeometry";
   import type { SpeciesRow } from "../../lib/analysis/queries";
   import type { Sel } from "../../lib/state/types";
+  import { categoryLabel } from "../../lib/ui/categories";
   import { formatAreaKm2, formatPercent0, formatPercent2, modelHref, taxonUrl } from "./species";
   import { SPECIES_PHONE_DEFAULT_COLUMNS, visibleSpeciesColumnKeys } from "./speciesTableColumns";
   import { speciesColumnsState } from "./speciesTableColumnsState.svelte";
@@ -57,7 +58,16 @@
   const STICKY_COLUMN_KEY = "scientific";
 
   const columns: DataTableColumn<SpeciesRow>[] = [
-    { key: "cat", label: "Category", value: (r) => r.sp_cat, sortable: true },
+    // P round V2 fix (Opus eyes-on: raw lowercase categories show in the UI): `value` stays the
+    // raw `sp_cat` (sort/filter compare it as-is, same as before); `format` is the cell's DISPLAY
+    // text, this component's own `cellText()` prefers it over `String(value)`.
+    {
+      key: "cat",
+      label: "Category",
+      value: (r) => r.sp_cat,
+      format: (r) => categoryLabel(r.sp_cat),
+      sortable: true,
+    },
     { key: "taxon", label: "Taxon", value: taxonStr, sortable: true },
     { key: "scientific", label: "Scientific name", value: (r) => r.sp_scientific, sortable: true },
     { key: "common", label: "Common name", value: (r) => r.sp_common ?? "", sortable: true },
