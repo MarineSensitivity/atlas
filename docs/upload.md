@@ -130,8 +130,14 @@ would draw the edge that was never travelled and buffering it is forbidden outri
 **GeoPackage is prompted, lazy and best-effort** (S4 rule 2, plan D14). Dropping a `.gpkg` asks once,
 naming the size (22.4 MB) and the third-party host (`extensions.duckdb.org`, which nothing else in
 this app contacts). A decline is `geopackageDeclined`; a blocked host is `geopackageUnavailable`
-carrying the real SQL error; both offer "convert to GeoJSON or FlatGeobuf". The DuckDB connection is
-**injected** (`GeoPackageRuntime`), so this module never imports `@duckdb/duckdb-wasm`.
+carrying the real SQL error; a GeoPackage with no vector layer at all (raster tiles, or a plain
+attribute table) is `geopackageNoFeatureTable`; both refusals above and this one offer "convert to
+GeoJSON or FlatGeobuf". The DuckDB connection is **injected** (`GeoPackageRuntime`), so this module
+never imports `@duckdb/duckdb-wasm` — the real one, `lib/geo/upload/engineRuntime.ts`, adapts the
+app's own `Engine` (`lib/engine/engine.ts`'s `registerFile`/`dropFile` + its existing `exec`), so a
+`.gpkg` is read through the SAME DuckDB connection the scores boot, not a second one (Q2, 0.10.52 —
+before that, `UploadPanel.svelte` hardcoded `runtime: null` and every `.gpkg` was refused
+unconditionally since 0.10.47).
 
 ## Refusal copy
 
@@ -142,6 +148,21 @@ others. Add a message by adding it to `allRefusalSamples()` in the same edit; th
 gate over _all_ of them rather than over a remembered list.
 
 ## Names
+
+Three naming options, and `normalizeParsed()` honours all three (Q2 fix — before it, `nameProperty`
+was a real, tested capability that the ONE caller, `UploadPanel.svelte`, never actually used, so
+every upload was named from the file regardless of what the file itself said about its own
+features):
+
+1. **feature name attribute** — an explicit `nameProperty: "NAME"` forces that ONE property; leaving
+   the option out altogether (the default) instead **auto-detects** it via `detectNameProperty()`:
+   the first of `name`/`title`/`label` (matched case-insensitively, so KML's own `<name>` and a
+   `NAME` DBF field both count) the file's first feature carries a non-empty value for, applied to
+   every feature. An explicit `nameProperty: null` opts back out and forces the file name.
+2. **file-derived name** — `fallbackName`, or `baseName(file)` when it is absent (the default): used
+   whenever no name property is chosen/detected, is empty, or the source is a union of features.
+3. **numbering** — a multi-feature file (`multiFeature: "perFeature"`) appends ` 1`, ` 2`, … to the
+   fallback for any feature without its own name; a single feature or a union gets no suffix.
 
 Only the chosen property survives, and it is **plain text, not escaped**: control characters are
 removed, whitespace runs collapse, 60 characters max, and nothing else changes. A feature named
@@ -158,12 +179,14 @@ const result = await normalizeUpload(
   { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) },
   {
     multiFeature: "perFeature", // or "union" — the panel ASKS once; this module never decides
-    nameProperty: "NAME", // chosen by the person from the file's property list
+    // nameProperty left out -> auto-detects name/title/label (the default, Q2); pass an explicit
+    // string to force ONE property, or `null` to force the file name and skip detection.
     fallbackName: "Uploaded place",
     studyArea: (places) => (touchesInUsa(places) ? null : outsideUsWaters()),
   },
   {
     // browsers have DOMParser; only node needs this
+    // the real runtime: geoPackageRuntime(() => dataEngine().then((ctx) => ctx.engine)), Q2
     geoPackage: { consent: askOnce, runtime: engineRuntime },
   },
 );
@@ -176,8 +199,10 @@ else addPlaces(result.places); // {name, geometry, bbox, vertices, sourceIndex}
 `coverage.cellsInPolygon()` consumes — unwrapped, closed, RFC 7946 wound — with no further
 conditioning by either. `place.bbox` is dateline-aware.
 
-To offer the person a name property, read `ParsedSource.features[i].properties` from a
-`parseByFormat()` call, or simply normalize twice; parsing is cheap once the chunk is loaded.
+The panel does not need to do anything for the common case — leaving `nameProperty` out gets
+auto-detection for free, as above. To let the person CHOOSE among the file's own properties (a
+picker UI, not built as of Q2), read `ParsedSource.features[i].properties` from a `parseByFormat()`
+call, or simply normalize twice; parsing is cheap once the chunk is loaded.
 
 ## Fixtures
 
@@ -195,6 +220,17 @@ Moved from `spikes/4/fixtures/` (never copied), plus the three atlas-6 adds:
 
 `fixtures_manifest.json` is the R-computed ground truth that travelled with them, and
 `generate_fixtures.R` regenerates the five.
+
+The `gpkg` column above is real, but only reachable through a REAL DuckDB connection (no
+`sqlite_scanner`/`spatial` in Node), so `fixtures.test.ts`'s vitest-level assertions skip it —
+`geoPackage` deps are omitted there on purpose, which makes `parseGeoPackage` throw
+`geopackageNoRuntime` immediately for any `.gpkg` name passed through it. The real read is proved by
+`e2e/places.upload-geopackage.spec.ts` instead, against five small, hand-built (`ogr2ogr`, no
+`SPATIAL_INDEX`) fixtures purpose-made for it — `gpkg_polygon`, `gpkg_multipolygon`, `gpkg_point`
+(refused, `notPolygon`), `gpkg_projected` (EPSG:32610, refused `projectedCrs`) and
+`gpkg_no_features` (refused `geopackageNoFeatureTable`) — committed at ~74-90 KB each (GDAL's
+GeoPackage schema floor: ~19 required tables/indexes at one 4 KB SQLite page each before a single
+feature is written, the same floor the five fixtures above already sit at).
 
 Hostile inputs are **generated in `tests/geo/upload/hostile.ts`**, never committed: a zip whose
 central directory declares 60 MB (a real bomb in 300 bytes — what makes it one is the declared size,

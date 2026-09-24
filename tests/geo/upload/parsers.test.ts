@@ -189,6 +189,9 @@ describe("GeoPackage (DuckDB spatial, consented and best-effort)", () => {
     registerFile: vi.fn(async () => {}),
     query: vi.fn(async (sql: string) => {
       if (/ST_Read\(/.test(sql)) return rows as never;
+      // Q2: the feature-table existence check, run BEFORE the CRS lookup -- a normal GeoPackage
+      // (every other case in this describe block) has one.
+      if (/count\(\*\) AS n FROM sqlite_scan/.test(sql)) return [{ n: 1 }] as never;
       if (/gpkg_spatial_ref_sys/.test(sql)) {
         return [{ auth_name: "EPSG", auth_srid: 4326, definition: "" }] as never;
       }
@@ -268,8 +271,11 @@ describe("GeoPackage (DuckDB spatial, consented and best-effort)", () => {
 
   it("an unreadable CRS table is not a reason to fail the read", async () => {
     const rt = runtime({
+      // a build with no `sqlite_scanner` at all fails EVERY sqlite_scan call identically, not just
+      // the CRS one -- this proves both best-effort lookups (feature-table existence, below, and
+      // CRS) degrade gracefully together rather than one masking a bug in the other.
       query: vi.fn(async (sql: string) => {
-        if (/gpkg_spatial_ref_sys/.test(sql)) throw new Error("no function sqlite_scan");
+        if (/sqlite_scan/.test(sql)) throw new Error("no function sqlite_scan");
         if (/ST_Read\(/.test(sql)) return rows as never;
         return [] as never;
       }),
@@ -281,6 +287,40 @@ describe("GeoPackage (DuckDB spatial, consented and best-effort)", () => {
     // ... the magnitude test in normalize.ts is then the only thing that can speak, which is exactly
     // the arrangement S4 rule 3 describes
     expect(p.crs).toBeNull();
+    expect(p.features).toHaveLength(1);
+  });
+
+  it("a GeoPackage with no feature table is refused by name, not with ST_Read's raw SQL error", async () => {
+    const rt = runtime({
+      query: vi.fn(async (sql: string) => {
+        if (/count\(\*\) AS n FROM sqlite_scan/.test(sql)) return [{ n: 0 }] as never;
+        if (/ST_Read\(/.test(sql)) throw new Error("ST_Read must not run -- refused before it");
+        return [] as never;
+      }),
+    });
+    const err = await parseGeoPackage("tiles.gpkg", fixtureBytes("gpkg_no_features.gpkg"), {
+      consent: async () => true,
+      runtime: rt,
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UploadParseError);
+    expect((err as UploadParseError).refusal.rule).toBe("geopackageNoFeatureTable");
+    expect((err as UploadParseError).refusal.what).toContain("tiles.gpkg");
+    expect(rt.dropFile).toHaveBeenCalled(); // the file is still cleaned up on this early refusal
+  });
+
+  it("a zero-count feature-table check that itself throws is best-effort too -- falls through to ST_Read", async () => {
+    const rt = runtime({
+      query: vi.fn(async (sql: string) => {
+        if (/count\(\*\) AS n FROM sqlite_scan/.test(sql))
+          throw new Error("no function sqlite_scan");
+        if (/ST_Read\(/.test(sql)) return rows as never;
+        return [] as never;
+      }),
+    });
+    const p = await parseGeoPackage("place.gpkg", new Uint8Array([1]), {
+      consent: async () => true,
+      runtime: rt,
+    });
     expect(p.features).toHaveLength(1);
   });
 });

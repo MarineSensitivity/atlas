@@ -7,6 +7,7 @@
   import type { Refusal } from "../lib/geo/upload/types";
   import type { NormalizedPlace, NormalizeOptions } from "../lib/geo/upload/normalize";
   import type { GeoPackageConsentRequest } from "../lib/geo/upload/parsers/geopackage";
+  import { geoPackageRuntime } from "../lib/geo/upload/engineRuntime";
   import type { MapHandle } from "../lib/map/map";
   import type { DataEngineContext } from "./dataEngine";
   import { noopTrack, placeUploadParams, type Track } from "./analytics";
@@ -31,31 +32,8 @@
 
   const MAX_FILE_MB = 10; // geo/upload/normalize.ts's own MAX_FILE_BYTES, restated for the drop hint
 
-  // P8 item 7 (Opus docs review, app finding #2 / #25): `askGeoPackageConsent` above always passes
-  // `runtime: null` (this phase's documented limitation), so `parseGeoPackage` throws
-  // `geopackageNoRuntime` for EVERY `.gpkg`, unconditionally -- there is no state it could ever
-  // finish waiting for. That refusal's own catalogue text (`lib/geo/upload/messages.ts`) reads
-  // "...which is not running in this tab yet" / "Wait for the map's numbers to appear and drop the
-  // file again" -- wrong: retrying can never succeed, so it wastes the person's time. The
-  // catalogue lives outside this file's scope this round; this substitutes the plain, honest
-  // sentence at the ONE place this app actually renders it, rather than a retry instruction that
-  // cannot work. Every OTHER GeoPackage refusal (a declined consent, a blocked
-  // extensions.duckdb.org fetch) passes through unchanged -- those really can succeed on a retry.
-  function honestRefusal(r: Refusal): Refusal {
-    if (r.rule !== "geopackageNoRuntime") return r;
-    return {
-      rule: r.rule,
-      what: "GeoPackage is not supported yet.",
-      why: "Reading a GeoPackage needs a spatial-database reader this app does not wire up in this phase — it is not a matter of the data engine still starting, and dropping the file again will not change the outcome.",
-      fix: "Export the layer as GeoJSON or a zipped shapefile in your GIS and drop that instead.",
-    };
-  }
-
   /** the GeoPackage consent prompt (Deliverable 4): names the size and the third-party host before
-   * anything is fetched. `runtime` stays `null` (no DuckDB `spatial` wiring in this phase, a
-   * documented limitation — see docs/upload.md's own GeoPackage section) so this consent, even
-   * when accepted, still ends in `geopackageNoRuntime`'s "convert to GeoJSON" fallback refusal;
-   * the prompt is written now so wiring a real runtime later needs no UI change. */
+   * anything is fetched. */
   async function askGeoPackageConsent(request: GeoPackageConsentRequest): Promise<boolean> {
     const mb = (request.bytes / (1024 * 1024)).toFixed(1);
     return window.confirm(
@@ -66,8 +44,18 @@
 
   async function normalize(input: { name: string; bytes: Uint8Array }, options: NormalizeOptions) {
     const mod = await import("../lib/geo/upload/normalize");
+    // Q2, 0.10.52: this used to hardcode `runtime: null` unconditionally -- `askGeoPackageConsent`
+    // still asked, but `parseGeoPackage` then always threw `geopackageNoRuntime` regardless of the
+    // answer, so every `.gpkg` was refused since 0.10.47 no matter what. `geoPackageRuntime()`
+    // (`lib/geo/upload/engineRuntime.ts`) wraps this panel's own `dataEngine` accessor -- the SAME
+    // DuckDB engine `ResultsPanel`/the study-area check already boot -- so a `.gpkg` is read through
+    // the app's one real connection. `dataEngine` is `undefined` only in the brief window before a
+    // release version is resolved (see this component's own prop doc); `runtime: null` in exactly
+    // that case is what makes `geopackageNoRuntime`'s message honest rather than permanently wrong.
+    const engineFn = dataEngine; // a local `const` so TS keeps the narrowing inside the closure below
+    const runtime = engineFn ? geoPackageRuntime(async () => (await engineFn()).engine) : null;
     return mod.normalizeUpload(input, options, {
-      geoPackage: { consent: askGeoPackageConsent, runtime: null },
+      geoPackage: { consent: askGeoPackageConsent, runtime },
     });
   }
 
@@ -116,7 +104,7 @@
       };
       const result = await normalize({ name: file.name, bytes }, { multiFeature: "perFeature" });
       if (!result.ok) {
-        refusal = honestRefusal(result.refusal);
+        refusal = result.refusal;
         trackOutcome(0, "refused");
         return;
       }
@@ -137,7 +125,7 @@
       const result = await normalize(pending, { multiFeature: mode });
       multiPrompt = null;
       if (!result.ok) {
-        refusal = honestRefusal(result.refusal);
+        refusal = result.refusal;
         trackOutcome(0, "refused");
         return;
       }
@@ -191,7 +179,7 @@
     <input type="file" onchange={onInputChange} disabled={busy} />
     <span>
       {busy ? "Reading…" : "Drop a file here, on the map, or choose one"} — GeoJSON, zipped shapefile,
-      KML, GPX, FlatGeobuf, WKT or GeoPackage (not yet), up to {MAX_FILE_MB} MB.
+      KML, GPX, FlatGeobuf, WKT or GeoPackage, up to {MAX_FILE_MB} MB.
     </span>
   </label>
 

@@ -232,6 +232,47 @@ export class Engine {
   }
 
   /**
+   * Register a whole file's raw bytes as a duckdb-wasm virtual file, addressable by `name` in SQL
+   * — the "buffer-register + query" hook `lib/geo/upload/engineRuntime.ts` wraps into a
+   * `GeoPackageRuntime` (Q2, 0.10.52: `UploadPanel.svelte` used to hardcode `runtime: null`, so
+   * every `.gpkg` was refused unconditionally since 0.10.47). Deliberately bypasses the `TableStore`
+   * (`load()`, above): that abstraction assumes a manifest URL + digest for its LRU bookkeeping and
+   * reads back only via `read_parquet(name)`, neither of which fits an uploaded `.gpkg`'s raw bytes
+   * read by `sqlite_scan()`/`ST_Read()`. Serialized on the same chain as `load()`/`exec()` so a
+   * concurrent query can never race the registration.
+   */
+  registerFile(name: string, bytes: Uint8Array): Promise<void> {
+    return this.#enqueue(async () => {
+      await this.boot();
+      const endMark = this.#startMark("engine:registerFile", { name, bytes: bytes.byteLength });
+      try {
+        await this.#db!.registerFileBuffer(name, bytes);
+        endMark({ ok: true });
+      } catch (err) {
+        endMark({ ok: false, error: String(err) });
+        throw err instanceof EngineUnavailableError ? err : new EngineUnavailableError(err);
+      }
+    });
+  }
+
+  /** Drop a file registered by {@link registerFile}. A no-op before `boot()` has ever run (nothing
+   * to drop yet), never an error — the same "never crash the tab" contract as every other public
+   * method here. */
+  dropFile(name: string): Promise<void> {
+    return this.#enqueue(async () => {
+      if (!this.#db) return;
+      const endMark = this.#startMark("engine:dropFile", { name });
+      try {
+        await this.#db.dropFile(name);
+        endMark({ ok: true });
+      } catch (err) {
+        endMark({ ok: false, error: String(err) });
+        throw err instanceof EngineUnavailableError ? err : new EngineUnavailableError(err);
+      }
+    });
+  }
+
+  /**
    * The {@link RawSql} handed to a `TableStore` (see `EngineOptions.store`): the same single
    * connection, NO chain, NO implicit `boot()`. It is an arrow property rather than a method so it
    * can be passed by reference, and it is private so the only way to obtain one is to BE the store

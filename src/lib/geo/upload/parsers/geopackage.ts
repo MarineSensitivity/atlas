@@ -17,7 +17,12 @@
 //
 // No geometry leaves the browser either way: the 22 MB is inbound, and the user's file is never
 // uploaded anywhere.
-import { geopackageDeclined, geopackageNoRuntime, geopackageUnavailable } from "../messages";
+import {
+  geopackageDeclined,
+  geopackageNoFeatureTable,
+  geopackageNoRuntime,
+  geopackageUnavailable,
+} from "../messages";
 import { classifyCrsText, classifyEpsg } from "../crs";
 import {
   UploadParseError,
@@ -108,6 +113,24 @@ export async function parseGeoPackage(
   const name = registeredName(fileName);
   await rt.registerFile(name, bytes);
   try {
+    // does this GeoPackage carry a vector (features) layer at all? `gpkg_contents.data_type` also
+    // covers `2d-gridded-coverage`/tile pyramids and plain attribute tables with no geometry column
+    // — real GeoPackage contents `ST_Read`'s default (first-layer) read cannot turn into a place.
+    // The same `sqlite_scan` this parser already needs for the CRS lookup below, so it gets the
+    // same best-effort rule: a build without `sqlite_scanner` cannot ask, and falls through to let
+    // `ST_Read` itself speak (as a generic `parseFailed`) rather than refusing on a guess.
+    try {
+      const contents = await rt.query<{ n: unknown }>(
+        `SELECT count(*) AS n FROM sqlite_scan(${sqlLit(name)}, 'gpkg_contents') WHERE data_type = 'features';`,
+      );
+      if (Number(contents[0]?.n ?? 0) === 0) {
+        throw new UploadParseError(geopackageNoFeatureTable(fileName));
+      }
+    } catch (err) {
+      if (err instanceof UploadParseError) throw err;
+      // no sqlite_scan available -- fall through, same reasoning as the CRS lookup just below
+    }
+
     // the layer's declared CRS, straight out of the GeoPackage's own `gpkg_spatial_ref_sys` table:
     // `ST_Read` behaves like every non-shpjs reader S4 measured and hands back raw source units, so
     // this row is the only thing that can say the file is projected.
