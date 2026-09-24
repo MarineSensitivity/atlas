@@ -16,6 +16,7 @@
   import Pill from "../lib/ui/Pill.svelte";
   import Chip from "../lib/ui/Chip.svelte";
   import Accordion from "../lib/ui/Accordion.svelte";
+  import Select from "../lib/ui/Select.svelte";
   import { announce } from "../lib/ui/announcer";
   import { encodePlace, type Place } from "../lib/geo/placeCodec";
   import type { Sel } from "../lib/state/types";
@@ -41,6 +42,8 @@
     zoneSetForUnit,
   } from "./model";
   import {
+    allZoneStats,
+    paLabel,
     summarizeZoneStats,
     zoneCenterFromBoot,
     zoneDisplayName,
@@ -205,6 +208,33 @@
     writePlaces(result.places, result.places.length - 1);
     pickState = clearPick();
     mapStore.setOutline(null);
+    announce("Added to places.");
+  }
+
+  // --- "Add a Program Area" (orchestrator-directed, 2026-09-24: Places had NO Program Area list
+  // at all, only map-based Pick mode -- unreachable without a pointer, and unreachable on a phone
+  // where the map is often off-screen behind the panel) -------------------------------------------
+  // every Program Area the release publishes, full-name-sorted (`allZoneStats`, zoneStats.ts);
+  // `[]` (the section below hides) for a release with none published, or before boot has loaded.
+  const programAreas = $derived(allZoneStats(boot, "programarea"));
+  let paPickValue = $state("");
+
+  /** adds the chosen Program Area exactly as a map-picked one would -- the SAME `addZonePlace()` +
+   * `writePlaces()` path `addPicked()` (above) uses, so the resulting place, URL hash and undo
+   * behaviour are identical regardless of which route added it. */
+  function addProgramAreaByKey(key: string) {
+    if (!key) return;
+    const set = zoneSetForUnit("programarea");
+    if (!set) return; // structurally unreachable (programarea always maps to "pa"); never a throw
+    const result = addZonePlace(places, set, [key]);
+    if (!result.ok) {
+      announce(result.reason ?? "Couldn't add that Program Area.");
+      return;
+    }
+    const added = result.places[result.places.length - 1];
+    remember(added);
+    writePlaces(result.places, result.places.length - 1);
+    paPickValue = "";
     announce("Added to places.");
   }
 
@@ -622,6 +652,36 @@
     </button>
   </section>
 
+  {#if programAreas.length}
+    <!-- orchestrator finding (2026-09-24): a keyboard/phone-reachable alternative to map Pick
+         mode above -- "Aleutian Arc (ALA)" style options (`paLabel`), full-name sorted
+         (`allZoneStats`). Adds through the IDENTICAL `addZonePlace`/`writePlaces` path a map pick
+         uses, so the resulting place/URL hash cannot differ by route. -->
+    <!-- the landmark's own name is deliberately DIFFERENT from the Select's (below) -- two
+         controls/regions sharing one accessible name is ambiguous for anything that looks a
+         control up "by its label" (Playwright's own `getByLabel`, a screen reader's forms list). -->
+    <section class="pa-picker" aria-label="Program Area picker">
+      <Select
+        label="Add a Program Area"
+        value={paPickValue}
+        onchange={(v) => (paPickValue = v)}
+        options={[
+          { value: "", label: "Choose a Program Area…" },
+          ...programAreas.map((pa) => ({ value: pa.key, label: paLabel(pa.key, pa.name) })),
+        ]}
+      />
+      <button
+        type="button"
+        class="add-picked"
+        disabled={!paPickValue}
+        onclick={() => addProgramAreaByKey(paPickValue)}
+      >
+        <Icon name="places" size={16} />
+        Add this Program Area
+      </button>
+    </section>
+  {/if}
+
   <section class="draw-bar" aria-label="Draw a place" role="group">
     <button
       type="button"
@@ -670,8 +730,8 @@
 
   {#if !places.length}
     <p class="empty">
-      No places yet. Turn on pick mode and click a Program Area, draw a shape, enter coordinates, or
-      drop a file on the map.
+      No places yet. Choose a Program Area above, turn on pick mode and click one on the map, draw a
+      shape, enter coordinates, or drop a file on the map.
     </p>
   {:else}
     <ul class="place-list" aria-label="Places">
@@ -738,16 +798,21 @@
 
   <p class="cap-note">{places.length} / {MAX_PLACES} places</p>
 
+  <!-- orchestrator finding (2026-09-24): these three actions all operate on the CURRENT place
+       list -- with zero places, Share opened an empty-list dialog and Download/Report merely
+       announced a rejection AFTER the click (their own internal guards, unchanged, below). They
+       are disabled outright now, matching the panel's own draw-tool/pick-mode buttons' existing
+       `:disabled` convention, so the empty state is visible before a click rather than after. -->
   <footer class="places-footer">
-    <button type="button" onclick={() => (shareDialogOpen = true)}>
+    <button type="button" disabled={!places.length} onclick={() => (shareDialogOpen = true)}>
       <Icon name="share" size={16} />
       Share
     </button>
-    <button type="button" onclick={onDownload}>
+    <button type="button" disabled={!places.length} onclick={onDownload}>
       <Icon name="download" size={16} />
       Download places
     </button>
-    <button type="button" onclick={onReport}>
+    <button type="button" disabled={!places.length} onclick={onReport}>
       <Icon name="report" size={16} />
       Report
     </button>
@@ -797,6 +862,13 @@
   }
 
   .pick-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .pa-picker {
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -976,6 +1048,11 @@
     background: none;
     color: var(--text-primary);
     cursor: pointer;
+  }
+
+  .places-footer button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .recent-list {

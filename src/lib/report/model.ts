@@ -52,6 +52,7 @@ import {
   componentLabel as componentLabelOf,
   dedupeFlowerComponents,
 } from "../../lens/scores/flower";
+import { paLabel } from "../../places/zoneStats";
 import { DEFAULT_SEL, type Sel } from "../state/types";
 import { encodePlace, type Place } from "../geo/placeCodec";
 import { formatCount, formatScore0, isoInstant, slugify, utcStamp } from "./format";
@@ -369,9 +370,11 @@ export interface PlaceStub {
  * KEY. The caller runs one query set per entry and hands the results back through
  * `ReportPlaceInput` -- so the split happens once, here, rather than in every caller.
  *
- * A zone place's name comes from `boot.zones[unit][key].name`, falling back to the key itself (an
- * old link naming a key a later release retired still gets a row, with its key as its name, rather
- * than being silently dropped).
+ * A zone place's name comes from `boot.zones[unit][key].name`, formatted "Full Name (KEY)"
+ * (`paLabel`, P3 fix, owner-directed 2026-09-24: "its caption / first mention should use the full
+ * name") -- falling back to the bare key when the release publishes none (an old link naming a key
+ * a later release retired still gets a row, with its key as its name, rather than being silently
+ * dropped).
  */
 export function expandPlaces(places: readonly Place[], boot: unknown): PlaceStub[] {
   const out: PlaceStub[] = [];
@@ -385,7 +388,7 @@ export function expandPlaces(places: readonly Place[], boot: unknown): PlaceStub
           place: single,
           zoneKey: key,
           unit,
-          name: typeof row?.name === "string" && row.name ? row.name : key,
+          name: paLabel(key, typeof row?.name === "string" ? row.name : undefined),
           token: encodePlace(single),
         });
       }

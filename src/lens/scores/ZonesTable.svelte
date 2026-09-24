@@ -5,8 +5,18 @@
   // SAME ranking as text, and clicking a row selects that zone exactly as clicking its polygon
   // would (`sel=zone:<unit>:<key>`).
   import { SvelteSet } from "svelte/reactivity";
+  import { columnWidthPx, totalTableWidthPx } from "../../lib/ui/dataTableCore";
   import { zonesTableRows, type ZonesTableRow } from "./zonesTable";
   import type { ZoneRow } from "./boot";
+
+  // P3 fix (owner-reported, 2026-09-24): the checkbox column's own fixed width, and the pseudo
+  // "columns" `columnWidthPx()`/`totalTableWidthPx()` size this table by -- Rank/Score/each
+  // component are short and NARROW, Zone (the identifying column) gets the readable text minimum.
+  // `dataTableCore.ts`'s own header explains why the `<table>` needs an EXPLICIT summed pixel
+  // width (not `max-content`/`auto`) for `table-layout: fixed` to actually honour these.
+  const CHECKBOX_COLUMN_PX = 40;
+  const ZONE_COLUMN = {};
+  const NARROW_COLUMN = { narrow: true };
 
   interface Props {
     zones: ZoneRow[];
@@ -42,6 +52,19 @@
   function formatValue(v: number | null): string {
     return v === null ? "—" : v.toLocaleString("en-US", { maximumFractionDigits: 1 });
   }
+
+  // Rank + Zone + Score + one NARROW column per published component.
+  const tableWidthPx = $derived(
+    totalTableWidthPx(
+      [
+        NARROW_COLUMN,
+        ZONE_COLUMN,
+        NARROW_COLUMN,
+        ...(rows[0]?.components ?? []).map(() => NARROW_COLUMN),
+      ],
+      onReportSelected ? CHECKBOX_COLUMN_PX : 0,
+    ),
+  );
 </script>
 
 <div class="zones-table-wrap">
@@ -57,14 +80,38 @@
     </div>
   {/if}
   <div class="zones-table">
-    <table class="grid" aria-label="Zones ranked by {metricLabel}">
+    <!-- P3 fix (owner-reported, 2026-09-24): explicit per-column widths (same rule
+         SpeciesTable.svelte uses, dataTableCore.ts#columnWidthPx's constants) -- Rank/Score/
+         components are short and NARROW, Zone (the identifying column) gets the readable text
+         minimum -- PLUS an explicit summed `width` on the table itself (`tableWidthPx`, above);
+         `dataTableCore.ts`'s own header explains why `table-layout: fixed` needs that to honour
+         the `<colgroup>` at all, rather than sizing every column from its own content. -->
+    <table
+      class="grid"
+      style={`width:${tableWidthPx}px`}
+      aria-label="Zones ranked by {metricLabel}"
+    >
+      <colgroup>
+        {#if onReportSelected}<col style={`width:${CHECKBOX_COLUMN_PX}px`} />{/if}
+        <col style={`width:${columnWidthPx(NARROW_COLUMN)}px`} />
+        <col style={`width:${columnWidthPx(ZONE_COLUMN)}px`} />
+        <col style={`width:${columnWidthPx(NARROW_COLUMN)}px`} />
+        {#if rows[0]}
+          {#each rows[0].components as c (c.label)}
+            <col style={`width:${columnWidthPx(NARROW_COLUMN)}px`} />
+          {/each}
+        {/if}
+      </colgroup>
       <thead>
         <tr>
           {#if onReportSelected}
             <th scope="col"><span class="sr-only">Select</span></th>
           {/if}
           <th scope="col">Rank</th>
-          <th scope="col">Zone</th>
+          <!-- the zone/name column: sticky on the left, same convention as SpeciesTable.svelte's
+               own "Scientific name" -- a `position: sticky; left: 0` cell need not be the row's
+               first cell to pin correctly (it covers whatever scrolls out from under it). -->
+          <th scope="col" class="sticky-col">Zone</th>
           <!-- G-24 fix (docs/parity.html): the header used to print the metric's WHOLE published
                `label` (a full sentence on a real release), which wrapped to one word per line and
                pushed every data row out of view. "Score" is a short, fixed header text; the full
@@ -93,7 +140,7 @@
               </td>
             {/if}
             <td class="num">{i + 1}</td>
-            <td title={r.name}>
+            <td class="sticky-col" title={r.name}>
               <button type="button" class="zone-link" onclick={() => onSelectZone(r.key)}>
                 {r.name}
               </button>
@@ -154,12 +201,15 @@
     border-radius: var(--radius-control);
   }
 
-  /* R1 (the owner's species/zones-table acceptance case, 2026-09-24): FIXED layout, same rationale
-     as SpeciesTable.svelte's own comment -- at the widest dock (720px) and in maximize, every
-     column (Rank/Zone/Score/however many components the release publishes) lands inside the
-     table's own visible box with no horizontal scroll. */
+  /* P3 fix (owner-reported, 2026-09-24) -- REPLACES the old "R1" rule (which divided every column
+     evenly across the panel's own width and squeezed a wide release's component columns to a
+     couple of characters). `width` (the SUM of the `<colgroup>` widths, `tableWidthPx`) is set
+     inline above, per dataTableCore.ts's own header -- `table-layout: fixed` only honours a
+     `<colgroup>` once the table has a DEFINITE width. `min-width: 100%` still stretches it
+     (proportionally) to fill a panel wide enough to hold every column without scrolling; a
+     narrower panel scrolls the TABLE (`.zones-table`'s own `overflow: auto`, above), never itself. */
   .grid {
-    width: 100%;
+    min-width: 100%;
     table-layout: fixed;
     border-collapse: collapse;
     font-size: var(--text-sm);
@@ -172,9 +222,25 @@
     background: var(--surface-sunken);
     text-align: left;
     padding: var(--space-1) var(--space-2);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* P3 fix: a header label is never truncated -- it wraps instead of ellipsizing (unlike a DATA
+       cell, below, which keeps its ellipsis + hover/`title` full value). */
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+
+  /* the Zone column: sticky on the left, stacking above a plain top-sticky header cell scrolling
+     underneath it once BOTH axes are in play. */
+  th.sticky-col {
+    left: 0;
+    z-index: 2;
+  }
+
+  td.sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    /* opaque -- must fully cover whatever column scrolled out from underneath it. */
+    background: var(--surface-raised);
   }
 
   td {

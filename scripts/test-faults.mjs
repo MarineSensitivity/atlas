@@ -743,6 +743,24 @@ const FAULTS = [
       "footnote it should not (the original 'footnotes almost every cell' bug, replayed)",
     gate: ["npx", "vitest", "run", "tests/lib/report/scores.test.ts"],
   },
+  {
+    id: "datatable-min-width-drop",
+    patch: "tests/faults/datatable-min-width-drop.patch",
+    describe:
+      "columnWidthPx() always returns the narrow (numeric/boolean) width -- the text-column " +
+      "minimum is gone, so the Zone column squeezes down to the same ~60px every numeric column gets",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.table.spec.ts",
+      "-g",
+      "every column's rendered width honours dataTableCore.ts's own minimum",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4375" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

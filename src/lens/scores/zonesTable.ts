@@ -3,6 +3,7 @@
 // (atlas-4 subplan's "New" bullet) — pure, so the ranking/formatting is provable without a DOM.
 // Values are `boot.zones[unit][*].metrics` read verbatim (never recomputed), which is what makes
 // the atlas-4 gate "the zone flower and zones table equal `zone_metric` exactly" trivially true.
+import { paLabel } from "../../places/zoneStats";
 import { componentLabel } from "./flower";
 import type { ZoneRow } from "./boot";
 
@@ -30,9 +31,12 @@ export function zonesTableRows(
   metricKey: string,
   componentKeys: readonly string[],
 ): ZonesTableRow[] {
+  // P3 fix (owner-reported, 2026-09-24): "Program area selection should list full names and
+  // parenthetical acronyms" -- the zones table is a list of every Program Area, so its own Zone
+  // column gets the same "Full Name (KEY)" treatment as the Places panel (`paLabel`, zoneStats.ts).
   const rows: ZonesTableRow[] = zones.map((z) => ({
     key: z.key,
-    name: z.name ?? z.key,
+    name: paLabel(z.key, z.name),
     value: metricOf(z, metricKey),
     components: componentKeys.map((k) => ({ label: componentLabel(k), score: metricOf(z, k) })),
   }));

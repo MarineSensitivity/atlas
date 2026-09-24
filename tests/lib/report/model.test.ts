@@ -234,9 +234,9 @@ describe("parameters", () => {
 });
 
 describe("expandPlaces -- a multi-key zone place becomes one reported area per key", () => {
-  it("splits keys, names them from boot, and re-encodes a one-key token each", () => {
+  it("splits keys, names them 'Full Name (KEY)' from boot (P3: paLabel), and re-encodes a one-key token each", () => {
     const stubs = expandPlaces([{ kind: "zone", set: "pa", keys: ["GAA", "GAB"] }], BOOT);
-    expect(stubs.map((s) => s.name)).toEqual(["Gulf of America", "Gulf B"]);
+    expect(stubs.map((s) => s.name)).toEqual(["Gulf of America (GAA)", "Gulf B (GAB)"]);
     expect(stubs.map((s) => s.zoneKey)).toEqual(["GAA", "GAB"]);
     expect(stubs[0].token).not.toBe(stubs[1].token);
     expect(stubs[0].token.startsWith("z.pa.GAA")).toBe(true);
