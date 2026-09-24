@@ -66,7 +66,14 @@
     // button, but this really is a root-level shortcut).
     const el = rootEl;
     el?.addEventListener("keydown", handleKeydown);
-    return () => el?.removeEventListener("keydown", handleKeydown);
+    // `focusin` on `document`, not `rootEl` -- a WebKit-only escape (see `onFocusEscape`'s own
+    // header) lands the NEW focus target OUTSIDE `rootEl` entirely, so listening on `rootEl` itself
+    // would never see it bubble (a `focusin` only bubbles up the TARGET's own ancestor chain).
+    document.addEventListener("focusin", onFocusEscape);
+    return () => {
+      el?.removeEventListener("keydown", handleKeydown);
+      document.removeEventListener("focusin", onFocusEscape);
+    };
   });
 
   function persist(next: PanelGeometry) {
@@ -215,6 +222,20 @@
       (event.shiftKey ? last : first).focus();
       return;
     }
+    // `active === surfaceEl` itself -- the programmatic focus target on maximize (SC 2.4.3's "the
+    // title is the least surprising first stop"), `tabindex="-1"` so it never appears in
+    // `focusable` above. `surfaceEl.contains(surfaceEl)` is true (a node contains itself), so this
+    // fell through `insideSurface` uncaught -- neither boundary check below ever matches it (it is
+    // not `last` NOR `first`), so a Shift+Tab from the very first keypress after maximizing hit no
+    // branch at all and fell through to the browser's OWN native focus move, which (WebKit only --
+    // Chromium/Firefox happened not to expose this on the same DOM) escaped straight to the rail
+    // button that opened the panel. Treat it as its own boundary: always intercepted, wrapping to
+    // `last` on Shift+Tab (mirroring "arrived at the end, moving backward") or `first` on Tab.
+    if (active === surfaceEl) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+      return;
+    }
     if (!event.shiftKey && active === last) {
       event.preventDefault();
       first.focus();
@@ -224,11 +245,43 @@
     }
   }
 
+  // safety net for a WebKit-only quirk `trapTab`'s keydown interception cannot see coming: this
+  // panel's own scrollable BODY region is a `tabindex="0"` container (`.panel-body` below, the
+  // "scrollable-region-focusable" a11y fix) that also holds many real focusable descendants (a
+  // long table's row/sort/filter controls). Chromium/Firefox visit that container in plain DOM
+  // order -- BEFORE its descendants, same as `querySelectorAll` -- so it is never `focusable`'s
+  // own `last` element and the ordinary boundary check above is enough. WebKit's native forward-
+  // tab order instead revisits the SAME container AFTER exhausting its descendants (its own
+  // "leaving a scrollable region" stop), which is a real element `trapTab` never predicts as a
+  // boundary because it is not array-last -- so a plain Tab from it fell through untouched and
+  // native WebKit then moved focus straight out of `surfaceEl` entirely, with no `keydown` this
+  // component ever sees again (proven by direct instrumentation: 15 forward Tabs from a real
+  // ~50-control maximized table repeated the escape every ~5 presses). Reacting to `focusin`
+  // rather than guessing every engine's own boundary geometry ahead of time is the standard
+  // focus-trap correction for exactly this class of quirk: whatever focus lands on, if it ends up
+  // outside `surfaceEl` while still maximized, snap it back -- to `last` if the escape happened on
+  // a backward (Shift+Tab) press, `first` otherwise, mirroring `trapTab`'s own wrap direction.
+  function onFocusEscape() {
+    if (!geometry.maximized || !surfaceEl) return;
+    const active = document.activeElement;
+    if (active instanceof Node && surfaceEl.contains(active)) return; // still inside -- nothing to do
+    const focusable = [...surfaceEl.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
+      isVisible,
+    );
+    if (focusable.length === 0) return;
+    (lastTabShiftKey ? focusable[focusable.length - 1] : focusable[0]).focus();
+  }
+
   // the innermost open layer handles Esc first: if some other open layer (a Select, a Popover)
   // already handled this SAME keydown and called preventDefault() on it, this panel must not
   // ALSO react to it. Esc means "back off one level": restore from maximized, else collapse.
+  // last Tab keydown's direction, read by `onFocusEscape` below (a `focusin` fires with no
+  // shiftKey of its own to consult).
+  let lastTabShiftKey = false;
+
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Tab") {
+      lastTabShiftKey = event.shiftKey;
       trapTab(event);
       return;
     }

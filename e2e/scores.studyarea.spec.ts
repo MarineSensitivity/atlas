@@ -36,8 +36,14 @@ import {
 } from "./hermetic";
 import { blockWasm, routeBasemapStyle, routeGlyphs, routeTitilerTiles } from "./map-hermetic";
 import { STUDY_AREAS, bootFor, routeZones20 } from "./scores-hermetic";
-import { panelStorageKey, type PanelGeometry } from "../src/lib/ui/panelGeometry";
+import {
+  DEFAULT_PANEL_GEOMETRY,
+  panelStorageKey,
+  type PanelGeometry,
+} from "../src/lib/ui/panelGeometry";
 import { tileUrlLeaksStudyArea } from "../src/lib/map/layers/titiler";
+import { desktopPanelPadding } from "../src/lib/map/chromePadding";
+import { paddedStudyAreaCenter } from "../src/lib/map/camera";
 
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 800 } });
@@ -213,7 +219,20 @@ test.describe("S-01: the study area is a CAMERA — sel.area drives it on load a
     page,
   }) => {
     await gotoScoresArea(page, "");
-    await waitForCameraNear(page, { lon: FULL.lon, lat: FULL.lat });
+    // R1 (usability M4, merged into this round after this spec was first written): the shell's
+    // DEFAULT desktop panel (undocked, right, 380px -- DEFAULT_PANEL_GEOMETRY, no geometry seeded
+    // by this test) pads the FIRST-paint camera so the study area is not hidden behind it
+    // (`Shell.svelte#initialStudyArea`/`paddedStudyAreaCenter`) -- at FULL's own low zoom (2.16)
+    // that reserved 380px is a large fraction of the visible world, so the settled camera lands
+    // well away from FULL's raw, unpadded point. Compute the SAME padded point the shell computes
+    // (never re-hardcode the shift) so this still proves "the initial camera settled and stayed
+    // put" -- this test's own concern -- without asserting a value M4 has since made stale.
+    const paddedFull = paddedStudyAreaCenter(
+      FULL,
+      FULL.zoom,
+      desktopPanelPadding(DEFAULT_PANEL_GEOMETRY),
+    );
+    await waitForCameraNear(page, paddedFull);
 
     await flyAndWaitForMoveEnd(page, () => page.getByLabel("Study area").selectOption(AK.key));
 
