@@ -122,7 +122,7 @@ export const INTENTIONAL = [
       },
       {
         file: "e2e/scores.versionPicker.spec.ts",
-        name: "?ver=v9 shows a denial notice with a preview-host link carrying the same query + hash",
+        name: "?ver=v9: with VITE_PREVIEW_ATLAS_ROUTE unset, no /atlas/ preview link renders -- the honest fallback (Scores/Species) does instead (round 2, Q4)",
       },
       {
         file: "e2e/report.spec.ts",
