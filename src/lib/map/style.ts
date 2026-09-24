@@ -37,6 +37,7 @@ import {
   classifyBasemapLayer,
   DEFAULT_LAYER_STACK,
   defaultLayerStackEntries,
+  normalizeLayerStack,
   type LayerGroupId,
   type LayerStackEntry,
 } from "./layerStack";
@@ -426,7 +427,13 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
   // from a data spec — one mechanism, not a raster-specific and a zone-specific and a selection-
   // specific one). `defaultLayerStackEntries()` is a no-op on both counts, so an existing caller
   // that never passes `layerStack` sees byte-identical output to before this input existed.
-  const stackEntries = input.layerStack ?? defaultLayerStackEntries();
+  //
+  // m10 (review round 1): `normalizeLayerStack` appends any group a caller's `layerStack` omits
+  // entirely (default visible/opacity) — a complete stack (the common case: `parseLayerStack`'s
+  // own output, or the default) passes through untouched; only a hand-built, PARTIAL array (a
+  // caller bypassing the URL layer) gets repaired here, before `orderLayers` below would otherwise
+  // throw on the missing group's roles.
+  const stackEntries = normalizeLayerStack(input.layerStack ?? defaultLayerStackEntries());
   const groupById = new Map(stackEntries.map((e) => [e.id, e]));
   const styledRoled: RoledLayer[] = roled.map(({ role, layer }) => {
     const group = ROLE_GROUP[role];

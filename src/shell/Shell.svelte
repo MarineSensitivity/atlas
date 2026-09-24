@@ -509,8 +509,18 @@
   // decoration, not the release's one selectable unit, so `sel.out` never hides it. Kept OUT of
   // `zoneUnits`/`zonesForStyle` (Places/pick-mode's own inputs) so drawing it can never make
   // "ecoregion" a pickable zone type by accident.
+  //
+  // m9 (review round 1): a release whose OWN `boot.units[]` already publishes an "ecoregion"
+  // selectable unit (so `zonesForStyle` already carries one, e.g. via `sel.out=ecoregion`) must
+  // not ALSO get this manifest-published outline appended -- `composeStyle` keys every zone unit's
+  // ids on `unit` (`ecoregion_ln`, …), so two "ecoregion" entries in the same `zones` array collide
+  // into duplicate layer ids and break the style. No release does this today (the manifest outline
+  // exists precisely BECAUSE no release has an ecoregion `boot` unit), but the guard is cheap and
+  // makes the combination structurally safe rather than "currently doesn't happen to occur."
   const ecoregionUnit = $derived(
-    sel.lens === "scores" ? ecoregionZoneUnitFromManifest(manifest) : null,
+    sel.lens === "scores" && !zonesForStyle.some((u) => u.unit === "ecoregion")
+      ? ecoregionZoneUnitFromManifest(manifest)
+      : null,
   );
 
   onMount(() => {

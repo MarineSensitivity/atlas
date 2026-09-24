@@ -122,6 +122,27 @@ export function defaultLayerStackEntries(): LayerStackEntry[] {
   return DEFAULT_LAYER_STACK.map((id) => ({ id, visible: true, opacity: 1 }));
 }
 
+/**
+ * m10 (review round 1): `style.ts#composeStyle` takes `layerStack` directly (not only through
+ * {@link parseLayerStack}'s own URL-string normalisation) -- a caller that hands it a hand-built,
+ * incomplete array (missing a group entirely, e.g. `data-places`) used to make `orderLayers` throw
+ * ("has a role ... which is not in the declared stack order"), because a role with no rank at all
+ * is exactly the "a layer order that would cascade" failure that function's `@throws` exists to
+ * catch. `parseLayerStack` already repairs a well-formed but PARTIAL `layers=` token; this handles
+ * anything shorter of that, including a caller that bypasses the URL layer entirely. Any group
+ * `entries` omits is appended, visible/opacity default, in {@link DEFAULT_LAYER_STACK}'s own
+ * relative order — the same "missing == default, appended" rule generalized to a whole missing
+ * group. A complete stack round-trips unchanged (same array reference, even).
+ */
+export function normalizeLayerStack(
+  entries: readonly LayerStackEntry[],
+): readonly LayerStackEntry[] {
+  const present = new Set(entries.map((e) => e.id));
+  const missing = DEFAULT_LAYER_STACK.filter((id) => !present.has(id));
+  if (missing.length === 0) return entries;
+  return [...entries, ...missing.map((id) => ({ id, visible: true, opacity: 1 }))];
+}
+
 /** true iff `entries` is draw-order-and-value identical to `defaultLayerStackEntries()` — the
  * "is this a default?" comparison `state/codec.ts#formatSel` needs (mirrors every other field's own
  * `!== DEFAULT_SEL.x` check) and what "Reset layers" restores. */

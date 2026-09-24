@@ -11,6 +11,7 @@ import {
   isDefaultLayerStack,
   isLayerGroupId,
   moveLayerStackEntry,
+  normalizeLayerStack,
   parseLayerStack,
   scaleOpacity,
   type LayerStackEntry,
@@ -112,6 +113,46 @@ describe("defaultLayerStackEntries / isDefaultLayerStack", () => {
       false,
     );
     expect(isDefaultLayerStack([def[1], def[0], ...def.slice(2)])).toBe(false); // reordered
+  });
+});
+
+// m10 (review round 1): `style.ts#composeStyle` takes `layerStack` directly, not only through
+// `parseLayerStack`'s own repair of a URL string -- a hand-built, incomplete array used to make
+// `orderLayers` throw ("has a role ... which is not in the declared stack order") the moment a
+// layer in the missing group's roles was composed.
+describe("normalizeLayerStack", () => {
+  it("a complete stack passes through UNCHANGED (same array reference)", () => {
+    const def = defaultLayerStackEntries();
+    expect(normalizeLayerStack(def)).toBe(def);
+  });
+
+  it("a stack missing ONE group gets it appended, default visible/opacity, at the END", () => {
+    const partial = defaultLayerStackEntries().filter((e) => e.id !== "data-places");
+    const out = normalizeLayerStack(partial);
+    expect(out.map((e) => e.id)).toEqual([...partial.map((e) => e.id), "data-places"]);
+    expect(out.at(-1)).toEqual({ id: "data-places", visible: true, opacity: 1 });
+  });
+
+  it("a stack missing SEVERAL groups gets all of them appended, in DEFAULT_LAYER_STACK's own relative order", () => {
+    const partial = defaultLayerStackEntries().filter(
+      (e) => e.id !== "data-places" && e.id !== "basemap-bathymetry",
+    );
+    const out = normalizeLayerStack(partial);
+    expect(out.map((e) => e.id)).toEqual([
+      ...partial.map((e) => e.id),
+      "basemap-bathymetry",
+      "data-places",
+    ]);
+  });
+
+  it("an empty stack normalises to exactly the default stack", () => {
+    expect(normalizeLayerStack([])).toEqual(defaultLayerStackEntries());
+  });
+
+  it("a REORDERED but complete stack is left alone (normalising is about MISSING groups, not order)", () => {
+    const def = defaultLayerStackEntries();
+    const reordered = [def[1], def[0], ...def.slice(2)];
+    expect(normalizeLayerStack(reordered)).toBe(reordered);
   });
 });
 
