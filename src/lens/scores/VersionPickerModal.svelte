@@ -49,6 +49,17 @@
   {/if}
 {/snippet}
 
+{#snippet previewContinuationCompact(ver: string)}
+  {#if atlasRouteEnabled}
+    <a href={previewLinkFor(ver, loc)}>Continue on the preview host</a>
+  {:else}
+    <a href={previewScoresLinkFor(ver)}>Scores</a>/<a href={previewSpeciesLinkFor(ver)}>Species</a>
+    <span class="preview-hint" title="The preview host does not serve the Atlas yet"
+      >on preview</span
+    >
+  {/if}
+{/snippet}
+
 <Modal {open} title="Data release" {onclose}>
   {#if denied}
     <p class="denied-notice">
@@ -75,7 +86,7 @@
           {/if}
           {#if access !== "public"}
             <span class="badge badge--restricted">restricted</span>
-            {@render previewContinuation(row.ver ?? "")}
+            {@render previewContinuationCompact(row.ver ?? "")}
           {:else if row.ver === currentVer}
             <span class="badge">current</span>
           {:else}
@@ -147,6 +158,14 @@
 
   .date {
     margin-left: auto;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
+  /* round 2, Q4: the row-list's compact fallback (previewContinuationCompact) -- a short label
+     beside the Scores/Species links rather than repeating the denied-notice's full sentence once
+     per restricted row, which wrapped badly and pushed the date column around (eyes-on finding). */
+  .preview-hint {
     color: var(--text-secondary);
     font-size: var(--text-xs);
   }
