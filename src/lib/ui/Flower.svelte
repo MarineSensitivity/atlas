@@ -58,9 +58,19 @@
     /** CSS px; the SVG viewBox is fixed (flowerViewBox()), so this only scales the drawing.
      * spec.md §10: the phone flower shrinks to 150. */
     size?: number;
+    /** Q3 fix round 1 (coordinator finding): "one table" -- a caller that already renders its OWN
+     * component table beside this flower (`src/places/ResultsPanel.svelte`, whose DataTable also
+     * carries coverage/mean-where-present columns this component's own table does not) sets this
+     * `false` so the two tables stop duplicating the same rows. The SR-only `.summary` paragraph
+     * below already states every component's name and score in text (`describeFlowerSummary()`),
+     * so hiding the visible table loses no accessible information -- it just stops being the one
+     * that also has to exist as a SECOND on-screen copy of a caller's own table. Every other
+     * caller (`FlowerPanel.svelte`, the gallery) has no such table of its own, so the default stays
+     * `true` -- unchanged there. */
+    showTable?: boolean;
   }
 
-  let { title, components, droppedLabels = [], size = 220 }: Props = $props();
+  let { title, components, droppedLabels = [], size = 220, showTable = true }: Props = $props();
 
   const uid = nextUid();
   const summaryId = `${uid}-summary`;
@@ -224,32 +234,34 @@
       {/if}
     </div>
 
-    <table class="flower-table" id={tableId}>
-      <caption class="sr-only">Component scores for {title}</caption>
-      <thead>
-        <tr>
-          <th scope="col"><span class="sr-only">Color</span></th>
-          <th scope="col">Component</th>
-          <th scope="col">Score</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each safe.keptComponents as c (c.key)}
+    {#if showTable}
+      <table class="flower-table" id={tableId}>
+        <caption class="sr-only">Component scores for {title}</caption>
+        <thead>
           <tr>
-            <td class="swatch-cell">
-              <span class="swatch" style={`background: var(${categoryFor(c.key).color})`}></span>
-            </td>
-            <td>{categoryFor(c.key).label}</td>
-            <td class="num">{c.score === null ? "No data" : formatScore(c.score)}</td>
+            <th scope="col"><span class="sr-only">Color</span></th>
+            <th scope="col">Component</th>
+            <th scope="col">Score</th>
           </tr>
-        {/each}
-        <tr class="mean-row">
-          <td class="swatch-cell"></td>
-          <th scope="row">Mean</th>
-          <td class="num">{roundedCenter !== null ? roundedCenter : "No data"}</td>
-        </tr>
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each safe.keptComponents as c (c.key)}
+            <tr>
+              <td class="swatch-cell">
+                <span class="swatch" style={`background: var(${categoryFor(c.key).color})`}></span>
+              </td>
+              <td>{categoryFor(c.key).label}</td>
+              <td class="num">{c.score === null ? "No data" : formatScore(c.score)}</td>
+            </tr>
+          {/each}
+          <tr class="mean-row">
+            <td class="swatch-cell"></td>
+            <th scope="row">Mean</th>
+            <td class="num">{roundedCenter !== null ? roundedCenter : "No data"}</td>
+          </tr>
+        </tbody>
+      </table>
+    {/if}
   </div>
 
   <!-- SC 1.1.1's "text summary" alongside the chart's own table equivalent -- the table above

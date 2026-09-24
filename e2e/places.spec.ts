@@ -1119,3 +1119,36 @@ for (const viewport of [
     });
   });
 }
+
+// Q3 fix round 1 (coordinator eyes-on finding, 2026-09-24): the SAME three component rows used to
+// render TWICE in the results panel -- once in Flower.svelte's own always-shown swatch/component/
+// score table (beneath every flower, unrelated to this panel), and again in ResultsPanel's own
+// filterable/exportable DataTable right underneath it. "Rule: one table" -- Flower now takes a
+// `showTable` prop (default true, unchanged for every OTHER caller) that ResultsPanel sets `false`
+// on both its Flower instances, since its own DataTable carries columns (coverage, mean-where-
+// present, for a geom place) the flower's table never had. `.results table` counts EVERY `<table>`
+// element under the panel -- Flower's own (`table.flower-table`) and DataTable's own
+// (`table.grid[role="grid"]`) are both real `<table>`s (verified by reading each component's
+// markup), so a plain count is a real assertion, not a role-name guess. Before Load species is
+// clicked there is exactly one -- the Components grid.
+test("a zone place's results panel renders exactly ONE component table, not the flower's own copy too", async ({
+  page,
+}) => {
+  await gotoPlacesWithZoneResultsFixture(page);
+  const results = page.locator(".results");
+  await expect(results).toBeVisible();
+  await expect(results.getByRole("grid", { name: "Components" })).toBeVisible();
+  await expect(results.locator("table")).toHaveCount(1);
+});
+
+test("a geom place's results panel renders exactly ONE component table, not the flower's own copy too", async ({
+  page,
+}) => {
+  test.setTimeout(60_000); // a real DuckDB-WASM cold boot, like the round trip above
+  await gotoPlacesWithRoundtripRelease(page, "/?map=-123.75,40.75,7");
+  await addByCoordinates(page);
+  await readResultsPanel(page); // waits for a real composite -- the Components table is now rendered
+  const results = page.locator(".results");
+  await expect(results.getByRole("grid", { name: "Components" })).toBeVisible();
+  await expect(results.locator("table")).toHaveCount(1);
+});

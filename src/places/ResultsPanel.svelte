@@ -329,6 +329,7 @@
             components={zoneFlower.components}
             droppedLabels={zoneFlower.droppedLabels}
             size={160}
+            showTable={false}
           />
           <p class="composite-figure">
             <strong>
@@ -368,7 +369,7 @@
       </p>
     {:else}
       <div class="composite-row">
-        <Flower title={resultsLabel} components={flowerComponents} size={160} />
+        <Flower title={resultsLabel} components={flowerComponents} size={160} showTable={false} />
         <p class="composite-figure">
           <strong>{scoreResults.composite.toFixed(1)}</strong> composite
         </p>
@@ -458,15 +459,22 @@
     margin: 0;
   }
 
+  /* Q3 fix round 1 (coordinator finding, eyes-on): this used to be a flex ROW -- the flower's
+     fixed-width figure left the composite text only the narrow leftover space beside it, which
+     wrapped "25.0" / "composite" onto separate lines even on a 1280px desktop. A COLUMN, both
+     children centred, puts the composite figure under the flower instead -- readable at any
+     panel width, phone included. */
   .composite-row {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: var(--space-3);
+    gap: var(--space-2);
   }
 
   .composite-figure {
     font-size: var(--text-lg);
     margin: 0;
+    text-align: center;
   }
 
   .species-section h3 {
