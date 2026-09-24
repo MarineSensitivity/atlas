@@ -44,7 +44,7 @@ import type { MapHandle } from "../../lib/map/map";
 import { mapClick, type QueryableMap } from "../../lib/map/interaction";
 import { createPopup } from "../../lib/map/popup";
 import { announce } from "../../lib/ui/announcer";
-import { gridFromBoot, tileOf } from "../../lib/grid/grid";
+import { cellFromLonLat, gridFromBoot, tileOf } from "../../lib/grid/grid";
 import { effectiveLyr, effectiveUnit } from "./fallback";
 import {
   cellRing,
@@ -55,7 +55,7 @@ import {
 } from "./selection";
 import { scoresMapInputs, type ScoresMapInputs, type ScoresMapState } from "./mapInputs";
 import type { ManifestOverlayRow } from "./raster";
-import { layerByKey, metricLabelsFromManifest, zoneRows } from "./boot";
+import { layerByKey, metricLabelsFromManifest, primaryUnitType, zoneRows } from "./boot";
 import { fetchCellValue } from "./cellClick";
 import { getAnalysisSources } from "./engine";
 import {
@@ -65,6 +65,11 @@ import {
   zonePopupAnnounceText,
   zonePopupText,
 } from "./popup";
+// Q1 (atlas-8 P-round, 2026-09-24): the top-bar search's "fly to the zone's own centroid" reuses
+// the SAME point `places/zoneStats.ts#zoneCenterFromBoot` already computes for a zone Place's own
+// "Zoom to place" (`Places.svelte`) — one reader for "where does this zone's label sit", never a
+// second bbox/centroid computation invented here.
+import { zoneCenterFromBoot } from "../../places/zoneStats";
 
 /** the map ring's own shape — a cell's centre + half-extents (pure arithmetic on the release's
  * grid) or a zone key to outline; `ScoresMapState["selection"]`'s own type, named here so
@@ -116,6 +121,18 @@ export interface ScoresLens {
     lngLat: { lng: number; lat: number },
     point: { x: number; y: number },
   ): Promise<void>;
+  /** Q1 (top-bar search, item 1): select a zone found by `search.ts#matchZones` — the SAME `sel`
+   * write a map click resolves to when the current spatial unit already IS `unit` (`formatZoneToken`
+   * +, for the release's own SELECTABLE unit only, `sel.unit` too — see the impl's own header for
+   * why the two fields differ from a real click's write). Flies the camera to the zone's own
+   * centroid and opens the SAME popup a click on it would. */
+  selectZone(unit: string, key: string): void;
+  /** Q1 (top-bar search, item 2): select the cell at `lon`/`lat` — the SAME `sel` write/popup path
+   * as `handleMapClick`'s cell branch, plus a camera fly-to (a real click is already looking at the
+   * point it resolves; a typed coordinate is not). `false` when the point falls outside this
+   * release's grid (no boot yet, or genuinely off-grid) — the caller reports "no match", never a
+   * throw. */
+  selectCoordinate(lon: number, lat: number): Promise<boolean>;
 }
 
 export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
@@ -219,15 +236,8 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
         const tile = tileOf(cellId, grid);
         const sources = await getAnalysisSources(ver, bootObj);
         value = await fetchCellValue(sources, { cellId, tile, metricKey: lyr });
-        console.log("DIAG2 value resolved:", value, "cellId", cellId, "lyr", lyr);
-      } else {
-        console.log("DIAG2 skipped: ver=", ver, "lyr=", lyr);
       }
-    } catch (err) {
-      console.log(
-        "DIAG2 caught:",
-        err instanceof Error ? err.message + " " + err.stack : String(err),
-      );
+    } catch {
       value = null; // no engine / no tile for this cell (off-grid, unscored) — "no value", not a throw
     }
     if (token !== popupToken) return; // a later click superseded this one
@@ -343,6 +353,73 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
           zonePopupAnnounceText(zRows, lyr, result.zone),
         );
       }
+    },
+
+    // Q1 (top-bar search, item 1): `ScoresSearch.svelte`'s "pick a zone" — the search field has no
+    // screen point to query features at (nothing has been clicked), so this builds the SAME `sel`
+    // write and popup a map click resolves to directly from the matched zone's own key, rather than
+    // routing through `mapClick`'s screen-point query.
+    selectZone(unit: string, key: string): void {
+      if (deps.selStore.sel.lens !== "scores") return;
+      clearPopup();
+      const boot = deps.boot();
+      // "same sel fields: unit + selected zone" (brief): a real map click never rewrites `sel.unit`
+      // because it only ever resolves a ZONE when `sel.unit` already equals it — the precondition
+      // IS the current spatial-unit selection. Search has no such precondition (it can be invoked
+      // from "Raster cells" mode too), so it sets `unit` explicitly for the release's own
+      // SELECTABLE unit only (never for a subregion/ecoregion match — D17: neither is ever a valid
+      // `sel.unit`, and `fallback.ts#effectiveUnit` would just clamp it back to "cell" anyway).
+      const patch: { sel: string; unit?: string } = { sel: formatZoneToken(unit, key) };
+      if (unit === primaryUnitType(boot)) patch.unit = unit;
+      deps.selStore.set(patch);
+
+      const zRows = zoneRows(boot, unit);
+      const hit = { unit, key, name: zRows.find((z) => z.key === key)?.name ?? key };
+      const center = zoneCenterFromBoot(boot, unit, [key]);
+      const handle = deps.mapHandle();
+      if (handle && center) {
+        // zoom 6, the SAME literal `Places.svelte#zoomTo`'s own "zone" branch flies a Program-Area
+        // place to — one convention for "zoomed out just enough to see a Program Area's own extent".
+        handle.flyTo({ key: "place", lon: center.lon, lat: center.lat, zoom: 6 });
+        showPopup(
+          { lng: center.lon, lat: center.lat },
+          zonePopupText(zRows, lyr, hit),
+          zonePopupAnnounceText(zRows, lyr, hit),
+        );
+      } else {
+        // no published label point for this zone (or no map yet) — the selection/URL write above
+        // already stands; just announce it rather than silently doing nothing.
+        announce(zonePopupAnnounceText(zRows, lyr, hit));
+      }
+    },
+
+    // Q1 (top-bar search, item 2): `ScoresSearch.svelte`'s "jump to a coordinate" — mirrors
+    // `handleMapClick`'s cell branch (eager `sel` write, loading popup, async value fill-in/
+    // retraction via `showCellPopup`) plus a camera move, which a real click never needs (the user
+    // is already looking at whatever they clicked).
+    async selectCoordinate(lon: number, lat: number): Promise<boolean> {
+      if (deps.selStore.sel.lens !== "scores") return false;
+      let grid;
+      try {
+        grid = gridFromBoot(deps.boot());
+      } catch {
+        return false; // no boot.grid yet
+      }
+      const cellId = cellFromLonLat(lon, lat, grid);
+      if (cellId === null) return false; // off this release's grid — a fact about the point, not a throw
+      const lngLat = { lng: lon, lat };
+      const token = ++popupToken;
+      clearPopup();
+      const prevSel = deps.selStore.sel.sel;
+      deps.selStore.set({ sel: formatCellToken(cellId) });
+      const handle = deps.mapHandle();
+      // zoom 9: close enough to read a single 0.05 deg cell's own popup clearly, short of the
+      // per-place heuristic `places/camera.ts#MAX_ZOOM` (12) reserves for a drawn place's true point
+      // extent — a typed coordinate is a known location to LOOK AT, not a place being measured.
+      if (handle) handle.flyTo({ key: "place", lon, lat, zoom: 9 });
+      showPopup(lngLat, cellPopupLoadingText({ cellId, lon, lat }), "Loading value…");
+      void showCellPopup(cellId, lngLat, token, prevSel);
+      return true;
     },
   };
 }

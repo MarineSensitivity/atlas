@@ -102,12 +102,14 @@ test("a full interaction walk never calls history.pushState, and never grows his
   const panel = page.locator("#panel-region");
   await panel.locator('[data-panel-control="collapse"]').click();
   await panel.locator("button.panel-pill").click();
-  // U1c fix round (CI run 35956406448/107495562810): `getByLabel` now matches TWO elements
-  // sharing this accessible name -- the desktop `<input type="search">` (this test's real
-  // target, at this default desktop viewport) and P5's phone-search trigger `<button>`
-  // (`topbar-phone-only`, CSS-hidden here but still present in the DOM and still matched by
-  // accessible name, same as a real AT would). Disambiguate by role.
-  await page.getByRole("searchbox", { name: "Search species and places" }).click();
+  // U1c fix round (CI run 35956406448/107495562810): `getByLabel` used to match TWO elements
+  // sharing one accessible name -- the desktop search field and P5's phone-search trigger
+  // `<button>` (`topbar-phone-only`, CSS-hidden here but still present in the DOM). `role`
+  // disambiguated it back then; it still does, though Q1 (2026-09-24) also gave the scores-lens
+  // field its own distinct accessible name ("Search Program Areas or coordinates",
+  // `ScoresSearch.svelte`) now that this click lands back in the Scores lens (the "Scores" click
+  // just above), so the two no longer collide on name either.
+  await page.getByRole("combobox", { name: "Search Program Areas or coordinates" }).click();
   await page.keyboard.type("leatherback");
 
   const pushStateCalls = await page.evaluate(

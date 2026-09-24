@@ -8,12 +8,14 @@
 // RED-FIRST: fails on the pre-fix tree -- no `[data-control="search-phone"]` button exists at
 // 390x844.
 //
-// Scope note: the SCORES lens' topbar search field has never been wired to a real place search
-// anywhere in this app (ScoresLens.svelte's own header comment: "the Nominatim geocoder was never
-// attempted... out of scope this phase") -- it is a plain, unwired `<input>` on desktop too. This
-// spec proves the phone button reaches that SAME stub input (parity with desktop, focused on
-// open), and proves the real, wired case end-to-end: in the species lens, typing a known species
-// name lists results and choosing one changes the species model (`sp=` in the URL).
+// Q1 (atlas-8 P-round, 2026-09-24) update: the SCORES lens' topbar search field used to be a
+// plain, unwired `<input>` on both desktop and phone (ScoresLens.svelte's own former header
+// comment: "the Nominatim geocoder was never attempted... out of scope this phase"). It is now
+// wired (`ScoresSearch.svelte`/`search.ts`, offline: Program Areas by key/name + "lon, lat"
+// coordinates, no geocoder) -- this spec's own "scores lens" test below now proves the phone
+// button reaches that SAME real, wired search (parity with the desktop field), not a stub; the
+// full red-first "does it actually select something" coverage lives in
+// `e2e/scores.search.spec.ts`. The species-lens tests below are unchanged.
 import { expect, test } from "@playwright/test";
 import { LEATHERBACK_SP, gotoSpecies } from "./species-hermetic";
 import { blockWasm, routeBasemapStyle, routeGlyphs, routeTitilerTiles } from "./map-hermetic";
@@ -53,7 +55,7 @@ test.describe("P1: phone search button", () => {
     await expect.poll(() => page.url()).toContain("sp=ms_merge");
   });
 
-  test("scores lens: tapping it opens a focused input (parity with the desktop field, itself unwired)", async ({
+  test("scores lens: tapping it opens the focused Program Area / coordinate search (parity with the desktop field)", async ({
     page,
   }) => {
     await blockWasm(page);
@@ -70,8 +72,10 @@ test.describe("P1: phone search button", () => {
     await page.getByRole("button", { name: "Search species and places" }).click();
     const dialog = page.getByRole("dialog", { name: "Search" });
     await expect(dialog).toBeVisible();
-    const input = dialog.getByPlaceholder("Search species and places");
+    const input = dialog.getByRole("combobox", { name: "Search Program Areas or coordinates" });
+    await expect(input).toBeVisible({ timeout: 10_000 });
     await expect(input).toBeFocused();
+    await expect(input).toHaveAttribute("placeholder", "Program Areas or lon, lat");
   });
 
   test("desktop (1280x800): the phone search button is not rendered", async ({ page }) => {

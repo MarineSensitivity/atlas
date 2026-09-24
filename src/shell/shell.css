@@ -457,6 +457,18 @@ button.chip {
   position: static;
   margin-top: var(--space-1);
 }
+/* Q1 (atlas-8 P-round, 2026-09-24): the SAME clipping fix as `.search-field-phone--species` just
+   above, for `ScoresSearch.svelte`'s own dropdown (`.scores-search-dropdown`) -- it is `position:
+   absolute` on the desktop topbar field for the identical reason SpeciesPicker's is (float over the
+   map, never push content down), and needs the identical normal-flow override inside this modal so
+   Modal.svelte's `.modal-body { overflow: auto }` actually includes it in the dialog's own height. */
+.search-field-phone--scores {
+  align-items: flex-start;
+}
+.search-field-phone.search-field-phone--scores .scores-search-dropdown {
+  position: static;
+  margin-top: var(--space-1);
+}
 .search-field-phone-control {
   flex: 1;
   min-width: 0;
