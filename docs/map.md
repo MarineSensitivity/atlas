@@ -58,6 +58,7 @@ composeStyle({
   overlays, // RasterLayerSpec[]: e.g. "cells outside Program Areas"
   selection, // SelectionSpec | null: the #ff00aa highlight
   basemapStyle, // override ONLY in a test: skips the network fetch, merges this instead
+  layerStack, // R3: the user's layer stack (order + each group's visible/opacity) — see below
 });
 ```
 
@@ -70,13 +71,45 @@ resolves either.
 it belongs, and a unit test for the builder. `orderLayers()` throws on a role the table does not
 name, so there is no way to add a layer without deciding where it sits.
 
-**Layer order is declared, bottom to top:** `background · basemap · raster · range · overlay ·
-zone-fill · zone-line · zone-label · selection-fill · selection-line`. Because the order is a table
-rather than a chain of `before` ids, a missing layer removes exactly itself — the v1 failure where
-one absent `before_id` cascaded into "a map with nothing but labels" cannot happen here.
-`range` (atlas-5, `map/layers/ranges.ts`) is a species PMTiles presence fill, filtered to one
-`mdl_key` — distinct from a zone unit's own PMTiles outline even though both register the same
-`pmtiles://` protocol.
+**Layer order is declared, bottom to top:** `background · basemap-land · basemap-bathymetry ·
+basemap-boundaries · basemap-roads · basemap-labels · raster · range · overlay · zone-fill ·
+zone-line · zone-label · selection-fill · selection-line`. Because the order is a table rather than
+a chain of `before` ids, a missing layer removes exactly itself — the v1 failure where one absent
+`before_id` cascaded into "a map with nothing but labels" cannot happen here. `range` (atlas-5,
+`map/layers/ranges.ts`) is a species PMTiles presence fill, filtered to one `mdl_key` — distinct
+from a zone unit's own PMTiles outline even though both register the same `pmtiles://` protocol.
+
+### The layer stack (R3, round-2 plan §5 U4 / `docs/usability.md` §7 R3)
+
+The single "basemap" role above used to be one bucket holding every merged CARTO layer, unmovable —
+so CARTO's own place/road labels always painted UNDER the score raster, invisibly. `map/layerStack.ts`
+(pure, no MapLibre/Svelte) turns that fixed bucket into five sub-roles (`classifyBasemapLayer`) plus
+three data groups (`raster`+`range`+`overlay` folded into `data-raster` — "the lens's data"; the
+three zone roles into `data-zones`; the selection pair into `data-places`), each a `LayerGroupId` a
+viewer can reorder and dim from the Layers panel (`src/lib/ui/LayersPanel.svelte`, shared by both
+lenses — the panel IS the stack, its "Data" row expanding into the lens's own controls). Five lines:
+
+1. **The model is an ordered `LayerStackEntry[]`** (`{id, visible, opacity}`), bottom-to-top —
+   `DEFAULT_LAYER_STACK` is exactly today's rendering (every basemap sub-role still under the
+   raster); moving `basemap-labels` above `data-raster` (Ben's example: names over a semi-
+   transparent raster) is the new capability, not a change to the default view.
+2. **`composeStyle({layerStack})` consumes it two ways**: `rankForStack()` expands the group order
+   into the flat `LayerRole` order `orderLayers()` sorts against (background always first,
+   unconditionally), and `applyLayerGroupStyling()` overrides a layer's `layout.visibility`/opacity
+   paint key(s) from its group's entry — applied uniformly to every layer, basemap or data, in ONE
+   pass before the one `orderLayers()`/`setStyle(diff:true)` call. Omitting `layerStack` (every
+   pre-R3 caller) is a no-op on both counts — byte-identical output.
+3. **`layers=` is the URL key** (`parseLayerStack`/`formatLayerStack`, called from
+   `state/codec.ts`): `<id>[:h][:oNN],...`, order = draw order bottom-to-top; `:h` = hidden,
+   `:oNN` = opacity NN% (01–99; 100/opacity 1 is the default and is never written); a KNOWN group
+   missing from the token is appended at its default relative position (a release that adds a group
+   later never orphans an old link); an unknown id is dropped; omitted entirely = the default stack.
+4. **`isDefaultLayerStack()`** is the one "is this a deviation?" check both `formatLayerStack` (omit
+   the key) and the panel's "Reset layers" button (disabled at the default) share.
+5. **Scope note**: "places" (a drawn/picked outline) and the click-driven "selection" ring both draw
+   through the SAME `selection-fill`/`selection-line` pair (one GeoJSON source), so they are ONE
+   stack row (`data-places`), not two — splitting them needs a second source/layer pair, out of R3's
+   scope.
 
 ## Rules with teeth
 

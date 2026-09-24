@@ -10,6 +10,14 @@
 // to release/ in a later phase — this module does not know if it is running on the public host or
 // the preview host.
 
+// R3 layer stack model (round-2 plan §5 U4): `LayerStackEntry`/`LayerGroupId` are the map domain's
+// own types (`../map/layerStack.ts` — classification, opacity application, the `layers=` codec all
+// live there). Importing them here is the SAME cross-domain precedent `../map/layers/zones.ts`
+// already sets in the other direction (it imports `Outline` FROM this file) — this module still has
+// no svelte/DOM/MapLibre dependency, only a plain type import.
+import type { LayerStackEntry } from "../map/layerStack";
+export type { LayerStackEntry } from "../map/layerStack";
+
 export type Lens = "scores" | "species";
 export type Palette = "spectral_r" | "viridis" | "cividis" | "magma";
 export type Projection = "globe" | "mercator";
@@ -63,6 +71,11 @@ export interface Sel {
   /** panel-visibility deltas against the shipped default (plan: "deltas", not an absolute list). */
   show: string[];
   hide: string[];
+  /** R3 (round-2 plan §5 U4): deviations from the release's default layer stack (order + each
+   * group's visible/opacity) — `layers=`, `../map/layerStack.ts#parseLayerStack`/`formatLayerStack`.
+   * `undefined` = the default stack (never written to the URL), matching every other "deltas, not an
+   * absolute list" field on this type (`show`/`hide`). */
+  layers?: readonly LayerStackEntry[];
   theme: Theme;
   tour: Tour;
   /** hash only: the place codec (`g1`, opaque here — that codec belongs to another agent). */
@@ -91,6 +104,7 @@ export const QUERY_KEYS = [
   "sel",
   "show",
   "hide",
+  "layers",
   "theme",
   "tour",
 ] as const;
@@ -172,6 +186,7 @@ export const DEFAULT_SEL: Sel = {
   sel: undefined,
   show: [],
   hide: [],
+  layers: undefined,
   theme: "auto",
   tour: "on",
   pl: undefined,

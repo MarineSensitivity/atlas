@@ -20,6 +20,7 @@ import {
   layersControlItems,
   mergeCartoStyle,
   orderLayers,
+  rankForStack,
   type RoledLayer,
 } from "../../src/lib/map/style";
 import type { CartoStyleLike } from "../../src/lib/map/layers/basemap";
@@ -31,7 +32,12 @@ import {
 } from "../../src/lib/map/layers/titiler";
 import { OVERLAY_RASTER_OPACITY, SCORE_RASTER_OPACITY } from "../../src/lib/map/layers/raster";
 import type { SourceSpecification, ZoneUnitSpec } from "../../src/lib/map/types";
-import { MISTAGGED_BASEMAP_LAYER, UNORDERED_ROLED_LAYER } from "../fixtures/map/faults";
+import {
+  MISTAGGED_BASEMAP_LAYER,
+  UNGROUPED_BASEMAP_LAYER,
+  UNORDERED_ROLED_LAYER,
+} from "../fixtures/map/faults";
+import { defaultLayerStackEntries, moveLayerStackEntry } from "../../src/lib/map/layerStack";
 
 const PRA: ZoneUnitSpec = {
   unit: "programarea",
@@ -92,9 +98,17 @@ describe("orderLayers", () => {
     expect(() => orderLayers([UNORDERED_ROLED_LAYER])).toThrowError(/bathymetry/);
   });
 
+  // R3 (round-2 plan §5 U4): the SAME throw mechanism now also covers a basemap layer tagged with a
+  // plausible-but-undeclared STACK group (`tests/fixtures/map/faults.ts` FAULT 5) — proving
+  // "every basemap layer is assigned to exactly one group" has teeth, not just that
+  // `classifyBasemapLayer` happens to be total.
+  it("SEEDED FAULT: a layer tagged with an undeclared basemap stack group throws, naming the layer", () => {
+    expect(() => orderLayers([UNGROUPED_BASEMAP_LAYER])).toThrowError(/basemap-seafloor-relief/);
+  });
+
   it("SEEDED FAULT: a basemap layer mistagged with a later role sorts AFTER the zone data it should sit under", () => {
     const roled: RoledLayer[] = [
-      { role: "basemap", layer: { id: "basemap-background", type: "background" } },
+      { role: "basemap-land", layer: { id: "basemap-background", type: "background" } },
       MISTAGGED_BASEMAP_LAYER,
       { role: "zone-fill", layer: { id: "programarea_fill", type: "fill", source: "s" } },
     ];
@@ -107,9 +121,12 @@ describe("orderLayers", () => {
 
   it("the declared order is the documented one (basemap first, selection on top, background at the bottom)", () => {
     expect(LAYER_ORDER[0]).toBe("background");
-    expect(LAYER_ORDER[1]).toBe("basemap");
+    // R3: the single "basemap" bucket is now five sub-roles (`basemap-land` first — everything the
+    // old flat bucket held sat where THIS sub-role now sits, see style.ts's own header).
+    expect(LAYER_ORDER[1]).toBe("basemap-land");
     expect(LAYER_ORDER[LAYER_ORDER.length - 1]).toBe("selection-line");
-    expect(LAYER_ORDER.indexOf("basemap")).toBeLessThan(LAYER_ORDER.indexOf("raster"));
+    expect(LAYER_ORDER.indexOf("basemap-land")).toBeLessThan(LAYER_ORDER.indexOf("raster"));
+    expect(LAYER_ORDER.indexOf("basemap-labels")).toBeLessThan(LAYER_ORDER.indexOf("raster"));
     expect(LAYER_ORDER.indexOf("raster")).toBeLessThan(LAYER_ORDER.indexOf("zone-fill"));
     expect(LAYER_ORDER.indexOf("zone-fill")).toBeLessThan(LAYER_ORDER.indexOf("zone-line"));
     expect(LAYER_ORDER.indexOf("zone-line")).toBeLessThan(LAYER_ORDER.indexOf("zone-label"));
@@ -519,6 +536,143 @@ describe("layersControlItems", () => {
     expect(
       layersControlItems(composeStyle({ theme: "navy", basemapStyle: FAKE_CARTO_STYLE })),
     ).toEqual([]);
+  });
+});
+
+// R3 (round-2 plan §5 U4, docs/usability.md §7 R3): the layer STACK — reordering basemap sub-roles
+// relative to the data, and dimming/hiding a whole group. `composeStyle` still returns ONE style
+// object (CLAUDE.md's "one composed style" rule); `layerStack` is one more plain input, exactly
+// like `zones`/`raster`/`selection` above.
+describe("composeStyle + layerStack (R3: the layer stack model)", () => {
+  // a fuller CARTO-shaped fixture than FAKE_CARTO_STYLE — one layer per basemap sub-role, so a
+  // reorder/opacity/visibility assertion below can tell every bucket apart.
+  const CARTO_FULL: CartoStyleLike = {
+    sources: { carto: { type: "vector", url: "https://tiles.example/tiles.json" } },
+    layers: [
+      { id: "background", type: "background", paint: { "background-color": "#101820" } },
+      { id: "water", type: "fill", source: "carto", "source-layer": "water", paint: {} },
+      {
+        id: "boundary_state",
+        type: "line",
+        source: "carto",
+        "source-layer": "boundary",
+        paint: {},
+      },
+      { id: "road_major", type: "line", source: "carto", "source-layer": "road", paint: {} },
+      {
+        id: "place_label",
+        type: "symbol",
+        source: "carto",
+        "source-layer": "place",
+        layout: {},
+      },
+    ],
+  };
+
+  it("no `layerStack` input: byte-identical to the pre-R3 default (backward compatible)", () => {
+    const withDefault = composeStyle({
+      theme: "navy",
+      basemapStyle: CARTO_FULL,
+      raster: SCORE,
+      layerStack: defaultLayerStackEntries(),
+    });
+    const withoutInput = composeStyle({ theme: "navy", basemapStyle: CARTO_FULL, raster: SCORE });
+    expect(withoutInput).toEqual(withDefault);
+  });
+
+  it("default order: every basemap sub-role (including labels) sits UNDER the raster — today's rendering", () => {
+    const s = composeStyle({ theme: "navy", basemapStyle: CARTO_FULL, raster: SCORE });
+    const ids = s.layers.map((l) => l.id);
+    expect(ids.indexOf(`${BASEMAP_LAYER_PREFIX}place_label`)).toBeLessThan(ids.indexOf("r_lyr"));
+    expect(ids.indexOf(`${BASEMAP_LAYER_PREFIX}boundary_state`)).toBeLessThan(ids.indexOf("r_lyr"));
+    expect(ids.indexOf(`${BASEMAP_LAYER_PREFIX}road_major`)).toBeLessThan(ids.indexOf("r_lyr"));
+  });
+
+  it("Ben's example: moving basemap-labels above data-raster puts the label layer AFTER r_lyr in the composed order", () => {
+    const stack = moveLayerStackEntry(defaultLayerStackEntries(), 4, 5); // basemap-labels <-> data-raster
+    const s = composeStyle({
+      theme: "navy",
+      basemapStyle: CARTO_FULL,
+      raster: SCORE,
+      layerStack: stack,
+    });
+    const ids = s.layers.map((l) => l.id);
+    expect(ids.indexOf(`${BASEMAP_LAYER_PREFIX}place_label`)).toBeGreaterThan(ids.indexOf("r_lyr"));
+    // roads/boundaries/land did NOT move — only the moved group changed position.
+    expect(ids.indexOf(`${BASEMAP_LAYER_PREFIX}road_major`)).toBeLessThan(ids.indexOf("r_lyr"));
+    expect(ids.indexOf(`${BASEMAP_LAYER_PREFIX}boundary_state`)).toBeLessThan(ids.indexOf("r_lyr"));
+  });
+
+  it("`background` is always bottom regardless of the stack order passed in", () => {
+    const stack = [...defaultLayerStackEntries()].reverse();
+    const s = composeStyle({
+      theme: "navy",
+      basemapStyle: CARTO_FULL,
+      raster: SCORE,
+      layerStack: stack,
+    });
+    expect(s.layers[0].id).toBe("background");
+  });
+
+  it("hiding a group sets layout.visibility=none on every one of its layers — never removes them", () => {
+    const stack = defaultLayerStackEntries().map((e) =>
+      e.id === "basemap-labels" ? { ...e, visible: false } : e,
+    );
+    const s = composeStyle({ theme: "navy", basemapStyle: CARTO_FULL, layerStack: stack });
+    const label = s.layers.find((l) => l.id === `${BASEMAP_LAYER_PREFIX}place_label`);
+    expect(label).toBeDefined(); // still present
+    expect(label && "layout" in label ? label.layout : null).toMatchObject({ visibility: "none" });
+  });
+
+  it("dimming the data-raster group overrides raster-opacity, replacing the raster spec's own opacity", () => {
+    const stack = defaultLayerStackEntries().map((e) =>
+      e.id === "data-raster" ? { ...e, opacity: 0.25 } : e,
+    );
+    const s = composeStyle({ theme: "navy", basemap: null, raster: SCORE, layerStack: stack });
+    const r = s.layers.find((l) => l.id === "r_lyr");
+    expect(r && "paint" in r ? r.paint : null).toMatchObject({ "raster-opacity": 0.25 });
+  });
+
+  it("dimming data-zones affects fill AND line, each by its own paint key", () => {
+    const stack = defaultLayerStackEntries().map((e) =>
+      e.id === "data-zones" ? { ...e, opacity: 0.4 } : e,
+    );
+    const s = composeStyle({
+      theme: "navy",
+      basemap: null,
+      layerStack: stack,
+      zones: [
+        {
+          ...PRA,
+          fill: {
+            keyProperty: "programarea_key",
+            stops: [{ key: "GAA", color: "#111111" }],
+            defaultColor: "lightgrey",
+            opacity: 0.7,
+            outlineColor: "white",
+          },
+        },
+      ],
+    });
+    const fill = s.layers.find((l) => l.id === "programarea_fill");
+    const line = s.layers.find((l) => l.id === "programarea_ln");
+    expect(fill && "paint" in fill ? fill.paint : null).toMatchObject({ "fill-opacity": 0.4 });
+    expect(line && "paint" in line ? line.paint : null).toMatchObject({ "line-opacity": 0.4 });
+  });
+});
+
+describe("rankForStack", () => {
+  it("defaults to the flat LAYER_ORDER", () => {
+    expect(rankForStack()).toEqual([...LAYER_ORDER]);
+  });
+
+  it("expands a custom group order into the SAME set of fine roles, reordered", () => {
+    const custom = moveLayerStackEntry(defaultLayerStackEntries(), 4, 5).map((e) => e.id);
+    const roles = rankForStack(custom);
+    expect(roles.indexOf("basemap-labels")).toBeGreaterThan(roles.indexOf("raster"));
+    // every fine role still appears exactly once — no role gained or lost by the reorder.
+    expect(roles).toHaveLength(LAYER_ORDER.length);
+    expect(new Set(roles)).toEqual(new Set(LAYER_ORDER));
   });
 });
 

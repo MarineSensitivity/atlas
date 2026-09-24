@@ -1,3 +1,48 @@
+# atlas 0.10.31
+
+**U4 — the Layers model (round-2 plan §5 U4, `docs/usability.md` §7 R3, Ben's decision 2026-09-24):
+"one Layers panel that IS the stack, the data row expanding into today's controls — PLUS the
+ability to change the stacking of data layers (Program Areas, the score raster) relative to map
+layers (place names, bathymetry)."**
+
+- **The layer stack model** (`src/lib/map/layerStack.ts`, pure + unit-tested): five basemap
+  sub-roles classified from the merged CARTO style (`classifyBasemapLayer`: land/water,
+  bathymetry — empty today, ready for GEBCO — boundaries, roads, labels) and three data groups
+  (the lens's raster, Program Areas, places/selection), each with `visible`/`opacity`, reorderable
+  bottom-to-top. `composeStyle({layerStack})` consumes it: `rankForStack()` expands the group order
+  into `orderLayers()`'s rank table, and `applyLayerGroupStyling()` overrides a layer's
+  `layout.visibility`/opacity paint key(s) uniformly, basemap or data. Omitting the input (every
+  pre-existing caller) is a byte-identical no-op — the single "basemap" role that used to sit
+  entirely UNDER the raster is now five sub-roles in the SAME default position, so `basemap-labels`
+  above `data-raster` (a map layer's name over a semi-transparent score raster) is a new capability,
+  not a changed default view.
+- **`layers=` is the new URL key** (`state/codec.ts` calls `layerStack.ts#parseLayerStack`/
+  `formatLayerStack`): `<id>[:h][:oNN],...`, written only as a deviation from the default stack; a
+  known group missing from a token is appended at its default position (forward-compatible with a
+  future group), an unknown id is dropped, never a throw. Grammar documented in `docs/map.md`.
+- **The Layers panel is now the stack** (`src/lib/ui/LayersPanel.svelte`, shared by both lenses):
+  each group is a row (name, visibility switch, opacity slider, ▲▼ move buttons with an
+  `aria-live` position announcement); the "Data" row expands into the existing per-lens controls
+  (scores: study area/units/layer/palette/projection/outside-PRA; species: title/layer bar/card) via
+  a `dataControls` snippet, unchanged content, new container. "Reset layers" restores the default
+  (disabled when already there). `src/lens/scores/LayersPanel.svelte` is now ONLY that data-row
+  content (the old non-interactive "Layers on the map" bullet list is gone — the stack itself is
+  that list now, made real).
+- **Both lenses keep the same basemap-group choices across a lens switch** (`sel.layers` is one
+  lens-independent field on `Sel`).
+- **Orchestrator parity-audit fixes folded in**: (1) the eye toggle is gated by a real e2e pixel
+  probe, not just a unit test. (2) The standalone ECOREGION outline (black, 3px —
+  `layers/zones.ts#ZONE_LINE_STYLE.ecoregion`, already in the table but never drawn) is read from
+  the release's MANIFEST (`boot.ts#ecoregionZoneUnitFromManifest`, verified live against v7's real
+  `manifest.json`) and drawn on every scores view, independent of `sel.unit`/`sel.out` — before
+  this, the Atlantic/Hawaii/Puerto Rico portions of the study area (outside every Program Area) had
+  no outline at all. (3) The layer picker's `<select>` and the legend title now prefer the
+  manifest's own SHORT label (`boot.ts#metricLabelsFromManifest`) over `boot.layers[].label`, which
+  is actually the LONG description text (verified live: `primprod`'s is a full paragraph) — the
+  long text is now a "What is this layer?" description line under the picker instead.
+- Seeded fault: `tests/faults/layerstack-order-ignored.patch` (`composeStyle` stops reading
+  `input.layerStack`'s order) — wired into `npm run test:faults`.
+
 # atlas 0.10.28
 
 Six fixes from the atlas-8 phase review round 2 (`workflows/.claude/plans_todo/atlas-refs/2026-09-23
