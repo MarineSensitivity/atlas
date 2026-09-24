@@ -16,7 +16,6 @@ Round 2, Q4: the feedback endpoint and preview-host link flags.
   and every restricted row in the release list. Flipping the flag to `1` (once atlas-9 ships)
   restores today's direct link with no code change.
 
-<<<<<<< HEAD
 
 # atlas 0.10.53
 
