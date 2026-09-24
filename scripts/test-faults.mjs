@@ -565,6 +565,57 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4388" },
   },
+  // P4 (Ben, phone, live "Report" tool, 0.10.43): "Report map is duplicated and seemingly empty or
+  // at least not zoomed to selected/drawn areas." Three faults, one per rule fixed:
+  //  - report.css's screen-only `.map-print { display: none }` rule dropped -- the static
+  //    print/export snapshot is visible again alongside the live interactive map.
+  //  - Report.svelte's final `flyToBounds(finalBounds, ...)` call dropped -- the camera stays at
+  //    the provisional full-study-area view it flew to first, never actually reaching the place.
+  //  - scores.ts's `COVERAGE_FOOTNOTE_FLOOR_PCT` reverted from 99 to 100, replaying the original
+  //    "footnotes almost every component of every place" bug (a pure vitest fault, no browser).
+  {
+    id: "report-map-duplicated",
+    patch: "tests/faults/report-map-duplicated.patch",
+    describe:
+      "report.css's screen-only `.map-print { display: none }` rule dropped -- the static " +
+      "print/export snapshot sits visible right below the live interactive map again, reading " +
+      "as two stacked map figures",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.map.spec.ts",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4377" },
+  },
+  {
+    id: "report-map-fitbounds-skipped",
+    patch: "tests/faults/report-map-fitbounds-skipped.patch",
+    describe:
+      "Report.svelte#mountMap's final flyToBounds(finalBounds, ...) call is skipped -- the camera " +
+      "stays at the provisional full-study-area view it flew to first (to load the zone's pmtiles " +
+      "tiles) and never actually reaches the place, even though the correct target box was computed",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.map.spec.ts",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4377" },
+  },
+  {
+    id: "scores-footnote-floor-reverted",
+    patch: "tests/faults/scores-footnote-floor-reverted.patch",
+    describe:
+      "scores.ts#COVERAGE_FOOTNOTE_FLOOR_PCT reverted from 99 to 100 -- a component at 99.9% " +
+      "coverage footnotes again, and a fully-covered place with one component at 99.9% gets a " +
+      "footnote it should not (the original 'footnotes almost every cell' bug, replayed)",
+    gate: ["npx", "vitest", "run", "tests/lib/report/scores.test.ts"],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
