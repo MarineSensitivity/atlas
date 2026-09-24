@@ -54,7 +54,6 @@
     pageUrlFromLocation,
     type FeedbackContext,
   } from "../lib/feedback/issueUrl";
-  import { postFeedback } from "../lib/feedback/postFeedback";
   // atlas-5: the species lens. Shell owns WHERE it mounts (the "layers" panel body, the topbar
   // search field, a legend region over the map) and the ONE composeStyle call; the lens owns what
   // to draw (docs/map.md / this file's own header comment). `state.svelte.ts` is the lens' pure
@@ -724,22 +723,38 @@
     viewport: `${viewportW}x${viewportH}`,
     theme: resolvedTheme,
   });
+  // kept as the anchor's plain `href` below: works with JS disabled/failed, and a middle-click /
+  // "open in new tab" still lands on a sensible zero-backend issue link even though a plain left
+  // click now opens the dialog instead (onclick below always preventDefault()s it).
   const feedbackHref = $derived(feedbackIssueUrl(feedbackCtx));
 
-  // set at build time only (VITE_FEEDBACK_URL); unset -> the control is a plain link to the GitHub
-  // issue above and this handler is never attached (see the template below).
-  const FEEDBACK_URL = import.meta.env.VITE_FEEDBACK_URL as string | undefined;
+  // U3: the resolved release's `access` field, read off the SAME `versions` rows the release
+  // picker already resolves (above) -- never `src/lib/release/access.ts`'s `accessOf()`
+  // (tests/shell/shell-invariants.test.ts: this file may not import from ../lib/release at all).
+  // Only the literal "restricted" ever matters to the dialog (payload.ts's own contract).
+  const releaseAccess = $derived(versions?.find((v) => v.ver === earlyVersion)?.access);
 
-  async function onFeedbackClick(e: MouseEvent) {
-    if (!FEEDBACK_URL) return; // plain <a>, default navigation to feedbackHref
-    e.preventDefault();
-    const ok = await postFeedback(FEEDBACK_URL, feedbackCtx, fetch);
-    if (ok) {
-      announce("Thanks — your feedback was sent.");
-    } else {
-      // falls back to the SAME GitHub link a plain click would have followed -- never silently
-      // swallows feedback because the configured endpoint failed.
-      window.open(feedbackHref, "_blank", "noopener");
+  // U3 (round 2): "Send feedback" -- the SAME action, now opening a real dialog
+  // (src/lib/feedback/FeedbackDialog.svelte, lazy) instead of navigating straight to the GitHub
+  // issue link above. `openFeedback()` is the ONE function every trigger calls (this deliverable's
+  // brief) -- until U1 lands its own top-bar "Feedback" control, the existing bottom-left "Report a
+  // problem" anchor below is the only caller; U1 wires a second one to the same function.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let FeedbackDialogComp = $state<Component<any> | null>(null);
+  let feedbackOpen = $state(false);
+  // snapshotted at the moment the control is used, never read reactively -- the hash is not
+  // tracked anywhere else in this file (nothing needs it continuously; the dialog only needs the
+  // value AS OF when it opens). Shell.svelte is allowed to read `location.hash` directly (the ban
+  // is on src/lib/feedback/** doing so -- see FeedbackDialog.svelte's own header); this is the
+  // exact same pattern `feedbackCtx.pageUrl` above already uses for `location.origin`/`.pathname`.
+  let feedbackHash = $state("");
+  function openFeedback(): void {
+    feedbackHash = location.hash;
+    feedbackOpen = true;
+    if (!FeedbackDialogComp) {
+      import("../lib/feedback/FeedbackDialog.svelte")
+        .then((mod) => (FeedbackDialogComp = mod.default))
+        .catch(() => announceChunkFailure("the feedback dialog"));
     }
   }
 
@@ -1168,11 +1183,14 @@
 
   <div class="about-region" id="about-region" data-tour="about" data-control="about">
     <About {releaseNote} />
-    <!-- Deliverable 4, zero backend (CLAUDE.md/GATES.md: "the CalCOFI zero-backend fallback"):
-         a real <a>, not a button, so it works with JS disabled/failed too -- `href` is a plain
-         `$derived` (feedbackHref, above), so it is always the CURRENT lens/ver/theme, never a value
-         captured once at mount. Desktop-only, same as the About card it sits beside (shell.css's
-         `.about-region { display:none }` below 899px) -- no room next to the phone bottom rail. -->
+    <!-- U3 (round 2): a real <a>, not a button, so it degrades to the zero-backend GitHub link
+         with JS disabled/failed -- `href` stays the plain `$derived` (feedbackHref, above), always
+         the CURRENT lens/ver/theme. A normal click now opens the dialog instead (openFeedback(),
+         the ONE function every trigger calls -- U1's own top-bar "Feedback" control will call the
+         same one); e2e/feedback.spec.ts's existing href/keyboard/rel assertions are unaffected by
+         that, since they never simulate a click. Desktop-only, same as the About card it sits
+         beside (shell.css's `.about-region { display:none }` below 899px) -- no room next to the
+         phone bottom rail. -->
     <a
       class="feedback-link"
       data-tour="feedback"
@@ -1180,13 +1198,36 @@
       href={feedbackHref}
       target="_blank"
       rel="noopener"
-      onclick={onFeedbackClick}
+      onclick={(e) => {
+        e.preventDefault();
+        openFeedback();
+      }}
     >
       <Icon name="alert" size={14} />
       Report a problem
     </a>
   </div>
 </main>
+
+{#if FeedbackDialogComp}
+  {@const Comp = FeedbackDialogComp}
+  <Comp
+    open={feedbackOpen}
+    onclose={() => (feedbackOpen = false)}
+    ver={earlyVersion}
+    access={releaseAccess}
+    lens={sel.lens}
+    appVersion={__APP_VERSION__}
+    appSha={__APP_SHA__}
+    viewport={`${viewportW}x${viewportH}`}
+    theme={resolvedTheme}
+    userAgent={typeof navigator === "undefined" ? "" : navigator.userAgent}
+    pageUrl={feedbackCtx.pageUrl}
+    hash={feedbackHash}
+    track={(name: string, params: Record<string, unknown>) =>
+      analytics.track(name as never, params as never)}
+  />
+{/if}
 
 {#if NotFoundModalComp}
   {@const Comp = NotFoundModalComp}
