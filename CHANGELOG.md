@@ -1,3 +1,21 @@
+# atlas 0.10.54
+
+Round 2, Q4: the feedback endpoint and preview-host link flags.
+
+- **Fixed: the published build could never pick up the "Send feedback" endpoint or the new preview
+  -route flag.** `.github/workflows/pages.yml`'s build step carried `VITE_SEAL`/`VITE_AGENCY` but
+  never `VITE_FEEDBACK_URL` (docs/feedback.md's own runbook) or `VITE_PREVIEW_ATLAS_ROUTE` (below)
+  — a repository variable set in GitHub could never reach the site GitHub Pages actually serves.
+  Both are now wired into that same build step.
+- **The version picker's "Continue on the preview host" Atlas link is now gated on the route
+  actually existing.** The preview host has not deployed the Atlas's own `/{ver}/atlas/` route yet
+  (atlas-9, P8 item 8, deferred), so that link 404s a reviewer who follows it in good faith. Behind
+  the new build-time `VITE_PREVIEW_ATLAS_ROUTE` flag (off by default): the modal now says "The
+  preview host does not serve the Atlas yet; open the Scores/Species apps there instead," linking
+  the Scores and Species apps that already are deployed there, for both a denied `?ver=` request
+  and every restricted row in the release list. Flipping the flag to `1` (once atlas-9 ships)
+  restores today's direct link with no code change.
+
 # atlas 0.10.51
 
 Q1: **the top-bar search now works in the Scores lens.** It was a stub `<input>` that did nothing
