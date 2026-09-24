@@ -841,6 +841,66 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4397" },
   },
+  {
+    id: "places-missing-tile-treated-as-error",
+    patch: "tests/faults/places-missing-tile-treated-as-error.patch",
+    describe:
+      "isMissingTileStatus() always returns false -- a release-side gap (a tile the release " +
+      "never generated, 403/404) is treated as a real failure again, so a place spanning a " +
+      "missing tile rejects instead of showing a composite from the tiles that DID exist",
+    gate: ["npx", "vitest", "run", "tests/analysis/missingTile.test.ts"],
+  },
+  {
+    id: "places-zonestats-flat-composite",
+    patch: "tests/faults/places-zonestats-flat-composite.patch",
+    describe:
+      "compositeOf() stops reading metrics[compositeMetricKey] -- a Program-Area row falls back " +
+      "to the flat composite/score fields no real release publishes, so it reads 'not published' " +
+      "forever even when the release DID publish a composite",
+    gate: [
+      "npx",
+      "vitest",
+      "run",
+      "tests/places/zoneStats.test.ts",
+      "-t",
+      "REAL v7 boot.json shape",
+    ],
+  },
+  {
+    id: "places-shareurl-substring-replace",
+    patch: "tests/faults/places-shareurl-substring-replace.patch",
+    describe:
+      "shareUrl() reverts to a plain string substring-replace of pl=<oldPl> against href -- " +
+      "silently no-ops against a REAL percent-encoded address bar (several places, or a name " +
+      "with a space), so 'Copy link anyway' copies the full unsimplified original link",
+    gate: [
+      "npx",
+      "vitest",
+      "run",
+      "tests/places/share.test.ts",
+      "-t",
+      "address-bar href -- P8 item 5",
+    ],
+  },
+  {
+    id: "places-stopdraw-noop",
+    patch: "tests/faults/places-stopdraw-noop.patch",
+    describe:
+      'stopDraw() reverts to `drawMode = drawMode ? "select" : null` -- a no-op at its own ' +
+      "call site (Done only renders while drawMode is truthy), so Done never actually ends " +
+      "draw mode and never disappears",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/places.spec.ts",
+      "-g",
+      "clicking Done actually ends draw mode",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4402" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
