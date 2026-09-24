@@ -99,17 +99,55 @@ lenses — the panel IS the stack, its "Data" row expanding into the lens's own 
    paint key(s) from its group's entry — applied uniformly to every layer, basemap or data, in ONE
    pass before the one `orderLayers()`/`setStyle(diff:true)` call. Omitting `layerStack` (every
    pre-R3 caller) is a no-op on both counts — byte-identical output.
+
+   **Basemap rows move only across data rows, never against each other** (review round 1, M1):
+   `rankForStack()` assigns ONE shared rank to every CONTIGUOUS run of `basemap-*` groups, whatever
+   order the stack lists them in — CARTO's own dark-matter/positron style.json interleaves its
+   LAYER TYPES (a boundary line between two land/water fills, a country boundary between roads and
+   labels) rather than grouping them by our five sub-roles, so a rank per SUB-ROLE would hoist every
+   "land" layer before every "boundaries" layer and scramble that real interleaving. The stable sort
+   then falls through to each layer's ORIGINAL CARTO index within a shared-rank run, so reordering
+   `basemap-land` past `basemap-boundaries` in the panel changes the STACK MODEL but paints nothing
+   differently — only a move that crosses OUT of the contiguous basemap run (past a `data-*` group,
+   e.g. Ben's "names above the raster") changes what the run of basemap layers paints relative to.
+   `tests/map/style.test.ts`'s "M1: a real CARTO-shaped interleaving is UNCHANGED..." pins this
+   against a literal fixture; `docs/parity.html`/`layers.spec.ts` never assert an intra-basemap
+   reorder produces a different pixel, because it does not.
 3. **`layers=` is the URL key** (`parseLayerStack`/`formatLayerStack`, called from
    `state/codec.ts`): `<id>[:h][:oNN],...`, order = draw order bottom-to-top; `:h` = hidden,
    `:oNN` = opacity NN% (01–99; 100/opacity 1 is the default and is never written); a KNOWN group
-   missing from the token is appended at its default relative position (a release that adds a group
-   later never orphans an old link); an unknown id is dropped; omitted entirely = the default stack.
+   missing from the token is inserted right after the nearest EARLIER `DEFAULT_LAYER_STACK` id that
+   IS present (M2 fix, review round 1 — never appended at the array's end/top, which used to bury a
+   partial token's own data: `?layers=data-raster:o50` named only the raster, so every other group
+   landed ABOVE it and made the raster invisible); an unknown id is dropped; omitted entirely = the
+   default stack. `composeStyle` itself gets the same safety net one layer down
+   (`normalizeLayerStack`, m10): any group a `layerStack` input omits ENTIRELY (not only
+   `parseLayerStack`'s well-formed-but-partial case — a hand-built array bypassing the URL layer
+   too) is appended at its default position rather than making `orderLayers` throw.
 4. **`isDefaultLayerStack()`** is the one "is this a deviation?" check both `formatLayerStack` (omit
    the key) and the panel's "Reset layers" button (disabled at the default) share.
 5. **Scope note**: "places" (a drawn/picked outline) and the click-driven "selection" ring both draw
    through the SAME `selection-fill`/`selection-line` pair (one GeoJSON source), so they are ONE
    stack row (`data-places`), not two — splitting them needs a second source/layer pair, out of R3's
    scope.
+6. **A group's opacity SCALES a layer's existing paint value, never replaces it** (B1, review round
+   1, blocker): `applyLayerGroupStyling()` multiplies through `scaleOpacity(existing, k)` — a plain
+   number, a legacy `{stops}` function, a zoom `interpolate`/`step` expression, or (falling through)
+   wraps an arbitrary expression as `["*", existing, k]`; `k = 1` is a guaranteed no-op (same object
+   reference back, so a fully-visible group never rewrites a layer's paint at all). Replacing used to
+   paint the B3 invisible query-fill placeholder (`fill-opacity: 0`) VISIBLE the moment its group was
+   dimmed, collapse a per-cell `["get","opacity"]` selection expression to one flat number, and make
+   the raster non-monotonic (0.6 at 100% slider, 0.95 at 95%).
+7. **`data-raster < data-zones < data-places` is a FIXED relative order, and `data-places` is
+   PINNED** (M7, review round 1): `moveLayerStackEntry()` rejects (returns the array unchanged) any
+   move that would invert that order or place anything at/above `data-places`'s own position, and a
+   move attempt starting FROM `data-places` is a no-op outright — Selection stays the topmost row a
+   viewer can never bury under Program Areas or the raster by accident. A choropleth FILL with real
+   computed stops classifies as role `"choropleth"` (between `overlay` and `zone-fill` in
+   `LAYER_ORDER`), mapped to group `data-raster` — "the lens's data" — leaving `data-zones` (labelled
+   "Zone outlines") holding only the outline/label roles and B3's invisible query-fill placeholder
+   (M5, review round 1: before this, dimming "Program Areas" silently ALSO dimmed a real zone
+   choropleth's fill, which is `data-raster`'s content, not `data-zones`'s).
 
 ## Rules with teeth
 
