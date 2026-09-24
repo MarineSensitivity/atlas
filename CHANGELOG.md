@@ -46,6 +46,59 @@ review items (Opus 5.5 audit; owner decision R8).
   default flower AND a selected zone's own flower. Seeded fault
   `tests/faults/flower-petal-colour-dropped.patch` (`scripts/test-faults.mjs`, PW_PORT 4393).
 
+# atlas 0.10.29
+
+U6 (Report + Tour) and U2a (dark theme by default) from the round-2 usability assessment
+(`docs/usability.md`).
+
+- **U6 — Report does the obvious thing with what is selected (M1).** The top-bar "Report" button
+  and the "report" rail tool were both placeholders (`activeTool = "report"` into a literal
+  "arrives in a later phase" string). `src/shell/report.ts#reportAction()` now decides: a place
+  list in `#pl=` opens `report.html` for every place in it; a single Program Area selected on the
+  map/table (`sel=zone:<unit>:<key>`) opens a one-place report for it; with nothing selected, the
+  rail tool (now `src/shell/ReportTool.svelte`) shows a chooser — pick a Program Area from the
+  release's own zone list, or hand off to the Places tool for drawing/coordinates/upload — plus the
+  reports opened this session (`sessionStorage`, capped at 5, deduped by link). Every open still
+  runs `window.open()` synchronously (no `await` before it) and reuses the SAME `reportHash()` /
+  `hashFromPlaces()` encoders the Places panel and the Zones table's "Report on selected" already
+  built through, never a second hand-rolled one.
+- **U6 — Guided tour.** driver.js, lazy (`src/shell/tourRuntime.ts`, a dynamic `import()` only —
+  never on the 450 KB static critical path; `scripts/size-budget-core.mjs`'s
+  `FORBIDDEN_LAZY_MARKERS` now lists `"driver"`). 8 steps for the Scores lens, 5 for Species
+  (`src/shell/tour.ts`, `docs/usability.md` §5); each step's `before()` hook opens the tool/lens it
+  needs before driver.js resolves its anchor, and the tour snapshots + restores the lens/tool it
+  found on Esc/Done (CalCOFI explore's `src/tour.ts` pattern). `?tour=on` starts it once on load
+  (suppressing the welcome modal so the two overlays never stack); the welcome modal's "Take a
+  Tour" and a new **(?) Help** menu in the top bar ("Take a tour", keyboard shortcuts, a docs link)
+  both start the same real tour instead of announcing a stub. New analytics events `tour_start`,
+  `tour_step`, `tour_end`, `open_help`.
+- **U2a — dark by default; sun/moon toggle.** `DEFAULT_SEL.theme` is `"dark"`, not `"auto"`: an
+  absent or malformed `?theme=` now paints navy regardless of the OS's `prefers-color-scheme`,
+  matching both Shiny apps and the brand's dark lockup (`"auto"` stays a legal, explicit override —
+  `?theme=auto` still follows the OS). `index.html`'s pre-paint script changed identically, so
+  there is still no flash of the wrong theme. The toggle is now a sun/moon control
+  (`mdiBrightness7`/`mdiBrightness4`, Apache-2.0 via `@mdi/js`) showing the DESTINATION theme, with
+  an accessible name in one vocabulary ("Switch to light/dark theme" — `light`/`dark`, the URL's
+  own words, never "navy"/"paper"). `report.html` is unchanged (always `data-theme="paper"`,
+  print-first).
+- Seeded fault: `tests/faults/theme-default-reverts-to-auto.patch` (`DEFAULT_SEL.theme` back to
+  `"auto"`), wired into `npm run test:faults`.
+- `docs/parity.html`'s known gaps: G-28 (Report placeholder) and G-30 (theme default `auto`)
+  removed — both are exactly what this release fixes.
+- `scripts/verify.mjs` fix (found by the U2a change, not a pre-existing bug): `scoresRasterProbe()`/
+  `speciesRasterProbe()` defaulted their basemap-blend expectation to the PAPER fixture colour,
+  which was correct only while `auto` (the old default) resolved to paper under headless
+  Chromium's own `prefers-color-scheme`. Every state that never sets `theme=` explicitly now
+  defaults to the NAVY blend instead (`BASEMAP_RGB_NAVY`); the one state that still means "paper,
+  specifically" (`shell (theme=light)`) passes the paper colour explicitly.
+- `src/shell/tour.ts`: `setLens()` is now guarded (`if (a.getLens() !== target) …`) — calling it
+  even when the lens was already correct still reset `sel.out` and re-triggered the lens' own
+  reactive load for no reason.
+- `e2e/species-hermetic.ts`: the shared species fixture now publishes `boot.palettes.spectral_r`
+  (11 real stops) — without it `paletteStopsFromBoot()` returns `null` and the species legend never
+  renders at all (not even an empty node), a pre-existing fixture gap no earlier spec against it
+  had ever exercised.
+
 # atlas 0.10.28
 
 Six fixes from the atlas-8 phase review round 2 (`workflows/.claude/plans_todo/atlas-refs/2026-09-23

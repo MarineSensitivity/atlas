@@ -33,6 +33,15 @@ export const EVENT_NAMES = [
   "report_open",
   "report_export",
   "opfs_fallback",
+  // U6 (round 2): the guided tour (driver.js, src/shell/tour*.ts) and the new top-bar Help menu.
+  // Distinct from the Shiny-ported `start_tour`/`open_about` above -- those were reserved 1:1 from
+  // the R app's own vocabulary (parity scores app.md §10) and were never wired to anything; these
+  // four are wired to the real tour/help this round builds, and are named to match the round-2
+  // plan/docs/usability.md verbatim ("Analytics events tour_start, tour_step, tour_end, open_help").
+  "tour_start",
+  "tour_step",
+  "tour_end",
+  "open_help",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -102,4 +111,8 @@ export interface EventParamsMap {
   report_open: Record<string, unknown>;
   report_export: { format: string };
   opfs_fallback: { reason: string };
+  tour_start: { lens: string };
+  tour_step: { lens: string; step: string; index: number };
+  tour_end: { lens: string; completed: boolean };
+  open_help: Record<string, never>;
 }

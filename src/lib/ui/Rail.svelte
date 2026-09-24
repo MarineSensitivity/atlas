@@ -71,6 +71,7 @@
       inactive={item.inactive}
       inactiveReason={item.inactiveReason}
       tabindex={i === rovingIndex ? 0 : -1}
+      tourId={`rail-${item.name}`}
       {onAnnounce}
       onclick={() => {
         rovingIndex = i;

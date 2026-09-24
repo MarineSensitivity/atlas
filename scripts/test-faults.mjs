@@ -440,6 +440,21 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4393" },
   },
+  // U6/U2a (round 2): the load-bearing rule behind U2a's default-theme change -- DEFAULT_SEL.theme
+  // reverting from "dark" to "auto" would silently undo the whole feature (a first-time visitor on
+  // a light-OS system would see the paper theme again, docs/usability.md's original finding). This
+  // patch is exactly that one-line revert and must turn tests/state/codec.test.ts's own "theme:
+  // tri-state, default 'dark'" describe block red (5 assertions: the bare default, the garbage
+  // fallback, and the now-flipped formatSel omit/write rules for "dark" vs "auto"). Proven RED
+  // against this exact patch (vitest -- 5 failed, 75 passed) before being committed.
+  {
+    id: "theme-default-reverts-to-auto",
+    patch: "tests/faults/theme-default-reverts-to-auto.patch",
+    describe:
+      'DEFAULT_SEL.theme reverts from "dark" to "auto" -- a first-time visitor on a light-OS ' +
+      "system sees the paper theme again, undoing U2a's default-theme change",
+    gate: ["npx", "vitest", "run", "tests/state/codec.test.ts"],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

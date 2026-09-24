@@ -257,10 +257,14 @@ function blend(under, over, alpha) {
 // the state matrix runs, instead of a hand-rolled `!= RASTER_RGB` check that would pass on ANY
 // wrong colour, not just "the basemap alone, never the raster" -- the exact same "the gate and its
 // seeded fault run the SAME code" rule tests/map/no-fitbounds.test.ts's own header states.
+// U2a (round 2): `basemapRgb` defaults to `BASEMAP_RGB_NAVY`, not `BASEMAP_RGB` (paper) -- the
+// default theme is now DARK (`DEFAULT_SEL.theme`, state/types.ts), so every state below that never
+// sets `theme=` now paints navy, not paper. The one caller that still means "the paper theme,
+// specifically" (`shell (theme=light)`) passes `BASEMAP_RGB` explicitly instead.
 export function scoresRasterProbe(
   cog = RASTER_RGB,
   opacity = SCORE_RASTER_OPACITY,
-  basemapRgb = BASEMAP_RGB,
+  basemapRgb = BASEMAP_RGB_NAVY,
 ) {
   const expected = blend(basemapRgb, cog, opacity);
   return async (page) => {
@@ -368,12 +372,13 @@ function zoneSelectionProbe(unit = "programarea") {
  * always inside the camera `flyToBounds()` just fit, rather than a fixed lon/lat tuned for one
  * species' extent -- the fixture raster (`routeTitilerTiles`'s `solidPng`) is one flat colour for
  * ANY tile, so wherever the camera centers is a valid probe point. `basemapRgb` defaults to the
- * PAPER fixture colour (every state below that never sets `theme=` resolves there); the two
- * `theme=dark` states pass `BASEMAP_RGB_NAVY` (M5's own per-theme fixture colour). */
+ * NAVY fixture colour (U2a, round 2: the default theme is dark -- every state below that never
+ * sets `theme=` resolves there); the explicit `theme=dark`/`theme=light` states below pass
+ * `BASEMAP_RGB_NAVY`/`BASEMAP_RGB` themselves either way, so they are unaffected by this default. */
 function speciesRasterProbe(
   cog = RASTER_RGB,
   opacity = SPECIES_RASTER_OPACITY,
-  basemapRgb = BASEMAP_RGB,
+  basemapRgb = BASEMAP_RGB_NAVY,
 ) {
   const expected = blend(basemapRgb, cog, opacity);
   return async (page) => {
@@ -469,9 +474,11 @@ function scoresOutlineProbe(out) {
 
 // M6: the shell states are ordinary `unit=cell` scores states (the default), so the SAME
 // `scoresRasterProbe` every other default-raster state below gets applies here too -- just
-// theme-aware, since `?theme=dark` now paints over a DIFFERENT basemap colour (M5,
-// `BASEMAP_RGB_NAVY`) than the default/`?theme=light` paper fixture.
+// theme-aware, since `?theme=dark`/the default (U2a, round 2) now paint over a DIFFERENT basemap
+// colour (M5, `BASEMAP_RGB_NAVY`) than the explicit `?theme=light` paper fixture.
 const SHELL_STATES = [
+  // U2a: no explicit `theme=`, so this IS the default -- dark, `scoresRasterProbe()`'s own new
+  // default `basemapRgb` (BASEMAP_RGB_NAVY). Was BASEMAP_RGB (paper) before U2a flipped the default.
   { name: "shell (default)", kind: "scores", path: "/", assert: scoresRasterProbe() },
   {
     name: "shell (theme=dark)",
@@ -483,7 +490,10 @@ const SHELL_STATES = [
     name: "shell (theme=light)",
     kind: "scores",
     path: "/?theme=light",
-    assert: scoresRasterProbe(),
+    // U2a: paper is no longer the default, so this ONE state now needs the EXPLICIT paper
+    // fixture colour -- every other bare `scoresRasterProbe()` call in this file means "the
+    // default", which is dark now.
+    assert: scoresRasterProbe(RASTER_RGB, SCORE_RASTER_OPACITY, BASEMAP_RGB),
   },
 ];
 
