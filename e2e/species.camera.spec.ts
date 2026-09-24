@@ -8,8 +8,12 @@
 //      (`tests/fixtures/species/v9/taxon/75.json`) — `cameraFor()`'s new "sibling" step fixes this
 //      with NO network call at all.
 //   2. v7's walrus (`mdl_seq=54383`) publishes NO bbox anywhere (every asset's `bbox` is null,
-//      `assets: []`) — `state.svelte.ts#refineCameraFromCogBounds` asks titiler's own
-//      `/cog/bounds` for the drawn COG's extent as the true last resort.
+//      `assets: []`) — `state.svelte.ts#refineCameraFromCogBounds` asks titiler's own `/cog/info`
+//      (NOT `/cog/bounds`, which 404s live on titiler-v8 — verified; see `src/lib/raster/bounds.ts`'s
+//      own header) for the drawn COG's extent as the true last resort. The real walrus v7 COG's own
+//      `/cog/info` bounds are a degenerate whole-360-degree-longitude span
+//      (`[-180, 53.15, 180, 73.75]`), so this test also exercises `narrowLongitude`'s point-probe
+//      narrowing (real value: only lon -170 holds data), not just a plain pass-through bbox.
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession, waitForHydration } from "./hermetic";
 import { blockWasm, routeGlyphs, routeTitilerTiles } from "./map-hermetic";
@@ -39,6 +43,39 @@ async function readCamera(page: Page): Promise<CameraState> {
 // describes staying parked at).
 const STUDY_AREA_ZOOM_CEILING = 3; // FULL is 2.16 on both v7 and v9 fixtures — well under this
 
+/** the walrus v7 COG's own `/cog/info` + `/cog/point` narrowing mocks, shared by both v7 tests
+ * below (the initial species-change effect AND `zoomToLayer()`'s own follow-up) — factored out so
+ * the two don't drift on what "the real walrus COG answers" means. */
+async function routeWalrusCogBoundsFallback(page: Page) {
+  await page.route(
+    (url) => url.hostname === "titiler-v8.marinesensitivity.org" && url.pathname === "/cog/info",
+    (route: Route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        // the real walrus v7 merged COG's own /cog/info answer — a degenerate whole-360-degree
+        // longitude span (bounds.ts's own header has the live verification), which the fix must
+        // NOT hand straight to the camera (that would frame the whole globe's width).
+        body: JSON.stringify({ bounds: [-180, 53.15, 180, 73.75] }),
+      }),
+  );
+  await page.route(
+    (url) =>
+      url.hostname === "titiler-v8.marinesensitivity.org" && url.pathname.startsWith("/cog/point/"),
+    (route: Route) => {
+      // only -170 (the real walrus data's own longitude, measured live) answers with a value —
+      // every other CANDIDATE_LONS probe must come first in the module's own list and answer
+      // null, exactly like the real walrus was measured to.
+      const hit = route.request().url().includes("/cog/point/-170,");
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ values: [hit ? 91 : null] }),
+      });
+    },
+  );
+}
+
 test.describe("D8: selecting a model frames its extent, not the default study area", () => {
   test("v9 `am` walrus (no bbox of its own) frames off its `ax` sibling's extent (no network call needed)", async ({
     page,
@@ -64,7 +101,7 @@ test.describe("D8: selecting a model frames its extent, not the default study ar
     expect(camera.center.lat).toBeLessThan(85);
   });
 
-  test("v7 walrus (mdl_seq 54383, NO bbox anywhere) frames off the COG's own /cog/bounds extent", async ({
+  test("v7 walrus (mdl_seq 54383, NO bbox anywhere) frames off the COG's own /cog/info extent, narrowed by point-probe", async ({
     page,
   }) => {
     // NOT `gotoSpecies` (which registers its own `routeTitilerTiles` wildcard as the LAST step
@@ -72,43 +109,98 @@ test.describe("D8: selecting a model frames its extent, not the default study ar
     // app fires during that same initial load — measured: the plain "register after gotoSpecies"
     // version below never actually saw this route matched). Composing the same steps by hand, in
     // the SAME order `e2e/species.smoke.spec.ts`'s own "hung tile" test uses for exactly this
-    // reason, but with the `/cog/bounds` override inserted before `page.goto` ever fires — the one
-    // request this whole fix depends on.
+    // reason, but with the `/cog/info` + `/cog/point` overrides inserted before `page.goto` ever
+    // fires — the requests this whole fix depends on.
     await blockWasm(page);
     await routeBucket(page, "v7", bootFor("v7"));
     await routeSpeciesShards(page);
     await routeSession(page, null); // v7 is public — no preview session needed
     await routeSealFixture(page);
     await routeGlyphs(page);
-    await routeTitilerTiles(page); // the wildcard, registered FIRST so the override below wins
-    await page.route(
-      (url) =>
-        url.hostname === "titiler-v8.marinesensitivity.org" && url.pathname === "/cog/bounds",
-      (route: Route) =>
-        route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          // the walrus's true range (Bering/Chukchi seas) — a plausible COG bounds answer.
-          body: JSON.stringify({ bounds: [-179.5, 52.1, -155.2, 72.8] }),
-        }),
-    );
+    await routeTitilerTiles(page); // the wildcard, registered FIRST so the overrides below win
+    await routeWalrusCogBoundsFallback(page);
     await page.goto("/?mdl_seq=54383&ver=v7");
     await waitForHydration(page);
     await expect(page.getByTestId("species-title-sci")).toHaveText("Odobenus rosmarus");
 
-    // the fix is a FOLLOW-UP fly-to once /cog/bounds answers -- poll rather than a fixed wait.
+    // the fix is a FOLLOW-UP fly-to once /cog/info + the point-probe narrowing answers -- poll
+    // rather than a fixed wait.
     await expect
       .poll(async () => (await readCamera(page)).zoom, {
-        message: "camera never zoomed in past the study-area default after /cog/bounds answered",
+        message: "camera never zoomed in past the study-area default after /cog/info answered",
         timeout: 5_000,
       })
       .toBeGreaterThan(STUDY_AREA_ZOOM_CEILING);
 
     const camera = await readCamera(page);
-    // bounds center: (-167.35, 62.45)
-    expect(camera.center.lng).toBeGreaterThan(-179);
-    expect(camera.center.lng).toBeLessThan(-150);
-    expect(camera.center.lat).toBeGreaterThan(50);
-    expect(camera.center.lat).toBeLessThan(78);
+    // narrowed bbox: [-190, 53.15, -150, 73.75] -> center (-170, 63.45).
+    expect(camera.center.lng).toBeGreaterThan(-185);
+    expect(camera.center.lng).toBeLessThan(-155);
+    expect(camera.center.lat).toBeGreaterThan(58);
+    expect(camera.center.lat).toBeLessThan(70);
+  });
+
+  // D8 fold-in (orchestrator round 2, 2026-09-24): "zoomToLayer() using the same bounds fallback"
+  // -- the manual re-fit action (`state.svelte.ts#zoomToLayer`, reached here through the
+  // `__atlasSpecies` test seam Shell.svelte exposes it on, same spirit as `selectSpecies`) used to
+  // call only `cameraFor()`'s bundle-only chain, so on a taxon with NO published bbox anywhere it
+  // landed on the loose study-area view and never asked `/cog/info` at all -- even though the
+  // INITIAL species-change effect (the test above) already got the COG-bounds last resort in round
+  // 1. This test proves the manual action reaches the SAME fallback, not just the automatic one.
+  test("zoomToLayer() ALSO reaches the COG-bounds last resort, not just the initial species-change effect", async ({
+    page,
+  }) => {
+    await blockWasm(page);
+    await routeBucket(page, "v7", bootFor("v7"));
+    await routeSpeciesShards(page);
+    await routeSession(page, null);
+    await routeSealFixture(page);
+    await routeGlyphs(page);
+    await routeTitilerTiles(page);
+    await routeWalrusCogBoundsFallback(page);
+    await page.goto("/?mdl_seq=54383&ver=v7");
+    await waitForHydration(page);
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Odobenus rosmarus");
+
+    // let the INITIAL species-change effect finish its own fit (round 1's fix) before exercising
+    // the SEPARATE `zoomToLayer()` action below.
+    await expect
+      .poll(async () => (await readCamera(page)).zoom, { timeout: 5_000 })
+      .toBeGreaterThan(STUDY_AREA_ZOOM_CEILING);
+
+    // pan the camera away with a plain, INSTANT MapLibre call (not this app's own
+    // flyTo/applyCamera path) — proves any re-fit below is `zoomToLayer()`'s own doing, not a
+    // leftover animation from the initial load.
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        __atlasMap: {
+          handle: { map: { jumpTo(o: { center: [number, number]; zoom: number }): void } };
+        };
+      };
+      w.__atlasMap.handle.map.jumpTo({ center: [0, 0], zoom: 2 });
+    });
+    await expect
+      .poll(async () => (await readCamera(page)).zoom, { timeout: 2_000 })
+      .toBeLessThan(3);
+
+    await page.evaluate(() => {
+      (
+        window as unknown as { __atlasSpecies: { zoomToLayer(): void } }
+      ).__atlasSpecies.zoomToLayer();
+    });
+
+    await expect
+      .poll(async () => (await readCamera(page)).zoom, {
+        message: "zoomToLayer() never reached the COG-bounds last resort",
+        timeout: 5_000,
+      })
+      .toBeGreaterThan(STUDY_AREA_ZOOM_CEILING);
+
+    const camera = await readCamera(page);
+    // narrowed bbox: [-190, 53.15, -150, 73.75] -> center (-170, 63.45), same as the effect's own.
+    expect(camera.center.lng).toBeGreaterThan(-185);
+    expect(camera.center.lng).toBeLessThan(-155);
+    expect(camera.center.lat).toBeGreaterThan(58);
+    expect(camera.center.lat).toBeLessThan(70);
   });
 });

@@ -427,6 +427,11 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
         padding: DEFAULT_CAMERA_PADDING,
       });
       applyCamera(cam);
+      // D8 fold-in (orchestrator round 2, 2026-09-24): the manual "zoom to layer" button used to
+      // stop at `cameraFor()`'s own bundle-only chain, so a taxon with NO published bbox anywhere
+      // (v7's walrus) fell to `kind: "center"` here too — the SAME COG-bounds last resort the
+      // species-change `$effect` above already applies, now wired to this explicit action as well.
+      if (cam?.kind === "center") void refineCameraFromCogBounds(card, cameraKeyOf(selStore.sel));
     },
 
     async handleMapClick(lngLat: LngLat, point: { x: number; y: number }): Promise<void> {

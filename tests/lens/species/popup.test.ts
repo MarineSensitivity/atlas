@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import {
   luminance,
+  popupAnnounceText,
   popupContent,
   popupHtml,
   roundValue,
@@ -111,17 +112,58 @@ describe("popupContent", () => {
     expect(p.displayValue).toBeNull();
   });
 
-  it("no value (a nodata COG pixel, or outside the grid): grey pin + 'no value here'", () => {
+  it("no value (a nodata COG pixel, or outside the grid): grey pin + 'No scored cell here'", () => {
     const p = popupContent({ sci: "x", lon: 1, lat: 2, cellId: null, kind: "no-value" });
-    expect(p.text).toBe("no value here");
+    expect(p.text).toBe("No scored cell here");
     expect(p.pinColor).toBe("grey");
     expect(p.textColor).toBeNull();
   });
 
-  it("kind 'value' with a missing value/rescale degrades to 'no value here' rather than throwing", () => {
+  it("kind 'value' with a missing value/rescale degrades to 'No scored cell here' rather than throwing", () => {
     const p = popupContent({ sci: "x", lon: 1, lat: 2, cellId: 1, kind: "value" });
     expect(p.kind).toBe("no-value");
-    expect(p.text).toBe("no value here");
+    expect(p.text).toBe("No scored cell here");
+  });
+});
+
+// D3 fold-in (orchestrator round 2, 2026-09-24): the SAME rule the scores lens already got
+// (`src/lens/scores/popup.ts#noScoredCellText`) — a no-value click must never show an internal
+// `cellId`, even when `mapClick` DID resolve one (the grid still has a cell there; the asset's own
+// COG pixel is just nodata). Showing "Cell ID: 5" beside "no value" reads as a data/lookup bug, not
+// as "you clicked outside where this model has data."
+describe("D3 fold-in: the no-value popup never shows a cell id", () => {
+  it("popupHtml omits the 'Cell ID' line entirely for kind 'no-value', even with a real cellId", () => {
+    const html = popupHtml(popupContent({ sci: "x", lon: 1, lat: 2, cellId: 5, kind: "no-value" }));
+    expect(html).not.toContain("Cell ID");
+    expect(html).toContain("No scored cell here");
+  });
+
+  it("popupAnnounceText never mentions a cell for kind 'no-value'", () => {
+    const withCell = popupContent({ sci: "x", lon: 1, lat: 2, cellId: 5, kind: "no-value" });
+    const withoutCell = popupContent({ sci: "x", lon: 1, lat: 2, cellId: null, kind: "no-value" });
+    expect(popupAnnounceText(withCell)).not.toContain("cell 5");
+    expect(popupAnnounceText(withoutCell)).not.toContain("no cell");
+    expect(popupAnnounceText(withCell)).toContain("No scored cell here");
+  });
+
+  it("a 'value'/'presence' popup still shows its Cell ID line unchanged (only 'no-value' drops it)", () => {
+    const value = popupHtml(
+      popupContent({
+        sci: "x",
+        lon: 1,
+        lat: 2,
+        cellId: 7,
+        kind: "value",
+        value: 1,
+        rescale: [1, 100],
+        stops: STOPS,
+      }),
+    );
+    expect(value).toContain("Cell ID: 7");
+    const presence = popupHtml(
+      popupContent({ sci: "x", lon: 1, lat: 2, cellId: 7, kind: "presence" }),
+    );
+    expect(presence).toContain("Cell ID: 7");
   });
 });
 
@@ -147,9 +189,18 @@ describe("popupHtml", () => {
     expect(html).toContain("Value: 1");
   });
 
-  it("no cell id renders an em dash, never 'null'", () => {
+  it("no cell id renders an em dash, never 'null' (kind 'value'/'presence' — 'no-value' omits the line entirely, see the D3 fold-in describe below)", () => {
     const html = popupHtml(
-      popupContent({ sci: "x", lon: 1, lat: 2, cellId: null, kind: "no-value" }),
+      popupContent({
+        sci: "x",
+        lon: 1,
+        lat: 2,
+        cellId: null,
+        kind: "value",
+        value: 1,
+        rescale: [1, 100],
+        stops: STOPS,
+      }),
     );
     expect(html).toContain("Cell ID: —");
     expect(html).not.toContain("null");
@@ -257,7 +308,7 @@ describe("the five /cog/point probes -> popupContent.displayValue", () => {
       stops: STOPS,
     });
     expect(content.displayValue).toBeNull();
-    expect(content.text).toBe("no value here");
+    expect(content.text).toBe("No scored cell here");
   });
 
   it("probe 5 — off-grid: the click never resolved a cell id, so no /cog/point call is made", () => {
@@ -266,6 +317,6 @@ describe("the five /cog/point probes -> popupContent.displayValue", () => {
     const content = popupContent({ sci: "x", lon: 200, lat: 89, cellId: null, kind: "no-value" });
     expect(content.displayValue).toBeNull();
     expect(content.cellId).toBeNull();
-    expect(content.text).toBe("no value here");
+    expect(content.text).toBe("No scored cell here");
   });
 });
