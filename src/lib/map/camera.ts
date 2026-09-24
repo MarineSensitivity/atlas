@@ -152,10 +152,9 @@ export function boundsToCameraView(
   const cy = (y0 + y1) / 2;
   const rawCenter = { lon: mercatorXToLng(cx), lat: mercatorYToLat(cy) };
   // an asymmetric padding shifts the fitted content toward the free area's own middle, at the
-  // FIT's own zoom — UNCAPPED (unlike paddedStudyAreaCenter below): a bounds fit's zoom already
-  // scales with the content being framed, so the shift stays a small fraction of the frame at any
-  // zoom, never the "rotate the low-zoom globe by 30 degrees" regime that needs capping against
-  // (MAX_STUDY_AREA_SHIFT_PX's own header).
+  // FIT's own zoom — a bounds fit's zoom already scales with the content being framed, so this
+  // never falls into the low-zoom "globe shows the whole world" regime `paddedStudyAreaCenter`'s
+  // own header (`PHONE_STUDY_AREA_ZOOM_BOOST`) describes.
   const shifted = shiftForPadding(
     rawCenter,
     zoom,
@@ -165,27 +164,31 @@ export function boundsToCameraView(
   return { center: [shifted.lon, shifted.lat], zoom };
 }
 
-/** P2 (Opus 5.5 eyes-on, 2026-09-24): at the LOW zoom a study-area preset uses (~2, showing most of
- * the globe), `shiftForPadding`'s otherwise-exact Mercator math stops matching what the GLOBE
- * projection actually renders -- MapLibre's globe is a true 3D sphere at this zoom, not a flat
- * Mercator crop, so a large padding-driven shift (a half-open phone sheet reserves ~450px of an
- * 844px viewport) computed as if it were flat rotates the sphere far more than intended: measured
- * on the fallback study area (padding.bottom ~452px, zoom 2.16), the UNCAPPED formula moved the
- * reference latitude from 46.9 to 17.4 -- a 29.5-degree swing that pushed the whole visible globe
- * down and left ~100 CSS px of blank "space" above it, the exact defect the eyes-on review caught
- * (P2: "empty sky"). Capping the PADDING DIFFERENCE fed into the shift (not the shift itself, and
- * not `padding` as returned to any OTHER caller -- `initialChromePadding()`'s own free-area bounds
- * stay the true, uncapped occlusion) keeps the correction in the regime where flat Mercator is a
- * fair stand-in for the globe's own rendering, verified empirically (a hermetic black/white water
- * fixture, `.tmp/` screenshots) to cut that gap to roughly a third. `boundsToCameraView` below
- * does NOT need this cap: a bounds fit's zoom scales with the content being framed (a small species
- * range fits at a much higher zoom, where flat Mercator IS globe-accurate), so the same runaway
- * shift cannot occur there. */
-export const MAX_STUDY_AREA_SHIFT_PX = 200;
-
-function capAxis(diff: number): number {
-  return Math.max(-MAX_STUDY_AREA_SHIFT_PX, Math.min(MAX_STUDY_AREA_SHIFT_PX, diff));
-}
+/**
+ * P2 round 2 (orchestrator, real-v7-build eyes-on, 2026-09-24 -- supersedes round 1's
+ * `MAX_STUDY_AREA_SHIFT_PX` cap, which fixed the SYNTHETIC hermetic fixture's "empty sky" pixel
+ * count but not the real defect): capping the SHIFT was the wrong lever. Measured directly against
+ * the live v7 build (`?map=lon,lat,zoom`, real CARTO tiles, no fixture) at the study area's own
+ * zoom (2.16): the visible frame shows most of the GLOBE -- Canada, Greenland, Finland, Norway,
+ * Iceland -- almost regardless of which latitude the shift targets (17, 27, 35, 43 all measured
+ * "Canada/Greenland dominant"). This is not a shift-math bug: MapLibre's GLOBE projection renders
+ * a true sphere below roughly zoom 3, so "how much of the world is visible" is set by ZOOM, not by
+ * center -- a translate-only correction, however capped, cannot escape it. Capping the shift also
+ * threw away real precision for no benefit: it forced the SAME under-shot fallback (200px) at
+ * every zoom, when the correct shift at a higher zoom is smaller anyway (an uncapped shift's own
+ * `1/worldPx` term already shrinks it as zoom grows -- see `shiftForPadding`'s own header).
+ *
+ * The fix is {@link PHONE_STUDY_AREA_ZOOM_BOOST} below: raise the zoom BEFORE computing the
+ * (uncapped) shift. At the boosted zoom the real, uncapped shift both (a) lands the free area on
+ * CONUS + the Gulf/Atlantic coast instead of the Arctic (measured: zoom 3.0, real padding -> lat
+ * 33.4, "Canada" reduced to a minor top-of-frame label) and (b) happens to also close the "empty
+ * sky" gap round 1 was chasing (a higher zoom renders a visually LARGER globe disc, covering more
+ * of the free area, not less). `boundsToCameraView` never needed a cap or a boost: a bounds fit's
+ * OWN zoom already scales with the content being framed (a small species range fits at a zoom
+ * where flat Mercator IS globe-accurate), so the runaway low-zoom regime this note describes
+ * cannot occur there.
+ */
+export const PHONE_STUDY_AREA_ZOOM_BOOST = 0.85;
 
 /**
  * usability M4 ("the panel/sheet cover the study area... frame the study area with padding for
@@ -198,19 +201,17 @@ function capAxis(diff: number): number {
  * map with, and nothing else in the app ever reads MapLibre's padding state (`docs/map.md`: "no
  * fitBounds, anywhere" carries the same "no antimeridian-unsafe native camera math" spirit).
  *
- * See {@link MAX_STUDY_AREA_SHIFT_PX}'s own header for why the padding DIFFERENCE this feeds into
- * {@link shiftForPadding} is capped -- a phone sheet at "half" or a maximized panel can reserve far
- * more than that on its own, and this is the ONE call site (the low-zoom initial/default camera)
- * where an uncapped shift visibly breaks under the globe projection.
+ * UNCAPPED (round 2 -- see {@link PHONE_STUDY_AREA_ZOOM_BOOST}'s own header for why a cap on this
+ * shift was the wrong fix): the caller is responsible for passing a `zoom` where a flat-Mercator
+ * shift is a fair stand-in for the globe's own rendering -- `Shell.svelte`'s `initialStudyArea`
+ * adds the phone boost to `zoom` before calling this, exactly once, for exactly this reason.
  */
 export function paddedStudyAreaCenter(
   center: { lon: number; lat: number },
   zoom: number,
   padding: ChromePadding,
 ): { lon: number; lat: number } {
-  const hDiff = capAxis(padding.left - padding.right);
-  const vDiff = capAxis(padding.top - padding.bottom);
-  return shiftForPadding(center, zoom, hDiff, vDiff);
+  return shiftForPadding(center, zoom, padding.left - padding.right, padding.top - padding.bottom);
 }
 
 // --- sel.area -> camera, the fly-on-load/fly-on-change decision -------------------------------

@@ -53,3 +53,17 @@ export function phonePadding(detent: SheetDetent, viewportHeightPx: number): Chr
   const halfPx = viewportHeightPx * 0.46;
   return { ...NO_PADDING, top, bottom: Math.round(halfPx) + railRow };
 }
+
+/** P2 round 2 (orchestrator, real-build eyes-on, 2026-09-24): {@link phonePadding} above is an
+ * ESTIMATE (a fixed 46svh-derived fraction) because the ONE thing genuinely unavailable at map
+ * construction time is Sheet.svelte's own real, MEASURED `offsetHeight`
+ * (`sheetGeometry.ts`'s `SheetGeometry.height`, P1's own addition) -- the Sheet has not mounted
+ * yet. `Shell.svelte` calls THIS function a second time, once, the first time `ongeometry` reports
+ * a real height, and re-applies the initial fit with the accurate number ("the fit must use the
+ * free area... at load time, not a constant" -- the orchestrator's own words). A minor accuracy
+ * correction on its own (the estimate is usually within ~15px of the real height) -- it is
+ * `PHONE_STUDY_AREA_ZOOM_BOOST` (camera.ts), applied at both the estimated and the re-fit call,
+ * that actually fixes the framing. */
+export function phonePaddingFromMeasured(sheetHeightPx: number): ChromePadding {
+  return { ...NO_PADDING, top: TOPBAR_HEIGHT_PX, bottom: sheetHeightPx + PHONE_RAIL_ROW_PX };
+}

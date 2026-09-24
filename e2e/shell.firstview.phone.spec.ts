@@ -4,9 +4,16 @@
 // wired once at map construction in Shell.svelte's `initialStudyArea`) was computed as flat
 // Mercator math and fed straight into MapLibre's GLOBE projection -- a true 3D sphere at the low
 // zoom a study-area preset uses, where a large shift (a half-open phone sheet reserves ~450px of
-// an 844px viewport) rotates the sphere far more than a flat-Mercator "move N px" intends. Fixed
-// by MAX_STUDY_AREA_SHIFT_PX, a cap on the padding DIFFERENCE fed into that shift (camera.ts's own
-// header has the measured before/after numbers).
+// an 844px viewport) rotates the sphere far more than a flat-Mercator "move N px" intends.
+//
+// ROUND 2 (orchestrator, real-v7-build eyes-on, 2026-09-24): round 1's fix here (capping the
+// shift at a flat 200px) reduced the empty-sky gap on this hermetic fixture, but a real-build
+// screenshot caught the DEEPER problem the cap never addressed: at the study area's own zoom
+// (~2.16), MapLibre's globe projection renders the WHOLE sphere regardless of the shift, so the
+// visible frame showed Canada/Greenland/Finland/Norway/Iceland, not the US. The fix is
+// `PHONE_STUDY_AREA_ZOOM_BOOST` (camera.ts): raise the zoom BEFORE computing an (now uncapped)
+// shift -- verified on the real build (`?map=` sweeps against live v7 data) to both frame CONUS
+// properly AND close the empty-sky gap (a higher zoom renders a visually larger globe disc).
 //
 // The shared hermetic basemap fixture (`e2e/map-hermetic.ts#routeBasemapStyle`) deliberately
 // paints `background` and `water` the SAME colour (for OTHER specs' blend-math assertions), so it
@@ -116,6 +123,24 @@ async function gotoPhone(page: Page, path = "/") {
 }
 
 test.describe("P2: the phone first view frames the study area, not empty sky", () => {
+  // P2 round 2 (orchestrator, real-build eyes-on, 2026-09-24): round 1's fix (cap the shift) still
+  // left Canada/Greenland dominant on the REAL v7 build -- MapLibre's globe projection renders the
+  // whole sphere below roughly zoom 3, and no translate can escape that. The actual fix is
+  // `PHONE_STUDY_AREA_ZOOM_BOOST` (camera.ts): the phone's initial camera now uses a HIGHER zoom
+  // than the study-area preset's own `FALLBACK_FULL_STUDY_AREA.zoom`. This hermetic fixture cannot
+  // reproduce "Canada visible" (no real coastlines), so this test pins the MECHANISM directly.
+  test("the initial camera zoom is boosted above the study-area preset's own zoom", async ({
+    page,
+  }) => {
+    await gotoPhone(page);
+    const zoom = await page.evaluate(() =>
+      (
+        window as unknown as { __atlasMap: { handle: { map: { getZoom(): number } } } }
+      ).__atlasMap.handle.map.getZoom(),
+    );
+    expect(zoom).toBeGreaterThan(FALLBACK.zoom);
+  });
+
   test("the fallback study-area reference point projects INSIDE the free area (below the top bar, above the sheet)", async ({
     page,
   }) => {

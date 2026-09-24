@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CAMERA_WRITE_DELAY_MS,
   INITIAL_AREA_CAMERA_STATE,
-  MAX_STUDY_AREA_SHIFT_PX,
   NO_PADDING,
   boundsToCameraView,
   cameraEqual,
@@ -243,10 +242,7 @@ describe("boundsToCameraView", () => {
       expect(shifted.zoom).toBeLessThan(unpadded.zoom);
     });
 
-    it("is NOT capped the way paddedStudyAreaCenter is — a fit's own zoom already keeps the shift proportionate", () => {
-      // MAX_STUDY_AREA_SHIFT_PX would clamp a 300px difference at the study-area's low zoom; a
-      // bounds fit computes its OWN (much higher, content-scaled) zoom, so 300px here shifts
-      // strictly more than the capped 200px would at the SAME zoom.
+    it("is uncapped, monotonic — a fit's own (content-scaled) zoom already keeps the shift proportionate", () => {
       const at300 = boundsToCameraView(bounds, viewport, {
         padding: { top: 0, right: 300, bottom: 0, left: 0 },
       });
@@ -302,31 +298,24 @@ describe("paddedStudyAreaCenter", () => {
     expect(out.lat).toBeLessThan(CENTER.lat);
   });
 
-  it("a bigger reservation shifts the center further, monotonically, BELOW the cap", () => {
+  it("a bigger reservation shifts the center further, monotonically, uncapped", () => {
     const small = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 50 });
     const big = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 150 });
+    const huge = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 452 }); // a real "half" sheet's own bottom reservation, applied here to the right axis
     expect(big.lon - CENTER.lon).toBeGreaterThan(small.lon - CENTER.lon);
+    expect(huge.lon - CENTER.lon).toBeGreaterThan(big.lon - CENTER.lon);
   });
 
-  // P2 (Opus 5.5 eyes-on, 2026-09-24): a phone sheet at "half" reserves ~450px of an 844px
-  // viewport, and the UNCAPPED shift this used to compute rotated the low-zoom globe so far that
-  // ~100 CSS px of blank "space" appeared above it (measured; see MAX_STUDY_AREA_SHIFT_PX's own
-  // header) -- a padding difference beyond the cap must shift NO FURTHER than the cap itself.
-  it("a reservation beyond the cap shifts no further than the cap (the P2 fix)", () => {
-    const atCap = paddedStudyAreaCenter(CENTER, ZOOM, {
-      ...NO_PADDING,
-      right: MAX_STUDY_AREA_SHIFT_PX,
-    });
-    const wayOver = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 452 }); // a real "half" sheet's own bottom reservation, applied here to the right axis for a clean same-axis comparison
-    expect(wayOver.lon).toBeCloseTo(atCap.lon, 9);
-  });
-
-  it("the cap applies per axis independently — a huge bottom AND a modest right both cap/pass through on their own", () => {
-    const out = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, bottom: 452, right: 50 });
-    const bottomOnly = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, bottom: 452 });
-    const rightOnly = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 50 });
-    expect(out.lat).toBeCloseTo(bottomOnly.lat, 9); // bottom alone is already at the cap
-    expect(out.lon).toBeCloseTo(rightOnly.lon, 9); // right alone is well under the cap
+  // P2 round 2 (orchestrator, real-build eyes-on, 2026-09-24): round 1 capped this shift at a flat
+  // 200px, which turned out to be the WRONG fix (camera.ts's own `PHONE_STUDY_AREA_ZOOM_BOOST`
+  // header has the measured proof: capping still left Canada/Greenland dominant on the real v7
+  // build, at every latitude tried). This function is deliberately UNCAPPED now -- the caller
+  // (`Shell.svelte`) is responsible for passing a zoom where a flat-Mercator shift is a fair
+  // stand-in for the globe's own low-zoom rendering.
+  it("is UNCAPPED — a huge bottom reservation shifts proportionally, not clamped", () => {
+    const bottom300 = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, bottom: 300 });
+    const bottom452 = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, bottom: 452 });
+    expect(CENTER.lat - bottom452.lat).toBeGreaterThan(CENTER.lat - bottom300.lat);
   });
 
   it("a higher zoom (a smaller world-px shift per degree) shifts the center LESS for the same padding", () => {

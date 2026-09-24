@@ -70,12 +70,17 @@
   import { studyAreaFromBoot, type StudyArea } from "../lib/map/interaction";
   import {
     INITIAL_AREA_CAMERA_STATE,
+    PHONE_STUDY_AREA_ZOOM_BOOST,
     paddedStudyAreaCenter,
     shouldFlyToArea,
     type AreaCameraState,
     type ChromePadding,
   } from "../lib/map/camera";
-  import { desktopPanelPadding, phonePadding } from "../lib/map/chromePadding";
+  import {
+    desktopPanelPadding,
+    phonePadding,
+    phonePaddingFromMeasured,
+  } from "../lib/map/chromePadding";
   import { createAnalytics } from "../lib/analytics/analytics";
   // atlas-8 Deliverable 4 (beta feedback, zero backend -- CLAUDE.md/GATES.md's "the CalCOFI
   // zero-backend fallback"): both pure functions take a snapshot the caller builds -- neither ever
@@ -591,10 +596,21 @@
     );
   }
 
+  // P2 round 2 (orchestrator, real-build eyes-on, 2026-09-24): the study-area preset's own zoom
+  // (~2.16) is in the regime where MapLibre's GLOBE projection renders the whole sphere regardless
+  // of the shift below -- boosting it here, BEFORE the shift, is what actually frames CONUS/the
+  // Gulf/Atlantic coast instead of Canada/Greenland (`PHONE_STUDY_AREA_ZOOM_BOOST`'s own header has
+  // the measured proof). Desktop's own free area is tall enough (topbar-only padding, no sheet)
+  // that this was never needed there.
+  function boostedForPhone(area: StudyArea): StudyArea {
+    return isPhone ? { ...area, zoom: area.zoom + PHONE_STUDY_AREA_ZOOM_BOOST } : area;
+  }
+
   function initialStudyArea(area: StudyArea): StudyArea {
     if (sel.map) return area; // an explicit URL camera is never second-guessed
-    const padded = paddedStudyAreaCenter(area, area.zoom, initialChromePadding());
-    return { ...area, ...padded };
+    const boosted = boostedForPhone(area);
+    const padded = paddedStudyAreaCenter(boosted, boosted.zoom, initialChromePadding());
+    return { ...boosted, ...padded };
   }
 
   // usability M4's OTHER half: a light loader over the map until the first raster/basemap tile
@@ -749,6 +765,31 @@
     const decision = shouldFlyToArea(area.key, DEFAULT_SEL.area, areaCameraState);
     areaCameraState = decision.next;
     if (decision.fly) mapHandle.flyTo(area);
+  });
+
+  // P2 round 2 (orchestrator, real-build eyes-on, 2026-09-24): "the fit must use the free area
+  // above the sheet (its measured height at that detent, at load time), not [an estimated]
+  // constant... re-fit once when the sheet's initial detent is known" -- `initialStudyArea` (map
+  // construction, above) necessarily used `initialChromePadding()`'s pre-mount ESTIMATE of the
+  // sheet's height (`phonePadding`'s own 46svh-derived fraction), because Sheet.svelte has not
+  // mounted yet at that point. `sheetGeom` (this file's own `ongeometry` binding, P1's addition)
+  // reports the sheet's REAL `offsetHeight` shortly after -- this effect re-applies the padded fit
+  // ONCE, with that real number, PURELY for accuracy (`chromePadding.ts#phonePaddingFromMeasured`'s
+  // own header: usually within ~15px of the estimate; `PHONE_STUDY_AREA_ZOOM_BOOST`, applied both
+  // times, is what actually fixes the framing). Guarded to the DEFAULT area only and to fire at
+  // most once, so it can never race or compete with the `sel.area`-driven effect just above (a
+  // real `?area=` selection, or a user's own pan, always wins and this never touches either).
+  let refitOnceForMeasuredSheet = false;
+  $effect(() => {
+    if (refitOnceForMeasuredSheet) return;
+    if (!isPhone || !mapHandle || !boot) return;
+    if (sheetGeom.height <= 0) return; // Sheet.svelte has not reported a real measurement yet
+    if (sel.map || sel.area !== DEFAULT_SEL.area) return; // not the default padded first view
+    refitOnceForMeasuredSheet = true;
+    const area = boostedForPhone(studyAreaFromBoot(boot, sel.area));
+    const padding = phonePaddingFromMeasured(sheetGeom.height);
+    const padded = paddedStudyAreaCenter(area, area.zoom, padding);
+    mapHandle.flyTo({ ...area, ...padded });
   });
 
   // one composed style, re-applied with setStyle(diff:true) whenever theme, projection, the

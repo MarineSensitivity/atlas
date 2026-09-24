@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { desktopPanelPadding, phonePadding } from "../../src/lib/map/chromePadding";
+import {
+  desktopPanelPadding,
+  phonePadding,
+  phonePaddingFromMeasured,
+} from "../../src/lib/map/chromePadding";
 import { DEFAULT_PANEL_GEOMETRY } from "../../src/lib/ui/panelGeometry";
 
 // P2 (Opus 5.5 eyes-on, 2026-09-24): `top` used to be 0 in EVERY case below -- the top bar sits
@@ -84,5 +88,34 @@ describe("phonePadding (usability M4)", () => {
     const short = phonePadding("half", 700);
     const tall = phonePadding("half", 1000);
     expect(tall.bottom).toBeGreaterThan(short.bottom);
+  });
+});
+
+// P2 round 2 (orchestrator, real-build eyes-on, 2026-09-24): the re-fit's own padding source --
+// Sheet.svelte's REAL measured `offsetHeight`, not the 46svh-derived ESTIMATE `phonePadding` above
+// computes before the Sheet has ever mounted.
+describe("phonePaddingFromMeasured (P2 round 2)", () => {
+  it("reserves the top bar + the measured sheet height + the rail row", () => {
+    const p = phonePaddingFromMeasured(388);
+    expect(p.top).toBe(TOPBAR);
+    expect(p.bottom).toBeGreaterThan(388); // the rail row is added on top of the measured height
+    expect(p.left).toBe(0);
+    expect(p.right).toBe(0);
+  });
+
+  it("a taller measured sheet reserves proportionally more, never less", () => {
+    const shorter = phonePaddingFromMeasured(200);
+    const taller = phonePaddingFromMeasured(400);
+    expect(taller.bottom).toBeGreaterThan(shorter.bottom);
+    expect(taller.bottom - shorter.bottom).toBe(200); // a 1:1 passthrough, not a re-derived fraction
+  });
+
+  it("is close to (but not required to equal) the ESTIMATE for a plausible real height", () => {
+    // the estimate for "half" at a typical phone viewport (844) is ~452px total bottom reservation
+    // (phonePadding's own 46svh + rail-row formula); a real measured sheet height in that
+    // neighbourhood should land the corrected padding within a modest margin of it.
+    const estimate = phonePadding("half", 844);
+    const measured = phonePaddingFromMeasured(388); // a real sheet height close to 844*0.46
+    expect(Math.abs(measured.bottom - estimate.bottom)).toBeLessThan(50);
   });
 });
