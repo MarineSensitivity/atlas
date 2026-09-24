@@ -25,7 +25,6 @@ lens' Table ▸ Zones tool uses. "Show analysis cells" is not yet available for 
 per-zone cell data is published to the app yet) and now says so plainly instead of showing a
 disabled button with a misleading reason. Also: fixed a rare race where "Show analysis cells"
 could paint the wrong place's cells if the selection moved while a load was in flight.
-=======
 
 # atlas 0.10.52
 
@@ -68,8 +67,6 @@ already publishes):
 Results are a keyboard-navigable list (Arrow keys, Enter to select, Esc to close), same accessible
 pattern as the species search. Available on both the desktop top-bar field and the phone search
 modal.
-
-> > > > > > > main
 
 # atlas 0.10.50
 
