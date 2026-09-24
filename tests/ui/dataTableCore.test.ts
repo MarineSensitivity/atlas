@@ -3,6 +3,7 @@
 // numeric sort ("10" before "9"), and filtering on the formatted vs. raw value.
 import { describe, expect, it } from "vitest";
 import {
+  columnWidthPx,
   compareValues,
   computeVisibleWindow,
   type DataTableColumn,
@@ -11,9 +12,12 @@ import {
   gridRowCount,
   gridRowIndex,
   HEADER_ROW_COUNT,
+  NARROW_COLUMN_WIDTH_PX,
   nextCellPosition,
   scrollTopForRow,
   sortRows,
+  TEXT_COLUMN_WIDTH_PX,
+  totalTableWidthPx,
 } from "../../src/lib/ui/dataTableCore";
 
 interface Row {
@@ -312,5 +316,53 @@ describe("gridRowCount / gridRowIndex (SC 1.3.1 / 4.1.2: count and index include
   it("aria-rowindex increases one-for-one with the data row index", () => {
     expect(gridRowIndex(1)).toBe(4);
     expect(gridRowIndex(9)).toBe(12);
+  });
+});
+
+// P3 fix (owner-reported, 2026-09-24): "Table is an absurdity of unintelligible ellipses" -- 12
+// columns divided evenly across a 390px panel gave each ~2 characters. The seeded fault this
+// replaces: a column width rule that ignores `numeric`/`narrow` and always returns the SAME width
+// (equivalent to the old "divide the container evenly" behaviour) -- see
+// tests/faults/datatable-min-width-drop.patch.
+describe("columnWidthPx (P3: a text column never narrows below a readable minimum)", () => {
+  it("a plain text column gets the readable minimum, never the narrow width", () => {
+    expect(columnWidthPx({})).toBe(TEXT_COLUMN_WIDTH_PX);
+    expect(TEXT_COLUMN_WIDTH_PX).toBeGreaterThanOrEqual(70);
+  });
+
+  it("a numeric column fits its own (narrower) content", () => {
+    expect(columnWidthPx({ numeric: true })).toBe(NARROW_COLUMN_WIDTH_PX);
+    expect(NARROW_COLUMN_WIDTH_PX).toBeLessThan(TEXT_COLUMN_WIDTH_PX);
+  });
+
+  it("a `narrow` text column (e.g. a Yes/No boolean) also fits narrower, without needing `numeric`", () => {
+    expect(columnWidthPx({ narrow: true })).toBe(NARROW_COLUMN_WIDTH_PX);
+  });
+
+  it("`numeric` and `narrow` agree on the same width (one rule, not two)", () => {
+    expect(columnWidthPx({ numeric: true })).toBe(columnWidthPx({ narrow: true }));
+  });
+});
+
+// P3 fix: `table-layout: fixed` only honours a `<colgroup>`'s widths once the `<table>` has a
+// DEFINITE width (`columnWidthPx()`'s own header) -- `totalTableWidthPx()` is what a caller sums
+// into that explicit `width`. Seeded fault: a caller that keeps `width: max-content`/`auto`
+// (ignoring this function) is exactly the regression a truncation-free Playwright assertion on
+// real column widths would catch -- see e2e/scores.table.spec.ts.
+describe("totalTableWidthPx", () => {
+  it("sums every column's own width, in order", () => {
+    const cols = [{ numeric: false }, { numeric: true }, { narrow: true }];
+    expect(totalTableWidthPx(cols)).toBe(
+      TEXT_COLUMN_WIDTH_PX + NARROW_COLUMN_WIDTH_PX + NARROW_COLUMN_WIDTH_PX,
+    );
+  });
+
+  it("adds an optional leading (e.g. a selection checkbox) width in px", () => {
+    expect(totalTableWidthPx([{ numeric: true }], 40)).toBe(40 + NARROW_COLUMN_WIDTH_PX);
+  });
+
+  it("is just the leading width for an empty column list", () => {
+    expect(totalTableWidthPx([], 40)).toBe(40);
+    expect(totalTableWidthPx([])).toBe(0);
   });
 });

@@ -1,3 +1,22 @@
+# atlas 0.10.42
+
+R2, round 3 (owner finding on live at 390x844: Scores → Table → Species for cell 3092526, and
+the Places tool's Program Area list).
+
+- **The species/zones tables no longer squeeze every column to ~2 characters.** Columns get a
+  readable minimum width (text) or fit their short content (numeric/boolean); the TABLE now
+  scrolls horizontally when it doesn't fit (the panel itself never does), with the identifying
+  column (Scientific name / Zone) and the header row both sticky. Header labels wrap instead of
+  truncating. The same min-width/sticky/scroll treatment applies to `src/lib/ui/DataTable.svelte`
+  (the Places panel's Components/Species tables).
+- **Phone-width (< 900px) species table**: opens with a compact six-column default (Category,
+  Scientific name, Common name, ER code, ER score, Area) and a new "Columns" control to add/remove
+  any column; the choice persists for the session. Desktop is unchanged (every column, still with
+  the new min-width/scroll behavior).
+- **Program Area names**: everywhere a Program Area is presented (the Places panel's list, the
+  zones table), the label now reads "Full Name (KEY)" when the release publishes a name, falling
+  back to the bare key otherwise (`paLabel()`) — never the bare key alone when a name exists.
+
 # atlas 0.10.37
 
 R2, round 2 (owner finding on live 0.10.36 at 390x844): once the welcome modal is dismissed, the

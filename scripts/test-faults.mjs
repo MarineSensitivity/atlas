@@ -23,6 +23,9 @@
 //
 // Usage: npm run test:faults  (needs $TMPDIR exported, and a clean `git status` for HEAD to be
 // meaningful -- it worktrees off HEAD, not the working tree, on purpose: see each patch's header).
+// `--only <id>` (P3 round, 0.10.42) runs a single named entry -- for verifying ONE new fault while
+// developing it, without paying for every OTHER entry's own worktree+build+run cost (several of
+// which are full `npm run build` + Playwright, ~a minute each).
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -565,6 +568,31 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4388" },
   },
+  // P3 (owner-reported, live 0.10.37, 390x844: "Table is an absurdity of unintelligible ellipses")
+  // -- `columnWidthPx()` always returning the NARROW width drops the text-column minimum
+  // (dataTableCore.ts's own header: this is what the old "divide every column evenly" bug amounts
+  // to). Neither of this gate's other two assertions ("no header cell overflows", "the full text
+  // is present") actually catches it -- `overflow-wrap: break-word` means even a squeezed column
+  // just wraps its text onto more lines rather than truncating or dropping it -- so the fault must
+  // turn the REAL-RENDERED-COLUMN-WIDTH test red specifically.
+  {
+    id: "datatable-min-width-drop",
+    patch: "tests/faults/datatable-min-width-drop.patch",
+    describe:
+      "columnWidthPx() always returns the narrow (numeric/boolean) width -- the text-column " +
+      "minimum is gone, so the Zone column squeezes down to the same ~60px every numeric column gets",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.table.spec.ts",
+      "-g",
+      "every column's rendered width honours dataTableCore.ts's own minimum",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4375" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
@@ -670,15 +698,25 @@ function main() {
     process.exit(1);
   }
 
+  const onlyIdx = process.argv.indexOf("--only");
+  const onlyId = onlyIdx !== -1 ? process.argv[onlyIdx + 1] : null;
+  const faults = onlyId ? FAULTS.filter((f) => f.id === onlyId) : FAULTS;
+  if (onlyId && faults.length === 0) {
+    process.stderr.write(
+      `test-faults: --only ${onlyId} does not name a fault in FAULTS (see scripts/test-faults.mjs).\n`,
+    );
+    process.exit(1);
+  }
+
   const head = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
     cwd: ROOT,
     encoding: "utf8",
   }).trim();
-  process.stdout.write(`test-faults: ${FAULTS.length} fault(s), worktreed off HEAD (${head})\n\n`);
+  process.stdout.write(`test-faults: ${faults.length} fault(s), worktreed off HEAD (${head})\n\n`);
 
   const rows = [];
   let failed = false;
-  for (const fault of FAULTS) {
+  for (const fault of faults) {
     const result = runOne(fault);
     rows.push(result);
     if (result.ok) {
