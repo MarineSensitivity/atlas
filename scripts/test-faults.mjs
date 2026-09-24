@@ -662,6 +662,44 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4373" },
   },
+  {
+    id: "legend-chip-modal-blank",
+    patch: "tests/faults/legend-chip-modal-blank.patch",
+    describe:
+      "ScoresLegend.svelte's viewport display:none (desktop-only 'no room beside the sheet') " +
+      "reinstated -- LegendChip.svelte's phone modal reuses the SAME component, so tapping the " +
+      "chip opens a dialog titled 'Legend' with nothing under it",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.legend-chip.spec.ts",
+      "-g",
+      "scores lens.*non-blank legend",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4371" },
+  },
+  {
+    id: "legend-chip-fixed-offset",
+    patch: "tests/faults/legend-chip-fixed-offset.patch",
+    describe:
+      "shell.css's .legend-chip-region drops the sheet-anchored --legend-chip-sheet-height term " +
+      "-- the chip is back to a FIXED offset from the bottom regardless of the sheet's detent, " +
+      "landing on the sheet's own collapse/half/full buttons when collapsed",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.legend-chip.spec.ts",
+      "-g",
+      "scores lens.*collapsed.*chip clears the sheet",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4371" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
