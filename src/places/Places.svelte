@@ -45,9 +45,11 @@
     allZoneStats,
     paLabel,
     summarizeZoneStats,
+    zoneCellsAvailable,
     zoneCenterFromBoot,
     zoneDisplayName,
     zoneStatsFor,
+    ZONE_CELLS_UNAVAILABLE_REASON,
   } from "./zoneStats";
   import { approxAreaKm2 } from "./area";
   import { centerZoomForGeometry } from "./camera";
@@ -529,6 +531,18 @@
     try {
       const ctx = await dataEngineFn();
       const cells = await placeCellsInStudyArea(ctx, p.geometry);
+      // item 2 (P round Q3): a test-only hook so e2e/places.spec.ts's item-3b test can hold the
+      // load RIGHT HERE -- after the real fetch resolves, before its result is applied -- move the
+      // selection, then release it, proving the `token !== cellsToken` check below actually drops
+      // what would otherwise paint the wrong place's cells. `window.__atlasTest` mirrors how
+      // `__atlasMap`/`__atlasSpecies` (Shell.svelte) expose their own test/automation seams, but is
+      // NEVER assigned outside a test -- `?.holdCells` is `undefined` in every real session, so
+      // `await undefined` resolves on the next microtask and this line changes nothing in
+      // production. Previously the ONLY way to force this race was a real network delay
+      // (`page.route()`), which measurably could not force the overlap (this test's own former
+      // `test.fixme` comment, e2e/places.spec.ts) -- this hook is what makes it deterministic.
+      await (window as unknown as { __atlasTest?: { holdCells?: Promise<void> } }).__atlasTest
+        ?.holdCells;
       if (token !== cellsToken) return; // the selection moved on while this was loading -- drop it
       mapStore.setShowCells(true);
       mapStore.setCells(cellsFeatureCollection(cells, grid));
@@ -838,13 +852,24 @@
     <button type="button" class="draw-tool" onclick={() => (coordDialogOpen = true)}>
       Enter coordinates
     </button>
-    <Pill
-      label={loadingCells ? "Loading analysed cells…" : "Show analysis cells"}
-      pressed={mapStore.showCells}
-      disabled={loadingCells || selectedIndex === null || places[selectedIndex]?.kind !== "geom"}
-      disabledReason="Select a drawn or uploaded place first."
-      onclick={toggleAnalysisCells}
-    />
+    {#if selectedIndex !== null && places[selectedIndex]?.kind === "zone" && !zoneCellsAvailable(boot)}
+      <!-- Q3 item 1: "the button is absent for zones with a one-line reason" -- the OLD disabled
+           Pill here read "Select a drawn or uploaded place first," which is actively wrong once a
+           zone place CAN be selected (P3's "Add a Program Area" picker); `zoneCellsAvailable()`
+           (zoneStats.ts) is the one place that flips true the day a `zone_cell` data path lands, so
+           nothing here needs to change when it does. -->
+      <span class="cells-unavailable" title={ZONE_CELLS_UNAVAILABLE_REASON}>
+        Show analysis cells: not available for Program Areas yet
+      </span>
+    {:else}
+      <Pill
+        label={loadingCells ? "Loading analysed cells…" : "Show analysis cells"}
+        pressed={mapStore.showCells}
+        disabled={loadingCells || selectedIndex === null || places[selectedIndex]?.kind !== "geom"}
+        disabledReason="Select a drawn or uploaded place first."
+        onclick={toggleAnalysisCells}
+      />
+    {/if}
   </section>
 
   <UploadPanel {mapHandle} dataEngine={dataEngineFn} onAdd={addEnteredPlaces} {track} />
@@ -931,8 +956,15 @@
     </ul>
   {/if}
 
-  {#if selectedIndex !== null && places[selectedIndex]?.kind === "geom"}
-    <ResultsPanel place={places[selectedIndex]} {boot} {ver} dataEngine={dataEngineFn} />
+  {#if selectedIndex !== null}
+    {@const selectedPlace = places[selectedIndex]}
+    <!-- Q3 item 1: a `kind: "zone"` (Program Area) place now gets the SAME results panel a
+         drawn/uploaded place does -- ResultsPanel.svelte's own header explains why its
+         coverage/flower/components branch differs (published, synchronous) while species still
+         goes through the engine. -->
+    {#if selectedPlace?.kind === "geom" || selectedPlace?.kind === "zone"}
+      <ResultsPanel place={selectedPlace} {boot} {ver} dataEngine={dataEngineFn} />
+    {/if}
   {/if}
 
   <p class="cap-note">{places.length} / {MAX_PLACES} places</p>
@@ -1066,6 +1098,14 @@
   .draw-tool:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  /* Q3 item 1: the one-line reason shown IN PLACE of the "Show analysis cells" Pill for a
+     selected zone place -- see the template's own comment for why this replaces the button rather
+     than disabling it. */
+  .cells-unavailable {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
   }
 
   .empty {

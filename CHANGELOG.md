@@ -16,6 +16,17 @@ Round 2, Q4: the feedback endpoint and preview-host link flags.
   and every restricted row in the release list. Flipping the flag to `1` (once atlas-9 ships)
   restores today's direct link with no code change.
 
+# atlas 0.10.53
+
+Places: choosing a Program Area now opens the same results panel a drawn or uploaded place gets --
+a coverage note (cells, area, published composite), the flower, and the component table, all read
+straight from the release. Its species table loads on request through the same path the scores
+lens' Table ▸ Zones tool uses. "Show analysis cells" is not yet available for Program Areas (no
+per-zone cell data is published to the app yet) and now says so plainly instead of showing a
+disabled button with a misleading reason. Also: fixed a rare race where "Show analysis cells"
+could paint the wrong place's cells if the selection moved while a load was in flight.
+=======
+
 # atlas 0.10.52
 
 Q2: GeoPackage upload actually reads, and uploads honour the documented naming options.
@@ -57,6 +68,8 @@ already publishes):
 Results are a keyboard-navigable list (Arrow keys, Enter to select, Esc to close), same accessible
 pattern as the species search. Available on both the desktop top-bar field and the phone search
 modal.
+
+> > > > > > > main
 
 # atlas 0.10.50
 

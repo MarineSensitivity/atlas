@@ -4,11 +4,21 @@
   // a Program Area's own page runs, over this place's cell set instead of a zone's. `Flower`/
   // `DataTable` are shared src/lib/ui/ components (not the scores lens's own), so this renders
   // fully within src/places/** without touching src/lens/scores/**.
+  //
+  // Q3 (P round, item 1, "Selecting a Program Area place opens no results panel in Places"): a
+  // `kind: "zone"` place gets THIS SAME panel now, not a second copy -- its coverage/flower/
+  // components read straight off `boot` (published, synchronous: a zone's numbers are baked in at
+  // release time, so there is no engine round trip, no `loadingScores` state and no
+  // `describeAnalysisError` failure mode for that half); only its species table still needs the
+  // engine (`results.ts#zoneSpeciesResults`, the same `zone_taxon` path the scores lens' own
+  // Table > Zones tool uses). The flower/component-label rule is reused from there too
+  // (`lens/scores/flower.ts#zoneFlowerComponents`, `lens/scores/boot.ts#zoneRows`) so a zone's
+  // flower here can never disagree with the one the Flower tool draws for the identical zone click.
   import { untrack } from "svelte";
   import Flower from "../lib/ui/Flower.svelte";
   import DataTable from "../lib/ui/DataTable.svelte";
   import { announce } from "../lib/ui/announcer";
-  import type { GeomPlace } from "../lib/geo/placeCodec";
+  import type { GeomPlace, ZonePlace } from "../lib/geo/placeCodec";
   import type { AreaGeometry } from "../lib/geo/types";
   import type { DataEngineContext } from "./dataEngine";
   import type { ComponentScore, SpeciesRow } from "../lib/analysis/queries";
@@ -18,19 +28,54 @@
     computeSpeciesResults,
     describeAnalysisError,
     speciesTilePlan,
+    zoneSpeciesResults,
     type ScoreResults,
   } from "./results";
   import { estimateFetchPlan, formatMb, needsConfirmation, type FetchPlan } from "./fetchPlan";
   import { downloadCsv, slugStem, toCsv } from "./csv";
+  import { unitForZoneSet } from "./model";
+  import {
+    summarizeZoneStats,
+    zoneComponentScores,
+    zoneDisplayName,
+    zoneNCellsFor,
+    zoneStatsFor,
+    type ZoneComponentScore,
+  } from "./zoneStats";
+  import { zoneFlowerComponents } from "../lens/scores/flower";
+  import { zoneRows } from "../lens/scores/boot";
 
   interface Props {
-    place: GeomPlace;
+    place: GeomPlace | ZonePlace;
     boot: unknown;
     ver: string | null;
     dataEngine: (() => Promise<DataEngineContext>) | undefined;
   }
 
   let { place, boot, ver, dataEngine }: Props = $props();
+
+  const isZone = $derived(place.kind === "zone");
+  const zoneUnit = $derived(place.kind === "zone" ? unitForZoneSet(place.set) : null);
+  const zoneKeys = $derived(place.kind === "zone" ? place.keys : []);
+  /** item 1 scopes the full zone results (flower/components/species) to ONE selected Program Area
+   * -- a multi-pick zone place (map Pick mode's Ctrl/Cmd-click) still gets the coverage note
+   * (summed/averaged, `summarizeZoneStats` already does this for the list row), but the flower and
+   * component table are keyed on a SINGLE zone's own `metrics`, so several picks show a short
+   * explanatory note instead of guessing which one's flower to draw. */
+  const zoneSoleKey = $derived(zoneKeys.length === 1 ? zoneKeys[0] : null);
+  const zoneStatsList = $derived(zoneUnit ? zoneStatsFor(boot, zoneUnit, zoneKeys) : []);
+  const zoneSummary = $derived(summarizeZoneStats(zoneStatsList));
+  const zoneNCells = $derived(zoneUnit ? zoneNCellsFor(boot, zoneUnit, zoneKeys) : null);
+  const zoneName = $derived(zoneDisplayName(zoneStatsList));
+  const zoneFlower = $derived(
+    zoneUnit && zoneSoleKey ? zoneFlowerComponents(zoneRows(boot, zoneUnit), zoneSoleKey) : null,
+  );
+  const zoneComponentRows = $derived(
+    zoneUnit && zoneSoleKey ? zoneComponentScores(boot, zoneUnit, zoneSoleKey) : [],
+  );
+  const resultsLabel = $derived(
+    place.kind === "geom" ? place.name : zoneName || zoneKeys.join(", "),
+  );
 
   let scoreResults = $state<ScoreResults | null>(null);
   let scoreError = $state<string | null>(null);
@@ -47,13 +92,17 @@
 
   // usability B1: these results belong to ONE place. On 0.10.21 the effect below read `place` only
   // AFTER an `await`, so it never tracked it: selecting (or uploading) another place kept the
-  // previous place's composite under the new name. `placeKey` is the geometry itself -- `places` is
-  // re-derived from `#pl=` whenever `sel` changes (a pan writes `map=`), which hands this panel a NEW
-  // object for the SAME place that must not re-run anything, and a rename changes nothing a result
-  // depends on -- and `run` stamps every analysis, so a place
-  // switched or removed mid-analysis drops its late result instead of landing it on the row that
-  // replaced it.
-  const placeKey = $derived(JSON.stringify(place.geometry));
+  // previous place's composite under the new name. `placeKey` is the geometry itself (or, for a
+  // zone place, its set + keys -- Q3 item 1) -- `places` is re-derived from `#pl=` whenever `sel`
+  // changes (a pan writes `map=`), which hands this panel a NEW object for the SAME place that must
+  // not re-run anything, and a rename changes nothing a result depends on -- and `run` stamps every
+  // analysis, so a place switched or removed mid-analysis drops its late result instead of landing
+  // it on the row that replaced it.
+  const placeKey = $derived(
+    place.kind === "geom"
+      ? `geom:${JSON.stringify(place.geometry)}`
+      : `zone:${place.set}:${place.keys.join(",")}`,
+  );
   let run = 0;
 
   async function loadScores(geometry: AreaGeometry, token: number) {
@@ -78,7 +127,7 @@
   }
 
   async function preparePlan() {
-    if (!dataEngine || !ver) return;
+    if (!dataEngine || !ver || place.kind !== "geom") return;
     const token = run;
     const geometry = place.geometry;
     const ctx = await dataEngine();
@@ -99,7 +148,7 @@
   }
 
   async function runSpecies() {
-    if (!dataEngine) return;
+    if (!dataEngine || place.kind !== "geom") return;
     const token = run;
     const geometry = place.geometry;
     awaitingConfirm = false;
@@ -122,9 +171,32 @@
     }
   }
 
+  // Q3 item 1: the zone twin of `runSpecies()` above -- no fetch plan (see `results.ts#
+  // zoneSpeciesResults`'s own header for why a zone's species table needs no tile confirmation),
+  // otherwise the SAME run-token guard so a place switch mid-load drops the late result rather than
+  // landing it under whichever zone is selected by the time it resolves.
+  async function runZoneSpecies() {
+    if (!dataEngine || !zoneUnit || !zoneSoleKey) return;
+    const token = run;
+    const unit = zoneUnit;
+    const key = zoneSoleKey;
+    loadingSpecies = true;
+    speciesError = null;
+    try {
+      const ctx = await dataEngine();
+      const rows = await zoneSpeciesResults(ctx, boot, unit, key);
+      if (token !== run) return;
+      speciesRows = rows;
+      announce(`Species table loaded, ${rows.length} rows.`);
+    } catch (err) {
+      if (token === run) speciesError = describeAnalysisError(err);
+    } finally {
+      if (token === run) loadingSpecies = false;
+    }
+  }
+
   $effect(() => {
-    void placeKey; // a different geometry is the one thing (besides the release) that re-runs this
-    const geometry = untrack(() => place.geometry);
+    void placeKey; // a different place (geometry, or zone set+keys) is what re-runs this
     const token = ++run;
     scoreResults = null;
     scoreError = null;
@@ -134,7 +206,14 @@
     speciesProgress = null;
     loadingSpecies = false;
     speciesError = null;
-    void loadScores(geometry, token);
+    if (place.kind === "geom") {
+      const geometry = untrack(() => place.geometry);
+      void loadScores(geometry, token);
+    }
+    // zone: coverage/flower/components are synchronous `$derived` reads straight off `boot` (see
+    // this file's own header) -- nothing to kick off here. Only species is async for a zone, and
+    // `runZoneSpecies`'s own run-token guard covers a place switch mid-load the same way
+    // `runSpecies` does for a custom place.
   });
 
   const flowerComponents = $derived(
@@ -195,13 +274,32 @@
     },
   ];
 
+  // Q3 item 1: the zone twin of `componentColumns` above -- just Component/Score, since a
+  // published zone's `metrics` carry no per-component coverage/mean-where-present the way a
+  // custom place's live SQL blend does (`ZoneComponentScore`'s own header, zoneStats.ts).
+  const zoneComponentColumns = [
+    { key: "component", label: "Component", value: (r: ZoneComponentScore) => r.component },
+    {
+      key: "score",
+      label: "Score",
+      value: (r: ZoneComponentScore) => r.score,
+      format: (r: ZoneComponentScore) => r.score.toFixed(1),
+      numeric: true,
+      sortable: true,
+    },
+  ];
+
   // P8 item 4: wires `DataTable`'s own `onExport` hook -- see csv.ts's header for why this is
   // fixed rather than removed (no other CSV reaches a drawn/entered place's own components or
   // species). `stem` reruns per place, never cached, so a rename before exporting is reflected.
-  const stem = $derived(slugStem(place.name));
+  const stem = $derived(slugStem(place.kind === "geom" ? place.name : resultsLabel));
 
   function onExportComponents(rows: ComponentScore[]) {
     downloadCsv(toCsv(rows, componentColumns), `${stem}_components`);
+  }
+
+  function onExportZoneComponents(rows: ZoneComponentScore[]) {
+    downloadCsv(toCsv(rows, zoneComponentColumns), `${stem}_components`);
   }
 
   function onExportSpecies(rows: SpeciesRow[]) {
@@ -209,8 +307,52 @@
   }
 </script>
 
-<section class="results" aria-label="Results for {place.name}">
-  {#if loadingScores}
+<section class="results" aria-label="Results for {resultsLabel}">
+  {#if isZone}
+    <!-- Q3 item 1: a zone place's coverage/flower/components read straight off `boot` -- published
+         at release time, so there is no loading/error state to show here (unlike the geom branch
+         below, which runs a live SQL query). -->
+    <p class="coverage-note">
+      {zoneNCells === null ? "—" : zoneNCells.toLocaleString("en-US")} cells,
+      {zoneSummary.areaKm2 === null
+        ? "—"
+        : zoneSummary.areaKm2.toLocaleString("en-US", { maximumFractionDigits: 0 })} km²; published composite
+      {zoneSummary.composite === null
+        ? "not published for this release"
+        : zoneSummary.composite.toFixed(1)}.
+    </p>
+    {#if zoneSoleKey}
+      {#if zoneFlower}
+        <div class="composite-row">
+          <Flower
+            title={resultsLabel}
+            components={zoneFlower.components}
+            droppedLabels={zoneFlower.droppedLabels}
+            size={160}
+            showTable={false}
+          />
+          <p class="composite-figure">
+            <strong>
+              {zoneSummary.composite === null ? "—" : zoneSummary.composite.toFixed(1)}
+            </strong>
+            composite
+          </p>
+        </div>
+        <DataTable
+          label="Components"
+          columns={zoneComponentColumns}
+          rows={zoneComponentRows}
+          getRowId={(r) => r.metric_key}
+          height={200}
+          onExport={onExportZoneComponents}
+        />
+      {:else}
+        <p class="status">No flower data is published for this Program Area in this release.</p>
+      {/if}
+    {:else if zoneKeys.length > 1}
+      <p class="status">Select a single Program Area to see its flower and components.</p>
+    {/if}
+  {:else if loadingScores}
     <p class="status">Computing scores…</p>
   {:else if scoreError}
     <p class="status status--error">{scoreError}</p>
@@ -227,7 +369,7 @@
       </p>
     {:else}
       <div class="composite-row">
-        <Flower title={place.name} components={flowerComponents} size={160} />
+        <Flower title={resultsLabel} components={flowerComponents} size={160} showTable={false} />
         <p class="composite-figure">
           <strong>{scoreResults.composite.toFixed(1)}</strong> composite
         </p>
@@ -271,8 +413,21 @@
         </div>
       {:else if speciesError}
         <p class="status status--error">{speciesError}</p>
+      {:else if isZone && !zoneSoleKey}
+        <!-- Q3 item 1: `zoneSpeciesResults`/`loadSpeciesRowsFor` take ONE zone key -- a multi-pick
+             zone place gets this note instead of a button that would only ever load ONE of its
+             several areas' species without saying which. -->
+        <p class="status">
+          Species aren't available for several Program Areas at once — select just one.
+        </p>
       {:else}
-        <button type="button" onclick={preparePlan} disabled={!dataEngine}>Load species</button>
+        <button
+          type="button"
+          onclick={isZone ? runZoneSpecies : preparePlan}
+          disabled={!dataEngine}
+        >
+          Load species
+        </button>
       {/if}
     </div>
   {:else}
@@ -304,15 +459,22 @@
     margin: 0;
   }
 
+  /* Q3 fix round 1 (coordinator finding, eyes-on): this used to be a flex ROW -- the flower's
+     fixed-width figure left the composite text only the narrow leftover space beside it, which
+     wrapped "25.0" / "composite" onto separate lines even on a 1280px desktop. A COLUMN, both
+     children centred, puts the composite figure under the flower instead -- readable at any
+     panel width, phone included. */
   .composite-row {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: var(--space-3);
+    gap: var(--space-2);
   }
 
   .composite-figure {
     font-size: var(--text-lg);
     margin: 0;
+    text-align: center;
   }
 
   .species-section h3 {
