@@ -65,6 +65,17 @@ const FAULTS = [
       "than a minute, and the property under test is a pure function.",
     gate: ["npx", "vitest", "run", "tests/feedback/noHash.test.ts"],
   },
+  {
+    id: "docsurl-always-root",
+    patch: "tests/faults/docsurl-always-root.patch",
+    describe:
+      "atlasDocsUrl() reverts to unconditionally returning DOCS_ROOT (P10: Help > Docs used to " +
+      "open the book's Preface instead of the release's Atlas chapter) -- a pure function, so " +
+      "this is a plain vitest gate like rmod-guard-drop above; the real-browser property (the " +
+      "rendered Shell.svelte href) is covered separately by e2e/shell.chrome.spec.ts's " +
+      "'P10: Help > Docs' block, proven red-first by hand against the pre-fix Shell.svelte.",
+    gate: ["npx", "vitest", "run", "tests/release/docsUrl.test.ts"],
+  },
   // --- atlas-8 step 3: the two accessibility faults the plan's pyramid row names ------------------
   // These are the first PLAYWRIGHT gates in this manifest. They need a real browser against a real
   // build of the PATCHED tree, so each runs on its own `PW_PORT` (playwright.config.ts honours it

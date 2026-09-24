@@ -1,0 +1,13 @@
+diff --git a/src/lib/release/docsUrl.ts b/src/lib/release/docsUrl.ts
+index 0a91a35..3753d37 100644
+--- a/src/lib/release/docsUrl.ts
++++ b/src/lib/release/docsUrl.ts
+@@ -50,7 +50,5 @@ export function atlasDocsUrl(
+   access: AccessLevel,
+   previewBase: string = PREVIEW_HOST,
+ ): string {
+-  if (!ver || access === "unknown") return DOCS_ROOT;
+-  if (access === "restricted") return `${previewBase}/docs/${ver}/${ATLAS_CHAPTER_PATH}`;
+-  return `${DOCS_ROOT}${ver}/${ATLAS_CHAPTER_PATH}`;
++  return DOCS_ROOT;
+ }

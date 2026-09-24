@@ -287,3 +287,53 @@ test.describe("map-chrome parity audit: MapLibre + CARTO/OSM attribution", () =>
     expect(violations, JSON.stringify(violations, null, 2)).toEqual([]);
   });
 });
+
+// P10 (Ben, live app, 2026-09-24): Help > Docs opened the documentation book's PREFACE, not the
+// Atlas chapter he was looking for -- docsHref was a plain `.../docs/{ver}/` with no chapter path.
+// docs/apps/atlas.qmd now exists (docs repo 49bc28b), published per release as `apps/atlas.html`
+// (src/lib/release/docsUrl.ts's own header). Both the desktop Help disclosure's "Docs" item and
+// the phone ⋯ menu's "Docs" item read the SAME `docsHref` (Shell.svelte), so one fixture per
+// access level covers both surfaces.
+test.describe("P10: Help > Docs opens the release's Atlas chapter", () => {
+  test("desktop Help menu: a public release (v7) links straight to its Atlas chapter", async ({
+    page,
+  }) => {
+    await gotoShell(page, DESKTOP);
+    await page.locator('[data-control="help"]').click();
+    const docsLink = page.locator("#help-menu").getByRole("link", { name: "Docs" });
+    await expect(docsLink).toHaveAttribute(
+      "href",
+      "https://marinesensitivity.org/docs/v7/apps/atlas.html",
+    );
+  });
+
+  test("phone ⋯ menu: the same public-release chapter link", async ({ page }) => {
+    await gotoShell(page, PHONE);
+    await page.locator('[data-control="more-menu"]').click();
+    const docsItem = page
+      .getByRole("menu", { name: "More" })
+      .getByRole("menuitem", { name: "Docs" });
+    await expect(docsItem).toHaveAttribute(
+      "href",
+      "https://marinesensitivity.org/docs/v7/apps/atlas.html",
+    );
+  });
+
+  test("a restricted release (v9) links to the chapter on the signed-in preview host, not the public book", async ({
+    page,
+  }) => {
+    await routeBucket(page, "v9");
+    await routeSession(page, { preview: true, ver: "v9" });
+    await routeSealFixture(page);
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/?ver=v9&theme=navy");
+    await waitForHydration(page);
+
+    await page.locator('[data-control="help"]').click();
+    const docsLink = page.locator("#help-menu").getByRole("link", { name: "Docs" });
+    await expect(docsLink).toHaveAttribute(
+      "href",
+      "https://preview.marinesensitivity.org/docs/v9/apps/atlas.html",
+    );
+  });
+});
