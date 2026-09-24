@@ -1,12 +1,12 @@
 diff --git a/.github/workflows/pages.yml b/.github/workflows/pages.yml
-index 5bcd950..b7e707f 100644
+index faa7ed9..e456988 100644
 --- a/.github/workflows/pages.yml
 +++ b/.github/workflows/pages.yml
-@@ -82,7 +82,6 @@ jobs:
+@@ -88,7 +88,6 @@ jobs:
          env:
            VITE_SEAL: "1"
            VITE_AGENCY: MMA
 -          VITE_FEEDBACK_URL: ${{ vars.VITE_FEEDBACK_URL }}
            VITE_PREVIEW_ATLAS_ROUTE: ${{ vars.VITE_PREVIEW_ATLAS_ROUTE }}
+           VITE_LOG_URL: ${{ vars.VITE_LOG_URL }}
  
-       # atlas-0 Deliverable 4 (F3 extended; budget relaxed 350->450 KB by plan D13, 2026-09-21):
