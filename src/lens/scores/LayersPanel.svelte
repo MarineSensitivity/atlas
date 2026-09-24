@@ -245,6 +245,14 @@
     font: inherit;
     font-size: var(--text-sm);
     width: 100%;
+    /* D2 (Opus eyes-on assessment, 2026-09-24): this native <select> was already full-width, but
+       its own rendered value text was CLIPPED mid-word ("...category and primar") with no
+       ellipsis -- the one control in the first panel every visitor sees. Chromium (the one engine
+       this app's own gate tests, and the only one with reliable support) honors text-overflow on
+       a closed <select>'s value once it is forced single-line/non-overflowing like this. */
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   .select:focus-visible {

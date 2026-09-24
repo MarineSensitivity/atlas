@@ -8,17 +8,31 @@
   // atlas-3 step 4 fix round 1 (SC 4.1.3): renders no live region of its own -- announces once,
   // through the ONE shared region (src/lib/ui/announcer.ts), when it first mounts. (A fuller
   // aria-busy pattern on whatever container this loader appears inside is left for atlas-8.)
+  //
+  // U1 fix round (CI run 35956406448): a PERSISTENT, app-level loader (Shell.svelte's first-view
+  // map loader, the only OTHER caller besides the gallery demo below) outlives a single mount --
+  // its "Map ready" (on hide, announced separately by the caller) can fire at any later,
+  // unpredictable moment (whenever the map's own "idle" settles) and clobber the shared region's
+  // text out from under an UNRELATED feature's own announcement made in between (a popup's
+  // description, a chunk-load failure) -- three real specs (scores.popup, species-popup,
+  // shell.chunk-error) read stale "Map ready" instead of their own text. `announceOnMount=false`
+  // opts a caller like that OUT of this shared-region announcement so it can use its own, isolated
+  // live region instead (Shell.svelte does); the gallery demo section (a short-lived, one-shot
+  // mount with nothing else competing for the shared region) keeps the original default.
   import { onMount } from "svelte";
   import { announce } from "./announcer";
 
   interface Props {
     label?: string;
+    announceOnMount?: boolean;
   }
 
-  let { label = "Loading…" }: Props = $props();
+  let { label = "Loading…", announceOnMount = true }: Props = $props();
   const cells = [0, 1, 2, 3, 4, 5, 6];
 
-  onMount(() => announce(label));
+  onMount(() => {
+    if (announceOnMount) announce(label);
+  });
 </script>
 
 <div class="honeycomb">

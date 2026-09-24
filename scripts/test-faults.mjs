@@ -743,13 +743,78 @@ const FAULTS = [
       "footnote it should not (the original 'footnotes almost every cell' bug, replayed)",
     gate: ["npx", "vitest", "run", "tests/lib/report/scores.test.ts"],
   },
-  // P7 (0.10.46, "drawn places vanish from the map after the second draw"): terra-draw adds its
-  // OWN `td-*` sources/layers straight to the live map (draw.ts's own header), never through
-  // composeStyle -- `applyStyle()`'s `preserveDrawLayers()` call is what keeps a reactive
-  // `setStyle(diff:true)` from silently deleting them out from under it (live-reproduced: an
-  // uncaught `TypeError: Cannot read properties of undefined (reading 'setData')` inside terra-
-  // draw's own vendor chunk, the moment it next tried to update a source the diff had removed).
-  // This patch drops that call and must turn `preserveDrawLayers`'s own vitest gate red.
+  {
+    id: "datatable-min-width-drop",
+    patch: "tests/faults/datatable-min-width-drop.patch",
+    describe:
+      "columnWidthPx() always returns the narrow (numeric/boolean) width -- the text-column " +
+      "minimum is gone, so the Zone column squeezes down to the same ~60px every numeric column gets",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.table.spec.ts",
+      "-g",
+      "every column's rendered width honours dataTableCore.ts's own minimum",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4375" },
+  },
+  {
+    id: "legend-fixed-corner",
+    patch: "tests/faults/legend-fixed-corner.patch",
+    describe:
+      "ScoresLegend.svelte drops its dock=right override -- the legend sits back under the " +
+      "default right-docked panel (D1's real defect, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.legend-position.spec.ts",
+      "-g",
+      "dock=right \\(the default\\)",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4379" },
+  },
+  {
+    id: "select-width-removed",
+    patch: "tests/faults/select-width-removed.patch",
+    describe:
+      "Select.svelte's .select loses width:100% -- the box shrinks to its text again while the " +
+      "chevron floats past its right edge (D2's real defect, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/layers.select-style.spec.ts",
+      "-g",
+      "the box spans to the chevron",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4379" },
+  },
+  {
+    id: "phone-search-button-removed",
+    patch: "tests/faults/phone-search-button-removed.patch",
+    describe:
+      "Shell.svelte drops the phone-only search button -- no search or species picker is reachable " +
+      "on the phone again (P1's real defect, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.phone-search.spec.ts",
+      "-g",
+      "the button exists",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4379" },
+  },
   {
     id: "places-draw-style-drops-td-layers",
     patch: "tests/faults/places-draw-style-drops-td-layers.patch",
@@ -758,13 +823,6 @@ const FAULTS = [
       "MapLibre's diff silently deletes them again, the same uncaught crash P7 live-reproduced",
     gate: ["npx", "vitest", "run", "tests/map/style.test.ts", "-t", "preserves a live td-"],
   },
-  // P7 fault 2 (Rule 3, "the circle tool bypasses writePlaces"): every drawable shape shares ONE
-  // terra-draw `finish` listener (`createDrawSession`'s own `draw.on("finish", onFinish)`), which
-  // is what makes `writePlaces()` the SAME path for a circle as a polygon. This patch drops the
-  // circle mode from the `modes` array terra-draw is constructed with (a plausible accidental
-  // regression, e.g. a refactor dropping one array entry) -- `setMode("circle")` then has no mode
-  // to switch to, so a circle session never finishes and never reaches `writePlaces()` at all. Must
-  // turn `e2e/places.spec.ts`'s own circle-draw test red.
   {
     id: "places-circle-mode-dropped",
     patch: "tests/faults/places-circle-mode-dropped.patch",

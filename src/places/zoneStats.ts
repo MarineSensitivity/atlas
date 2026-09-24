@@ -67,6 +67,31 @@ export function zoneStatsFor(boot: unknown, unit: string, keys: readonly string[
   );
 }
 
+/**
+ * Every zone of `unit` the release publishes at all -- the Places panel's "Add a Program Area"
+ * chooser (orchestrator-directed, 2026-09-24: "the Places tool currently has NO Program Area list
+ * at all, only Pick mode on the map"), sorted by its own resolved `paLabel` text ("Full Name (KEY)"
+ * when published, else the bare key) so the list reads alphabetically by name, not by boot's own
+ * publish order. `[]` for a unit the release does not publish (never a throw).
+ */
+export function allZoneStats(boot: unknown, unit: string): ZoneStat[] {
+  const zones = (boot as { zones?: Record<string, unknown> } | null | undefined)?.zones;
+  const rows = zones && typeof zones === "object" ? zones[unit] : undefined;
+  if (!Array.isArray(rows)) return [];
+  const out: ZoneStat[] = [];
+  for (const raw of rows as BootZoneRow[]) {
+    if (!raw || typeof raw !== "object" || typeof raw.key !== "string") continue;
+    out.push({
+      key: raw.key,
+      name: typeof raw.name === "string" && raw.name ? raw.name : raw.key,
+      areaKm2: num(raw.area_km2),
+      coveragePct: num(raw.pct_covered) ?? num(raw.coverage),
+      composite: num(raw.composite) ?? num(raw.score),
+    });
+  }
+  return out.sort((a, b) => paLabel(a.key, a.name).localeCompare(paLabel(b.key, b.name)));
+}
+
 /** the list row's summary over several keys (a multi-pick zone place): areas SUM, composite is the
  * plain mean of the ones known. Display only -- the SAME published composite figures the row shows
  * are computed by msens at publish time; this never re-derives or feeds a score. */
@@ -86,10 +111,25 @@ export function summarizeZoneStats(stats: readonly ZoneStat[]): {
   };
 }
 
-/** the display name for a zone place's row: every resolved name, ", "-joined -- "St. George
- * Basin, Western Gulf of Alaska" rather than raw keys once boot has a row for them. */
+/**
+ * P3 fix (owner-reported, 2026-09-24): "Program area selection should list full names and
+ * parenthetical acronyms" -- everywhere a Program Area (or any zone) is presented to the user, it
+ * reads "Aleutian Arc (ALA)", never the bare key alone. `name` is whatever the release's app
+ * bundle publishes for this key (`ZoneStat.name`, already falls back to `key` when the bundle
+ * carries no `name` row -- `zoneStatFromBoot` above) -- when it is missing OR happens to equal the
+ * key, this falls back to the bare key rather than printing "ALA (ALA)". URLs/state stay keyed by
+ * the acronym; this is display text only.
+ */
+export function paLabel(key: string, name: string | null | undefined): string {
+  if (!name || name === key) return key;
+  return `${name} (${key})`;
+}
+
+/** the display name for a zone place's row: every resolved "Name (KEY)" label (`paLabel`, above),
+ * ", "-joined -- "St. George Basin (GAA), Western Gulf of Alaska (WGA)" once boot has a row for
+ * them; falls back to the bare key per zone when the bundle publishes none. */
 export function zoneDisplayName(stats: readonly ZoneStat[]): string {
-  return stats.map((s) => s.name).join(", ");
+  return stats.map((s) => paLabel(s.key, s.name)).join(", ");
 }
 
 /**

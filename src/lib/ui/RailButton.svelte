@@ -141,9 +141,19 @@
     font-size: 11px;
     line-height: 1.1;
     cursor: pointer;
-    transition:
-      background var(--motion-fast) var(--ease-out),
-      color var(--motion-fast) var(--ease-out);
+    /* U1 fix round (CI run 35956406448, matrix.a11y "rail tool: Flower plot"): background/color
+       were transitioning together over --motion-fast (150ms) -- switching tools deselects the
+       PREVIOUS button, fading its gold `is-on` background back toward transparent WHILE its text
+       fades from navy back to --text-secondary at the same time. Caught directly (a DOM sweep
+       mid-transition): the outgoing button briefly renders `rgba(232,194,74,0.04)` (a near-
+       transparent gold tint over the page's own dark surface) with text still close to
+       --text-secondary -- axe scores that combination as a REAL sub-4.5:1 violation, an
+       intermediate frame worse than either the idle or active end state, which is exactly what
+       WCAG 1.4.3 cares about (a rendered frame, not just the settled one). Dropped: an instant,
+       discrete switch between the two known-good states is the only way to guarantee no frame in
+       between is ever under-contrast. `--motion-fast` itself is untouched (still used elsewhere,
+       still 0ms under prefers-reduced-motion) -- this is scoped to background/color on this ONE
+       element only. */
   }
 
   .railitem:hover {
