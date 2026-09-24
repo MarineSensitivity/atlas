@@ -221,12 +221,17 @@ generator must follow:
 | `chevronUp`    | `mdiChevronUp`           | accordion open                                                                                          |
 | `collapseSide` | `mdiChevronDoubleRight`  | panel header control 1 (desktop)                                                                        |
 | `collapseDown` | `mdiChevronDoubleDown`   | sheet header control 1 (phone)                                                                          |
-| `dockRight`    | `mdiDockRight`           | panel header control 2 (desktop "half")                                                                 |
-| `dockBottom`   | `mdiDockBottom`          | sheet header control 2 (phone "half")                                                                   |
-| `expand`       | `mdiArrowExpand`         | header control 3 ("full")                                                                               |
+| `dockRight`    | `mdiDockRight`           | panel dock control (desktop, R1)                                                                        |
+| `dockBottom`   | `mdiDockBottom`          | panel dock control (desktop, R1)                                                                        |
+| `dockLeft`     | `mdiDockLeft`            | panel dock control (desktop, R1)                                                                        |
+| `expand`       | `mdiArrowExpand`         | header control 3 ("full"), sheet "full"                                                                 |
 | `collapseAll`  | `mdiArrowCollapse`       | "full" toggled back, panel restore from a pill                                                          |
 | `close`        | `mdiClose`               | modal close, chip dismiss                                                                               |
-| `info`         | `mdiInformationOutline`  | the `ⓘ` popover trigger, the About card                                                                 |
+| `info`         | `mdiInformationOutline`  | the `ⓘ` popover trigger, the About popover (R2)                                                         |
+| `maximize`     | `mdiFullscreen`          | panel header control (R1, maximize to stage)                                                            |
+| `restore`      | `mdiFullscreenExit`      | panel header control (R1, restore from maximize)                                                        |
+| `more`         | `mdiDotsHorizontal`      | phone top-bar overflow (⋯) menu (R2)                                                                    |
+| `feedback`     | `mdiMessageAlertOutline` | top bar "Feedback" (R2)                                                                                 |
 | `copy`         | `mdiContentCopy`         | copy the scientific / common name                                                                       |
 | `check`        | `mdiCheck`               | merged-model pill, selected row                                                                         |
 | `alert`        | `mdiAlertCircleOutline`  | a denied release, a failed upload                                                                       |

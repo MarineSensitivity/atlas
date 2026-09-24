@@ -1,3 +1,45 @@
+# atlas 0.10.36
+
+U1 (docs/usability.md §7, owner decisions 2026-09-24): the shell's panel model and chrome
+placement. R1 (dockable panel, not floating windows) and R2 (About popover + Feedback + a phone ⋯
+menu), plus the round's own default-camera/loader and legend-chip deliverables.
+
+- **R1 — one dockable panel**, replacing the "collapse / half / full" model. `Panel.svelte`: a dock
+  control (left/right/bottom, a control in the header; bottom = a horizontal drawer), drag-resize
+  AND arrow-key resize (10px steps, Shift = 50px) on the panel's map-facing edge (320-720px),
+  maximize to the whole stage (a backdrop, Esc restores the previous dock, focus trapped inside
+  while maximized, the map stays mounted underneath), and the existing collapse-to-edge-pill kept.
+  Geometry (`collapsed`/`maximized`/`dock`/`size`) is chrome only — remembered per viewport bucket
+  in localStorage (`panelGeometry.ts`), never the URL. `SpeciesTable.svelte`/`ZonesTable.svelte` get
+  `table-layout: fixed` + ellipsis-truncated cells so every column fits the panel's ACTUAL width at
+  the widest dock and in maximize, with no horizontal scroll (the owner's acceptance case).
+- **R2 — About + Feedback move off the map.** "About this release" leaves the on-map bottom-left
+  card for an (i) popover-dialog at the top bar's right end (release/status/app version, a
+  restricted-release watermark note, the seal at >= 72px per D10, links to docs/changelog/GitHub).
+  "Feedback" (the old "Report a problem" link) becomes a top-bar control, calling the SAME existing
+  handler behind one function boundary (a later U3 round only changes that function). On the phone,
+  both — plus Share/Report/Help — live under one ⋯ overflow menu (`role="menu"`, arrow-key roving,
+  Esc). New `src/shell/TopBarActions.svelte`, mounted from `Shell.svelte` with one line so the U5/U6
+  rounds (rail, Report/Help/theme) stay additive.
+- **Usability M4 — the default camera now frames the study area padded for the docked panel/sheet**
+  (`src/lib/map/camera.ts#paddedStudyAreaCenter` + `chromePadding.ts`), instead of centering
+  regardless of how much of the map the chrome covers; an explicit `?map=` is never second-guessed.
+  A honeycomb loader covers the map until the first real tile settles, announced politely ("Map
+  loading" / "Map ready"), `pointer-events: none` so it never blocks a click.
+- **Usability M14 — a compact legend chip on the phone** (`src/lib/ui/LegendChip.svelte`), replacing
+  "no legend at all below 900px"; tapping it opens the same legend content full-size. Mutually
+  exclusive with the desktop floating legend, so "one legend on screen at a time" still holds.
+- **Map-chrome parity audit — MapLibre + CARTO/OSM attribution**, visible with no interaction at
+  every viewport. A labelled region OUTSIDE `#map` (never a MapLibre-injected in-map control):
+  `#map` carries `role="img"`, and ARIA forbids a role=img element having accessible descendants.
+- New gates: `e2e/shell.panel.spec.ts`, `e2e/shell.chrome.spec.ts`, `e2e/shell.firstview.spec.ts`;
+  `e2e/keyboard-walk.spec.ts` steps 4-5; `tests/map/camera.test.ts`/`chromePadding.test.ts`.
+- **Merged forward onto 0.10.35** (the study-area-camera fix below): the padded default-camera fit
+  from M4 above now defers to that round's `shouldFlyToArea` — an explicit `?area=` in the URL wins
+  over the padded default fit exactly as an explicit `?map=` already did, and a user's pan after
+  either is never fought. `e2e/scores.studyarea.spec.ts` re-run green alongside this round's own
+  specs after the merge (see that spec's own precedence assertions).
+
 # atlas 0.10.35
 
 Fix S-01: the study-area camera did not move (owner report, live public v7, 2026-09-24).

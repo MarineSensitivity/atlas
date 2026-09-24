@@ -107,15 +107,22 @@
     }
     speciesRows = undefined;
     compositionRows = undefined;
+    // two INDEPENDENT queries, two independent failures: the species table and the composition
+    // treemap are different tabs of this SAME panel (subTab), so a composition.sql failure (e.g.
+    // a taxonomy join mismatch on some release) must not also blank the species table -- they used
+    // to share one try/catch, so ANY failure in EITHER query nulled BOTH, even when the species
+    // rows had already loaded successfully one line above.
     try {
-      const rows = await loadSpeciesRows(ver, boot as Record<string, unknown>, {
+      speciesRows = await loadSpeciesRows(ver, boot as Record<string, unknown>, {
         selection,
         zoneAllKey: allKey,
       });
-      speciesRows = rows;
-      compositionRows = await loadCompositionRows(ver, boot as Record<string, unknown>);
     } catch {
       speciesRows = null;
+    }
+    try {
+      compositionRows = await loadCompositionRows(ver, boot as Record<string, unknown>);
+    } catch {
       compositionRows = null;
     }
   }

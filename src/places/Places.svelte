@@ -847,7 +847,7 @@
 
   .draw-tool--active {
     background: var(--fill-accent);
-    border-color: var(--fill-accent);
+    border-color: var(--border-accent);
     color: var(--text-on-accent);
   }
 
@@ -881,7 +881,7 @@
   }
 
   .place-row--selected {
-    border-color: var(--fill-accent);
+    border-color: var(--border-accent);
   }
 
   .row-select {

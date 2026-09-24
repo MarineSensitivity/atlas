@@ -81,7 +81,11 @@ test.describe("Report a problem: the control's href never carries the hash", () 
 
     await link.focus();
     await expect(link).toBeFocused();
-    await expect(link).toHaveAccessibleName(/report a problem/i);
+    // R2 (docs/usability.md §7, landed after this spec): the control moved from an on-map
+    // bottom-left "Report a problem" link into the top bar, RELABELLED "Feedback" -- the same
+    // action (`[data-control="feedback"]`, `openFeedback()`), a shorter name that fits a top-bar
+    // icon+text control (TopBarActions.svelte).
+    await expect(link).toHaveAccessibleName(/feedback/i);
   });
 
   test("the href is recomputed when the lens changes, never frozen at mount", async ({ page }) => {

@@ -479,6 +479,36 @@
           data-control="help"
           ><span class="sk-icon-tool"></span
         ></span>
+
+        <!--
+          R2: About/Feedback moved off the map into the top bar (TopBarActions.svelte) -- plain
+          `.tool` spans, same convention as the four above (a dedicated skeleton class here once
+          gave one its OWN `display`, which -- tied in specificity -- landed LATER than
+          `.topbar-desktop-only`'s hide rule in source order and stayed visible at phone width;
+          see shell.css's header comment on the fix). The ⋯ overflow trigger is phone-only
+          (`.tool.topbar-phone-only`, shell.css).
+        -->
+        <span
+          class="tool topbar-desktop-only"
+          aria-hidden="true"
+          data-tour="feedback"
+          data-control="feedback"
+          ><span class="sk-icon-tool"></span>Feedback</span
+        >
+        <span
+          class="tool topbar-desktop-only"
+          aria-hidden="true"
+          data-tour="about"
+          data-control="about"
+          ><span class="sk-icon-tool"></span
+        ></span>
+        <span
+          class="tool topbar-phone-only"
+          aria-hidden="true"
+          data-tour="more"
+          data-control="more-menu"
+          ><span class="sk-icon-tool"></span
+        ></span>
         <span class="tool" aria-hidden="true" data-tour="theme" data-control="theme"
           ><span class="sk-icon-tool"></span
         ></span>
@@ -528,9 +558,19 @@
             <div class="sk-panel-head">
               <p class="sk-panel-title">Layers</p>
               <div class="sk-panel-controls">
+                <!-- R1: Panel's own 5 (dock left/bottom/right, maximize, collapse), desktop only --
+                     `.sk-panel-ctrl` is `display:none` below 900px (shell.css) since Panel itself
+                     never renders there (Sheet does, below). -->
                 <span class="sk-panel-ctrl"></span>
                 <span class="sk-panel-ctrl"></span>
                 <span class="sk-panel-ctrl"></span>
+                <span class="sk-panel-ctrl"></span>
+                <span class="sk-panel-ctrl"></span>
+                <!-- Sheet's own 3 (collapse/half/full, unchanged by R1), phone only -- the mirror
+                     image of the rule above (shell.css). -->
+                <span class="sk-sheet-ctrl"></span>
+                <span class="sk-sheet-ctrl"></span>
+                <span class="sk-sheet-ctrl"></span>
               </div>
             </div>
             <div class="sk-panel-body">
@@ -555,27 +595,6 @@
               <div class="sk-layers-control"></div>
             </div>
           </div>
-        </div>
-
-        <div class="about-region" id="about-region" data-tour="about" data-control="about">
-          <div class="sk-about" aria-hidden="true">
-            <div class="sk-about-head">
-              <span class="sk-icon-tool"></span>
-              <h2>About this release</h2>
-              <span class="sk-about-tool"></span>
-            </div>
-          </div>
-          <!-- atlas-8 Deliverable 4: mirrors the hydrated "Report a problem" link's box model
-               (shell.css's `.sk-feedback-link`/`.feedback-link`) so the About card's bottom-anchored
-               region shifts up by the SAME amount on both sides -- see shell.css's own comment.
-               tests/shell/shell-invariants.test.ts also requires this exact data-control/data-tour
-               pair to exist here, matching Shell.svelte's real control. -->
-          <span
-            class="sk-feedback-link"
-            data-tour="feedback"
-            data-control="feedback"
-            aria-hidden="true"
-          ></span>
         </div>
       </main>
     </div>
