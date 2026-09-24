@@ -49,7 +49,14 @@ export const SCORES_TOUR_STEPS: TourStep[] = [
     title: "The map",
     description:
       "Colour is the combined sensitivity score for each 0.05° cell of US waters (red high, blue low).",
-    before: (a) => a.setLens("scores"),
+    // guarded (a tour started while ALREADY on the scores lens is the common case): calling
+    // setLens() unconditionally re-set `sel.out` to its lens default even when the lens itself
+    // was unchanged, which reset in-flight lens state for no reason -- measured on the species
+    // side (see the species step below) as a legend that never resolved because its OWN
+    // redundant setLens() call kept restarting the species data load underneath the walk.
+    before: (a) => {
+      if (a.getLens() !== "scores") a.setLens("scores");
+    },
   },
   {
     id: "release",
@@ -117,7 +124,14 @@ export const SPECIES_TOUR_STEPS: TourStep[] = [
     side: "bottom",
     title: "Search",
     description: "Find a species by common or scientific name.",
-    before: (a) => a.setLens("species"),
+    // guarded, same reason the scores "map" step's identical guard has: an UNCONDITIONAL
+    // setLens("species") here, even when a `?sp=` deep link already put the shell on the species
+    // lens, reset `sel.out` and restarted the reactive chain the species lens' own data load
+    // depends on -- measured directly: the "legend" step's anchor (a REAL resolved species query)
+    // never appeared, reproducibly, until this guard was added.
+    before: (a) => {
+      if (a.getLens() !== "species") a.setLens("species");
+    },
   },
   {
     id: "card",

@@ -10,13 +10,13 @@ import {
   type TourActions,
 } from "../../src/shell/tour";
 
-function fakeActions(): TourActions & {
+function fakeActions(currentLens: "scores" | "species" = "scores"): TourActions & {
   calls: { setLens: string[]; selectTool: string[]; snapshot: number; restore: number };
 } {
   const calls = { setLens: [] as string[], selectTool: [] as string[], snapshot: 0, restore: 0 };
   return {
     calls,
-    getLens: () => "scores",
+    getLens: () => currentLens,
     setLens: (l) => calls.setLens.push(l),
     selectTool: (t) => calls.selectTool.push(t),
     snapshot: () => calls.snapshot++,
@@ -69,10 +69,19 @@ describe("SCORES_TOUR_STEPS: 8 steps, docs/usability.md §5", () => {
     }
   });
 
-  it("the map step switches to the scores lens (a tour started from Species must land here)", () => {
-    const a = fakeActions();
+  it("the map step switches to the scores lens when the tour started from Species", () => {
+    const a = fakeActions("species");
     SCORES_TOUR_STEPS[0]?.before?.(a);
     expect(a.calls.setLens).toEqual(["scores"]);
+  });
+
+  // guarded (found by e2e/tour.spec.ts's own species walk going red): an UNCONDITIONAL setLens()
+  // call reset `sel.out` (defaultOut(lens)) even when the lens was UNCHANGED, restarting the
+  // reactive chain the lens' own data load depends on for no reason.
+  it("the map step does NOT call setLens() when already on the scores lens", () => {
+    const a = fakeActions("scores");
+    SCORES_TOUR_STEPS[0]?.before?.(a);
+    expect(a.calls.setLens).toEqual([]);
   });
 });
 
@@ -97,10 +106,20 @@ describe("SPECIES_TOUR_STEPS: 5 steps, docs/usability.md §5", () => {
     }
   });
 
-  it("the search step switches to the species lens", () => {
-    const a = fakeActions();
+  it("the search step switches to the species lens when the tour started from Scores", () => {
+    const a = fakeActions("scores");
     SPECIES_TOUR_STEPS[0]?.before?.(a);
     expect(a.calls.setLens).toEqual(["species"]);
+  });
+
+  // guarded, the same regression the scores "map" step's identical test above covers: a real
+  // `?sp=` deep link already resolves `sel.lens === "species"` before the tour ever starts, so an
+  // unconditional setLens("species") here reset the species lens' own reactive load underneath
+  // the walk -- reproduced directly in e2e/tour.spec.ts (the legend step's anchor never appeared).
+  it("the search step does NOT call setLens() when already on the species lens", () => {
+    const a = fakeActions("species");
+    SPECIES_TOUR_STEPS[0]?.before?.(a);
+    expect(a.calls.setLens).toEqual([]);
   });
 
   it("the card step opens the layers tool (species' own card lives there)", () => {
