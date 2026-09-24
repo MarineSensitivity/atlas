@@ -16,6 +16,24 @@ Round 2, Q4: the feedback endpoint and preview-host link flags.
   and every restricted row in the release list. Flipping the flag to `1` (once atlas-9 ships)
   restores today's direct link with no code change.
 
+# atlas 0.10.51
+
+Q1: **the top-bar search now works in the Scores lens.** It was a stub `<input>` that did nothing
+at all when typed into (only the Species lens' search ever worked). It now matches, offline (no
+Nominatim, no third-party geocoder, no network call — entirely against what the release itself
+already publishes):
+
+- **Program Areas** (and any subregion/ecoregion archive the release also happens to publish), by
+  key ("ALA") or by name ("Aleutian"). Choosing one selects it exactly as clicking it on the map
+  would — same URL fields, same flower/species/table panels — and flies the camera to it.
+- **Coordinates** — "lon, lat" (e.g. "-140, 57"), with "lat, lon" also read correctly, either via an
+  explicit `lat`/`lon` label or inferred when the default order would be out of range. Flies to the
+  point and selects that cell.
+
+Results are a keyboard-navigable list (Arrow keys, Enter to select, Esc to close), same accessible
+pattern as the species search. Available on both the desktop top-bar field and the phone search
+modal.
+
 # atlas 0.10.50
 
 P10: Help ▸ Docs (desktop Help menu and the phone ⋯ menu) now opens the current release's **Atlas

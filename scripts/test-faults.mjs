@@ -1096,6 +1096,34 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4433" },
   },
+  {
+    id: "scores-search-matcher-empty",
+    patch: "tests/faults/scores-search-matcher-empty.patch",
+    describe:
+      "matchZones() reads zoneRows(boot, '') instead of the real unit -- the top-bar Scores " +
+      "search matcher against Program Areas/subregions/ecoregions always finds nothing, for " +
+      "any query (Q1 round, owner-reported: the search box did nothing at all)",
+    gate: ["npx", "vitest", "run", "tests/lens/scores/search.test.ts"],
+  },
+  {
+    id: "scores-search-enter-noop",
+    patch: "tests/faults/scores-search-enter-noop.patch",
+    describe:
+      "ScoresSearch.svelte's onKeydown() Enter branch no longer calls pick(activeIndex) -- the " +
+      "results list opens and highlights a match, but pressing Enter selects nothing (no sel= " +
+      "write, no camera move, no popup)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.search.spec.ts",
+      "-g",
+      "typing 'ALA' lists the Aleutian Arc",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4421" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

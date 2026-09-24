@@ -1,0 +1,13 @@
+diff --git a/src/lens/scores/search.ts b/src/lens/scores/search.ts
+index 03a0a12..89357ed 100644
+--- a/src/lens/scores/search.ts
++++ b/src/lens/scores/search.ts
+@@ -76,7 +76,7 @@ export function matchZones(boot: unknown, query: string, limit = MAX_RESULTS): Z
+   const ranked: Array<{ m: ZoneSearchMatch; rank: number; order: number }> = [];
+   let order = 0;
+   for (const unit of searchableZoneUnits(boot)) {
+-    for (const z of zoneRows(boot, unit)) {
++    for (const z of zoneRows(boot, "")) {
+       const rank = matchRank(q, z.key, z.name);
+       if (rank === null) continue;
+       ranked.push({
