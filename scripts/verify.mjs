@@ -579,6 +579,18 @@ const SCORES_STATES = [
     path: "/?sel=cell:100&map=146.075,74.725,8",
     assert: selectionLineProbe(),
   },
+  // R3 (round-2 plan §5 U4): one `layers=` deviation in the matrix -- hides the Program-Area
+  // outline group (`data-zones`), proving a real Layers-panel state renders (and passes axe, via
+  // matrix.a11y.spec.ts) without breaking the raster itself. Only `data-zones` is touched (never a
+  // colour-affecting group): `scoresRasterProbe()`'s expected blend assumes the DEFAULT basemap/
+  // raster colours, so a state that also dimmed a colour group would need its own bespoke expected
+  // blend -- out of scope for "one state added to the matrix," not a limitation of the stack itself.
+  {
+    name: "scores layers=data-zones:h (Program Areas hidden)",
+    kind: "scores",
+    path: "/?layers=basemap-land,basemap-bathymetry,basemap-boundaries,basemap-roads,basemap-labels,data-raster,data-zones:h,data-places",
+    assert: scoresRasterProbe(),
+  },
 ];
 
 // M6: `param` fixes a real bug this matrix's assertions immediately surfaced -- `WALRUS_AM_MDL_KEY`
