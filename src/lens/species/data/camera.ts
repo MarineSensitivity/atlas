@@ -31,8 +31,13 @@ import type { Bbox, TaxonCard } from "./shards";
 /** `[[west, south], [east, north]]` — the shape the map module takes. `east` MAY exceed 180. */
 export type CameraBounds = [[number, number], [number, number]];
 
-/** the source rule that produced a camera — surfaced for the tests and for "Zoom to layer". */
-export type CameraSource = "input" | "merged" | "ecoregion" | "study-area";
+/** the source rule that produced a camera — surfaced for the tests and for "Zoom to layer".
+ * `"sibling"` (D8, Opus 5.5 eyes-on, 2026-09-24): a bbox from a DIFFERENT input of the SAME taxon —
+ * see {@link anyInputBbox}'s own header. `"cog-bounds"`: fetched from the drawn COG itself, the
+ * LAST resort when the bundle publishes no bbox at all (`state.svelte.ts#refineCameraFromCogBounds`
+ * — that step lives outside this module, which stays network-free by contract). */
+export type CameraSource =
+  "input" | "sibling" | "merged" | "ecoregion" | "study-area" | "cog-bounds";
 
 export interface BoundsCamera {
   kind: "bounds";
@@ -154,14 +159,45 @@ export function inputBbox(card: TaxonCard, dsKey: string, rep?: string): Bbox | 
 }
 
 /**
- * The camera for a taxon + the layer on screen (§6.3's fit target, with fix round 1's fallback
- * chain):
+ * D8 (Opus 5.5 eyes-on, 2026-09-24): the walrus card (v9, WORMS:137077) is the worked example —
+ * its `am` input (AquaMaps, `am|ITS-Mam-180639`) publishes `bbox: null` on both assets, and so does
+ * `card.merged`, yet the SAME taxon's `ax` input (AquaX) carries a real one
+ * (`[-177.7, 60.65, -139.15, 79]`, verified live in `tests/fixtures/species/v9/taxon/75.json`) —
+ * selecting the `am` layer used to fall all the way to the study area for want of a bbox that a
+ * SIBLING of the very taxon on screen already has. The first input (in the card's own order) that
+ * carries ANY bbox on ANY of its assets, `rep`-preferred the same way {@link inputBbox} is —
+ * `undefined` (not `selectedInput` itself, already tried by the caller, and not filtered by
+ * `is_mask`: a mask input's own footprint is still honestly this taxon's ground).
+ *
+ * `cameraFor()` tries this AFTER the caller's own ecoregion fallback, not before: a critical-
+ * habitat mask's bbox can be a small sliver of the taxon's real range (the leatherback's `ch_fws`
+ * is 0.1 x 0.05 deg — a single reef, not the species) and the ecoregion extent the caller already
+ * curated is the more representative fallback whenever one is supplied (`tests/lens/species/
+ * camera.test.ts`'s existing leatherback/globe cases pin exactly this ordering). In PRACTICE
+ * `state.svelte.ts` supplies no ecoregion bbox yet (its own header explains why), so this step is
+ * where the walrus `am` case actually resolves today. */
+export function anyInputBbox(card: TaxonCard, rep?: string): Bbox | null {
+  for (const input of card.inputs) {
+    const preferred = rep ? input.assets.find((a) => a.rep === rep && a.bbox) : undefined;
+    const bbox = (preferred ?? input.assets.find((a) => a.bbox))?.bbox;
+    if (bbox) return bbox;
+  }
+  return null;
+}
+
+/**
+ * The camera for a taxon + the layer on screen (§6.3's fit target, with fix round 1's chain, D8's
+ * "sibling" step added 2026-09-24):
  *   1. the INPUT's own extent (when an input is on screen), re-framed;
  *   2. the MERGED extent, re-framed — a wraparound range's own COG honestly is -180..180, and
  *      obeying it framed every Bering Sea species off Iceland (§11.10);
  *   3. the supplied ecoregion extent;
- *   4. the release's study-area view (`boot.study_areas[FULL]`), which always exists — so a v7
- *      species, for which NO bbox is published at all, frames US waters rather than the globe.
+ *   4. ANY OTHER input of the SAME taxon that publishes a bbox (`anyInputBbox` — the walrus `am`
+ *      selection frames itself off its own `ax` sibling's extent rather than falling one more step
+ *      to the whole study area; tried AFTER ecoregion, see that function's own header for why);
+ *   5. the release's study-area view (`boot.study_areas[FULL]`), which always exists — so a v7
+ *      species, for which NO bbox is published on ANY input (`state.svelte.ts`'s own COG-bounds
+ *      fetch is the caller's LAST resort beyond even this), frames US waters rather than the globe.
  * `null` only when the caller supplied no study area either.
  */
 export function cameraFor(
@@ -179,9 +215,39 @@ export function cameraFor(
   if (merged) return { kind: "bounds", bounds: boundsOf(merged), padding, source: "merged" };
   const er = framed(opts.fallbackBbox);
   if (er) return { kind: "bounds", bounds: boundsOf(er), padding, source: "ecoregion" };
+  const sibling = framed(anyInputBbox(card, opts.rep));
+  if (sibling) return { kind: "bounds", bounds: boundsOf(sibling), padding, source: "sibling" };
   const area = opts.studyArea;
   if (area)
     return { kind: "center", center: [area.lon, area.lat], zoom: area.zoom, source: "study-area" };
+  return null;
+}
+
+/**
+ * D8: the COG url the caller should ask `/cog/bounds` about, when `cameraFor()` above has already
+ * fallen all the way to `"study-area"` for want of ANY bbox in the bundle (v7's own case — see this
+ * module's header). Mirrors {@link inputBbox}'s own asset-selection rule so the url matches the
+ * SAME asset a bbox would have come from, EXCEPT it returns whichever asset is drawable at all
+ * (a `type: "cog"`) rather than requiring `.bbox`, since the whole point is that field is missing.
+ * `null` when nothing drawable is even a COG (a pmtiles-only taxon has no raster to ask titiler
+ * about). Deliberately NOT exported alongside a network call — this module stays network-free by
+ * contract (header: "WHY THERE IS NO QUERY HERE"); the caller (`state.svelte.ts`) does the actual
+ * `/cog/bounds` fetch.
+ */
+export function cogUrlForBoundsFallback(
+  card: TaxonCard,
+  selectedInput: string,
+  rep?: string,
+): string | null {
+  if (selectedInput !== MERGED_IN) {
+    const input = card.inputs.find((i) => i.dsKey === selectedInput || i.mdlKey === selectedInput);
+    if (input) {
+      const preferred = rep ? input.assets.find((a) => a.rep === rep) : undefined;
+      const chosen = preferred ?? input.assets[0];
+      if (chosen?.type === "cog") return chosen.url;
+    }
+  }
+  if (card.merged?.type === "cog") return card.merged.url;
   return null;
 }
 

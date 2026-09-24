@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CAMERA_WRITE_DELAY_MS,
   INITIAL_AREA_CAMERA_STATE,
+  MAX_STUDY_AREA_SHIFT_PX,
   NO_PADDING,
   boundsToCameraView,
   cameraEqual,
@@ -201,6 +202,60 @@ describe("boundsToCameraView", () => {
     );
     expect(zoom).toBeGreaterThanOrEqual(3);
   });
+
+  // P6/D8 (Opus 5.5 eyes-on, 2026-09-24): a docked panel/sheet occludes only ONE side, so the
+  // caller needs the SAME asymmetric-padding shift `paddedStudyAreaCenter` already applies to the
+  // initial camera — a uniform number (every caller before this round) is the degenerate case
+  // (shift zero, as the pre-existing tests above already pin) and must keep behaving exactly as
+  // before.
+  describe("asymmetric padding (ChromePadding)", () => {
+    const bounds: [[number, number], [number, number]] = [
+      [-10, -10],
+      [10, 10],
+    ];
+    const viewport = { width: 800, height: 600 };
+
+    it("a uniform ChromePadding (all four sides equal) matches the plain-number form", () => {
+      const byNumber = boundsToCameraView(bounds, viewport, { padding: 100 });
+      const byPadding = boundsToCameraView(bounds, viewport, {
+        padding: { top: 100, right: 100, bottom: 100, left: 100 },
+      });
+      expect(byPadding.center[0]).toBeCloseTo(byNumber.center[0], 9);
+      expect(byPadding.center[1]).toBeCloseTo(byNumber.center[1], 9);
+      expect(byPadding.zoom).toBeCloseTo(byNumber.zoom, 9);
+    });
+
+    it("a right-only reservation (a right-docked panel) shifts the fitted center EAST, same direction paddedStudyAreaCenter uses", () => {
+      const shifted = boundsToCameraView(bounds, viewport, {
+        padding: { top: 0, right: 300, bottom: 0, left: 0 },
+      });
+      const unpadded = boundsToCameraView(bounds, viewport, { padding: 0 });
+      expect(shifted.center[0]).toBeGreaterThan(unpadded.center[0]);
+      expect(shifted.center[1]).toBeCloseTo(unpadded.center[1], 6);
+    });
+
+    it("a bottom-only reservation (a phone sheet) shifts the fitted center SOUTH, and still shrinks the available height for the zoom", () => {
+      const shifted = boundsToCameraView(bounds, viewport, {
+        padding: { top: 0, right: 0, bottom: 300, left: 0 },
+      });
+      const unpadded = boundsToCameraView(bounds, viewport, { padding: 0 });
+      expect(shifted.center[1]).toBeLessThan(unpadded.center[1]);
+      expect(shifted.zoom).toBeLessThan(unpadded.zoom);
+    });
+
+    it("is NOT capped the way paddedStudyAreaCenter is — a fit's own zoom already keeps the shift proportionate", () => {
+      // MAX_STUDY_AREA_SHIFT_PX would clamp a 300px difference at the study-area's low zoom; a
+      // bounds fit computes its OWN (much higher, content-scaled) zoom, so 300px here shifts
+      // strictly more than the capped 200px would at the SAME zoom.
+      const at300 = boundsToCameraView(bounds, viewport, {
+        padding: { top: 0, right: 300, bottom: 0, left: 0 },
+      });
+      const at200 = boundsToCameraView(bounds, viewport, {
+        padding: { top: 0, right: 200, bottom: 0, left: 0 },
+      });
+      expect(at300.center[0]).toBeGreaterThan(at200.center[0]);
+    });
+  });
 });
 
 // usability M4: "frame the study area with padding for the panel/sheet". `paddedStudyAreaCenter`
@@ -247,10 +302,31 @@ describe("paddedStudyAreaCenter", () => {
     expect(out.lat).toBeLessThan(CENTER.lat);
   });
 
-  it("a bigger reservation shifts the center further, monotonically", () => {
-    const small = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 200 });
-    const big = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 500 });
+  it("a bigger reservation shifts the center further, monotonically, BELOW the cap", () => {
+    const small = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 50 });
+    const big = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 150 });
     expect(big.lon - CENTER.lon).toBeGreaterThan(small.lon - CENTER.lon);
+  });
+
+  // P2 (Opus 5.5 eyes-on, 2026-09-24): a phone sheet at "half" reserves ~450px of an 844px
+  // viewport, and the UNCAPPED shift this used to compute rotated the low-zoom globe so far that
+  // ~100 CSS px of blank "space" appeared above it (measured; see MAX_STUDY_AREA_SHIFT_PX's own
+  // header) -- a padding difference beyond the cap must shift NO FURTHER than the cap itself.
+  it("a reservation beyond the cap shifts no further than the cap (the P2 fix)", () => {
+    const atCap = paddedStudyAreaCenter(CENTER, ZOOM, {
+      ...NO_PADDING,
+      right: MAX_STUDY_AREA_SHIFT_PX,
+    });
+    const wayOver = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 452 }); // a real "half" sheet's own bottom reservation, applied here to the right axis for a clean same-axis comparison
+    expect(wayOver.lon).toBeCloseTo(atCap.lon, 9);
+  });
+
+  it("the cap applies per axis independently — a huge bottom AND a modest right both cap/pass through on their own", () => {
+    const out = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, bottom: 452, right: 50 });
+    const bottomOnly = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, bottom: 452 });
+    const rightOnly = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 50 });
+    expect(out.lat).toBeCloseTo(bottomOnly.lat, 9); // bottom alone is already at the cap
+    expect(out.lon).toBeCloseTo(rightOnly.lon, 9); // right alone is well under the cap
   });
 
   it("a higher zoom (a smaller world-px shift per degree) shifts the center LESS for the same padding", () => {

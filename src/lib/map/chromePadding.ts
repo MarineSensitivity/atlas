@@ -16,30 +16,40 @@ import type { SheetDetent } from "../ui/sheetGeometry";
  * one, and the user's own subsequent pan/zoom (URL state) takes over immediately. */
 const PHONE_RAIL_ROW_PX = 64;
 
-/** desktop: the docked panel's own reservation, or none if collapsed/maximized (a maximized panel
- * covers the whole stage -- there is no "visible remainder" left to frame a study area within, so
- * this returns no padding rather than a nonsensical one covering everything). */
+/** the top bar's own height (`tokens.css`'s `--size-topbar: 48px`, same estimate-not-import
+ * convention as `PHONE_RAIL_ROW_PX` above) -- P2 (Opus 5.5 eyes-on, 2026-09-24): this was
+ * previously NEVER reserved on either platform (`top` was always 0 out of both functions below),
+ * so the first-view shift only ever compensated for the panel/sheet, never the bar sitting over
+ * the map's own top edge. Present on BOTH desktop and phone (the topbar is the one piece of chrome
+ * neither `desktopPanelPadding` nor `phonePadding` gate on any state -- it is always there). */
+const TOPBAR_HEIGHT_PX = 48;
+
+/** desktop: the top bar, plus the docked panel's own reservation (none if collapsed/maximized -- a
+ * maximized panel covers the whole stage below the bar, so there is no "visible remainder" left to
+ * frame a study area within beyond the bar itself). */
 export function desktopPanelPadding(geometry: PanelGeometry): ChromePadding {
-  if (geometry.collapsed || geometry.maximized) return NO_PADDING;
+  const topbar = { ...NO_PADDING, top: TOPBAR_HEIGHT_PX };
+  if (geometry.collapsed || geometry.maximized) return topbar;
   switch (geometry.dock) {
     case "left":
-      return { ...NO_PADDING, left: geometry.size };
+      return { ...topbar, left: geometry.size };
     case "bottom":
-      return { ...NO_PADDING, bottom: geometry.size };
+      return { ...topbar, bottom: geometry.size };
     default:
-      return { ...NO_PADDING, right: geometry.size };
+      return { ...topbar, right: geometry.size };
   }
 }
 
-/** phone: the sheet's own height at its current detent, plus the bottom tab bar it sits above.
- * `peek`/`half` are approximated from `tokens.css`'s own constants (`--size-sheet-peek`: 96px,
- * `--size-sheet-half`: 46svh); `full` reserves the same fraction "half" does, capped, rather than
- * the true near-100% height -- a study area padded almost to the top edge is a worse first view
- * than one that keeps a sensible margin, and a user who chose "full" is about to look at the sheet,
- * not the map, anyway. */
+/** phone: the top bar, plus the sheet's own height at its current detent and the bottom tab bar it
+ * sits above. `peek`/`half` are approximated from `tokens.css`'s own constants (`--size-sheet-peek`:
+ * 96px, `--size-sheet-half`: 46svh); `full` reserves the same fraction "half" does, capped, rather
+ * than the true near-100% height -- a study area padded almost to the top edge is a worse first
+ * view than one that keeps a sensible margin, and a user who chose "full" is about to look at the
+ * sheet, not the map, anyway. */
 export function phonePadding(detent: SheetDetent, viewportHeightPx: number): ChromePadding {
   const railRow = PHONE_RAIL_ROW_PX;
-  if (detent === "peek") return { ...NO_PADDING, bottom: 96 + railRow };
+  const top = TOPBAR_HEIGHT_PX;
+  if (detent === "peek") return { ...NO_PADDING, top, bottom: 96 + railRow };
   const halfPx = viewportHeightPx * 0.46;
-  return { ...NO_PADDING, bottom: Math.round(halfPx) + railRow };
+  return { ...NO_PADDING, top, bottom: Math.round(halfPx) + railRow };
 }

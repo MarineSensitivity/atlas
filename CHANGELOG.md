@@ -1,3 +1,34 @@
+# atlas 0.10.45
+
+**P6 — map + lens defects from the Opus 5.5 eyes-on assessment (D3, D4, D8, D12, P2).**
+
+- **D3: a click outside the scored area no longer misleads.** The popup for a cell with no value
+  (off-grid, unscored — e.g. land) now reads a plain one-line "No scored cell here · lon …, lat …"
+  — never a cell id and never the layer's long title (a Utah click used to read "Cell 2711027 ·
+  lon -113.526, lat 38.932 · {30-word description}: no value"). That click also no longer WRITES
+  the selection: the previously selected scored cell (or nothing) stays selected, so the Flower and
+  Table panels never flash a misleading "not published"/"could not be loaded" message for a click
+  that never landed on scored data at all. Those panels' own empty-state copy is now "Click a
+  scored cell on the map to see its flower / species", with a genuine query failure (a real thrown
+  error, not just "nothing here") shown as a visually distinct message that names the failure.
+- **D4: the click popup shows the SHORT metric label, not the long description.** The popup used to
+  print `boot.layers[].label` verbatim (e.g. the full VGPM productivity description); it now prefers
+  the release manifest's own short per-metric name (`manifest.metrics[]`), matching the layer picker
+  and legend.
+- **D12: the popup tip now matches the popup's own background** in both themes (already the case in
+  code; re-verified with this round's other popup changes).
+- **D8: selecting a species model now frames its own extent**, not the whole default study area. A
+  model with no published bbox of its own now falls back to a SIBLING input's bbox for the same
+  taxon (e.g. AquaMaps framing off AquaX's extent) before falling to the study area, and — as the
+  true last resort, for a release that publishes no bbox anywhere (v1-v7) — fetches the drawn COG's
+  own extent from titiler's `/cog/bounds`.
+- **P2: the phone first view no longer leaves a large empty band of "sky" above the globe.** The
+  panel/sheet-driven initial-camera shift is now capped (`MAX_STUDY_AREA_SHIFT_PX`) so it stays in
+  the regime where its flat-Mercator math is a fair stand-in for the GLOBE projection's own
+  rendering at low zoom; the shift also now accounts for the top bar (previously unreserved on both
+  platforms). The same asymmetric, chrome-aware padding is available to any `fitBounds`-style camera
+  fit (`boundsToCameraView`'s new `ChromePadding` option), reused by D8's model-selection fly-to.
+
 # atlas 0.10.38
 
 **U4 — the Layers model (round-2 plan §5 U4, `docs/usability.md` §7 R3, Ben's decision 2026-09-24):

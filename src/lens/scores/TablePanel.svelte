@@ -14,7 +14,14 @@
   import { layerByKey, primaryUnitType, zoneAllKey, zoneRows } from "./boot";
   import { formatZoneToken } from "./selection";
   import type { ScoresSelection } from "./selection";
-  import { csvFilename, modelSelPatch, speciesFilenameStem, speciesHeader, toCsv } from "./species";
+  import {
+    csvFilename,
+    modelSelPatch,
+    speciesFilenameStem,
+    speciesHeader,
+    speciesTableEmptyText,
+    toCsv,
+  } from "./species";
   import { loadCompositionRows, loadSpeciesRows } from "./speciesLoad";
   import SpeciesTable from "./SpeciesTable.svelte";
   import ZonesTable from "./ZonesTable.svelte";
@@ -98,8 +105,15 @@
 
   let speciesRows = $state<SpeciesRow[] | null | undefined>(undefined);
   let compositionRows = $state<CompositionRow[] | null | undefined>(undefined);
+  // D3(b) (Opus 5.5 eyes-on, 2026-09-24): `speciesRows === null` used to be ONE state covering both
+  // "nothing scored is selected" (the bail-out below) AND a genuine thrown failure from
+  // `loadSpeciesRows` — both rendered the SAME "could not be loaded" text, which reads as a bug for
+  // the former. Captured separately so the panel can show a message that NAMES the failure only
+  // when there really was one (`speciesTableEmptyText`'s own header).
+  let speciesError = $state<string | null>(null);
 
   async function reload() {
+    speciesError = null;
     if (!ver || unavailable || noSpeciesPublished) {
       speciesRows = null;
       compositionRows = null;
@@ -117,8 +131,9 @@
         selection,
         zoneAllKey: allKey,
       });
-    } catch {
+    } catch (err) {
       speciesRows = null;
+      speciesError = err instanceof Error ? err.message : String(err);
     }
     try {
       compositionRows = await loadCompositionRows(ver, boot as Record<string, unknown>);
@@ -234,7 +249,7 @@
     {:else if speciesRows === undefined}
       <p class="note">Loading species…</p>
     {:else if speciesRows === null}
-      <p class="note">The species table could not be loaded.</p>
+      <p class="note" class:note--error={speciesError}>{speciesTableEmptyText(speciesError)}</p>
     {:else}
       <SpeciesTable label={header} rows={speciesRows} {sel} {onModelClick} />
     {/if}
@@ -297,5 +312,11 @@
     margin: 0;
     color: var(--text-secondary);
     font-size: var(--text-sm);
+  }
+
+  /* D3(b): a genuine query failure reads visually distinct from the plain "click a cell" hint --
+     never the same colour as a routine empty state (FlowerPanel.svelte's own identical rule). */
+  .note--error {
+    color: var(--text-danger);
   }
 </style>

@@ -223,8 +223,21 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       value = null; // no engine / no tile for this cell (off-grid, unscored) — "no value", not a throw
     }
     if (token !== popupToken) return; // a later click superseded this one
-    const label = layerByKey(bootObj, lyr)?.label ?? lyr ?? "value";
+    // R3/D4 (Opus 5.5 eyes-on, 2026-09-24): the manifest's own SHORT per-metric label
+    // (`metricLabels`, `boot.ts#metricLabelsFromManifest`) — `boot.layers[].label` is the LONG
+    // description text ("Primary productivity: Oregon State Vertically Generalized Production
+    // Model (VGPM)..."), which used to print verbatim in a one-line popup. Falls back to the long
+    // label, then the bare metric_key, exactly as before, when a release's manifest has not
+    // published a short name for this metric yet.
+    const label = (lyr && metricLabels[lyr]) || layerByKey(bootObj, lyr)?.label || lyr || "value";
     const input = { cellId, lon: lngLat.lng, lat: lngLat.lat, layerLabel: label, value };
+    // D3(a) (Opus 5.5 eyes-on, 2026-09-24): a click with no value for the displayed layer (off-grid,
+    // unscored — e.g. land) never BECOMES the selection: `handleMapClick` below no longer writes
+    // `sel` for this click at all, so the cell the user was already looking at (or nothing) stays
+    // selected, and the popup itself carries no cell id/layer title for a no-value answer
+    // (`cellPopupText`'s own "No scored cell here" branch). Only a CONFIRMED scored cell is ever
+    // written to the URL/selStore.
+    if (value !== null) deps.selStore.set({ sel: formatCellToken(cellId) });
     updatePopup(lngLat, cellPopupText(input), cellPopupAnnounceText(input));
   }
 
@@ -280,7 +293,9 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       clearPopup(); // closes on the next click, whatever it resolves to
       if (unit === "cell") {
         if (result.cellId !== null) {
-          deps.selStore.set({ sel: formatCellToken(result.cellId) });
+          // D3(a): the selection is NOT written here — `showCellPopup` (below) writes it only once
+          // the cell is confirmed to carry a value for the displayed layer, so a click outside the
+          // scored area (Utah, on the owner's screenshot) never replaces whatever WAS selected.
           // usability M9: open at once, never wait on the engine — showCellPopup replaces this in
           // place once it answers.
           showPopup(
