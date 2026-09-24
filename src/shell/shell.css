@@ -317,8 +317,19 @@ button.chip {
    theme toggle 0.7px past the right edge (scripts/verify.mjs's assertLayout caught it on the
    species lens, where a v9 preview session is the only way to view a restricted release). Small
    and compact, not hidden: the badge is the one visual cue that this release is not the public
-   one, so it must survive down to 320 px, just narrower. */
+   one, so it must survive down to 320 px, just narrower.
+
+   R2/U1 fix (owner decision, 2026-09-24): that margin did not survive this round's OWN 320px
+   reclamation (hiding the brand mark below) -- re-measured, the chip is 97.78px with the badge
+   at this 9px size (v9 preview) vs 84px without (v7 public), and the mark-hiding fix was tuned
+   with zero slack for the no-badge case (verify.mjs: 17 of 17 species-lens phoneNarrow states
+   caught it). Below, `.ms-preview-badge-short` ("PRE") replaces the full word at <= 380px --
+   `aria-label`/`title` on the outer span keep BOTH the accessible name and the hover tooltip at
+   "Preview release" regardless of which form is visually shown, and neither inner span is ever
+   removed from the accessibility tree (`aria-hidden`, not `{#if}` -- a pure CSS swap). */
 .ms-preview-badge {
+  display: inline-flex;
+  align-items: center;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -328,6 +339,11 @@ button.chip {
   background: var(--fill-accent);
   color: var(--text-on-accent);
   flex: none;
+}
+/* the compact form is inert until the <= 380px query below flips which one is visible; both
+   always render (see VersionBadge.svelte's own header on why). */
+.ms-preview-badge-short {
+  display: none;
 }
 
 .search-field {
@@ -690,6 +706,16 @@ button.chip {
    * coarse`) is exactly the gap this closes. */
   .tool {
     padding: 0 var(--space-2);
+  }
+  /* a v9 preview session's chip (VersionBadge.svelte's own header) is ~14px wider than this --
+     "PREVIEW" swaps for "PRE" here, never hidden or removed from the accessibility tree (both
+     spans keep `aria-hidden`; the OUTER span's `aria-label`/`title` already fix the accessible
+     name/tooltip at "Preview release" regardless of which one is showing). */
+  .ms-preview-badge-full {
+    display: none;
+  }
+  .ms-preview-badge-short {
+    display: inline;
   }
 }
 

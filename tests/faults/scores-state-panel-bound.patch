@@ -1,15 +1,15 @@
 diff --git a/src/lens/scores/ScoresLens.svelte b/src/lens/scores/ScoresLens.svelte
-index 1e505a9..4d6b7e4 100644
+index 1e505a9..20ee469 100644
 --- a/src/lens/scores/ScoresLens.svelte
 +++ b/src/lens/scores/ScoresLens.svelte
-@@ -46,15 +46,36 @@
+@@ -46,10 +46,31 @@
       * `unit`/`lyr`/`manifestOverlays`/`selection`/`mapSelection`/`showOutsidePra`/`mapExtra` all
       * come from here now, not recomputed a second time. */
      lens: ScoresLens;
 +    // SEEDED FAULT (tests/faults/scores-state-panel-bound.patch): reinstates the 0.10.17 bug --
 +    // Shell.svelte reads this bucket instead of `lens.mapExtra` directly, so the map only ever
 +    // sees a value while THIS component is mounted.
-+    mapExtra?: import("./mapInputs").ScoresMapInputs | null;
++    mapExtra?: ScoresLens["mapExtra"] | null;
    }
  
 -  let { sel, selStore, boot, manifest, ver, mapHandle, activeTool, fallbackBody, lens }: Props =
@@ -26,26 +26,21 @@ index 1e505a9..4d6b7e4 100644
 +    lens,
 +    mapExtra = $bindable(null),
 +  }: Props = $props();
- 
-   const unit = $derived(lens.unit);
-   const lyr = $derived(lens.lyr);
-   const manifestOverlays = $derived(lens.manifestOverlays);
- 
++
 +  // SEEDED FAULT (tests/faults/scores-state-panel-bound.patch): only runs while this component is
 +  // mounted -- a collapsed desktop panel never mounts it, so `mapExtra` (and therefore the map)
 +  // never sees a value.
 +  $effect(() => {
 +    mapExtra = lens.mapExtra;
 +  });
-+
-   // the selection AS THE FLOWER/SPECIES/TABLE PANELS SEE IT (`cell:<id>` keeps the raw cell id —
-   // `flower.ts`/`species.ts` need it verbatim for titles and headers).
-   const selection = $derived(lens.selection);
+ 
+   const unit = $derived(lens.unit);
+   const lyr = $derived(lens.lyr);
 diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
-index 51d50ae..9723544 100644
+index 9fd5636..5d04b70 100644
 --- a/src/shell/Shell.svelte
 +++ b/src/shell/Shell.svelte
-@@ -327,6 +327,13 @@
+@@ -500,6 +500,11 @@
    // every read of it below is null-safe and falls back to "the shell's own base view", same as
    // the old `{}` default did.
    let scoresLens = $state<ScoresLensState | null>(null);
@@ -53,13 +48,11 @@ index 51d50ae..9723544 100644
 +  // purpose -- a bucket only ScoresLens.svelte (the PANEL body) ever writes, via bind:mapExtra,
 +  // instead of reading scoresLens.mapExtra directly. A collapsed desktop panel never mounts that
 +  // component, so this stays null forever.
-+  let scoresPanelMapExtra = $state<import("../lens/scores/mapInputs").ScoresMapInputs | null>(
-+    null,
-+  );
++  let scoresPanelMapExtra = $state<ScoresLensState["mapExtra"] | null>(null);
  
    // G-25 fix: `Sel.out`'s ONE effect on the map, applied to whichever `zones` array (the shell's
    // own outline-only `zoneUnits`, or the scores lens' richer `scoresLens.mapExtra.zones`) is about
-@@ -339,7 +346,7 @@
+@@ -512,7 +517,7 @@
    // never mounted on a species view in the first place.
    const zonesForStyle = $derived<ZoneUnitSpec[]>(
      zoneUnitsWithOutline(
@@ -68,7 +61,7 @@ index 51d50ae..9723544 100644
        sel.out,
      ),
    );
-@@ -488,11 +495,11 @@
+@@ -775,11 +780,11 @@
      projection: sel.proj,
      zones: zonesForStyle,
      raster:
@@ -83,7 +76,7 @@ index 51d50ae..9723544 100644
    });
  
    $effect(() => {
-@@ -873,6 +880,7 @@
+@@ -1331,6 +1336,7 @@
              {activeTool}
              fallbackBody={TOOL_BODY[activeTool]}
              lens={scoresLens}
@@ -91,12 +84,21 @@ index 51d50ae..9723544 100644
            />
          {:else}
            <p>{TOOL_BODY[activeTool]}</p>
-@@ -902,7 +910,7 @@
+@@ -1365,7 +1371,7 @@
+        -- `isPhone` gates the two branches, so exactly one ever renders, never both. -->
+   {#if isPhone}
+     {@const legend =
+-      sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresLens?.mapExtra.legend ?? null)}
++      sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresPanelMapExtra?.legend ?? null)}
+     {#if legend}
+       <div class="legend-chip-region">
+         <LegendChip title={legend.title}>
+@@ -1384,7 +1390,7 @@
      <Comp legend={speciesLens.mapInputs.legend} />
    {:else if sel.lens === "scores" && ScoresLegendComp}
      {@const Comp = ScoresLegendComp}
 -    <Comp legend={scoresLens?.mapExtra.legend ?? null} />
 +    <Comp legend={scoresPanelMapExtra?.legend ?? null} />
    {/if}
+ </main>
  
-   <div class="about-region" id="about-region" data-tour="about" data-control="about">
