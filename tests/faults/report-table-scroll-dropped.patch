@@ -1,11 +1,11 @@
 diff --git a/src/report/report.css b/src/report/report.css
-index 4e703f3..5d66a29 100644
+index c09ec88..048e558 100644
 --- a/src/report/report.css
 +++ b/src/report/report.css
-@@ -50,7 +50,7 @@ table {
-    `overflow: visible` below) -- pagination, not a scroll container, is how a printed table too
+@@ -51,7 +51,7 @@ table {
     wide for one page is meant to read. */
  .table-scroll {
+   position: relative;
 -  overflow-x: auto;
 +  overflow-x: visible;
    -webkit-overflow-scrolling: touch;
