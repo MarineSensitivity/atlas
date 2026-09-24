@@ -16,13 +16,11 @@
   import { onMount, type Component } from "svelte";
   import "./shell.css";
   import { buildRailItems, TOOL_BODY, TOOL_LABEL, type ToolName } from "./tools";
-  // a plain `src="../lib/brand/vendor/mst-mark.svg"` in the template below would resolve against
-  // the PAGE's URL at runtime (index.html, mounted at site root), not this file's location, and a
-  // production build would ship it unrewritten -- a relative-base violation (CLAUDE.md) that also
-  // 404s, since dist/ never contains src/. Importing it as a `?url` asset routes it through Vite's
-  // normal pipeline (hashed, copied to dist/assets/, and rewritten relative to the page).
-  import markNavyUrl from "../lib/brand/vendor/mst-mark.svg?url";
-  import markPaperUrl from "../lib/brand/vendor/mst-mark-dark.svg?url";
+  // R5: the wave-in-hexagon mark replaces the old two-file "wave in a circle" pair
+  // (mst-mark.svg/mst-mark-dark.svg, kept vendored only for history -- Report.svelte moved to
+  // this same component too) -- inline, so ONE definition serves both themes through
+  // --border-accent rather than a `.mark--navy`/`.mark--paper` display:none swap.
+  import WaveHexMark from "../lib/brand/WaveHexMark.svelte";
   import Icon from "../lib/ui/Icon.svelte";
   import Rail from "../lib/ui/Rail.svelte";
   import Panel from "../lib/ui/Panel.svelte";
@@ -162,7 +160,7 @@
     const label = railItems.find((i) => i.name === name)?.label;
     if (!label) return;
     const btn = document.querySelector<HTMLButtonElement>(
-      `#rail-region button.hexbtn[aria-label="${CSS.escape(label)}"]`,
+      `#rail-region button.railitem[aria-label="${CSS.escape(label)}"]`,
     );
     btn?.focus();
   }
@@ -898,8 +896,7 @@
 
 <header class="topbar" data-tour="topbar">
   <span data-tour="brand" style="display:flex;align-items:center;gap:var(--space-2)">
-    <img class="mark mark--navy" src={markNavyUrl} alt="" />
-    <img class="mark mark--paper" src={markPaperUrl} alt="" />
+    <WaveHexMark size={28} />
     <h1 class="brand-title" id="app-title">Marine Sensitivity Atlas</h1>
   </span>
 

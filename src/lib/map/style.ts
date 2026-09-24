@@ -263,7 +263,7 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
   for (const u of zones) {
     const fill = zoneFillLayer(u);
     if (fill) roled.push({ role: "zone-fill", layer: fill });
-    roled.push({ role: "zone-line", layer: zoneLineLayer(u) });
+    roled.push({ role: "zone-line", layer: zoneLineLayer(u, input.theme) });
   }
   for (const u of zones) {
     const label = zoneLabelLayer(u);

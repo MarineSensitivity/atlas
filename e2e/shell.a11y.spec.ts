@@ -65,9 +65,16 @@ async function gotoShell(page: import("@playwright/test").Page, theme: string, p
 // exclusion, phone briefly rose to 12 and cited a THIRD reason, `bgOverlap` (the legend's box
 // visually overlapping the centered bottom rail, both anchored at the same `bottom` offset), which
 // is why phone keeps the two-reason allow-list below rather than growing a third entry.
+// RE-TRIAGED 2026-09-24 (R4, docs/usability.md §7): phone 10 -> 14, desktop 15 -> 19. The rail is
+// now a labelled stack (RailButton.svelte) -- four new visible TEXT nodes per viewport (the idle
+// items' labels; the pressed item's own label sits on the OPAQUE `--fill-accent` fill, which axe
+// resolves normally and does not flag it). Verified, not assumed: the idle label's token pair
+// (`--text-secondary` on the SAME rail glass background every other rail node already sat on) is
+// one of the pairs `node scripts/contrast.mjs` independently resolves and passes; no new node
+// cited a reason outside the two already allow-listed below.
 const COLOR_CONTRAST_INCOMPLETE_CEILING: Record<string, number> = {
-  phone: 10,
-  desktop: 15,
+  phone: 14,
+  desktop: 19,
 };
 // `imgNode` joined `pseudoContent` in the same re-triage: axe reports it when the element's
 // background resolves to an IMAGE it cannot sample — here the map's WebGL canvas behind the glass
