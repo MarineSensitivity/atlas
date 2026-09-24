@@ -207,8 +207,8 @@ export const INTENTIONAL = [
     id: "ID-11",
     title:
       "The species map's default draws no outline; the Shiny app defaulted to Ecoregions and let you choose",
-    what: "The Shiny species app defaulted its Outlines select to Ecoregions (black) and offered Program Areas / Ecoregions / None. The atlas has no Outlines select (G-02, still open), but since 0.10.19 `Sel.out` DOES reach the rendered style on both lenses (G-25, fixed — `zoneUnitsWithOutline()`, `src/shell/Shell.svelte`'s `zonesForStyle`): a link carrying `out=programarea` now draws the release's one unit, white, on the species map too. What the Shiny app never had to choose, the species lens picks by DEFAULT rather than by control — `DEFAULT_OUT_BY_LENS.species` is `\"none\"` (`src/lib/state/types.ts:133-136`), so a plain species link draws no outline at all. The species screenshot pairs below were shot before this default existed (0.10.17, when the outline was drawn unconditionally); re-shot against 0.10.21 they will show NO outline on the atlas side unless the link explicitly carries `out=programarea`.",
-    why: "The species-lens chrome was deferred (G-02) and D17 makes the release's one unit the only outline the app knows how to draw. `out`'s per-lens default (`none` for species, `programarea` for scores) was a documented interpretation taken in atlas-2 when no UI existed to confirm it against, pinned by a test so a later deliberate change shows as a diff rather than drift.",
+    what: 'The Shiny species app defaulted its Outlines select to Ecoregions (black) and offered Program Areas / Ecoregions / None. The atlas has no Outlines select (G-02, still open), but since 0.10.19 `Sel.out` DOES reach the rendered style on both lenses (G-25, fixed — `zoneUnitsWithOutline()`, `src/shell/Shell.svelte`\'s `zonesForStyle`): a link carrying `out=programarea` now draws the release\'s one unit, white, on the species map too. What the Shiny app never had to choose, the species lens picks by DEFAULT rather than by control — `DEFAULT_OUT_BY_LENS.species` is `"none"` (`src/lib/state/types.ts:133-136`), so a plain species link draws no outline at all. The species screenshot pairs below were shot before this default existed (0.10.17, when the outline was drawn unconditionally); re-shot against 0.10.21 they will show NO outline on the atlas side unless the link explicitly carries `out=programarea`. A SEPARATE, unrelated "ecoregion": R3 orchestrator audit item 2 (0.10.36) draws a standalone black outline from the release\'s own MANIFEST (`ecoregionZoneUnitFromManifest`, `Shell.svelte`\'s `ecoregionUnit`) on the SCORES lens only, unconditionally — `sel.lens === "scores" ? ecoregionZoneUnitFromManifest(manifest) : null` (`src/shell/Shell.svelte`) gates it structurally, so the species lens never receives it regardless of `out=`, and on scores it is never hidden by `out=none` either (it is decoration, not the selectable unit `out=` controls). This is not the Shiny "Ecoregions" OPTION described above — that option (a user-selectable outline TYPE) is still G-02, not built in either lens.',
+    why: "The species-lens chrome was deferred (G-02) and D17 makes the release's one unit the only outline the app knows how to draw. `out`'s per-lens default (`none` for species, `programarea` for scores) was a documented interpretation taken in atlas-2 when no UI existed to confirm it against, pinned by a test so a later deliberate change shows as a diff rather than drift. The manifest-published standalone outline is a DIFFERENT decision (which lens draws the release's ecoregion boundary at all, not which unit `out=` selects) — scores draws it because every scores view benefits from the boundary (`ecoregionUnit`'s own header: independent of `sel.unit`/`sel.out`); species does not receive it because that lens has no equivalent \"always-on chrome\" convention yet (G-02).",
     where: [
       { file: "tests/state/codec.test.ts", name: "defaultOut" },
       {
@@ -220,6 +220,14 @@ export const INTENTIONAL = [
       {
         file: "e2e/scores.outlines.spec.ts",
         name: "out=none: the outline renders NOTHING, but the choropleth fill still does",
+      },
+      {
+        file: "e2e/layers.spec.ts",
+        name: "ecoregion_ln renders >= 1 feature on v7 (the release's manifest publishes it)",
+      },
+      {
+        file: "e2e/layers.spec.ts",
+        name: "out=none (hides the SELECTABLE unit's outline) does NOT hide the ecoregion boundary -- it is decoration, not the selected unit",
       },
     ],
     rows: ["P-07"],
