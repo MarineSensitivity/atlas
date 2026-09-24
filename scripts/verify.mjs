@@ -500,6 +500,44 @@ const SHELL_STATES = [
 const PROJECTIONS = ["globe", "mercator"];
 const OUTLINES = ["programarea", "ecoregion", "none"];
 const AREAS = ["FULL", "GA"];
+const STUDY_AREA_BY_KEY = Object.fromEntries(
+  BOOT_FIXTURE_SCORES.study_areas.map((a) => [a.key, a]),
+);
+
+/**
+ * S-01 (owner report, 2026-09-24): `?area=X` used to render the DEFAULT camera regardless of X —
+ * `scoresOutlineProbe`/`scoresRasterProbe` never noticed because neither reads the CAMERA at all,
+ * only what painted. This is the positive check that the map actually flew: `map.getCenter()` must
+ * settle near `area`'s own `lon`/`lat` (`src/lib/map/camera.ts#shouldFlyToArea`'s contract).
+ */
+function cameraNearAreaProbe(areaKey, tolDeg = 1) {
+  return async (page) => {
+    const area = STUDY_AREA_BY_KEY[areaKey];
+    if (!area) return [`no fixture study area "${areaKey}"`];
+    let center = null;
+    for (let i = 0; i < 20; i++) {
+      center = await page.evaluate(() => {
+        const map = window.__atlasMap?.handle.map;
+        if (!map) return null;
+        const c = map.getCenter();
+        return [c.lng, c.lat];
+      });
+      if (center && Math.hypot(center[0] - area.lon, center[1] - area.lat) < tolDeg) return [];
+      await page.waitForTimeout(250);
+    }
+    return [
+      `camera never reached study area "${areaKey}" (${area.lon},${area.lat}) — stuck at ` +
+        `${center ? center.join(",") : "no map"}`,
+    ];
+  };
+}
+
+/** run BOTH `probe` (the existing raster/outline check for this state) and the camera check above,
+ * concatenating problems — an `area=` state's camera assertion is additive, never a replacement. */
+function withAreaCamera(probe, areaKey) {
+  return async (page) => [...(await probe(page)), ...(await cameraNearAreaProbe(areaKey)(page))];
+}
+
 const PALETTES = ["spectral_r", "viridis", "cividis", "magma"];
 // `map=` (added M6, alongside `zoneSelectionProbe`): the same `label_pt`s BOOT_FIXTURE_SCORES
 // already carries. Without a camera override, the default "FULL" globe camera (zoom 2.16) does
@@ -518,14 +556,15 @@ const ZONE_KEYS = [
 
 const SCORES_STATES = [
   // projection x outline x area: every combination is a real, valid, independently-composed
-  // composeStyle input (docs/map.md) -- 2 x 3 x 2 = 12
+  // composeStyle input (docs/map.md) -- 2 x 3 x 2 = 12. S-01: `withAreaCamera` ADDS the camera
+  // assertion on top of the existing outline/raster probe -- neither is removed.
   ...PROJECTIONS.flatMap((proj) =>
     OUTLINES.flatMap((out) =>
       AREAS.map((area) => ({
         name: `scores proj=${proj} out=${out} area=${area}`,
         kind: "scores",
         path: `/?proj=${proj}&out=${out}&area=${area}`,
-        assert: scoresOutlineProbe(out),
+        assert: withAreaCamera(scoresOutlineProbe(out), area),
       })),
     ),
   ),
@@ -545,13 +584,13 @@ const SCORES_STATES = [
     path: `/?pal=${pal}`,
     assert: scoresRasterProbe(),
   })),
-  // every published layer x both study areas -- 4 x 2 = 8
+  // every published layer x both study areas -- 4 x 2 = 8. S-01: same additive camera check.
   ...LAYER_KEYS.flatMap((lyr) =>
     AREAS.map((area) => ({
       name: `scores lyr=${lyr.slice(0, 24)} area=${area}`,
       kind: "scores",
       path: `/?lyr=${encodeURIComponent(lyr)}&area=${area}`,
-      assert: scoresRasterProbe(),
+      assert: withAreaCamera(scoresRasterProbe(), area),
     })),
   ),
   // every zone, selected, on both projections -- 4 x 2 = 8. M6: `zoneSelectionProbe` checks BOTH

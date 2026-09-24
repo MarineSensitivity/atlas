@@ -455,6 +455,29 @@ const FAULTS = [
       "system sees the paper theme again, undoing U2a's default-theme change",
     gate: ["npx", "vitest", "run", "tests/state/codec.test.ts"],
   },
+  // S-01 (owner report, 2026-09-24, live v7): `?area=AK` rendered the DEFAULT camera. The old
+  // evidence for this rule (`flyToStudyArea` unit tests) spied on `flyTo` in isolation and could
+  // not fail -- `flyToStudyArea` has no caller anywhere in `src/` (an Opus 5.5 audit finding). This
+  // patch reproduces the ORIGINAL defect's effect directly at the decision point
+  // (`shouldFlyToArea` always answers "don't fly") and must turn the real end-to-end spec red.
+  {
+    id: "study-area-camera-ignored",
+    patch: "tests/faults/study-area-camera-ignored.patch",
+    describe:
+      "camera.ts#shouldFlyToArea always returns fly:false -- sel.area never reaches the camera " +
+      "again, on load or on change (the owner's original live defect, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.studyarea.spec.ts",
+      "-g",
+      "flies to Alaska on LOAD",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4398" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

@@ -34,12 +34,17 @@
   import { announce } from "../lib/ui/announcer";
   import { createSelStore } from "../lib/state/sel.svelte";
   import { formatSel } from "../lib/state/codec";
-  import { defaultOut, resolveTheme } from "../lib/state/types";
+  import { DEFAULT_SEL, defaultOut, resolveTheme } from "../lib/state/types";
   import { createMap, type MapHandle } from "../lib/map/map";
   import { composeStyle } from "../lib/map/style";
   import { warmBasemapStyles, type CartoStyleLike } from "../lib/map/layers/basemap";
   import { zoneUnitsFromBoot, zoneUnitsWithOutline } from "../lib/map/layers/zones";
   import { studyAreaFromBoot } from "../lib/map/interaction";
+  import {
+    INITIAL_AREA_CAMERA_STATE,
+    shouldFlyToArea,
+    type AreaCameraState,
+  } from "../lib/map/camera";
   import { createAnalytics } from "../lib/analytics/analytics";
   // atlas-8 Deliverable 4 (beta feedback, zero backend -- CLAUDE.md/GATES.md's "the CalCOFI
   // zero-backend fallback"): both pure functions take a snapshot the caller builds -- neither ever
@@ -490,10 +495,15 @@
 
   onMount(() => {
     if (!mapEl) return;
+    // `boot` (read a few lines up) is ALWAYS still `null` here regardless of what is passed below:
+    // it settles from `early.boot.then(...)` above, a microtask that cannot run until this whole
+    // synchronous mount pass (every `onMount` body in this component) has returned. Passed as `boot`
+    // anyway, not a literal `null`, so this stays correct if that ordering ever changes — the
+    // effect just below is what actually resolves the real `study_areas` row once `boot` arrives.
     const handle = createMap(mapEl, {
       theme: resolveTheme(sel.theme, prefersDark),
       camera: sel.map,
-      area: studyAreaFromBoot(null, sel.area),
+      area: studyAreaFromBoot(boot, sel.area),
       projection: sel.proj,
       // URL-is-the-view: the camera goes back through selStore, i.e. history.replaceState, and
       // only for user-driven moves (src/lib/map/camera.ts).
@@ -557,6 +567,38 @@
       handle.destroy();
       mapHandle = undefined;
     };
+  });
+
+  // --- the study-area camera: `sel.area` drives it on LOAD and on CHANGE, never the panel body ---
+  // The owner's 2026-09-24 defect: `?area=AK` rendered the default camera, live, in production.
+  // Root cause was two bugs stacked. (1) The map's INITIAL camera above (`area:
+  // studyAreaFromBoot(null, sel.area)`) is constructed against a literal `null` boot, on purpose —
+  // at `onMount` time `boot` (the `$state` a few lines up) has not resolved yet regardless of what
+  // is passed here (it settles from `early.boot.then(...)`, a separate microtask), so there was
+  // never a way to see the release's real `study_areas` row at construction time; only the baked
+  // `FALLBACK_FULL_STUDY_AREA` was ever reachable there. (2) The ONLY place anything called
+  // `handle.flyTo(area)` was `LayersPanel.svelte`'s `onchange` handler — the panel BODY (only
+  // mounted while a tool is open and, on desktop, the panel is not collapsed) — which never runs for
+  // a `sel.area` arriving from the URL on load. `docs/map.md`'s 0.10.21 rule exists for exactly this
+  // shape of bug: a map input must live in a lens/shell-level store the shell reads unconditionally,
+  // never panel-only UI.
+  //
+  // This effect is that store, at the shell level (`sel.area` is a top-level `Sel` field, not scores
+  // -specific — CLAUDE.md/docs/map.md's own convention: "map inputs are a plain store... independent
+  // of which tool/panel is open or collapsed"). It re-runs whenever `boot`, `mapHandle`, `sel.area`
+  // or `sel.map` changes and defers the fly/no-fly DECISION to `camera.ts#shouldFlyToArea` (a pure,
+  // unit-tested function — read its header for the exact precedence a later round touching the
+  // DEFAULT first-view camera must preserve). `LayersPanel.svelte`'s `onAreaChange` still writes
+  // `{ area: value, map: undefined }` to `sel` (so a shared link reproduces the choice, and clearing
+  // `map` is what lets THIS effect fly for it) — it no longer calls `mapHandle.flyTo` itself.
+  let areaCameraState: AreaCameraState = INITIAL_AREA_CAMERA_STATE;
+  $effect(() => {
+    if (!mapHandle || !boot) return; // nothing to resolve `sel.area` against yet
+    if (sel.map) return; // an explicit camera (a user's pan, or a pasted `?map=` link) always wins
+    const area = studyAreaFromBoot(boot, sel.area);
+    const decision = shouldFlyToArea(area.key, DEFAULT_SEL.area, areaCameraState);
+    areaCameraState = decision.next;
+    if (decision.fly) mapHandle.flyTo(area);
   });
 
   // one composed style, re-applied with setStyle(diff:true) whenever theme, projection, the

@@ -104,6 +104,62 @@ export function boundsToCameraView(
   return { center: [mercatorXToLng(cx), mercatorYToLat(cy)], zoom };
 }
 
+// --- sel.area -> camera, the fly-on-load/fly-on-change decision -------------------------------
+//
+// The defect this fixes (owner report, 2026-09-24, live v7): `?area=AK` rendered the DEFAULT
+// camera, not Alaska. Root cause was TWO bugs stacked: `Shell.svelte` resolved the initial study
+// area against a literal `null` boot (`studyAreaFromBoot(null, sel.area)`), so it could never see
+// a release's real `study_areas` rows; and the ONLY place that ever called `handle.flyTo(area)` was
+// `LayersPanel.svelte`'s `onchange` handler — the panel BODY, which never runs for `sel.area` as it
+// arrives from the URL on load (docs/map.md's 0.10.21 rule: a map input must be a lens/shell-level
+// store, never panel-only UI, for exactly this reason — a collapsed/unmounted panel body must not
+// be the only path a rule runs through). The fix is this pure decision, called from an effect that
+// watches `sel.area`/`sel.map`/`boot` regardless of which tool/panel is open (Shell.svelte).
+//
+// Precedence (read this before touching the DEFAULT first-view camera elsewhere — e.g. a later
+// round padding it for docked panel/sheet chrome in Shell.svelte/interaction.ts): an EXPLICIT
+// `?area=` (a non-default key on the FIRST resolution once `boot` arrives) always wins over
+// whatever camera framed the very first paint, default-fit padding included — the study area is a
+// CAMERA, not a filter (CLAUDE.md), so a shared `?area=AK` link must always end up on Alaska. The
+// only camera a `?area=` is not allowed to override is an EXPLICIT one — `sel.map` (a user's own
+// pan, or a pasted `?map=` link) — same "camera preset applies only when `map` is absent" rule
+// `state/types.ts`'s own `area` field doc and `map.ts`'s `start = opts.camera ?? area-derived`
+// already encode; the caller is expected to skip this function entirely while `sel.map` is set
+// (see `tests/map/camera.test.ts`'s "sel.map wins" case).
+export interface AreaCameraState {
+  /** the area key last flown to, or `undefined` before the first resolution (`boot` not loaded
+   * yet, or the map not yet constructed). */
+  flownAreaKey: string | undefined;
+}
+
+export const INITIAL_AREA_CAMERA_STATE: AreaCameraState = { flownAreaKey: undefined };
+
+/**
+ * Should `handle.flyTo(area)` run right now, and what state should the caller carry forward?
+ * `areaKey` is the CURRENT `sel.area`, already resolved against the real `boot.study_areas`
+ * (`studyAreaFromBoot`) by the caller — this function only ever compares keys, never resolves one.
+ *
+ * - Same key already flown to (including "still `undefined` and still the default" on a repeat
+ *   effect run before boot has loaded) — no-op.
+ * - The FIRST resolution (boot just arrived) landing on the DEFAULT key — no-op: the map was
+ *   already constructed pointed roughly there (`createMap`'s own `opts.area` fallback), so flying
+ *   again would be a same-place no-op at best and, once a later round pads that initial camera for
+ *   docked chrome, would silently UN-pad it for no reason.
+ * - Anything else — an explicit non-default `?area=` on load, or ANY later change (including back
+ *   to the default, once it is no longer "first") — flies.
+ */
+export function shouldFlyToArea(
+  areaKey: string,
+  defaultAreaKey: string,
+  state: AreaCameraState,
+): { fly: boolean; next: AreaCameraState } {
+  if (areaKey === state.flownAreaKey) return { fly: false, next: state };
+  const isFirstResolve = state.flownAreaKey === undefined;
+  const next: AreaCameraState = { flownAreaKey: areaKey };
+  if (isFirstResolve && areaKey === defaultAreaKey) return { fly: false, next };
+  return { fly: true, next };
+}
+
 /** debounce for the URL write, per the atlas-3 shell's "replaceState only, debounced" rule. */
 export const CAMERA_WRITE_DELAY_MS = 300;
 
