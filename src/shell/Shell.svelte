@@ -1039,6 +1039,11 @@
   let ScoresLensComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let ScoresLegendComp = $state<Component<any> | null>(null);
+  // Q1 (atlas-8 P-round, 2026-09-24): the top-bar search field's Scores-lens content (Program Area
+  // + coordinate search, `search.ts`/`ScoresSearch.svelte`) -- lazy like every other scores chunk
+  // below, so a species-only session never downloads it (`tests/shell/lazy-lens-imports.test.ts`).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let ScoresSearchComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let SpeciesLensPanelComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1123,6 +1128,13 @@
       import("../lens/scores/ScoresLegend.svelte")
         .then((mod) => (ScoresLegendComp = mod.default))
         .catch(() => announceChunkFailure("the scores legend"));
+    }
+    // Q1: the top-bar search field's scores content -- same trigger as the two chunks above, so a
+    // scores deep link/session has it ready by the time the field is first focused.
+    if (!ScoresSearchComp) {
+      import("../lens/scores/ScoresSearch.svelte")
+        .then((mod) => (ScoresSearchComp = mod.default))
+        .catch(() => announceChunkFailure("the scores search"));
     }
     // 0.10.21 fix 1 -- the scores lens' MAP-INPUT store, loaded (and instantiated) the SAME way as
     // the two chunks above, so it exists whenever `sel.lens === "scores"` regardless of whether
@@ -1266,6 +1278,18 @@
         onSetUsOnly={(enabled: boolean) => speciesLens.setUsOnly(enabled)}
         onSearchLogged={(query: string) => analytics.track("search_species", { query })}
         onFocusIndex={() => speciesLens.ensureTaxaIndex()}
+      />
+    {:else if sel.lens === "scores" && ScoresSearchComp && scoresLens}
+      <!-- Q1 (owner-reported defect, live 0.10.50): this used to be the SAME plain stub `<input>`
+           the final fallback below still is for every other lens -- typing here did nothing at
+           all. `scoresLens` (Shell.svelte's own lazily-created `createScoresLens()` instance, see
+           the `$effect` above) supplies the map/selection wiring; this field just resolves a match
+           into a `selectZone`/`selectCoordinate` call. -->
+      {@const SearchComp = ScoresSearchComp}
+      <SearchComp
+        {boot}
+        onSelectZone={(unit: string, key: string) => scoresLens?.selectZone(unit, key)}
+        onSelectCoord={(lon: number, lat: number) => void scoresLens?.selectCoordinate(lon, lat)}
       />
     {:else}
       <input
@@ -1738,6 +1762,7 @@
     <div
       class="search-field-phone"
       class:search-field-phone--species={sel.lens === "species"}
+      class:search-field-phone--scores={sel.lens === "scores"}
       bind:this={phoneSearchBodyEl}
     >
       <Icon name="search" size={16} />
@@ -1755,6 +1780,21 @@
             onSetUsOnly={(enabled: boolean) => speciesLens.setUsOnly(enabled)}
             onSearchLogged={(query: string) => analytics.track("search_species", { query })}
             onFocusIndex={() => speciesLens.ensureTaxaIndex()}
+          />
+        {:else if sel.lens === "scores" && ScoresSearchComp && scoresLens}
+          <!-- Q1: the SAME content as the desktop field above, closing the modal once a result is
+               picked (mirrors the species branch's own `closePhoneSearch()` call). -->
+          {@const SearchComp = ScoresSearchComp}
+          <SearchComp
+            {boot}
+            onSelectZone={(unit: string, key: string) => {
+              scoresLens?.selectZone(unit, key);
+              closePhoneSearch();
+            }}
+            onSelectCoord={(lon: number, lat: number) => {
+              void scoresLens?.selectCoordinate(lon, lat);
+              closePhoneSearch();
+            }}
           />
         {:else}
           <input

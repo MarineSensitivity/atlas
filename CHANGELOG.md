@@ -1,3 +1,21 @@
+# atlas 0.10.54
+
+Round 2, Q4: the feedback endpoint and preview-host link flags.
+
+- **Fixed: the published build could never pick up the "Send feedback" endpoint or the new preview
+  -route flag.** `.github/workflows/pages.yml`'s build step carried `VITE_SEAL`/`VITE_AGENCY` but
+  never `VITE_FEEDBACK_URL` (docs/feedback.md's own runbook) or `VITE_PREVIEW_ATLAS_ROUTE` (below)
+  — a repository variable set in GitHub could never reach the site GitHub Pages actually serves.
+  Both are now wired into that same build step.
+- **The version picker's "Continue on the preview host" Atlas link is now gated on the route
+  actually existing.** The preview host has not deployed the Atlas's own `/{ver}/atlas/` route yet
+  (atlas-9, P8 item 8, deferred), so that link 404s a reviewer who follows it in good faith. Behind
+  the new build-time `VITE_PREVIEW_ATLAS_ROUTE` flag (off by default): the modal now says "The
+  preview host does not serve the Atlas yet; open the Scores/Species apps there instead," linking
+  the Scores and Species apps that already are deployed there, for both a denied `?ver=` request
+  and every restricted row in the release list. Flipping the flag to `1` (once atlas-9 ships)
+  restores today's direct link with no code change.
+
 # atlas 0.10.52
 
 Q2: GeoPackage upload actually reads, and uploads honour the documented naming options.
@@ -21,6 +39,24 @@ Q2: GeoPackage upload actually reads, and uploads honour the documented naming o
   Leaving `nameProperty` out (the default) now auto-detects the first of `name`/`title`/`label`
   (case-insensitive) the file's first feature carries a non-empty value for; an explicit property
   still forces that one, and an explicit `null` still forces the file name.
+
+# atlas 0.10.51
+
+Q1: **the top-bar search now works in the Scores lens.** It was a stub `<input>` that did nothing
+at all when typed into (only the Species lens' search ever worked). It now matches, offline (no
+Nominatim, no third-party geocoder, no network call — entirely against what the release itself
+already publishes):
+
+- **Program Areas** (and any subregion/ecoregion archive the release also happens to publish), by
+  key ("ALA") or by name ("Aleutian"). Choosing one selects it exactly as clicking it on the map
+  would — same URL fields, same flower/species/table panels — and flies the camera to it.
+- **Coordinates** — "lon, lat" (e.g. "-140, 57"), with "lat, lon" also read correctly, either via an
+  explicit `lat`/`lon` label or inferred when the default order would be out of range. Flies to the
+  point and selects that cell.
+
+Results are a keyboard-navigable list (Arrow keys, Enter to select, Esc to close), same accessible
+pattern as the species search. Available on both the desktop top-bar field and the phone search
+modal.
 
 # atlas 0.10.50
 

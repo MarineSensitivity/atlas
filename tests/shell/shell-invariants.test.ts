@@ -3,7 +3,7 @@
 // already uses for sel.svelte.ts (a real `history.pushState` call can't be observed by invoking
 // code under vitest's node environment; reading whether the source calls it is the available
 // proxy, and e2e/shell.url-state.spec.ts covers the real-browser version of the same rule).
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const INDEX_HTML = readFileSync("index.html", "utf8");
@@ -83,5 +83,21 @@ describe("the skeleton and the hydrated shell agree on every data-control/data-t
     ]);
     expect([...skeleton].sort()).toEqual([...hydrated].sort());
     expect(skeleton.size).toBeGreaterThan(0);
+  });
+});
+
+// Q1 follow-up (coordinator, 2026-09-24): state.svelte.ts's showCellPopup shipped two DIAG2
+// console.log calls to production, one on every scores-lens cell click -- a shipped app must not
+// log diagnostics on every click. Removed; this scan is what keeps it removed.
+describe("src/lens/** never ships a console.log(", () => {
+  it("no console.log( appears in any src/lens/**/*.{ts,svelte} file", () => {
+    const files = (readdirSync("src/lens", { recursive: true }) as string[]).filter((f) =>
+      /\.(ts|svelte)$/.test(f),
+    );
+    const offenders = files.filter((f) =>
+      /console\.log\(/.test(readFileSync(`src/lens/${f}`, "utf8")),
+    );
+    expect(offenders).toEqual([]);
+    expect(files.length).toBeGreaterThan(4); // not vacuous
   });
 });

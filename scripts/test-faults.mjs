@@ -1064,6 +1064,66 @@ const FAULTS = [
       "carries min-width: 0",
     ],
   },
+  // round 2, Q4 (P8 item 8, deferred): two faults for the two things this round wired --
+  // VITE_FEEDBACK_URL actually reaching the published build's `vite build` step, and the
+  // preview-host Atlas link actually honouring VITE_PREVIEW_ATLAS_ROUTE rather than always
+  // linking a route atlas-9 has not deployed yet.
+  {
+    id: "pages-feedback-url-dropped",
+    patch: "tests/faults/pages-feedback-url-dropped.patch",
+    describe:
+      "pages.yml's `checks` job vite build step loses its `VITE_FEEDBACK_URL` line -- the " +
+      "published build never picks up the Apps Script endpoint no matter what Ben sets the " +
+      "repository variable to, and 'Send feedback' can never actually send",
+    gate: ["npx", "vitest", "run", "tests/release/pagesEnvVars.wiring.test.ts"],
+  },
+  {
+    id: "preview-atlas-route-gate-ignored",
+    patch: "tests/faults/preview-atlas-route-gate-ignored.patch",
+    describe:
+      "previewAtlasRouteEnabled() ignores its flag and always returns true -- the version " +
+      "picker links the preview host's `/{ver}/atlas/` route on every build, unset included, " +
+      "sending a reviewer into a 404 before atlas-9 has deployed it",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.versionPicker.spec.ts",
+      "-g",
+      "no /atlas/ preview link renders",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4433" },
+  },
+  {
+    id: "scores-search-matcher-empty",
+    patch: "tests/faults/scores-search-matcher-empty.patch",
+    describe:
+      "matchZones() reads zoneRows(boot, '') instead of the real unit -- the top-bar Scores " +
+      "search matcher against Program Areas/subregions/ecoregions always finds nothing, for " +
+      "any query (Q1 round, owner-reported: the search box did nothing at all)",
+    gate: ["npx", "vitest", "run", "tests/lens/scores/search.test.ts"],
+  },
+  {
+    id: "scores-search-enter-noop",
+    patch: "tests/faults/scores-search-enter-noop.patch",
+    describe:
+      "ScoresSearch.svelte's onKeydown() Enter branch no longer calls pick(activeIndex) -- the " +
+      "results list opens and highlights a match, but pressing Enter selects nothing (no sel= " +
+      "write, no camera move, no popup)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.search.spec.ts",
+      "-g",
+      "typing 'ALA' lists the Aleutian Arc",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4421" },
+  },
   {
     id: "geopackage-no-feature-table-check-dropped",
     patch: "tests/faults/geopackage-no-feature-table-check-dropped.patch",

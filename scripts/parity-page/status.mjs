@@ -527,14 +527,14 @@ export const STATUS = {
       },
       {
         file: "e2e/scores.versionPicker.spec.ts",
-        name: "?ver=v9 shows a denial notice with a preview-host link carrying the same query + hash",
+        name: "?ver=v9: with VITE_PREVIEW_ATLAS_ROUTE unset, no /atlas/ preview link renders -- the honest fallback (Scores/Species) does instead (round 2, Q4)",
       },
       {
         file: "e2e/scores.versionPicker.spec.ts",
         name: "the version chip opens the SAME modal for a manual look, listing every release",
       },
     ],
-    note: "release picker (with D15's preview-host link), welcome modal and `tour=off` are done. The driver.js guided tour over the old ten steps is NOT built — the button announces that instead (known gap G-08).",
+    note: "release picker (with D15's preview-host link, gated round 2 Q4 on VITE_PREVIEW_ATLAS_ROUTE until atlas-9 deploys the route -- see previewLink.ts), welcome modal and `tour=off` are done. The driver.js guided tour over the old ten steps is NOT built — the button announces that instead (known gap G-08).",
   },
   "S-22": {
     match: "Zones table: every zone of the unit ranked",
