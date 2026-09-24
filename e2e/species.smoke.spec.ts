@@ -123,7 +123,8 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
     expect(await unavailable.getAttribute("tabindex")).toBeNull();
     const title = await unavailable.getAttribute("title");
     expect(title).toContain("feeds the merged model");
-    expect(title).toContain("nothing to draw");
+    // V4 (0.10.59) reworded the reason to the registry truth: no raster registered for the model.
+    expect(title).toContain("no raster registered");
   });
 
   test("fix round 3 #1: ticking 'US only' on a non-US selection falls back to the default (keeps a shared one)", async ({
