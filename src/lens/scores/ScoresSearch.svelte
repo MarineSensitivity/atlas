@@ -152,6 +152,13 @@
   .scores-search {
     position: relative;
     display: flex;
+    /* SpeciesPicker.svelte's own `.species-picker` rule, and the SAME reason: on the desktop field
+       the dropdown is `position: absolute` so this never matters, but the phone modal's own
+       `.search-field-phone--scores` override (shell.css) forces it to `position: static` -- without
+       `column` here, a plain `display: flex` (row, the default) placed the STATIC dropdown as a
+       flex ITEM beside the input instead of stacking it below (eyes-on evidence caught this: the
+       results list rendered as a narrow box to the input's right, half off the dialog). */
+    flex-direction: column;
     width: 100%;
   }
 

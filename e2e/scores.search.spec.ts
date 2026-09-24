@@ -165,4 +165,40 @@ test.describe("Q1: Scores-lens top-bar search (phone, 390x844)", () => {
     await expect(dialog).not.toBeVisible();
     await expect.poll(() => urlSel(page)).toBe("zone:programarea:ALA");
   });
+
+  // eyes-on evidence (a real screenshot, not an assumption) caught this: `.scores-search` was
+  // `display: flex` with no `flex-direction`, so `.search-field-phone--scores`'s own `position:
+  // static` override (shell.css, the SAME fix P1 made for SpeciesPicker's dropdown) turned the
+  // results list into a ROW-flex sibling of the input instead of stacking it below -- it rendered
+  // as a narrow column to the input's RIGHT, half outside the dialog. RED-FIRST: fails without
+  // `flex-direction: column` on `.scores-search`.
+  test("the results list renders BELOW the input, inside the dialog -- not beside it", async ({
+    page,
+  }) => {
+    await gotoScoresSearch(page);
+
+    await page.getByRole("button", { name: "Search species and places" }).click();
+    const dialog = page.getByRole("dialog", { name: "Search" });
+    await expect(dialog).toBeVisible();
+
+    const input = dialog.getByRole("combobox", { name: "Search Program Areas or coordinates" });
+    await input.fill("ALA");
+    const option = dialog.getByRole("option", { name: "Aleutian Arc (ALA)" });
+    await expect(option).toBeVisible();
+
+    const dialogBox = (await dialog.boundingBox())!;
+    const inputBox = (await input.boundingBox())!;
+    const listBox = (await dialog.getByRole("listbox", { name: "Search results" }).boundingBox())!;
+
+    // below the input, not beside it (the actual defect: the list rendered to the input's right).
+    expect(
+      listBox.y,
+      "results list starts above the input's own bottom edge",
+    ).toBeGreaterThanOrEqual(inputBox.y + inputBox.height - 0.5);
+    // fully inside the dialog on every edge (P5's own species-lens assertion, generalized).
+    expect(listBox.x).toBeGreaterThanOrEqual(dialogBox.x - 0.5);
+    expect(listBox.y).toBeGreaterThanOrEqual(dialogBox.y - 0.5);
+    expect(listBox.x + listBox.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width + 0.5);
+    expect(listBox.y + listBox.height).toBeLessThanOrEqual(dialogBox.y + dialogBox.height + 0.5);
+  });
 });
