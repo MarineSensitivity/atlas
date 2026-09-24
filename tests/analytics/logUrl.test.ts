@@ -11,7 +11,7 @@ describe("analyticsLogUrl (round 2, Q7)", () => {
     vi.unstubAllEnvs();
   });
 
-  it("unset VITE_LOG_URL -> \"\" (analytics.ts's own default for an absent logUrl)", () => {
+  it('unset VITE_LOG_URL -> "" (analytics.ts\'s own default for an absent logUrl)', () => {
     vi.stubEnv("VITE_LOG_URL", undefined);
     expect(analyticsLogUrl()).toBe("");
   });
@@ -25,17 +25,17 @@ describe("analyticsLogUrl (round 2, Q7)", () => {
     },
   );
 
-  it("whitespace-only VITE_LOG_URL trims to empty -> \"\"", () => {
+  it('whitespace-only VITE_LOG_URL trims to empty -> ""', () => {
     vi.stubEnv("VITE_LOG_URL", "   ");
     expect(analyticsLogUrl()).toBe("");
   });
 
-  it("a non-https VITE_LOG_URL (e.g. http://) fails closed to \"\"", () => {
+  it('a non-https VITE_LOG_URL (e.g. http://) fails closed to ""', () => {
     vi.stubEnv("VITE_LOG_URL", "http://script.google.com/macros/s/x/exec");
     expect(analyticsLogUrl()).toBe("");
   });
 
-  it("a garbage VITE_LOG_URL fails closed to \"\"", () => {
+  it('a garbage VITE_LOG_URL fails closed to ""', () => {
     vi.stubEnv("VITE_LOG_URL", "not-a-url");
     expect(analyticsLogUrl()).toBe("");
   });

@@ -32,7 +32,7 @@ measurement** (gear icon) → **Page changes based on browser history events**. 
 ## Enabling the Sheet leg
 
 The Sheet-log beacon (`analytics.ts`'s `flush()`) is a no-op until a build-time `logUrl` is
-supplied. That comes from **`VITE_LOG_URL`**, a *repository variable* on this repo (GitHub →
+supplied. That comes from **`VITE_LOG_URL`**, a _repository variable_ on this repo (GitHub →
 `MarineSensitivity/atlas` → Settings → Secrets and variables → Actions → **Variables** tab, not
 Secrets — the URL ships in the public bundle either way, same reasoning as `VITE_FEEDBACK_URL`).
 `.github/workflows/pages.yml`'s `checks` job forwards it into `npx vite build`;
