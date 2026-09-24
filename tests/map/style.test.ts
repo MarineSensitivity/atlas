@@ -11,6 +11,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   BASEMAP_LAYER_PREFIX,
+  DRAW_LAYER_PREFIX,
   LAYER_ORDER,
   SELECTION_COLOR,
   SELECTION_FILL_OPACITY_DEFAULT,
@@ -19,6 +20,7 @@ import {
   composeStyle,
   mergeCartoStyle,
   orderLayers,
+  preserveDrawLayers,
   rankForStack,
   type LayerRole,
   type RoledLayer,
@@ -31,7 +33,11 @@ import {
   titilerTileTemplate,
 } from "../../src/lib/map/layers/titiler";
 import { OVERLAY_RASTER_OPACITY, SCORE_RASTER_OPACITY } from "../../src/lib/map/layers/raster";
-import type { SourceSpecification, ZoneUnitSpec } from "../../src/lib/map/types";
+import type {
+  SourceSpecification,
+  StyleSpecification,
+  ZoneUnitSpec,
+} from "../../src/lib/map/types";
 import {
   MISTAGGED_BASEMAP_LAYER,
   UNGROUPED_BASEMAP_LAYER,
@@ -881,11 +887,95 @@ describe("rankForStack", () => {
 });
 
 describe("applyStyle", () => {
-  it("calls setStyle(style, {diff:true}) — and nothing else", () => {
+  it("calls setStyle(style, {diff:true}) — and nothing else, when the fake has no getStyle", () => {
     const setStyle = vi.fn();
     const style = composeStyle({ theme: "navy", basemap: null });
     applyStyle({ setStyle }, style);
     expect(setStyle).toHaveBeenCalledTimes(1);
     expect(setStyle).toHaveBeenCalledWith(style, { diff: true });
+  });
+
+  // P7 fix (0.10.46, "drawn places vanish from the map after the second draw"): terra-draw adds
+  // its OWN `td-*` sources/layers straight to the live map (draw.ts's own header), never through
+  // composeStyle -- so a plain `setStyle(diff:true)` with no knowledge of them silently deleted
+  // terra-draw's own edit chrome on every recompose. `applyStyle` now reads the map's CURRENT style
+  // (`getStyle()`) and preserves any `td-`-prefixed entry the new style doesn't already carry.
+  it("preserves a live td-* source/layer setStyle's own composed style never mentions", () => {
+    const setStyle = vi.fn();
+    const current = {
+      version: 8 as const,
+      sources: {
+        "basemap-carto": { type: "vector", tiles: ["x"] },
+        "td-point": { type: "geojson", data: { type: "FeatureCollection", features: [] } },
+      },
+      layers: [
+        { id: "basemap-carto-water", type: "background" },
+        { id: "td-point", type: "circle", source: "td-point" },
+      ],
+    } as unknown as StyleSpecification;
+    const getStyle = vi.fn(() => current);
+    const next = composeStyle({ theme: "navy", basemap: null });
+    applyStyle({ setStyle, getStyle }, next);
+
+    expect(getStyle).toHaveBeenCalledTimes(1);
+    const applied = setStyle.mock.calls[0][0] as StyleSpecification;
+    expect(applied.sources["td-point"]).toEqual(current.sources["td-point"]);
+    expect(applied.layers.at(-1)).toEqual(current.layers[1]); // appended, on top
+    expect(setStyle.mock.calls[0][1]).toEqual({ diff: true });
+    // nothing composeStyle itself declared moved or changed.
+    expect(applied.layers.slice(0, -1)).toEqual(next.layers);
+  });
+
+  it("does not touch a td-* entry the new style already carries (no duplicate)", () => {
+    const setStyle = vi.fn();
+    const current = {
+      version: 8 as const,
+      sources: {
+        "td-point": { type: "geojson", data: { type: "FeatureCollection", features: [] } },
+      },
+      layers: [{ id: "td-point", type: "circle", source: "td-point" }],
+    } as unknown as StyleSpecification;
+    const next = {
+      version: 8 as const,
+      sources: {
+        "td-point": { type: "geojson", data: { type: "FeatureCollection", features: [] } },
+      },
+      layers: [{ id: "td-point", type: "circle", source: "td-point" }],
+    } as unknown as StyleSpecification;
+    applyStyle({ setStyle, getStyle: () => current }, next);
+    expect((setStyle.mock.calls[0][0] as StyleSpecification).layers).toHaveLength(1);
+  });
+
+  it("is a no-op when nothing td-*-prefixed is live (the common case)", () => {
+    const setStyle = vi.fn();
+    const current = composeStyle({ theme: "navy", basemap: null });
+    const next = composeStyle({ theme: "paper", basemap: null });
+    applyStyle({ setStyle, getStyle: () => current }, next);
+    expect(setStyle).toHaveBeenCalledWith(next, { diff: true });
+  });
+});
+
+describe("preserveDrawLayers", () => {
+  const emptyStyle = { version: 8 as const, sources: {}, layers: [] } as StyleSpecification;
+
+  it("current === undefined (blank first style, or a fake with no getStyle) is a no-op", () => {
+    expect(preserveDrawLayers(undefined, emptyStyle)).toBe(emptyStyle);
+  });
+
+  it("only copies entries whose id has the terra-draw prefix", () => {
+    const current = {
+      version: 8 as const,
+      sources: {
+        "not-td": { type: "geojson", data: null },
+        [`${DRAW_LAYER_PREFIX}x`]: { type: "geojson", data: null },
+      },
+      layers: [
+        { id: "not-td", type: "circle", source: "not-td" },
+        { id: `${DRAW_LAYER_PREFIX}x`, type: "circle", source: `${DRAW_LAYER_PREFIX}x` },
+      ],
+    } as unknown as StyleSpecification;
+    const result = preserveDrawLayers(current, emptyStyle);
+    expect(Object.keys(result.sources)).toEqual([`${DRAW_LAYER_PREFIX}x`]);
+    expect(result.layers.map((l) => l.id)).toEqual([`${DRAW_LAYER_PREFIX}x`]);
   });
 });

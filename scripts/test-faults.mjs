@@ -815,6 +815,32 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4379" },
   },
+  {
+    id: "places-draw-style-drops-td-layers",
+    patch: "tests/faults/places-draw-style-drops-td-layers.patch",
+    describe:
+      "applyStyle() stops preserving terra-draw's own td-* sources/layers across a recompose -- " +
+      "MapLibre's diff silently deletes them again, the same uncaught crash P7 live-reproduced",
+    gate: ["npx", "vitest", "run", "tests/map/style.test.ts", "-t", "preserves a live td-"],
+  },
+  {
+    id: "places-circle-mode-dropped",
+    patch: "tests/faults/places-circle-mode-dropped.patch",
+    describe:
+      "draw.ts's terra-draw instance is constructed with no TerraDrawCircleMode -- the circle " +
+      "tool can never finish a shape, so it never reaches writePlaces() at all",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/places.spec.ts",
+      "-g",
+      "the circle tool's completion path writes through the same writePlaces",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4397" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

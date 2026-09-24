@@ -14,6 +14,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import {
   BUCKET,
+  collectConsoleErrors,
   collectRequests,
   gotoPublicShell,
   routeBucket,
@@ -569,4 +570,222 @@ test("the 'Show analysis cells' toggle survives a tool switch + remount, matchin
     "true",
   );
   expect(await selectionLineFeatureCount(page)).toBeGreaterThan(0);
+});
+
+// --- P7 ("drawn places vanish from the map after the second draw, and are 'not analysed yet'") ---
+//
+// Root cause 1 (Rule 1, "every place is drawn at all times"): `placesMap.svelte.ts`'s baseline
+// used to be `model.ts#selectedGeomPlaceGeometry` -- exactly ONE place, whichever `sel.sel` named.
+// Drawing a second place auto-selects it (`Places.svelte#writePlaces`), so the map's ONE visible
+// outline moved onto the new place and the one drawn just before it silently vanished. Fixed by
+// `model.ts#allGeomPlacesOutline` -- every `kind: "geom"` place, always -- and `composeOutline`
+// becoming a UNION (an interaction override no longer displaces the baseline, only adds to it).
+//
+// Root cause 2 (Rule 1's "after ANY style re-composition", Rule 3's fault "the circle tool
+// bypassing writePlaces"): terra-draw adds its OWN `td-*` sources/layers straight to the live map
+// (draw.ts's own header), never through `composeStyle()` -- so `map/style.ts#applyStyle`'s
+// `setStyle(diff:true)`, fired reactively on every finished draw (`writePlaces()` changes `sel.pl`),
+// silently REMOVED them (MapLibre's diff drops anything in the current style but absent from the
+// new one). Terra-draw's own next render then threw `TypeError: Cannot read properties of
+// undefined (reading 'setData')` (its adapter calling `.setData()` on a source that no longer
+// existed) -- an UNCAUGHT error, live-reproduced, that left the draw session unable to complete a
+// second shape reliably. Fixed by `map/style.ts#preserveDrawLayers` -- `applyStyle()` now copies any
+// live `td-`-prefixed source/layer the new style doesn't already carry back in, so MapLibre's diff
+// never touches them.
+//
+// A REAL terra-draw session (real `pointerdown`/`pointerup` sequences on the map canvas, not a
+// synthetic `map.fire`) -- the whole point of both bugs is what a real draw does to the live style.
+test.describe("P7: places drawn in sequence stay on the map, survive a reload, and a delete only removes one", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  /** the canvas-offset-aware screen point for a lon/lat -- `page.mouse` needs viewport-absolute
+   * coordinates, `map.project()` returns canvas-relative ones (same technique as
+   * `e2e/places.pick.spec.ts#screenPointFor`, copied rather than imported: that helper is that
+   * file's own local, not a shared export). */
+  async function mapPoint(page: Page, lonLat: [number, number]) {
+    return page.evaluate((ll) => {
+      const map = window.__atlasMap!.handle.map;
+      const rect = map.getCanvas().getBoundingClientRect();
+      const p = map.project(ll);
+      return { x: rect.left + p.x, y: rect.top + p.y };
+    }, lonLat);
+  }
+
+  /** a small real triangle, drawn point by point then closed on its own first vertex -- terra-draw's
+   * own polygon-finish gesture. Clicking "Done" afterwards (present whenever `drawMode` is set)
+   * leaves the session settled before the NEXT shape starts, matching how a real user pauses between
+   * two drawn places. */
+  async function drawPolygonAt(page: Page, points: [number, number][]) {
+    await page.getByRole("button", { name: "Polygon" }).click();
+    for (const ll of points) {
+      const p = await mapPoint(page, ll);
+      await page.mouse.move(p.x, p.y, { steps: 3 });
+      await page.mouse.click(p.x, p.y);
+      await page.waitForTimeout(250);
+    }
+    const first = await mapPoint(page, points[0]);
+    await page.mouse.dblclick(first.x, first.y);
+    await page.waitForTimeout(1500); // let the finish -> writePlaces -> style recompose settle
+    const doneButton = page.getByRole("button", { name: "Done" });
+    if (await doneButton.count()) {
+      await doneButton.click();
+      await page.waitForTimeout(300);
+    }
+  }
+
+  /** click-move-click: terra-draw's circle-mode gesture (centre, then the edge that sets the
+   * radius and finishes the shape). */
+  async function drawCircleAt(page: Page, center: [number, number], edge: [number, number]) {
+    await page.getByRole("button", { name: "Circle" }).click();
+    await page.waitForTimeout(300);
+    const c = await mapPoint(page, center);
+    const e = await mapPoint(page, edge);
+    await page.mouse.move(c.x, c.y, { steps: 5 });
+    await page.mouse.click(c.x, c.y);
+    await page.waitForTimeout(400);
+    await page.mouse.move(e.x, e.y, { steps: 8 });
+    await page.waitForTimeout(200);
+    await page.mouse.click(e.x, e.y);
+    await page.waitForTimeout(1500);
+  }
+
+  // two real, well-separated shapes -- far enough apart that one camera cannot frame both without
+  // the SAME false-negative `queryRenderedFeatures` risk `e2e/places.spec.ts`'s own "drawn/entered
+  // place" test documents (a tiny polygon at too wide a zoom never registers as a hit); each is
+  // checked under its OWN reframed camera instead.
+  const SHAPE_A: [number, number][] = [
+    [-143.3, 58.3],
+    [-142.9, 57.0],
+    [-139.5, 57.2],
+  ];
+  const SHAPE_A_CAMERA = "-141.5,58,7";
+  const SHAPE_B_CENTER: [number, number] = [-120.6, 34.6];
+  const SHAPE_B_EDGE: [number, number] = [-119.0, 34.6];
+  const SHAPE_B_CAMERA = "-120,34.6,7";
+
+  async function gotoWideDrawSession(page: Page) {
+    await gotoPublicShell(page, "/?map=-130,46,3"); // wide enough to click BOTH shapes accurately
+    await page.waitForSelector("#rail-region .rail", { state: "attached" });
+    await page.locator("#rail-region button[aria-label='Places']").click();
+    await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
+  }
+
+  /** reloads fresh (a real page.goto, not an in-session pan) at `camera` carrying `hash` --
+   * `window.__atlasMap`'s own declared shape (shared across every e2e file that uses it) has no
+   * `flyTo`/`jumpTo`, so reframing the camera goes through the SAME `?map=` mechanism a real shared
+   * link already uses -- which is also exactly what "reload the page with the resulting #pl=" means.
+   * `activeTool` is ephemeral chrome, never URL state (Places.svelte's own comment) -- a fresh load
+   * always starts on "Layers", so this re-opens Places every time, matching what a person clicking
+   * a shared link and then opening the Places panel would see. */
+  async function gotoFramedOn(page: Page, camera: string, hash: string) {
+    await page.goto(`/?map=${camera}${hash}`);
+    await waitForHydration(page);
+    await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
+    await page.locator("#rail-region button[aria-label='Places']").click();
+  }
+
+  test("draw AK1 (polygon) then CA circle: both stay on the map, survive a reload, and deleting one leaves the other", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    const errors = collectConsoleErrors(page);
+    await gotoWideDrawSession(page);
+
+    await drawPolygonAt(page, SHAPE_A);
+    await expect(page.locator(".place-row")).toHaveCount(1);
+
+    await drawCircleAt(page, SHAPE_B_CENTER, SHAPE_B_EDGE);
+    await expect(page.locator(".place-row")).toHaveCount(2);
+
+    const hash = await page.evaluate(() => location.hash);
+    // "~" is the codec's own place separator (placeCodec.ts), percent-escaped once more by
+    // `formatSel`'s own URLSearchParams encoding -- "%7E", not a literal "~" -- both places really
+    // are in the ONE shared hash.
+    expect(hash).toMatch(/^#pl=g1\..*%7Eg1\./i);
+
+    // --- both places' outlines render, each proven under its own camera -----------------------
+    await gotoFramedOn(page, SHAPE_A_CAMERA, hash);
+    await expect
+      .poll(() => selectionLineFeatureCount(page), {
+        message: "shape A's outline never rendered after both were drawn",
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(0);
+
+    await gotoFramedOn(page, SHAPE_B_CAMERA, hash);
+    await expect
+      .poll(() => selectionLineFeatureCount(page), {
+        message: "shape B's outline never rendered after both were drawn",
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(0);
+    await expect(page.locator(".place-row")).toHaveCount(2); // the reload reproduced BOTH rows too
+
+    // --- delete shape A: shape B stays drawn, shape A's own spot goes empty --------------------
+    await page.locator("#rail-region button[aria-label='Places']").click();
+    await page.locator(".place-row .row-actions button[aria-label='Delete place']").first().click();
+    await expect(page.locator(".place-row")).toHaveCount(1);
+    const hashAfterDelete = await page.evaluate(() => location.hash);
+    expect(hashAfterDelete).not.toContain("~"); // one place left -- no separator
+
+    await gotoFramedOn(page, SHAPE_B_CAMERA, hashAfterDelete);
+    await expect
+      .poll(() => selectionLineFeatureCount(page), {
+        message: "shape B vanished too after deleting shape A",
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(0);
+
+    await gotoFramedOn(page, SHAPE_A_CAMERA, hashAfterDelete);
+    expect(await selectionLineFeatureCount(page)).toBe(0); // deleted shape A stays gone
+
+    expect(errors).toEqual([]); // no uncaught terra-draw crash anywhere in this whole flow
+  });
+
+  // Rule 3's own fault: the circle tool's completion path must write through the SAME
+  // `writePlaces()` the polygon tool does -- fault-registry entry "places-circle-bypasses-writeplaces"
+  // reverts this to bypass it and must turn this red.
+  test("the circle tool's completion path writes through the same writePlaces() as the polygon tool", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await gotoWideDrawSession(page);
+
+    await drawCircleAt(page, SHAPE_B_CENTER, SHAPE_B_EDGE);
+
+    await expect(page.locator(".place-row")).toHaveCount(1);
+    const hash = await page.evaluate(() => location.hash);
+    // a REAL g1 (geom) token -- proves the circle's finished geometry went through the SAME encoder
+    // every other drawn/entered place does, not a different or skipped path.
+    expect(hash).toMatch(/^#pl=g1\.Drawn(%2520|%20|\s)place%25201\./);
+  });
+});
+
+// Rule 2 ("a newly drawn/added place is analysed automatically, so its row shows numbers, not
+// 'not analysed yet'"): `rowFigures()` (Places.svelte) used to hard-code `composite: null` for
+// EVERY `kind: "geom"` row, unconditionally -- Deliverable 5's own comment called this out as a
+// placeholder nothing ever came back to wire up once the SQL twins existed. Now every geom place
+// gets analysed the moment it exists (`results.ts#placeRowAnalysis` over a `placeScores` cache),
+// not only the one row currently selected -- proven here by asserting place A's OWN row shows a
+// composite while place B (added after it) is the one actually selected, so ONLY the list-level
+// effect (never `ResultsPanel.svelte`'s own per-selection one) could have analysed it.
+test("Rule 2: a drawn/entered place is analysed automatically WITHOUT being selected", async ({
+  page,
+}) => {
+  test.setTimeout(60_000); // a real DuckDB-WASM cold boot, like the round trip above
+  await gotoPlacesWithRoundtripRelease(page, "/?map=-123.75,40.5,6");
+  await addByCoordinates(page, "-124.5, 40.0, -123.0, 41.5"); // place A -- auto-selected
+  await addByCoordinates(page, "-124.9, 39.0, -124.6, 39.8"); // place B -- auto-selected instead
+  await expect(page.locator(".place-row")).toHaveCount(2);
+
+  // place A (row 0) is NOT selected right now (place B, the one added most recently, is) --
+  // confirmed by aria-pressed, so a composite showing up on row 0 cannot be ResultsPanel's doing.
+  await expect(page.locator(".place-row .row-select").nth(0)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+
+  const rowAChip = page.locator(".place-row").nth(0).locator(".chip").first();
+  await expect(rowAChip).toHaveText(/composite/, { timeout: 30_000 });
+  await expect(rowAChip).not.toHaveText("not analysed yet");
 });

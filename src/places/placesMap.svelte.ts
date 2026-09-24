@@ -48,15 +48,24 @@
 // the SAME exclusivity the old panel-mount-bound wiring gave Places by accident, without losing
 // M1's actual fix (a scores click with the Places tool merely OPEN, pick/draw NOT active, still
 // works).
+//
+// P7 fix (0.10.46, "drawn places vanish from the map after the second draw"): `baseline` used to
+// be ONE place -- `model.ts#selectedGeomPlaceGeometry(sel.pl, sel.sel)` -- so drawing (or picking,
+// or selecting) a SECOND place moved the map's only visible outline onto it and dropped whatever
+// was drawn just before. `baseline` is now EVERY `kind: "geom"` place in the list, ALWAYS
+// (`model.ts#allGeomPlacesOutline(sel.pl)`, keyed on `sel.pl` alone -- selection no longer decides
+// what is drawn), and `composeOutline` is a UNION (pick mode's own live highlight / a draw's just-
+// finished preview layered ON TOP of every already-listed place), not an override. See
+// `allGeomPlacesOutline`'s and `composeOutline`'s own headers in model.ts.
 import type { FeatureCollection } from "geojson";
 import type { SelStore } from "../lib/state/sel.svelte";
-import { densifyGeometry } from "./densify";
-import { composeOutline, featureCollectionOf, selectedGeomPlaceGeometry } from "./model";
+import { allGeomPlacesOutline, composeOutline } from "./model";
 
 export interface PlacesMapStore {
-  /** `interaction ?? baseline` -- the pick-mode highlight or a draw's live preview (Deliverable
-   * 2/3) when one is set, else the selected place's own outline restored from `sel.pl`/`sel.sel`
-   * alone (Deliverable 4); `null` when nothing should be highlighted. */
+  /** every `kind: "geom"` place in the list, PLUS (layered on top) an interaction override when
+   * one is set -- the pick-mode highlight of a not-yet-added candidate, or a draw's just-finished
+   * live preview (Deliverable 2/3). P7 (0.10.46): no longer just the selected place -- see this
+   * module's own header. `null` only when there is nothing to show at all. */
   readonly outline: FeatureCollection | null;
   /** "show analysis cells" (Deliverable 2): the covered cells, each carrying `pct` (1-100) and
    * `opacity` (`pct / 100`) properties for the selection layer's data-driven fill-opacity. */
@@ -90,14 +99,17 @@ export function createPlacesMapStore(deps: PlacesMapDeps): PlacesMapStore {
   // the baseline (this module's own header comment) -- a pure `$derived`, never an effect: it has
   // no side effect to race, so reading it can never disagree with a concurrent writer the way two
   // effects writing the same `$state` could.
-  const baseline = $derived.by(() => {
-    const geometry = selectedGeomPlaceGeometry(deps.selStore.sel.pl, deps.selStore.sel.sel);
-    return geometry ? featureCollectionOf(densifyGeometry(geometry)) : null;
-  });
+  //
+  // P7 fix ("drawn places vanish from the map after the second draw"): EVERY place in the list,
+  // not just the selected row -- `model.ts#allGeomPlacesOutline`'s own header has the root cause.
+  // Depends on `sel.pl` alone (never `sel.sel`): which place is selected no longer decides what is
+  // drawn, only which places EXIST decides that.
+  const baseline = $derived.by(() => allGeomPlacesOutline(deps.selStore.sel.pl));
 
   // a place/pl selection change drops any interaction override left over from a PREVIOUS
-  // selection (this module header's own rule) -- `Places.svelte`'s pick/draw callbacks
-  // (`refreshOutline()`, `onDrawFinish()`) re-assert a fresh one immediately if still active.
+  // selection (this module header's own rule, unchanged by the P7 fix) -- `Places.svelte`'s
+  // pick/draw callbacks (`refreshOutline()`, `onDrawFinish()`) re-assert a fresh one immediately
+  // if still active.
   $effect(() => {
     void deps.selStore.sel.pl;
     void deps.selStore.sel.sel;

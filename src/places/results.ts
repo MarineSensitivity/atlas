@@ -18,6 +18,7 @@ import {
 import type { DataEngineContext } from "./dataEngine";
 import type { AreaGeometry } from "../lib/geo/types";
 import type { CellCoverage } from "../lib/geo/coverage";
+import { PUBLIC_DATA_BASE } from "../lib/release/dataBase";
 
 export interface CoverageSummary {
   /** cells this place's geometry overlaps, before any study-area clip. */
@@ -34,6 +35,43 @@ export interface ScoreResults {
   components: ComponentScore[];
   /** `msens::mean_score()` -- NaN when the place has no scored cell at all. */
   composite: number;
+}
+
+/** `Places.svelte`'s own per-place cache entry -- a real result, mid-flight, or a described
+ * failure (never a bare `"error"` flag: {@link describeAnalysisError}'s own header explains why a
+ * place's row has to be able to say WHAT failed). */
+export type PlaceScoreState = ScoreResults | "loading" | { error: string };
+
+export interface PlaceRowAnalysis {
+  coveragePct: number | null;
+  composite: number | null;
+  /** what to show in place of a composite chip while there is no number to show. */
+  status?: "loading" | "error" | "outside";
+  errorMessage?: string;
+}
+
+/**
+ * `placeScores[key]` (`Places.svelte`'s cache, keyed by a place's own geometry) -> what its row's
+ * chip should show. Pulled out as a pure function -- CLAUDE.md's "keep core logic in an exported
+ * function ... a component just calls it" -- so every branch (still loading, a described failure,
+ * analysed-but-zero-study-area-coverage, a real composite) has a direct unit test independent of
+ * Svelte. `undefined` (never triggered yet, e.g. no release resolved) reads the same as "not
+ * analysed yet" always has.
+ */
+export function placeRowAnalysis(cached: PlaceScoreState | undefined): PlaceRowAnalysis {
+  if (cached === undefined) return { coveragePct: null, composite: null };
+  if (cached === "loading") return { coveragePct: null, composite: null, status: "loading" };
+  if (typeof cached === "object" && "error" in cached) {
+    return { coveragePct: null, composite: null, status: "error", errorMessage: cached.error };
+  }
+  if (cached.coverage.nCellsStudyArea === 0) {
+    // analysed, genuinely has no US-study-area coverage -- distinct from "not analysed yet".
+    return { coveragePct: 0, composite: null, status: "outside" };
+  }
+  return {
+    coveragePct: cached.coverage.coveragePct,
+    composite: Number.isFinite(cached.composite) ? cached.composite : null,
+  };
 }
 
 /** `boot.capabilities.cell_model` (schema TBD, atlas-1): `false` is the ONLY value that turns
@@ -157,4 +195,46 @@ export function computeSpeciesResults(
     });
     return { rows, tilesUsed: tiles.length };
   });
+}
+
+// --- P7 addendum: honest failures for a MISSING release object -----------------------------------
+//
+// A drawn place can legitimately cover ground a release never published a tile for -- `placeCells`
+// walks the geometric grid, not the release's actual object list, so a box that touches land or
+// runs past the populated footprint asks `AnalysisSources#cellTiles` for a `app/cell/tile={t}/
+// data_0.parquet` that genuinely does not exist. S3 answers a GetObject on a missing key with 403
+// (no ListBucket permission to disclose 404 vs "forbidden"), `engine/materialize.ts#fetchWithSizeGuard`
+// throws `Error("fetch <url>: HTTP 403")`, and `engine.ts` normalizes every failure into
+// `EngineUnavailableError("data engine unavailable: <cause>")` -- reproduced live (v7,
+// `-170,50,-130,60`): `.../v7/app/cell/tile=593/data_0.parquet` 403s while its neighbours 588-592
+// answer 200. `computeScoreResults`'s own callers used to show that raw, stack-shaped message
+// verbatim (or, `Places.svelte`'s row chip, nothing analysis-specific at all -- see this module's
+// header) -- neither says what actually happened. `describeAnalysisError` names the missing OBJECT
+// (release-relative, not the whole `https://` URL) when the failure is exactly this shape, so a
+// release gap reads as "analysis unavailable for this release: v7/app/cell/tile=593/data_0.parquet
+// (HTTP 403)" -- a sentence that can be handed to whoever publishes the release, not a stack trace.
+// Anything else (a WASM crash, a malformed query) falls back to the error's own message, unchanged.
+
+/** the release-relative KEY inside `err`'s own message, when it names one via
+ * `fetchWithSizeGuard`'s "fetch <url>: HTTP <code>" shape -- `null` for anything else (a WASM
+ * crash, a malformed query, ...). Strips {@link PUBLIC_DATA_BASE} so the result names an OBJECT
+ * ("v7/app/cell/tile=593/data_0.parquet"), not a full URL. */
+export function fetchFailureFromError(err: unknown): { path: string; status: number } | null {
+  const msg = err instanceof Error ? err.message : String(err);
+  const m = /fetch (\S+): HTTP (\d+)/.exec(msg);
+  if (!m) return null;
+  const [, url, status] = m;
+  const path = url.startsWith(PUBLIC_DATA_BASE) ? url.slice(PUBLIC_DATA_BASE.length) : url;
+  return { path, status: Number(status) };
+}
+
+/** one honest sentence for a failed place analysis -- the ONE place `Places.svelte`'s row chip and
+ * `ResultsPanel.svelte`'s own error paragraph both build their text from, so the two can never say
+ * two different things about the SAME failure. */
+export function describeAnalysisError(err: unknown): string {
+  const failure = fetchFailureFromError(err);
+  if (failure) {
+    return `analysis unavailable for this release: ${failure.path} (HTTP ${failure.status})`;
+  }
+  return err instanceof Error ? err.message : "Couldn't compute scores for this place.";
 }
