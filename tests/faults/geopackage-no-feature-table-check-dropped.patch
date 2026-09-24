@@ -1,0 +1,13 @@
+diff --git a/src/lib/geo/upload/parsers/geopackage.ts b/src/lib/geo/upload/parsers/geopackage.ts
+index b431aa4..002e61b 100644
+--- a/src/lib/geo/upload/parsers/geopackage.ts
++++ b/src/lib/geo/upload/parsers/geopackage.ts
+@@ -123,7 +123,7 @@ export async function parseGeoPackage(
+       const contents = await rt.query<{ n: unknown }>(
+         `SELECT count(*) AS n FROM sqlite_scan(${sqlLit(name)}, 'gpkg_contents') WHERE data_type = 'features';`,
+       );
+-      if (Number(contents[0]?.n ?? 0) === 0) {
++      if (false) {
+         throw new UploadParseError(geopackageNoFeatureTable(fileName));
+       }
+     } catch (err) {

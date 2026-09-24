@@ -1163,10 +1163,40 @@ const FAULTS = [
     env: { PW_PORT: "4429" },
     duckdbExt: true,
   },
-  // round 2, Q7: `logUrl` (src/lib/analytics/logUrl.ts's `analyticsLogUrl()`) reaching
-  // `createAnalytics()` -- docs/analytics.md and the orchestrator's own instructions to Ben both
-  // said setting the repository variable `VITE_LOG_URL` was enough, which was false while neither
-  // construction site passed a `logUrl` at all.
+  {
+    id: "geopackage-no-feature-table-check-dropped",
+    patch: "tests/faults/geopackage-no-feature-table-check-dropped.patch",
+    describe:
+      "parseGeoPackage()'s feature-table existence check ('if (Number(...) === 0)') is neutered " +
+      "to 'if (false)' -- a raster-tile/attribute-only .gpkg (no vector layer at all) falls " +
+      "through to ST_Read's raw SQL error instead of the honest geopackageNoFeatureTable refusal " +
+      "(Q2's own reader-returns-no-features fault)",
+    gate: [
+      "npx",
+      "vitest",
+      "run",
+      "tests/geo/upload/parsers.test.ts",
+      "-t",
+      "refused by name, not with ST_Read's raw SQL error",
+    ],
+  },
+  {
+    id: "naming-option-ignored",
+    patch: "tests/faults/naming-option-ignored.patch",
+    describe:
+      "normalizeParsed()'s nameProperty auto-detection (detectNameProperty()) is dropped -- " +
+      "leaving nameProperty out again silently never uses a feature's own name/title/label, the " +
+      "exact regression docs/upload.md's documented naming option was in since it was written " +
+      "(Opus finding, Q2 fix)",
+    gate: [
+      "npx",
+      "vitest",
+      "run",
+      "tests/geo/upload/rules.test.ts",
+      "-t",
+      "picks up a 'name' property with no nameProperty option at all",
+    ],
+  },
   {
     id: "analytics-logurl-unwired",
     patch: "tests/faults/analytics-logurl-unwired.patch",

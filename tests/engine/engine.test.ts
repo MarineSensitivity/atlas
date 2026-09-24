@@ -231,6 +231,75 @@ describe("Engine#load — materialize-then-query", () => {
   });
 });
 
+// Q2, 0.10.52: the "buffer-register + query" hook `lib/geo/upload/engineRuntime.ts` adapts into a
+// `GeoPackageRuntime` for `parseGeoPackage` -- previously missing, so `UploadPanel.svelte` hardcoded
+// `runtime: null` and every `.gpkg` was refused unconditionally. `exec()` (tested above) already
+// serves as the runtime's `query`; these two are the new half.
+describe("Engine#registerFile / dropFile — the GeoPackage runtime hook", () => {
+  it("registerFile boots the engine and registers the raw bytes via registerFileBuffer directly", async () => {
+    const h = fakeHandle();
+    const engine = new Engine({ createDb: h.createDb, extensionRepository: null });
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    await engine.registerFile("upload_place.gpkg", bytes);
+    expect(h.createDb).toHaveBeenCalledTimes(1); // boot() ran
+    expect(h.registerFileBuffer).toHaveBeenCalledExactlyOnceWith("upload_place.gpkg", bytes);
+  });
+
+  it("registerFile/dropFile/exec share the SAME chain -- a slow registerFile delays a later exec", async () => {
+    const order: string[] = [];
+    const h = fakeHandle({
+      onQuery: (sql) => {
+        order.push(`exec:${sql}`);
+        return [];
+      },
+    });
+    h.registerFileBuffer.mockImplementation(async () => {
+      order.push("registerFile:start");
+      await new Promise((r) => setTimeout(r, 20));
+      order.push("registerFile:done");
+    });
+    const engine = new Engine({ createDb: h.createDb, extensionRepository: null });
+
+    const regP = engine.registerFile("f", new Uint8Array([1]));
+    const execP = engine.exec("SELECT 1");
+    await Promise.all([regP, execP]);
+    expect(order).toEqual(["registerFile:start", "registerFile:done", "exec:SELECT 1"]);
+  });
+
+  it("registerFile wraps a registerFileBuffer failure as EngineUnavailableError", async () => {
+    const h = fakeHandle();
+    h.registerFileBuffer.mockRejectedValue(new Error("worker transfer failed"));
+    const engine = new Engine({ createDb: h.createDb, extensionRepository: null });
+    await expect(engine.registerFile("f", new Uint8Array([1]))).rejects.toThrow(
+      /data engine unavailable: worker transfer failed/,
+    );
+  });
+
+  it("dropFile calls the handle's own dropFile", async () => {
+    const h = fakeHandle();
+    const engine = new Engine({ createDb: h.createDb, extensionRepository: null });
+    await engine.registerFile("f", new Uint8Array([1]));
+    await engine.dropFile("f");
+    expect(h.dropFile).toHaveBeenCalledExactlyOnceWith("f");
+  });
+
+  it("dropFile before any boot is a silent no-op, never a crash", async () => {
+    const h = fakeHandle();
+    const engine = new Engine({ createDb: h.createDb, extensionRepository: null });
+    await expect(engine.dropFile("never-registered")).resolves.toBeUndefined();
+    expect(h.createDb).not.toHaveBeenCalled(); // no boot triggered either
+    expect(h.dropFile).not.toHaveBeenCalled();
+  });
+
+  it("dropFile wraps a real dropFile failure as EngineUnavailableError", async () => {
+    const h = fakeHandle();
+    h.dropFile.mockRejectedValue(new Error("no such file"));
+    const engine = new Engine({ createDb: h.createDb, extensionRepository: null });
+    await engine.registerFile("f", new Uint8Array([1]));
+    await expect(engine.dropFile("f")).rejects.toThrow(/data engine unavailable: no such file/);
+  });
+});
+
 describe("Engine marks", () => {
   it("records engine:boot, engine:load and engine:exec marks with timing", async () => {
     const h = fakeHandle({ onQuery: () => [{ n: 1 }] });
