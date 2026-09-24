@@ -88,6 +88,41 @@ const FLOWER_DEFAULT_V9_AK = [
   { component: "primprod", score: 5.63669830203109 },
 ];
 
+// atlas-4 fix round 2 (owner-reported defect, 2026-09-24): the REAL live v7 `flower_default.FULL`
+// shape — 8 components, "Other" included, full double precision — read directly off the
+// production screenshot (docs/parity/shots/scores-flower-atlas.jpg). The previous 3-item stand-in
+// (bird/fish/primprod, none of them small enough) never exercised the hub-occlusion defect
+// (flowerGeometry.ts's header): Coral/Fish/Invertebrate/Other/Primary producer are all <= the
+// hub's radius and were the exact petals the live bug painted over. Order matches the real
+// release's own row order.
+export const FLOWER_DEFAULT_V7_FULL = [
+  { component: "bird", score: 45.6671707107685 },
+  { component: "coral", score: 10.4494142116047 },
+  { component: "fish", score: 15.9570514927416 },
+  { component: "invertebrate", score: 14.7345085163167 },
+  { component: "mammal", score: 41.668393775248 },
+  { component: "other", score: 15.1784428369187 },
+  { component: "turtle", score: 38.8176408891894 },
+  { component: "primprod", score: 10.3787489146688 },
+];
+
+/** the SAME real 8 values as `FLOWER_DEFAULT_V7_FULL`, keyed as a zone's own
+ * `*_ecoregion_rescaled` metrics (`zoneFlowerComponents`'s input shape, `flower.ts#fromMetrics`) —
+ * gives `e2e/scores.flower.spec.ts` a real, non-default (a SELECTED zone's) flower to exercise the
+ * same fix against, per this round's own instructions ("nothing selected... AND a selected zone").
+ * Reusing the exact reported numbers keeps every fixture in this suite traceable to the one real
+ * screenshot rather than inventing a second, unverified data shape. */
+export const FLOWER_ZONE_METRICS_GAA = {
+  extrisk_bird_ecoregion_rescaled: 45.6671707107685,
+  extrisk_coral_ecoregion_rescaled: 10.4494142116047,
+  extrisk_fish_ecoregion_rescaled: 15.9570514927416,
+  extrisk_invertebrate_ecoregion_rescaled: 14.7345085163167,
+  extrisk_mammal_ecoregion_rescaled: 41.668393775248,
+  extrisk_other_ecoregion_rescaled: 15.1784428369187,
+  extrisk_turtle_ecoregion_rescaled: 38.8176408891894,
+  primprod_ecoregion_rescaled: 10.3787489146688,
+};
+
 export function bootFor(ver: Ver) {
   const common = {
     schema: 1,
@@ -155,21 +190,21 @@ export function bootFor(ver: Ver) {
       },
     ],
     zones: {
+      // GAA carries the SAME real 8-component values as the default flower (a selected zone's
+      // own flower, `e2e/scores.flower.spec.ts`'s second case) -- every other zone keeps just the
+      // composite, unchanged, so no existing spec's zone-metrics assumptions move.
       programarea: ZONE_KEYS.map((key, i) => ({
         key,
         name: key,
         n_taxa: 100 + i,
-        metrics: { [COMPOSITE_KEY]: 10 + i },
+        metrics:
+          key === "GAA"
+            ? { [COMPOSITE_KEY]: 10 + i, ...FLOWER_ZONE_METRICS_GAA }
+            : { [COMPOSITE_KEY]: 10 + i },
       })),
       subregion: [{ key: "FULL", name: "All US waters", n_taxa: 1, metrics: {} }],
     },
-    flower_default: {
-      FULL: [
-        { component: "bird", score: 45.67 },
-        { component: "fish", score: 15.96 },
-        { component: "primprod", score: 10.38 },
-      ],
-    },
+    flower_default: { FULL: FLOWER_DEFAULT_V7_FULL },
   };
 }
 

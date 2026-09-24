@@ -10,7 +10,35 @@
 // angular SLOT (so the ring's layout doesn't shift depending on which components happen to be
 // present) but draws no petal in it and excludes it from the mean -- "absent is not zero"
 // (docs/design/spec.md / the plan).
+//
+// atlas-4 fix round 2 (owner-reported defect, 2026-09-24): "Flower plot, nothing selected" on live
+// v7 listed EIGHT components under a centre of 24 but drew only ~3-4 visible petals. Root cause --
+// every petal used to be a full PIE SLICE from the true centre (`sectorPath(cx, cy, radius, ...)`
+// with `radius = score` when `outerRadius = 100`), and `Flower.svelte`/`flowerSvg.ts` then drew a
+// solid hub disc of radius 24 ON TOP to host the centre number. Any component whose score was <=
+// 24 -- Coral 10.45, Fish 15.96, Invertebrate 14.73, Other 15.18, Primary producer 10.38 in the
+// reported case -- produced a slice that fit ENTIRELY inside the hub and was therefore completely
+// covered by it: 5 of 8 petals were real, correctly-colored, correctly-sized shapes that were
+// simply painted over. This was never a color/category mapping gap (every one of the eight real
+// categories, "other" included, already had a defined, distinct `--cat-*` token in tokens.css) --
+// it was a z-order/radius bug that happened to look like a missing color from the screenshot.
+//
+// The fix mirrors what `msens::ggplot_flower()` does structurally (viz.R:779: `xlim(c(-10,
+// max(height)))`, which offsets the polar axis so every bar's inner edge starts above the true
+// centre, never fully covered by the centre annotation): every petal is now drawn as an ANNULAR
+// SECTOR (a donut-ring wedge) from a shared `innerRadius` (matching the hub's own radius) out to a
+// score-scaled outer radius, rather than a pie slice from the true centre. A real, present score
+// -- however small -- always draws a visible band immediately outside the hub; only an EXACT score
+// of 0 is naturally degenerate (innerRadius == outerRadius, zero-width, nothing to draw), which is
+// the same "real but invisible" contract `sectorPath`'s `radius <= 0` case already had.
 import { categoryFor, categoryKeyFor, type Category } from "./categories";
+import { formatScore } from "../format";
+
+/** the hub's radius as a fraction of `outerRadius` (24 of 100 in the default/only configuration
+ * this app ever uses) -- the single source both `computeFlowerGeometry`'s default `innerRadius`
+ * and every renderer's `<circle r>` derive from, so the two can never drift apart again the way
+ * Flower.svelte's hardcoded `r="24"` and this module's plain pie slices did. */
+export const FLOWER_HUB_RADIUS_RATIO = 0.24;
 
 export interface FlowerComponentInput {
   /** raw category/component key as the data names it (msens sp_cat, or the flower's
@@ -28,8 +56,17 @@ export interface FlowerPetal {
   score: number;
   startAngle: number;
   endAngle: number;
-  /** SVG path `d` for a filled sector from the centre out to `score`'s scaled radius; "" when the
-   * radius is 0 (a real score of exactly 0 -- still present, just degenerate) */
+  /** the shared hub-boundary radius every petal's annular band starts from (same units as `path`'s
+   * coordinates) -- exposed so a caller/test can compute this petal's on-screen centroid without
+   * parsing `path` (see `petalCentroid`). */
+  innerRadius: number;
+  /** this petal's own OUTER edge radius: `innerRadius` when `score` is 0, the geometry's
+   * `outerRadius` option when `score` is 100. */
+  radius: number;
+  /** SVG path `d` for a filled ANNULAR SECTOR from `innerRadius` out to `radius`; "" when
+   * `radius <= innerRadius` (a real score of exactly 0 -- still present, just degenerate). Never a
+   * pie slice from the true centre -- see this module's header note on why a hub drawn on top of
+   * that shape silently swallowed every petal below the hub's own radius. */
   path: string;
 }
 
@@ -52,12 +89,20 @@ export interface FlowerGeometry {
   /** total slots -- fixes the equal angular width (360 / sliceCount) independent of how many of
    * them are actually drawn */
   sliceCount: number;
+  /** the shared hub-boundary radius (same value as every petal's own `innerRadius`) -- the ONE
+   * place a renderer's hub `<circle r>` should read this from, rather than a hardcoded literal
+   * that can drift from the petals drawn around it. */
+  innerRadius: number;
 }
 
 export interface FlowerGeometryOptions {
   /** the SVG viewBox is `0 0 (2*outerRadius) (2*outerRadius)`; the centre is
    * `(outerRadius, outerRadius)`. Default 100 (a 0-100 viewBox unit maps 1:1 to a score point). */
   outerRadius?: number;
+  /** the hub's radius, in the same units as `outerRadius` -- every petal's annular band starts
+   * here, never at the true centre (see this module's header). Default
+   * `outerRadius * FLOWER_HUB_RADIUS_RATIO` (24 when `outerRadius` is the default 100). */
+  innerRadius?: number;
 }
 
 function clamp(x: number, lo: number, hi: number): number {
@@ -71,24 +116,61 @@ function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
 }
 
-/** a filled circular sector from `(cx, cy)` out to `radius`, spanning `[startAngle, endAngle)`
- * degrees. `radius <= 0` draws nothing (a real score of 0, not an error). */
+/**
+ * A filled sector from `(cx, cy)` out to `radius`, spanning `[startAngle, endAngle)` degrees.
+ * `radius <= innerRadius` draws nothing (a real score of 0, not an error).
+ *
+ * `innerRadius` (default 0, a full pie slice from the true centre) turns the shape into an ANNULAR
+ * SECTOR -- a donut-ring wedge from `innerRadius` to `radius` instead -- which is what
+ * `computeFlowerGeometry` uses for every petal (see this module's header: a pie slice from the
+ * centre is exactly what let the hub disc silently cover any petal at or below its own radius).
+ */
 export function sectorPath(
   cx: number,
   cy: number,
   radius: number,
   startAngle: number,
   endAngle: number,
+  innerRadius = 0,
 ): string {
-  if (radius <= 0 || endAngle <= startAngle) return "";
+  if (radius <= innerRadius || endAngle <= startAngle) return "";
+  const largeArc = endAngle - startAngle > 180 ? 1 : 0;
   const start = polarToCartesian(cx, cy, radius, startAngle);
   const end = polarToCartesian(cx, cy, radius, endAngle);
-  const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+  if (innerRadius <= 0) {
+    return (
+      `M ${cx} ${cy} ` +
+      `L ${start.x.toFixed(3)} ${start.y.toFixed(3)} ` +
+      `A ${radius} ${radius} 0 ${largeArc} 1 ${end.x.toFixed(3)} ${end.y.toFixed(3)} Z`
+    );
+  }
+  const innerStart = polarToCartesian(cx, cy, innerRadius, startAngle);
+  const innerEnd = polarToCartesian(cx, cy, innerRadius, endAngle);
   return (
-    `M ${cx} ${cy} ` +
+    `M ${innerStart.x.toFixed(3)} ${innerStart.y.toFixed(3)} ` +
     `L ${start.x.toFixed(3)} ${start.y.toFixed(3)} ` +
-    `A ${radius} ${radius} 0 ${largeArc} 1 ${end.x.toFixed(3)} ${end.y.toFixed(3)} Z`
+    `A ${radius} ${radius} 0 ${largeArc} 1 ${end.x.toFixed(3)} ${end.y.toFixed(3)} ` +
+    `L ${innerEnd.x.toFixed(3)} ${innerEnd.y.toFixed(3)} ` +
+    `A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${innerStart.x.toFixed(3)} ${innerStart.y.toFixed(3)} Z`
   );
+}
+
+/** the on-screen (viewBox) centroid of a drawn petal's colored annular band -- the midpoint of its
+ * angular span at the midpoint of its radial band (`innerRadius`..`radius`). `cx`/`cy` are the
+ * geometry's own centre (`outerRadius, outerRadius` in the default 100-unit flower). Used by
+ * `e2e/scores.flower.spec.ts` to probe a real rendered pixel inside each petal without parsing its
+ * SVG path string -- the seeded fault this guards against is a "petal exists in the DOM with a
+ * defined fill" check that never verifies the petal is actually the topmost, visible thing at its
+ * own centroid (the exact gap in the old `e2e/gallery.spec.ts` "8 distinct colors" gate, which
+ * read `getComputedStyle(...).fill` and so passed even while the hub covered 5 of 8 petals). */
+export function petalCentroid(
+  petal: Pick<FlowerPetal, "startAngle" | "endAngle" | "innerRadius" | "radius">,
+  cx: number,
+  cy: number,
+): { x: number; y: number } {
+  const midAngle = (petal.startAngle + petal.endAngle) / 2;
+  const midRadius = (petal.innerRadius + petal.radius) / 2;
+  return polarToCartesian(cx, cy, midRadius, midAngle);
 }
 
 /**
@@ -110,11 +192,12 @@ export function computeFlowerGeometry(
   options: FlowerGeometryOptions = {},
 ): FlowerGeometry {
   const outerRadius = options.outerRadius ?? 100;
+  const innerRadius = options.innerRadius ?? outerRadius * FLOWER_HUB_RADIUS_RATIO;
   const n = components.length;
   const petals: FlowerPetal[] = [];
   const noData: FlowerSlot[] = [];
 
-  if (n === 0) return { petals, noData, centerValue: null, sliceCount: 0 };
+  if (n === 0) return { petals, noData, centerValue: null, sliceCount: 0, innerRadius };
 
   const seenCategoryKeys = new Map<string, string>(); // resolved CategoryKey -> the raw input key
   for (const c of components) {
@@ -144,14 +227,20 @@ export function computeFlowerGeometry(
     }
     const score = clamp(c.score, 0, 100);
     present.push(score);
-    const radius = (score / 100) * outerRadius;
+    // an ANNULAR sector, innerRadius -> radius (never a pie slice from the true centre) -- see
+    // this module's header. score=0 -> radius === innerRadius (degenerate, draws nothing, same
+    // "real but invisible" contract as before); score=100 -> radius === outerRadius (reaches the
+    // same outer edge a pre-fix pie slice did).
+    const radius = innerRadius + (score / 100) * (outerRadius - innerRadius);
     petals.push({
       key: c.key,
       category,
       score,
       startAngle,
       endAngle,
-      path: sectorPath(outerRadius, outerRadius, radius, startAngle, endAngle),
+      innerRadius,
+      radius,
+      path: sectorPath(outerRadius, outerRadius, radius, startAngle, endAngle, innerRadius),
     });
   });
 
@@ -159,7 +248,7 @@ export function computeFlowerGeometry(
     ? present.reduce((sum, v) => sum + v, 0) / present.length
     : null;
 
-  return { petals, noData, centerValue, sliceCount: n };
+  return { petals, noData, centerValue, sliceCount: n, innerRadius };
 }
 
 export interface SafeFlowerGeometry {
@@ -230,7 +319,7 @@ export function describeFlowerSummary(title: string, geometry: FlowerGeometry): 
     return `${title}. Composite mean: no data. No data for any component (${absent}).`;
   }
 
-  const parts = petals.map((p) => `${p.category.label} ${p.score}`);
+  const parts = petals.map((p) => `${p.category.label} ${formatScore(p.score)}`);
   let text =
     `${title}. Composite mean ${meanText} across ${n} component${n === 1 ? "" : "s"}: ` +
     `${parts.join(", ")}.`;
@@ -238,5 +327,11 @@ export function describeFlowerSummary(title: string, geometry: FlowerGeometry): 
     const absent = noData.map((s) => s.category.label).join(", ");
     text += ` No data for ${absent}.`;
   }
-  return `${text} See the component table below for exact values.`;
+  // atlas-4 fix round 2: never claims a PAGE POSITION ("below") -- this one sentence is reused in
+  // three places whose layout disagrees on where the table actually is. In `Flower.svelte` the
+  // "Show table" TOGGLE (and the table itself, once shown) sit ABOVE this sentence, not below it;
+  // in the exported docx/HTML report (`src/lib/report/model.ts`'s `detail` field,
+  // `src/report/exportDocx.ts`) this text is a standalone paragraph with no table anywhere near
+  // it. "for exact values" alone is the only claim true in every context.
+  return `${text} See the component table for exact values.`;
 }
