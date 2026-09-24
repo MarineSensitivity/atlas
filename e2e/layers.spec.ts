@@ -19,10 +19,16 @@
 //
 // M8 fix (Opus 5.5 review): `main`'s default theme is now DARK (`DEFAULT_SEL.theme`), not "auto"
 // resolving to paper — `gotoLayersScores` below passes `&theme=light` explicitly so the PAPER
-// pixel expectations (`BASEMAP_RGB`, `BLENDED_RASTER_RGB`, both defined for the paper theme in
-// `map-hermetic.ts`) still hold. `gotoScoresWithEcoregion` (the ecoregion describe block below)
-// asserts feature counts and layer presence only, never a colour, so it does not need the theme
-// pinned.
+// pixel expectations (`BASEMAP_RGB` from `map-hermetic.ts`, and this file's OWN
+// `BLENDED_RASTER_RGB` below) still hold. `gotoScoresWithEcoregion` (the ecoregion describe block
+// below) asserts feature counts and layer presence only, never a colour, so it does not need the
+// theme pinned.
+//
+// second merge (main aab5745, U5/U3/the e2e blend fix): `scores-hermetic.ts#BLENDED_RASTER_RGB`
+// was redefined to blend against `BASEMAP_RGB_NAVY` (main's own now-dark default theme,
+// `species.timing.spec.ts` does the same for its own opacity) -- this file forces `theme=light`
+// throughout, so it needs the PAPER blend instead and defines its own local constant, shadowing
+// the shared (now navy) one rather than importing it.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
@@ -35,13 +41,7 @@ import {
   safeRoute,
   waitForHydration,
 } from "./hermetic";
-import {
-  BLENDED_RASTER_RGB,
-  OCEAN_PROBES,
-  bootFor,
-  readPixel,
-  routeZones20,
-} from "./scores-hermetic";
+import { OCEAN_PROBES, bootFor, readPixel, routeZones20 } from "./scores-hermetic";
 import { SCORE_RASTER_OPACITY } from "../src/lib/map/layers/raster";
 import {
   BASEMAP_RGB,
@@ -57,6 +57,14 @@ import {
  * imported directly (this file stays outside `src/lib/map` on purpose, matching every other e2e
  * fixture's own literal-colour convention, e.g. `map-hermetic.ts#BASEMAP_RGB`). */
 const MAP_BACKGROUND_PAPER_RGB = [234, 238, 243];
+
+/** the raster painting at its default `SCORE_RASTER_OPACITY` (0.6) OVER the PAPER basemap fixture
+ * colour (`BASEMAP_RGB`) -- this file's own local blend, since `gotoLayersScores` always forces
+ * `theme=light` but `scores-hermetic.ts#BLENDED_RASTER_RGB` now blends against the NAVY fixture
+ * colour instead (main's own dark-by-default fix; see this file's header). */
+const BLENDED_RASTER_RGB = [0, 1, 2].map((i) =>
+  Math.round(RASTER_RGB[i] * SCORE_RASTER_OPACITY + BASEMAP_RGB[i] * (1 - SCORE_RASTER_OPACITY)),
+);
 
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 800 } });
