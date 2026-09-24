@@ -27,6 +27,7 @@
     type ReportPlaceInput,
   } from "../lib/report/model";
   import { paletteStopsFromBoot } from "../lib/raster/ramps";
+  import { formatScore } from "../lib/format";
   import {
     formatCoveragePct,
     formatCount,
@@ -553,21 +554,29 @@
             role="group"
             aria-label={`Composite mean ${f.centre ?? "no data"}`}
           >
+            <!-- atlas-4 fix round 2 (2026-09-24 defect): petals are an ANNULAR sector from
+                 `f.geometry.innerRadius` (the SAME shared geometry `computeFlowerGeometry` builds
+                 for the live app, `src/lib/ui/flowerGeometry.ts`'s header), never a pie slice from
+                 the true centre -- this file used to draw a hub circle of a hardcoded `r="24"` ON
+                 TOP of full pie slices, which covered any component scoring <= 24 exactly the way
+                 the live app's own bug did. `opacity="0.5"` matches the ported app's own
+                 `geom_rect_interactive(..., alpha = 0.5)` (msens viz.R) --
+                 docs/parity/checklists/atlas-7-report.md:24. -->
             {#each f.geometry.petals as p (p.key)}
               <path
                 d={p.path}
                 style={`fill: var(${p.category.color})`}
-                opacity="0.92"
+                opacity="0.5"
                 stroke="white"
                 stroke-width="1"
               >
-                <title>{p.category.label}: {p.score}</title>
+                <title>{p.category.label}: {formatScore(p.score)}</title>
               </path>
             {/each}
             <circle
               cx="100"
               cy="100"
-              r="24"
+              r={f.geometry.innerRadius}
               class="hub"
               fill="var(--surface-raised)"
               stroke="var(--border-control)"
@@ -576,6 +585,20 @@
               >{f.centre ?? "—"}</text
             >
           </svg>
+          <!-- a legend BENEATH the flower (docs/parity/checklists/atlas-7-report.md:24): this
+               page's petals carry a `<title>` tooltip, but a printed page and the exported
+               docx/HTML snapshot show neither hover state nor JS, so color alone would be the
+               ONLY cue to which petal is which component -- exactly what spec.md's "no
+               information by color alone" forbids. One swatch + label per DRAWN petal, in the
+               same order the ring lays them out. -->
+          <ul class="flower-legend" aria-label={`${f.name} flower components`}>
+            {#each f.geometry.petals as p (p.key)}
+              <li>
+                <span class="swatch" style={`background: var(${p.category.color})`}></span>
+                {p.category.label}
+              </li>
+            {/each}
+          </ul>
           <p id={`flower-summary-${i}`}>{f.summary}</p>
         </figure>
       {/each}

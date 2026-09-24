@@ -149,37 +149,42 @@ describe("proj / rep / tour: enums with fixed defaults", () => {
   });
 });
 
-describe("theme: tri-state, default 'auto' (fix round 1, plan atlas-3)", () => {
-  it("defaults to 'auto' with no key", () => {
-    expect(parseSel(EMPTY).theme).toBe("auto");
+describe("theme: tri-state, default 'dark' (U2a, round 2 — was 'auto', fix round 1/atlas-3)", () => {
+  it("defaults to 'dark' with no key (U2a: no longer follows prefers-color-scheme by default)", () => {
+    expect(parseSel(EMPTY).theme).toBe("dark");
   });
 
-  it("parses explicit light/dark, and clamps garbage to 'auto'", () => {
+  it("parses explicit light/dark/auto, and clamps garbage to the default 'dark'", () => {
     expect(parseSel({ search: "?theme=light", hash: "" }).theme).toBe("light");
     expect(parseSel({ search: "?theme=dark", hash: "" }).theme).toBe("dark");
-    expect(parseSel({ search: "?theme=blue", hash: "" }).theme).toBe("auto");
+    expect(parseSel({ search: "?theme=auto", hash: "" }).theme).toBe("auto");
+    expect(parseSel({ search: "?theme=blue", hash: "" }).theme).toBe("dark");
   });
 
-  it("an explicit theme=auto reads back as auto (idempotent with the default)", () => {
+  it("an explicit theme=auto reads back as auto — still a legal, explicit override", () => {
     expect(parseSel({ search: "?theme=auto", hash: "" }).theme).toBe("auto");
   });
 
   // the fix-round-1 seeded fault: theme=light used to be silently dropped on format, because
-  // "light" was (wrongly) treated as the constant default. Both explicit values must now survive.
+  // "light" was (wrongly) treated as the constant default. It must still survive now that the
+  // constant default is "dark" instead of "auto".
   it("formatSel writes theme=light — the seeded fault this guards (light was silently dropped)", () => {
     expect(formatSel({ ...DEFAULT_SEL, theme: "light" }).search).toBe("?theme=light");
   });
 
-  it("formatSel writes theme=dark", () => {
-    expect(formatSel({ ...DEFAULT_SEL, theme: "dark" }).search).toBe("?theme=dark");
+  it("formatSel omits theme=dark — U2a: dark is now the default, so it is never written", () => {
+    expect(formatSel({ ...DEFAULT_SEL, theme: "dark" }).search).toBe("");
   });
 
-  it("formatSel NEVER writes theme=auto — the seeded fault: auto emitted", () => {
-    expect(formatSel({ ...DEFAULT_SEL, theme: "auto" }).search).toBe("");
+  // U2a flips this: "auto" differs from the new default ("dark"), so an explicit choice to
+  // follow the OS must survive a round trip exactly like light/dark do — the opposite of the old
+  // "formatSel never writes theme=auto" rule, which depended on "auto" being the default.
+  it("formatSel WRITES theme=auto now that dark, not auto, is the default", () => {
+    expect(formatSel({ ...DEFAULT_SEL, theme: "auto" }).search).toBe("?theme=auto");
   });
 
-  it("light and dark both round-trip exactly (parse . format = identity)", () => {
-    for (const theme of ["light", "dark"] as const) {
+  it("light, dark and auto all round-trip exactly (parse . format = identity)", () => {
+    for (const theme of ["light", "dark", "auto"] as const) {
       const { search } = formatSel({ ...DEFAULT_SEL, theme });
       expect(parseSel({ search, hash: "" }).theme).toBe(theme);
     }
@@ -472,7 +477,8 @@ describe("unknown keys are ignored; unknown values fall back to defaults", () =>
   });
 
   it("an unrecognized value on a known enum key falls back to the default, not an error", () => {
-    expect(parseSel({ search: "?theme=neon", hash: "" }).theme).toBe("auto");
+    // U2a: the default is "dark", not "auto" -- see the "theme: tri-state" describe block above.
+    expect(parseSel({ search: "?theme=neon", hash: "" }).theme).toBe("dark");
   });
 
   it("a formatted-then-reparsed Sel never carries an unknown key forward", () => {

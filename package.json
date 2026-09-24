@@ -1,7 +1,7 @@
 {
   "name": "atlas",
   "private": true,
-  "version": "0.10.31",
+  "version": "0.10.36",
   "description": "MarineSensitivity Atlas: scores, species, places and reports for U.S. marine areas.",
   "license": "MIT",
   "type": "module",
@@ -51,6 +51,7 @@
     "@tmcw/togeojson": "7.1.2",
     "d3-hierarchy": "3.1.2",
     "docx": "^9.7.1",
+    "driver.js": "^1.8.0",
     "fflate": "^0.8.3",
     "flatgeobuf": "4.4.0",
     "maplibre-gl": "^6.10.0",
@@ -62,6 +63,7 @@
   },
   "pinReasons": {
     "_": "package.json is JSON and cannot carry a real comment, so these entries ARE the inline reason (atlas-refs/'calcofi explore review.md' \u00a711 lesson 10). Full evidence and the wiring each pin depends on: docs/spikes/S1.md, S2.md, S4.md. tests/pins.test.ts fails if a range here drifts from its verdict line.",
+    "driver.js": "^1.8.0 (U6, round 2). The guided tour, the same package + range CalCOFI explore pins (src/tour.ts). No dedicated spike (not S1/S2/S4, so tests/pins.test.ts's spike-verdict gate does not cover this pair) -- pinned anyway for the same reason terra-draw/qrcode-generator are: a version bump changing popover/step behaviour should be a reviewed diff. Reached ONLY through src/shell/tourRuntime.ts's dynamic import() -- it must never enter index.html's static graph (scripts/size-budget-core.mjs's FORBIDDEN_LAZY_MARKERS now lists \"driver\").",
     "d3-hierarchy": "atlas-3 step 2b: EXACT 3.1.2 (not from a dedicated spike -- pinned for the same reason as the others: a dependency that must stay LAZY should not silently change behavior on `npm install` from an unreviewed bump). Treemap.svelte reaches it ONLY through a dynamic import() -- it must never enter index.html's static graph (scripts/size-budget-core.mjs's FORBIDDEN_LAZY_MARKERS already lists \"treemap\"; tests/fixtures/size-budget-static-treemap/ is the committed red fixture proving a static import of it fails the checker). Only `hierarchy()`/`.sum()` are used, to build the tree and roll up values -- the actual squarified layout math is this repo's own pure function (src/lib/ui/treemapLayout.ts), unit-tested independently of d3.",
     "@duckdb/duckdb-wasm": "EXACT 1.32.0, no caret (S1). npm 'latest' (1.33.1-dev57.0) creates OPFS files and never writes to them: the reopen after a reload throws 'Catalog Error: Table with name t does not exist!' on chromium AND firefox. 1.33.1-dev64.0 ('next') also passes but is a moving dist-tag on a dev build. A caret would admit a future stable 1.33.x, which is the line the write bug lives in and which nobody has tested. Bumping this means re-running spikes/1/e2e/persistence.spec.js; dev57 must stay red.",
     "maplibre-gl": "^6.10.0 (S2). NOT the subplan's '^5.24' fallback: GHSA-jrc7-96c5-q579 is critical (CVSS 10.0, XSS sanitizer bypass), vulnerable range <=6.4.0, first patched 6.4.1 \u2014 all 35 published 5.x releases are inside it and none is or will be patched. 6.10.0 starts under Vite 8 and renders 10 zones-line vector features with zero worker/shared 404s in all four dev/build x optimizeDeps.exclude cells (spikes/2's committed VECTOR GATE); first paint clears the 2.5s budget on 6.10 in 18 of 18 cold standalone runs (firstDataFrame medians 740.3ms and 662.2ms over two N=9 samples), though the same gate is flaky inside the parallel suite (2 of 6 runs over budget: titiler latency + contention) and has never run on CI \u2014 atlas-8 runs it alone. Works ONLY with named imports (6.x has no default export: a default import is a hard Rolldown [MISSING_EXPORT] build failure) and the worker wired as `maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url` + setWorkerUrl(). Plain '?url' emits the worker without its 514 KB shared chunk, which then 404s: rasters still paint, vector tiles silently never parse.",

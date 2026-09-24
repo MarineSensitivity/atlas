@@ -31,10 +31,11 @@ import {
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 800 } });
 
-/** the default flower's expected rounded hub value for each version -- v7's plain 3-component
- * mean, v9's real 8-entry `flower_default.AK` de-duplicated down to 7 before averaging. */
+/** the default flower's expected rounded hub value for each version -- v7's real 8-component
+ * `flower_default.FULL` mean (atlas-4 fix round 2's own fixture, `./scores-hermetic`), v9's real
+ * 8-entry `flower_default.AK` de-duplicated down to 7 before averaging. */
 const EXPECTED_DEFAULT_HUB: Record<Ver, string> = {
-  v7: "24", // (45.67+15.96+10.38)/3 = 24.00...
+  v7: "24", // (45.6671707107685+10.4494142116047+15.9570514927416+14.7345085163167+41.668393775248+15.1784428369187+38.8176408891894+10.3787489146688)/8 = 24.106... -> 24
   v9: "22", // 7 kept of 8 (bare "primprod" dropped): mean ~= 21.705 -> 22
 };
 
@@ -143,9 +144,10 @@ for (const ver of ["v7", "v9"] as const) {
       await page.getByRole("button", { name: "Flower plot" }).click();
       const flower = page.locator(".flower-title");
       await expect(flower).toHaveText("Full study area", { timeout: 10_000 });
-      // v7: mean of 3 fixture components. v9: `flower_default.AK`'s real 8 entries, de-duplicated
-      // to 7 (the "primprod"/"primary producer" collision `dedupeFlowerComponents` resolves) —
-      // proving the fix end-to-end, not just at the unit level.
+      // v7: mean of the real 8 fixture components (`flower_default.FULL`). v9:
+      // `flower_default.AK`'s real 8 entries, de-duplicated to 7 (the "primprod"/"primary
+      // producer" collision `dedupeFlowerComponents` resolves) — proving the fix end-to-end, not
+      // just at the unit level.
       await expect(page.locator(".hub-text")).toHaveText(EXPECTED_DEFAULT_HUB[ver]);
     });
   });

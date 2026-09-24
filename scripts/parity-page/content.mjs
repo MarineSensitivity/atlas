@@ -579,26 +579,10 @@ export const GAPS = [
     rows: ["S-10", "S-12"],
   },
   {
-    id: "G-28",
-    title: 'The "Report" tool and the top-bar "Report" button are both a placeholder',
-    detail:
-      'Both open the SAME rail panel, whose body is the literal string `TOOL_BODY.report` ("The report builder arrives in a later phase.", `src/shell/tools.ts:44`); `Shell.svelte`\'s `onReport()` just sets `activeTool = "report"`. This is unrelated to `report.html` (ID-04/ID-13, which IS fully built) — there is simply no in-app report-builder panel behind the rail tool or the top-bar button.',
-    owner: "atlas-8/9",
-    rows: [],
-  },
-  {
     id: "G-29",
     title: "No legend on a phone viewport, either lens",
     detail:
       "Both `ScoresLegend.svelte` and `SpeciesLegend.svelte` set `display: none` under `max-width: 899px` — there is no room beside the bottom rail and bottom sheet at that breakpoint (the same trade-off the on-map About card already makes, `docs/design/spec.md` §14). A phone user has color on the map with no key to it.",
-    owner: "atlas-8/9",
-    rows: [],
-  },
-  {
-    id: "G-30",
-    title: "The theme default is `auto`; the Shiny apps always opened dark",
-    detail:
-      '`DEFAULT_SEL.theme` is `"auto"` (`src/lib/state/types.ts:175`), which follows the OS/browser `prefers-color-scheme` (resolving to navy when that signal is unavailable). A first-time visitor whose system is set to light therefore sees a paper map by default, where every Shiny app opened dark regardless of the OS setting.',
     owner: "atlas-8/9",
     rows: [],
   },

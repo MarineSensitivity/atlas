@@ -187,7 +187,12 @@ export const DEFAULT_SEL: Sel = {
   show: [],
   hide: [],
   layers: undefined,
-  theme: "auto",
+  // U2a (round 2): the default is DARK, not "auto" -- matching both Shiny apps and the brand's
+  // dark lockup, regardless of the OS's prefers-color-scheme. "auto" stays a legal, explicit
+  // Theme value (an old `?theme=auto` link, or a future auto-follow control, still resolves
+  // through prefers-color-scheme via resolveTheme()) -- it is simply no longer what an absent or
+  // malformed `?theme=` falls back to. See docs/usability.md p3 and "Ben's items" (theme default).
+  theme: "dark",
   tour: "on",
   pl: undefined,
   t: undefined,

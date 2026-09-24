@@ -257,10 +257,14 @@ function blend(under, over, alpha) {
 // the state matrix runs, instead of a hand-rolled `!= RASTER_RGB` check that would pass on ANY
 // wrong colour, not just "the basemap alone, never the raster" -- the exact same "the gate and its
 // seeded fault run the SAME code" rule tests/map/no-fitbounds.test.ts's own header states.
+// U2a (round 2): `basemapRgb` defaults to `BASEMAP_RGB_NAVY`, not `BASEMAP_RGB` (paper) -- the
+// default theme is now DARK (`DEFAULT_SEL.theme`, state/types.ts), so every state below that never
+// sets `theme=` now paints navy, not paper. The one caller that still means "the paper theme,
+// specifically" (`shell (theme=light)`) passes `BASEMAP_RGB` explicitly instead.
 export function scoresRasterProbe(
   cog = RASTER_RGB,
   opacity = SCORE_RASTER_OPACITY,
-  basemapRgb = BASEMAP_RGB,
+  basemapRgb = BASEMAP_RGB_NAVY,
 ) {
   const expected = blend(basemapRgb, cog, opacity);
   return async (page) => {
@@ -368,12 +372,13 @@ function zoneSelectionProbe(unit = "programarea") {
  * always inside the camera `flyToBounds()` just fit, rather than a fixed lon/lat tuned for one
  * species' extent -- the fixture raster (`routeTitilerTiles`'s `solidPng`) is one flat colour for
  * ANY tile, so wherever the camera centers is a valid probe point. `basemapRgb` defaults to the
- * PAPER fixture colour (every state below that never sets `theme=` resolves there); the two
- * `theme=dark` states pass `BASEMAP_RGB_NAVY` (M5's own per-theme fixture colour). */
+ * NAVY fixture colour (U2a, round 2: the default theme is dark -- every state below that never
+ * sets `theme=` resolves there); the explicit `theme=dark`/`theme=light` states below pass
+ * `BASEMAP_RGB_NAVY`/`BASEMAP_RGB` themselves either way, so they are unaffected by this default. */
 function speciesRasterProbe(
   cog = RASTER_RGB,
   opacity = SPECIES_RASTER_OPACITY,
-  basemapRgb = BASEMAP_RGB,
+  basemapRgb = BASEMAP_RGB_NAVY,
 ) {
   const expected = blend(basemapRgb, cog, opacity);
   return async (page) => {
@@ -469,9 +474,11 @@ function scoresOutlineProbe(out) {
 
 // M6: the shell states are ordinary `unit=cell` scores states (the default), so the SAME
 // `scoresRasterProbe` every other default-raster state below gets applies here too -- just
-// theme-aware, since `?theme=dark` now paints over a DIFFERENT basemap colour (M5,
-// `BASEMAP_RGB_NAVY`) than the default/`?theme=light` paper fixture.
+// theme-aware, since `?theme=dark`/the default (U2a, round 2) now paint over a DIFFERENT basemap
+// colour (M5, `BASEMAP_RGB_NAVY`) than the explicit `?theme=light` paper fixture.
 const SHELL_STATES = [
+  // U2a: no explicit `theme=`, so this IS the default -- dark, `scoresRasterProbe()`'s own new
+  // default `basemapRgb` (BASEMAP_RGB_NAVY). Was BASEMAP_RGB (paper) before U2a flipped the default.
   { name: "shell (default)", kind: "scores", path: "/", assert: scoresRasterProbe() },
   {
     name: "shell (theme=dark)",
@@ -483,13 +490,54 @@ const SHELL_STATES = [
     name: "shell (theme=light)",
     kind: "scores",
     path: "/?theme=light",
-    assert: scoresRasterProbe(),
+    // U2a: paper is no longer the default, so this ONE state now needs the EXPLICIT paper
+    // fixture colour -- every other bare `scoresRasterProbe()` call in this file means "the
+    // default", which is dark now.
+    assert: scoresRasterProbe(RASTER_RGB, SCORE_RASTER_OPACITY, BASEMAP_RGB),
   },
 ];
 
 const PROJECTIONS = ["globe", "mercator"];
 const OUTLINES = ["programarea", "ecoregion", "none"];
 const AREAS = ["FULL", "GA"];
+const STUDY_AREA_BY_KEY = Object.fromEntries(
+  BOOT_FIXTURE_SCORES.study_areas.map((a) => [a.key, a]),
+);
+
+/**
+ * S-01 (owner report, 2026-09-24): `?area=X` used to render the DEFAULT camera regardless of X —
+ * `scoresOutlineProbe`/`scoresRasterProbe` never noticed because neither reads the CAMERA at all,
+ * only what painted. This is the positive check that the map actually flew: `map.getCenter()` must
+ * settle near `area`'s own `lon`/`lat` (`src/lib/map/camera.ts#shouldFlyToArea`'s contract).
+ */
+function cameraNearAreaProbe(areaKey, tolDeg = 1) {
+  return async (page) => {
+    const area = STUDY_AREA_BY_KEY[areaKey];
+    if (!area) return [`no fixture study area "${areaKey}"`];
+    let center = null;
+    for (let i = 0; i < 20; i++) {
+      center = await page.evaluate(() => {
+        const map = window.__atlasMap?.handle.map;
+        if (!map) return null;
+        const c = map.getCenter();
+        return [c.lng, c.lat];
+      });
+      if (center && Math.hypot(center[0] - area.lon, center[1] - area.lat) < tolDeg) return [];
+      await page.waitForTimeout(250);
+    }
+    return [
+      `camera never reached study area "${areaKey}" (${area.lon},${area.lat}) — stuck at ` +
+        `${center ? center.join(",") : "no map"}`,
+    ];
+  };
+}
+
+/** run BOTH `probe` (the existing raster/outline check for this state) and the camera check above,
+ * concatenating problems — an `area=` state's camera assertion is additive, never a replacement. */
+function withAreaCamera(probe, areaKey) {
+  return async (page) => [...(await probe(page)), ...(await cameraNearAreaProbe(areaKey)(page))];
+}
+
 const PALETTES = ["spectral_r", "viridis", "cividis", "magma"];
 // `map=` (added M6, alongside `zoneSelectionProbe`): the same `label_pt`s BOOT_FIXTURE_SCORES
 // already carries. Without a camera override, the default "FULL" globe camera (zoom 2.16) does
@@ -508,14 +556,15 @@ const ZONE_KEYS = [
 
 const SCORES_STATES = [
   // projection x outline x area: every combination is a real, valid, independently-composed
-  // composeStyle input (docs/map.md) -- 2 x 3 x 2 = 12
+  // composeStyle input (docs/map.md) -- 2 x 3 x 2 = 12. S-01: `withAreaCamera` ADDS the camera
+  // assertion on top of the existing outline/raster probe -- neither is removed.
   ...PROJECTIONS.flatMap((proj) =>
     OUTLINES.flatMap((out) =>
       AREAS.map((area) => ({
         name: `scores proj=${proj} out=${out} area=${area}`,
         kind: "scores",
         path: `/?proj=${proj}&out=${out}&area=${area}`,
-        assert: scoresOutlineProbe(out),
+        assert: withAreaCamera(scoresOutlineProbe(out), area),
       })),
     ),
   ),
@@ -535,13 +584,13 @@ const SCORES_STATES = [
     path: `/?pal=${pal}`,
     assert: scoresRasterProbe(),
   })),
-  // every published layer x both study areas -- 4 x 2 = 8
+  // every published layer x both study areas -- 4 x 2 = 8. S-01: same additive camera check.
   ...LAYER_KEYS.flatMap((lyr) =>
     AREAS.map((area) => ({
       name: `scores lyr=${lyr.slice(0, 24)} area=${area}`,
       kind: "scores",
       path: `/?lyr=${encodeURIComponent(lyr)}&area=${area}`,
-      assert: scoresRasterProbe(),
+      assert: withAreaCamera(scoresRasterProbe(), area),
     })),
   ),
   // every zone, selected, on both projections -- 4 x 2 = 8. M6: `zoneSelectionProbe` checks BOTH
