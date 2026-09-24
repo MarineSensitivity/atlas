@@ -89,7 +89,10 @@ test.describe("Q1: Scores-lens top-bar search (desktop, 1280x800)", () => {
     await expect(input).toHaveValue("");
 
     const title = await openFlower(page);
-    await expect(title).toHaveText("Aleutian Arc");
+    // V4 fix (CI run 36049515023, docs fact-check item 3): the flower title now goes through
+    // `paLabel()` too (FlowerPanel.svelte's own `zoneName()`) -- "Aleutian Arc (ALA)", the same
+    // "Full Name (KEY)" label the search result option above already shows, not the bare name.
+    await expect(title).toHaveText("Aleutian Arc (ALA)");
     // "shows its composite": a real flower, not the empty "click a scored cell" state -- ALA's
     // own `zones.programarea` row carries the full 8-component fixture (`FLOWER_ZONE_METRICS_GAA`'s
     // shape is NOT what ALA carries here; this asserts the mechanism -- petals render at all --

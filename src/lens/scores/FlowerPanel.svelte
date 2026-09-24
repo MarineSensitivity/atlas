@@ -13,6 +13,13 @@
   } from "./flower";
   import { zoneAllKey, zoneRows } from "./boot";
   import type { ScoresSelection } from "./selection";
+  // V4 fix (owner phone report, 2026-09-24, docs fact-check item 3): `zoneName` below used to
+  // return the bundle's bare `name` (== the key on every real release -- zoneStats.ts's own
+  // header: no published bundle carries a real Program Area name) instead of the SAME
+  // "Full Name (KEY)" label (`paLabel`, V1's names table) the Zones table and Places panel
+  // already show -- so the flower title for a selected zone read "GAA", not "GOA Program Area A
+  // (GAA)", while every other place that names a Program Area agreed.
+  import { paLabel } from "../../places/zoneStats";
 
   interface Props {
     boot: unknown;
@@ -44,7 +51,7 @@
   );
 
   function zoneName(unit: string, key: string): string {
-    return zoneRows(boot, unit).find((z) => z.key === key)?.name ?? key;
+    return paLabel(key, zoneRows(boot, unit).find((z) => z.key === key)?.name, unit);
   }
 
   // every path already returns ONE slot per category (`flower.ts`'s `dedupeFlowerComponents`,

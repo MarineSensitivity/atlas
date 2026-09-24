@@ -52,8 +52,12 @@ describe("pills", () => {
     });
     const am = bar.pills.find((p) => p.dsKey === "am_0.05")!;
     expect(am.hasSurface).toBe(false);
+    // V4 fix (owner phone report, 2026-09-24, docs fact-check item 1): "publishes no surface" was
+    // the wrong explanation -- a struck pill means no model-asset REGISTRY ROW for this model
+    // key, the same lookup the Species Shiny app makes, not a release choosing to omit one.
     expect(am.tooltip).toBe(
-      "AquaMaps SDM feeds the merged model, but v7 publishes no surface for it — nothing to draw",
+      "AquaMaps SDM feeds the merged model, but v7 has no raster registered for this model " +
+        "(the Species app shows it the same way)",
     );
     expect(am.tooltip).toBe(noSurfaceTooltip("AquaMaps SDM", "v7"));
     // the merged model itself IS drawable on v7

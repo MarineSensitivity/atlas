@@ -14,6 +14,7 @@ import {
 import type { ZoneFillSpec } from "../../lib/map/types";
 import { zoneKeyProperty } from "../../lib/map/layers/zones";
 import { ZONE_LINE_WHITE } from "../../lib/map/colors";
+import { paLabel } from "../../places/zoneStats";
 import type { ZoneRow } from "./boot";
 
 /** lightgrey (`app.R:2318`) — a zone with no value for the current layer is drawn, not dropped.
@@ -31,13 +32,20 @@ export interface ZoneValue {
 }
 
 /** `zones` narrowed to the ones carrying a real (finite) value for `metricKey`, name from the zone
- * row (falling back to the key — parity doc §6.4: "name from `zone_pts(unit)`, else the key"). */
+ * row (falling back to the key — parity doc §6.4: "name from `zone_pts(unit)`, else the key").
+ * V4 fix (owner phone report, 2026-09-24, docs fact-check item 3): `name` now goes through
+ * `paLabel()` (the SAME "Full Name (KEY)" label the Zones table/Places panel show, V1's names
+ * table) -- this used to be the bundle's bare `name` verbatim, which is the key itself on every
+ * real release (zoneStats.ts's own header), so the map's hover/click tooltip (`zoneTooltip` below)
+ * read "GAA: 42", never "GOA Program Area A (GAA): 42". No `unit` arg, same as `zonesTable.ts`'s
+ * own call -- every caller here only ever deals in Program Areas (D17: the release's one
+ * selectable unit), so the PROGRAM_AREA_NAMES fallback table resolves without one. */
 export function zoneValuesFor(zones: readonly ZoneRow[], metricKey: string): ZoneValue[] {
   const out: ZoneValue[] = [];
   for (const z of zones) {
     const v = z.metrics[metricKey];
     if (typeof v === "number" && Number.isFinite(v))
-      out.push({ key: z.key, name: z.name ?? z.key, value: v });
+      out.push({ key: z.key, name: paLabel(z.key, z.name), value: v });
   }
   return out;
 }

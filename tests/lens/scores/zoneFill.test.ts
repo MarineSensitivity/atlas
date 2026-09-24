@@ -6,11 +6,15 @@ import { BOOT_V7 } from "./fixtures";
 const COMPOSITE = "score_extriskspcat_primprod_ecoregionrescaled_equalweights";
 
 describe("zoneValuesFor", () => {
-  it("only zones carrying a finite value for the metric, name falling back to key", () => {
+  // V4 fix (owner phone report, 2026-09-24, docs fact-check item 3): `name` now goes through
+  // `paLabel()` -- "Full Name (KEY)", the same label the Zones table already shows -- so the
+  // map's own hover/click tooltip (`zoneTooltip`) agrees with it instead of reading the bare
+  // published name.
+  it("only zones carrying a finite value for the metric, name paLabel-formatted", () => {
     const values = zoneValuesFor(zoneRows(BOOT_V7, "programarea"), COMPOSITE);
     expect(values).toEqual([
-      { key: "GAA", name: "Gulf of America, Eastern", value: 33.09 },
-      { key: "GEO", name: "Georgia", value: 12 },
+      { key: "GAA", name: "Gulf of America, Eastern (GAA)", value: 33.09 },
+      { key: "GEO", name: "Georgia (GEO)", value: 12 },
     ]);
   });
 

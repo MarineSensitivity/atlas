@@ -140,9 +140,14 @@ export interface LayerBar {
   mobileToggleLabel: string;
 }
 
-/** §7.2's title for an input with nothing to draw. */
+/** §7.2's title for an input with nothing to draw.
+ * V4 fix (owner phone report, 2026-09-24, docs fact-check item 1): "publishes no surface for it"
+ * was the wrong explanation (Ben's own correction) -- an input's raster is found through the
+ * release's model-asset registry BY MODEL KEY, the same way the Species Shiny app looks it up, so
+ * a struck-through pill means no REGISTRY ROW for that model, not that the release chose not to
+ * publish one. */
 export function noSurfaceTooltip(label: string, ver: string): string {
-  return `${label} feeds the merged model, but ${ver} publishes no surface for it — nothing to draw`;
+  return `${label} feeds the merged model, but ${ver} has no raster registered for this model (the Species app shows it the same way)`;
 }
 
 /** sort_order asc, nulls last, then ds_key — one comparator so pills and the card's Values tree

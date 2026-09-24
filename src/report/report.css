@@ -78,16 +78,27 @@ td.num {
   white-space: nowrap;
 }
 
-caption {
+/* V4 fix (owner phone report, 2026-09-24, phone-15): this used to be a `<caption>` INSIDE the
+   `<table>` -- a caption's own box sizes to the TABLE's rendered width (native CSS table layout),
+   not the viewport, so a table wide enough to need `.table-scroll`'s horizontal scroll also
+   stretched its caption past 390px and clipped it ("Top 20 highest-scoring species (by
+   habitat-weighted exti|..." -- cut off, not wrapped, because only the scrolled-into-view slice of
+   that wide box was ever visible). `.table-caption` is now a plain paragraph placed ABOVE
+   `.table-scroll` (Report.svelte), sized to the section's own full width like any other prose, with
+   `id`+the table's own `aria-labelledby` keeping it as the table's accessible name the same way the
+   native `<caption>` did. Print is unaffected either way -- both sit above the table in visual/
+   reading order, and `.table-scroll`'s own print override (below) already restores full-width,
+   non-scrolling tables there. */
+.table-caption {
   text-align: left;
   font-size: 0.85em;
   color: var(--text-secondary, #55606f);
-  margin-bottom: 0.35rem;
-  /* V1 fix: a long caption ("Top 20 highest-scoring species (by habitat-weighted extinction
-     risk).") is ordinary prose and wraps at word boundaries fine on its own -- this only matters
-     for one that happens to contain a single unbroken run of characters wider than the viewport
-     (a species' own long token/name a future caption might interpolate); `anywhere` is a no-op on
-     the common case and a safety net on that one. */
+  margin: 0 0 0.35rem;
+  /* a long caption ("Top 20 highest-scoring species (by habitat-weighted extinction risk).") is
+     ordinary prose and wraps at word boundaries fine on its own -- this only matters for one that
+     happens to contain a single unbroken run of characters wider than the viewport (a species' own
+     long token/name a future caption might interpolate); `anywhere` is a no-op on the common case
+     and a safety net on that one. */
   overflow-wrap: anywhere;
 }
 
@@ -140,9 +151,15 @@ figure {
    browser's normal word-wrap to break on -- the permalink alone, with several picked places (each
    contributing a zone key or a drawn polygon's encoded vertices to `#pl=`), easily read 100+
    characters wide and pushed the whole document past a 390px viewport on its own, entirely
-   separate from any table. `anywhere` breaks mid-word/mid-token rather than overflowing; every
-   OTHER link in this document is short link TEXT (button/nav labels), which this never touches. */
-#report-root a {
+   separate from any table.
+   V4 fix (owner phone report, 2026-09-24): this used to be `#report-root a` -- EVERY link in the
+   document, including short link TEXT (a species common-name link, "Open this release in the
+   Atlas", a citation's own label). `anywhere` breaks at ANY character when a word doesn't fit, not
+   just at existing word boundaries -- on a short word that would wrap cleanly on its own (measured:
+   "Leatherback" -> "Leatherb" / "ack" on two lines), that is a worse break than doing nothing at
+   all. Report.svelte now marks only the raw-URL links `.report-url` (the permalink line and a
+   citation's own `({href})`) -- the one case that genuinely needs it. */
+.report-url {
   overflow-wrap: anywhere;
 }
 

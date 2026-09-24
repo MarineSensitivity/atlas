@@ -99,9 +99,28 @@ async function tapScoredCell(page, vp) {
           [490, 585],
           [600, 520],
         ];
+  // V4 fix (owner phone report, 2026-09-24, harness item 4): this used to click every candidate
+  // point regardless of outcome, so when an EARLIER point already landed a scored cell (a real
+  // popup) a LATER point landing on land or open ocean could still fire and dismiss/replace it
+  // (`closeOnClick`/a no-data reset) -- measured: states 06/07/09/10 (flower/table) ended up
+  // showing the full study area instead of a scored-cell popup on desktop. Stop at the first tap
+  // that produces a REAL scored-cell popup -- every atlas popup carries `.atlas-popup`
+  // (`src/lib/map/popup.ts#createPopup`, the ONE popup constructor both lenses use), but a click on
+  // land/unscored ocean ALSO opens one, just with "No scored cell here" text (`src/lens/scores/
+  // popup.ts#cellPopupLoadingText`'s no-value sibling) -- second draft (Opus re-check) caught this
+  // when the FIRST candidate point landed exactly that "no scored cell" popup and the loop stopped
+  // there instead of trying the next point.
   for (const [x, y] of pts) {
     await page.mouse.click(x, y);
     await page.waitForTimeout(2500);
+    const popup = page.locator(".atlas-popup");
+    if (await popup.count()) {
+      const text = await popup
+        .first()
+        .innerText()
+        .catch(() => "");
+      if (!text.includes("No scored cell")) return;
+    }
   }
 }
 // third pass (b): "Loading species..." (TablePanel.svelte) takes ~7s on a cold DuckDB-WASM query --

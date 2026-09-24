@@ -11,6 +11,7 @@
 // its caller, ever reads a rendered raster pixel -- `tests/lens/scores/no-readpixels.test.ts` scans
 // this whole directory for `readPixels` and fails if it ever appears.
 import { roundHalfEven } from "../../lib/geo/round";
+import { paLabel } from "../../places/zoneStats";
 import type { ZoneRow } from "./boot";
 import { zoneTooltip, zoneValuesFor } from "./zoneFill";
 
@@ -110,6 +111,11 @@ export function cellPopupLoadingText(input: CellPopupLoadingInput): string {
  * "{name or key}: {round(value)}" -- parity doc §6.4's tooltip text, unchanged; this only resolves
  * WHICH `ZoneValue` (if any) the clicked zone/layer pair has. `zone.name` already carries the
  * "or key" fallback (`boot.ts#zoneRows`' `name ?? key`), so this module does not repeat that rule.
+ * V4 fix (owner phone report, 2026-09-24, docs fact-check item 3): the NO-VALUE branch now runs
+ * `zone.name` through `paLabel()` too (the SAME "Full Name (KEY)" label `zoneTooltip` already
+ * gets via `zoneValuesFor` above) -- a caller's own `.name` resolution (a real map click's
+ * `zoneHitFromFeatures`, or the search-select path's `zRows.find(...).name`) is still the bare
+ * bundle name/key, so this is the one place both agree regardless of which one built `zone`.
  */
 export function zonePopupText(
   zones: readonly ZoneRow[],
@@ -117,7 +123,9 @@ export function zonePopupText(
   zone: { key: string; name: string },
 ): string {
   const value = lyr ? zoneValuesFor(zones, lyr).find((v) => v.key === zone.key) : undefined;
-  return value ? escapeHtml(zoneTooltip(value)) : `${escapeHtml(zone.name)}: no value`;
+  return value
+    ? escapeHtml(zoneTooltip(value))
+    : `${escapeHtml(paLabel(zone.key, zone.name))}: no value`;
 }
 
 /** fix list #12: the `announce()` counterpart of {@link zonePopupText} -- see
@@ -129,5 +137,5 @@ export function zonePopupAnnounceText(
   zone: { key: string; name: string },
 ): string {
   const value = lyr ? zoneValuesFor(zones, lyr).find((v) => v.key === zone.key) : undefined;
-  return value ? zoneTooltip(value) : `${zone.name}: no value`;
+  return value ? zoneTooltip(value) : `${paLabel(zone.key, zone.name)}: no value`;
 }

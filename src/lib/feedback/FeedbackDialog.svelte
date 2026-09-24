@@ -553,8 +553,10 @@
       viewport and theme, and the screenshot{includeShot ? "" : " (off)"} — the page link only if you
       tick the box above. It goes to the team by mail
       {#if !restricted}
-        and, without your email, as a public GitHub issue in
-        <code>MarineSensitivity/atlas</code> labelled <code>{kind}</code>.
+        and, on a public release, as a public GitHub issue in <code>MarineSensitivity/atlas</code>
+        labelled <code>{kind}</code> — filed either way, whether or not you give an email. Your email,
+        if you give one, never appears in the issue; it stays in the team's own mail and sheet, with a
+        copy sent back to you.
       {:else}
         . This release is under review, so no public GitHub issue is filed.
       {/if}

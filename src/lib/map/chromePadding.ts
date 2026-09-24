@@ -24,19 +24,43 @@ const PHONE_RAIL_ROW_PX = 64;
  * neither `desktopPanelPadding` nor `phonePadding` gate on any state -- it is always there). */
 const TOPBAR_HEIGHT_PX = 48;
 
+/** the desktop floating legend card's own approximate footprint (SpeciesLegend.svelte /
+ * ScoresLegend.svelte: a 280px ramp plus its own padding, title and tick labels) -- the same
+ * cheap, estimate-not-measured convention {@link LEGEND_CHIP_HEIGHT_PX} below already uses for the
+ * phone's chip; a second real `ongeometry` wire for this card was not worth it either. */
+export const DESKTOP_LEGEND_WIDTH_PX = 320;
+export const DESKTOP_LEGEND_HEIGHT_PX = 140;
+
 /** desktop: the top bar, plus the docked panel's own reservation (none if collapsed/maximized -- a
  * maximized panel covers the whole stage below the bar, so there is no "visible remainder" left to
- * frame a study area within beyond the bar itself). */
-export function desktopPanelPadding(geometry: PanelGeometry): ChromePadding {
+ * frame a study area within beyond the bar itself), plus the floating legend card's own footprint
+ * when the current lens is showing one.
+ *
+ * V4 fix (owner phone report, 2026-09-24, desktop-18): the walrus model view's south-west corner
+ * sat under the legend card -- `desktopPanelPadding` reserved the DOCKED PANEL's side only, blind
+ * to the legend card SpeciesLegend.svelte/ScoresLegend.svelte float into the opposite corner (or,
+ * for a bottom-docked panel, just above it). The legend is hidden by the exact same
+ * `data-panel-maximized="true"` CSS rule the `collapsed || maximized` guard above already
+ * short-circuits on, so this never reserves space for a card that is not actually drawn.
+ */
+export function desktopPanelPadding(geometry: PanelGeometry, legendShowing = false): ChromePadding {
   const topbar = { ...NO_PADDING, top: TOPBAR_HEIGHT_PX };
   if (geometry.collapsed || geometry.maximized) return topbar;
+  const legendW = legendShowing ? DESKTOP_LEGEND_WIDTH_PX : 0;
+  const legendH = legendShowing ? DESKTOP_LEGEND_HEIGHT_PX : 0;
   switch (geometry.dock) {
     case "left":
-      return { ...topbar, left: geometry.size };
+      // the panel takes the left strip; the legend stays at its own BASE bottom-right corner (no
+      // `data-panel-dock="left"` override moves it -- SpeciesLegend.svelte's own CSS).
+      return { ...topbar, left: geometry.size, right: legendW, bottom: legendH };
     case "bottom":
-      return { ...topbar, bottom: geometry.size };
+      // the legend floats ABOVE the bottom-docked panel (its own `data-panel-dock="bottom"` rule),
+      // so the reserved bottom strip is the panel's height plus the legend's.
+      return { ...topbar, bottom: geometry.size + legendH };
     default:
-      return { ...topbar, right: geometry.size };
+      // dock="right" (the default, and the case desktop-18 actually measured): the legend moves to
+      // bottom-LEFT to clear the panel (SpeciesLegend.svelte's `data-panel-dock="right"` rule).
+      return { ...topbar, right: geometry.size, left: legendW, bottom: legendH };
   }
 }
 

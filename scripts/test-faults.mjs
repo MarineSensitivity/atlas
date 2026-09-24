@@ -1372,6 +1372,33 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4451" },
   },
+  // V4 round (owner phone report, 2026-09-24): the phone/desktop species camera used to bunch a
+  // wide model's range into one corner of the free area under GLOBE projection at low zoom
+  // (`boundsToCameraView`'s flat-Mercator shift math does not land on the same screen pixels once
+  // MapLibre renders a true sphere) -- `map.ts#flyToBounds` now asks MapLibre's own
+  // projection-aware `cameraForBounds()` for the fit instead. This patch forces the OLD fallback
+  // path always (as if `cameraForBounds` never existed), which must turn the new free-area-coverage
+  // grid check red for BOTH the leatherback (a wide, directly-published bbox) and the walrus (a
+  // COG-bounds-narrowed one).
+  {
+    id: "species-camera-globe-projection-reverted",
+    patch: "tests/faults/species-camera-globe-projection-reverted.patch",
+    describe:
+      "flyToBounds() never calls MapLibre's own cameraForBounds() -- always falls back to the old " +
+      "flat-Mercator hand math, which bunches a wide model's range into one corner of the free " +
+      "area under globe projection at low zoom",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/species.camera.spec.ts",
+      "-g",
+      "V4 fix: the species camera fills the free area",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4466" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

@@ -182,8 +182,18 @@ routes that exact URL with Playwright, asserting the posted JSON body (the hash-
 
 > What is sent: your text, this view's release and lens, the viewport and theme, and the screenshot
 > (unless you turn it off) — the page link only if you tick the box above. It goes to the team by
-> mail and, without your email, as a public GitHub issue in `MarineSensitivity/atlas` labelled
-> `{kind}` — unless this release is under review, in which case no public issue is filed.
+> mail and, on a public release, as a public GitHub issue in `MarineSensitivity/atlas` labelled
+> `{kind}` — filed either way, whether or not you give an email. Your email, if you give one, never
+> appears in the issue; it stays in the team's own mail and sheet, with a copy sent back to you.
+> This release being under review is the one case no public issue is filed at all.
+
+V4 fix (owner phone report, 2026-09-24, docs fact-check item 2): the OLD wording ("...and, without
+your email, as a public GitHub issue...") read as though giving an email somehow traded away the
+issue, or the issue's filing was conditional on withholding one — `scripts/feedback/Code.gs` files
+the issue unconditionally on a public release (once `GITHUB_TOKEN` is set), independent of whether
+`email` was supplied at all; only the issue BODY never carries the submitter's email (that field is
+never passed into `_openIssue()` — it lives in the Sheet row and the team's own mail only, see
+`Code.gs`'s own `// 3. the row` comment).
 
 ## Seeded fault
 

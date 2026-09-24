@@ -81,8 +81,12 @@ test.describe("Report: a zone selected on the map", () => {
     await expect(reportPage.locator(".progress-line").first()).toContainText("Done", {
       timeout: 15_000,
     });
+    // V4 fix (owner phone report, 2026-09-24): the caption moved OUT of `<table>` to a sibling `<p
+    // class="table-caption">` (report.css's own header explains why) -- `hasText` no longer finds
+    // it as a descendant, so this locates the table by its ARIA name instead (`aria-labelledby`
+    // now points at that same caption paragraph, so the accessible name is unchanged).
     await expect(
-      reportPage.locator("table", { hasText: "Mean component and overall scores" }),
+      reportPage.getByRole("table", { name: "Mean component and overall scores" }),
     ).toContainText("Gulf of America");
     await reportPage.close();
   });

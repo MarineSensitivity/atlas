@@ -646,7 +646,12 @@
         chipShowing,
       );
     }
-    return desktopPanelPadding(panelGeom);
+    // V4 fix (owner phone report, 2026-09-24, desktop-18): `phoneLegend` (despite its name) is
+    // already lens-agnostic -- "the legend value the current lens would draw", the same one the
+    // desktop `.lens-legend-region` branch reads (species -> speciesLens.mapInputs.legend, scores
+    // -> scoresLens?.mapExtra.legend) -- so it doubles as desktop's own "is a legend card actually
+    // on screen right now" flag with no new derived state.
+    return desktopPanelPadding(panelGeom, !!phoneLegend);
   }
 
   // P9 (Opus docs re-check appendix finding A2, live-verified on 0.10.48): P2 round 2's fix

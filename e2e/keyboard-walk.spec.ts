@@ -709,8 +709,11 @@ test.describe("step 3: open the report and export it", () => {
     await expect(reportPage.locator(".progress-line").first()).toContainText("Done", {
       timeout: 30_000,
     });
+    // V4 fix (owner phone report, 2026-09-24): ARIA name, not `hasText` -- the caption moved OUT
+    // of `<table>` to a sibling `<p class="table-caption">` (report.css's own header), and
+    // `aria-labelledby` keeps the table's accessible name the same text that caption carries.
     await expect(
-      reportPage.locator("table", { hasText: "Mean component and overall scores" }),
+      reportPage.getByRole("table", { name: "Mean component and overall scores" }),
     ).toContainText(TOP_ZONE.name);
     await reportPage.close();
   });
