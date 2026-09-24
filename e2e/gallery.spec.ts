@@ -71,16 +71,41 @@ test.describe("screenshots: every section, both themes, phone and desktop widths
 // alone, which would just as silently swallow a brand-new, unrelated color-contrast defect. Pinned
 // instead (see e2e/hermetic.ts's assertColorContrastIncompletePinned doc comment for the full
 // rationale and how to re-triage): a node-count ceiling per viewport, and a closed set of the axe
-// "cannot determine" reasons -- measured today (both themes report the SAME numbers/reasons):
-//   phone (390x844):       16 nodes, {bgOverlap, pseudoContent}
-//   desktop (1280x900):    16 nodes, {bgOverlap, pseudoContent}
-//   phoneNarrow (320x800): 20 nodes, {bgOverlap, pseudoContent, elmPartiallyObscured} -- the
-//     narrower width creates more genuinely-overlapping layouts (Treemap cells, DataTable), which
-//     is exactly the NEW reason key at this width.
+// "cannot determine" reasons.
+//
+// gallery axe ceilings at phone widths (r2-gax): the gallery grew through U4 + P1-P5, and the
+// phone/phoneNarrow counts rose from the baseline 16/20 to 40/68. Investigated per node (selector,
+// axe's messageKey, and whether the content is actually reachable) before touching the ceiling:
+//   - #data-table (P3's DataTable, +24 at phone / +48 at phoneNarrow): each `td .cell-text` is a
+//     column scrolled past `.scroll-region`'s own right edge at rest (scrollLeft 0) -- confirmed
+//     reachable (`.scroll-region` itself scrolls, `scrollWidth > clientWidth`; a keyboard move to
+//     that cell's `focus()` brings it into view via the browser's default scrollIntoView). This is
+//     the SAME deliberate "the table scrolls horizontally, not the page" pattern
+//     dataTableCore.ts's own header documents (SC 1.4.10 exempts data tables) -- TRIAGED, not
+//     fixed: nothing here is actually invisible or below 4.5:1, axe just cannot sample a
+//     partially-scrolled-out node's background.
+//   - #categories (+6 at phoneNarrow only): a REAL bug, FIXED (Categories.svelte's `.col` --
+//     `min-width: 0` added, see its own comment). `.col` is a flex ITEM of `.gallery-stage`;
+//     without an explicit `min-width`, its default `auto` floored its shrink at the unbreakable
+//     `<code>` tokens' min-content width, pushing `.col` (and the sibling paragraph sharing its
+//     width) past the section's right edge. `.cat-table-scroll`'s own `max-width:100%` could not
+//     stop this (percentages are indeterminate during intrinsic-size computation). Worse,
+//     `#gallery-main`'s `overflow-y: auto` computes `overflow-x: auto` too (CSS Overflow's
+//     either-axis-non-visible rule), so the overflow was silently absorbed by making the WHOLE
+//     gallery body sideways-scrollable instead of triggering the section's own intended
+//     `.cat-table-scroll` containment -- the paragraph text was genuinely clipped with no
+//     per-section way to reach it. After the fix, `.cat-table-scroll` is the thing that scrolls
+//     (matching #data-table's pattern); the paragraph is now fully on-screen, and only 5 of the
+//     original 6 nodes remain (the "Color token" column's `<code>` cells past the fold) --
+//     verified reachable the same way as #data-table's, so TRIAGED.
+// measured today (both themes report the SAME numbers/reasons):
+//   phone (390x844):       40 nodes, {bgOverlap, pseudoContent, elmPartiallyObscured}
+//   desktop (1280x900):    16 nodes, {bgOverlap, pseudoContent} -- unaffected, unchanged
+//   phoneNarrow (320x800): 67 nodes, {bgOverlap, pseudoContent, elmPartiallyObscured}
 const COLOR_CONTRAST_INCOMPLETE_CEILING: Record<string, number> = {
-  phone: 16,
+  phone: 40,
   desktop: 16,
-  phoneNarrow: 20,
+  phoneNarrow: 67,
 };
 const COLOR_CONTRAST_INCOMPLETE_REASONS = ["bgOverlap", "pseudoContent", "elmPartiallyObscured"];
 

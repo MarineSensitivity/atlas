@@ -974,6 +974,25 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4402" },
   },
+  {
+    id: "gallery-categories-min-width-dropped",
+    patch: "tests/faults/gallery-categories-min-width-dropped.patch",
+    describe:
+      "Categories.svelte's `.col` loses `min-width: 0` -- the flex item's default auto floor " +
+      "widens it past the section again, clipping the 'primary spelling' paragraph at 320 CSS " +
+      "px with no per-section way to reach it (the gallery axe ceilings round's real bug, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--config=playwright.gallery.config.ts",
+      "e2e/gallery.spec.ts",
+      "-g",
+      "finding triaged, both themes, both widths.*phoneNarrow",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4407" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
