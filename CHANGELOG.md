@@ -1,3 +1,15 @@
+# atlas 0.10.48
+
+CI fix round (first completed three-engine run since the P round, 35971206753): two reds, one
+flake.
+
+- **The Layer select (Layers panel) now carries a `title` tooltip with its full name.** A native
+  `<select>`'s own closed-box text truncation cannot be styled portably — Chromium honors
+  `text-overflow: ellipsis` there, WebKit does not (confirmed: it hard-clips mid-word with no "…"
+  regardless of the computed style, which itself differs between WebKit builds). `title` is the
+  cross-engine fallback: the full layer name is always discoverable on hover, on every engine,
+  even where the visual ellipsis is Chromium/Firefox-only.
+
 # atlas 0.10.46
 
 P7 (Ben, live 0.10.43, "Places" tool, dark theme): after drawing a second place, BOTH places'
