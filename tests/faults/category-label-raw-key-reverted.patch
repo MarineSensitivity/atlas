@@ -1,0 +1,13 @@
+diff --git a/src/lib/ui/categories.ts b/src/lib/ui/categories.ts
+index 6e865d9..057aded 100644
+--- a/src/lib/ui/categories.ts
++++ b/src/lib/ui/categories.ts
+@@ -140,7 +140,7 @@ export function categoryLabel(
+       const fromManifest = metricLabels[`extrisk_${key}`];
+       if (typeof fromManifest === "string" && fromManifest.trim() !== "") return fromManifest;
+     }
+-    return categoryFor(raw).label;
++    return raw;
+   }
+   const trimmed = raw.trim();
+   return trimmed ? trimmed[0].toUpperCase() + trimmed.slice(1) : trimmed;

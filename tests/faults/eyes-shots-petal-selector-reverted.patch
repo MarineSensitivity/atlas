@@ -1,0 +1,13 @@
+diff --git a/scripts/eyes-shots.mjs b/scripts/eyes-shots.mjs
+index 504d013..dd5b301 100644
+--- a/scripts/eyes-shots.mjs
++++ b/scripts/eyes-shots.mjs
+@@ -194,7 +194,7 @@ const STATES = [
+       // real petal can be a zero-score DEGENERATE path (`d=""`, flowerGeometry.ts) with no area to
+       // click, so this also skips those. Waits for the tap label (`.petal-label`) to actually show
+       // before shooting -- a click that lands on nothing must not silently "succeed".
+-      const petal = p.locator('svg path.petal:not([d=""])').first();
++      const petal = p.locator("svg path[role=button], svg [data-component], svg path").nth(3);
+       await petal.click({ timeout: 5000 }).catch(() => {});
+       const labelShown = await p
+         .locator(".petal-label")
