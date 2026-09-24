@@ -306,8 +306,8 @@ function zoneRow(boot: unknown, unit: string, key: string): BootZoneRow | null {
  * how `zone_metric` was built (`workflows/score_zone_metrics.qmd:72-92`, steps (a) and (c)). So
  * coverage is exactly `post / pre` and `mean_where_present` IS the pre value -- which is what lets
  * a zone place carry the same D7b footnotes a custom place does. A release that publishes no `_pre`
- * twin yields `null` for both, and `scores.ts` then footnotes nothing (see its `FULL_COVERAGE`
- * note: "we cannot say" is not "it is complete").
+ * twin yields `null` for both, and `scores.ts` then footnotes nothing for that component (see its
+ * `COVERAGE_FOOTNOTE_FLOOR_PCT` note: "we cannot say" is not "it is complete").
  */
 export function zoneComponents(boot: unknown, unit: string, key: string): ReportComponent[] {
   const row = zoneRow(boot, unit, key);

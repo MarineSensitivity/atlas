@@ -18,6 +18,21 @@
 // covering 1.4 % of the place means 17.7 blended over the whole place from a mean of 1,255 where it
 // exists. Printing 17.7 with no footnote implies 17.7 everywhere. The old report printed exactly
 // that, for every component, on every area.
+//
+// P4 (Ben, phone, "Report" tool -- "these Report table foot notes seem completely duplicative and
+// unhelpful"): the ORIGINAL rule footnoted anything short of ~100.0000000 % coverage, which in
+// practice is every component of every place (float coverage is essentially never exactly 1) --
+// eight near-identical footnotes restating each cell's own value, one per component, on a single
+// area. TWO changes, both deliberate:
+//  1. The FLOOR moved from "~100 %" to 99 % (`COVERAGE_FOOTNOTE_FLOOR_PCT`, compared against the
+//     SAME `formatCoveragePctFloor()` value the sentence prints -- 99.0 % and above never
+//     footnotes, 88.3 % does), so a genuinely-complete-enough component stops earning a marker.
+//  2. Footnotes are GROUPED ONE PER PLACE (never one per (place, component) pair): every component
+//     below the floor, and every component ABSENT (a null cell, shown as "--" -- today that always
+//     means the workflow's own `score_zone_metrics` coverage floor deleted its `_ecoregion_rescaled`
+//     row rather than publishing a zero, `model.ts#zoneComponents`'s own header), joins ONE sentence
+//     per place, comma-separated, and every triggering cell in that row shares the SAME single
+//     footnote id.
 import { formatCoveragePctFloor, formatScore0 } from "./format";
 
 /** a component score as the engine returns it (`sql/scores_for_cells.sql`), widened so a ZONE
@@ -70,12 +85,12 @@ export function componentColumns(
 }
 
 export interface ScoresTableFootnote {
-  /** 1-based, in the order the footnotes are first referenced (row-major). */
+  /** 1-based, in the order the places carrying one are first referenced. */
   id: number;
   place: string;
-  component: string;
-  coverage: number;
-  meanWherePresent: number | null;
+  /** every component this place's footnote covers (below-floor and absent alike), in table-column
+   * order -- P4: ONE footnote per place, not one per (place, component) pair. */
+  components: string[];
   /** the sentence a renderer prints under the table. */
   text: string;
 }
@@ -112,9 +127,20 @@ const TABLE_NARRATIVE =
   "raster cells (N cells) included in the analysis. Component scores are ecoregionally " +
   "rescaled (0–100) averages across all cells in each area.";
 
-/** coverage is a 0-1 fraction; anything short of the whole place footnotes. The epsilon is float
- * slack on `w_present / w_all`, not a tolerance for "nearly complete" -- 99.87 % footnotes. */
-const FULL_COVERAGE = 1 - 1e-9;
+/** coverage is a 0-1 fraction; the floor a component's coverage must clear to escape a footnote
+ * (P4: was "anything short of ~100 %", which footnoted nearly every component of nearly every
+ * place -- see this module's own header). Compared against the FLOORED, 1-dp percent the footnote
+ * sentence itself prints (`formatCoveragePctFloor`), so "99.0 %" is the exact boundary: 99.0 % and
+ * above never footnotes, 98.9 % (and 88.3 %) does. */
+const COVERAGE_FOOTNOTE_FLOOR_PCT = 99;
+
+/** the workflow's own wording for an absent component (P4): a Program-Area component whose scored
+ * cells cover less than the workflow's 5 % coverage floor has its `_ecoregion_rescaled` row
+ * DELETED, never zeroed (`model.ts#zoneComponents`'s own header) -- so a null cell here always
+ * means exactly this, and the note says so instead of leaving the "--" unexplained. */
+function absentClause(component: string): string {
+  return `${component} not scored (coverage below the 5% floor)`;
+}
 
 export interface ScoresTablePlace {
   name: string;
@@ -125,40 +151,58 @@ export interface ScoresTablePlace {
 }
 
 /**
- * The table, in the places' own order, with one footnote per (place, component) whose coverage is
- * below 100 %.
+ * The table, in the places' own order, with ONE footnote per place (P4 -- see this module's own
+ * header): every component below {@link COVERAGE_FOOTNOTE_FLOOR_PCT}, and every component ABSENT
+ * (a null cell), joins one comma-separated sentence, and every triggering cell in that row carries
+ * the SAME footnote id. A place with nothing to note gets no footnote at all -- no markers, no list
+ * entry.
  *
- * A component whose `coverage` is `null` gets NO footnote: "we cannot say" is not "it is complete".
- * That is the zone-place case wherever a release does not publish the `_prepctareaweighting` twin
- * the model derives coverage from -- see `model.ts#zoneComponents`.
+ * A component whose `coverage` is `null` (present, but the release published no
+ * `_prepctareaweighting` twin) gets NO marker: "we cannot say" is not "it is complete" -- see
+ * `model.ts#zoneComponents`.
  */
 export function scoresTable(places: readonly ScoresTablePlace[]): ScoresTable {
   const components = componentColumns(places);
   const footnotes: ScoresTableFootnote[] = [];
   const rows: ScoresTableRow[] = places.map((p) => {
     const byLabel = new Map(p.components.map((c) => [c.component, c]));
+    const clauses: string[] = [];
+    const triggered = new Set<string>();
+
     const cells: ScoresTableCell[] = components.map((component) => {
       const c = byLabel.get(component);
-      if (!c) return { component, score: null, footnotes: [] };
-      const ids: number[] = [];
-      if (c.coverage !== null && Number.isFinite(c.coverage) && c.coverage < FULL_COVERAGE) {
-        const id = footnotes.length + 1;
-        footnotes.push({
-          id,
-          place: p.name,
-          component,
-          coverage: c.coverage,
-          meanWherePresent: c.mean_where_present,
-          text:
-            `${p.name}, ${component}: scored over ${formatCoveragePctFloor(c.coverage)} of the place` +
-            (c.mean_where_present !== null && Number.isFinite(c.mean_where_present)
-              ? `, where its mean is ${formatScore0(c.mean_where_present)}.`
-              : "."),
-        });
-        ids.push(id);
+      if (!c) {
+        clauses.push(absentClause(component));
+        triggered.add(component);
+        return { component, score: null, footnotes: [] };
       }
-      return { component, score: c.score, footnotes: ids };
+      const flooredPct =
+        c.coverage !== null && Number.isFinite(c.coverage) ? floorPct(c.coverage) : null;
+      if (flooredPct !== null && flooredPct < COVERAGE_FOOTNOTE_FLOOR_PCT) {
+        let clause = `${component} scored over ${formatCoveragePctFloor(c.coverage as number)} of the area`;
+        if (c.mean_where_present !== null && Number.isFinite(c.mean_where_present)) {
+          const meanRounded = formatScore0(c.mean_where_present);
+          // "mean X where scored" is appended ONLY when it says something the cell's own displayed
+          // value does not already -- never a redundant restatement of the same rounded number.
+          if (meanRounded !== formatScore0(c.score)) clause += `, mean ${meanRounded} where scored`;
+        }
+        clauses.push(clause);
+        triggered.add(component);
+      }
+      return { component, score: c.score, footnotes: [] };
     });
+
+    if (clauses.length > 0) {
+      const id = footnotes.length + 1;
+      footnotes.push({
+        id,
+        place: p.name,
+        components: [...triggered],
+        text: `${p.name}: ${clauses.join(", ")}.`,
+      });
+      for (const cell of cells) if (triggered.has(cell.component)) cell.footnotes = [id];
+    }
+
     return { name: p.name, areaKm2: p.areaKm2, nCells: p.nCells, cells, overall: p.overall };
   });
 
@@ -169,6 +213,13 @@ export function scoresTable(places: readonly ScoresTablePlace[]): ScoresTable {
     summary: describeScoresTable(rows),
     narrative: TABLE_NARRATIVE,
   };
+}
+
+/** the SAME floor `formatCoveragePctFloor()` renders (`floor(pct * 10) / 10`), as a bare number for
+ * the threshold comparison -- one floor rule, never a second one that could drift from the sentence
+ * the reader actually sees. */
+function floorPct(coverage: number): number {
+  return Math.floor(coverage * 1000) / 10;
 }
 
 /** SC 1.1.1: the table's own text equivalent -- one sentence per place naming its Overall. */
