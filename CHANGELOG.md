@@ -46,7 +46,67 @@ layers (place names, bathymetry)."**
 **Fix round 1 (Opus 5.5 review, `atlas-refs/"2026-09-24 U4 layer-stack review (Opus 5.5) on
 5a7c731.md"`), merged onto main 0.10.35:**
 
-<!-- U4-FIX-ROUND-BULLETS -->
+- **BLOCKER B1 fixed**: a group's opacity used to REPLACE a layer's existing paint value instead of
+  scaling it, so the invisible B3 query-fill placeholder (`fill-opacity: 0`) painted VISIBLE the
+  moment its group was dimmed, a per-cell `["get","opacity"]` selection expression collapsed to one
+  flat number, and the raster went non-monotonic (0.6 at 100% slider, 0.95 at a 95% one).
+  `layerStack.ts#scaleOpacity(existing, k)` now multiplies through every real MapLibre paint-value
+  shape (a plain number, a legacy `{stops}` function, a zoom `interpolate`/`step` expression, or an
+  arbitrary expression wrapped as `["*", existing, k]`); `k=1` is a guaranteed no-op (same object
+  reference back).
+- **M1**: `rankForStack()` now assigns ONE shared rank to every contiguous run of basemap sub-roles
+  (a `Map<LayerRole, number>`, not an array), so CARTO's own layer-type interleaving (a boundary
+  line between two fills, a country boundary between roads and labels) survives instead of being
+  regrouped by our five sub-roles. Consequence documented in `docs/map.md`: a basemap row can only
+  ever move relative to a DATA row — moving it past another basemap row changes the stack model but
+  paints nothing differently.
+- **M2**: a KNOWN group missing from a `layers=` token is now inserted right after the nearest
+  EARLIER default id present in the token (not appended at the array's end/top) — `?layers=data-
+  raster:o50` used to bury the raster it named under every other group, including a fully-opaque
+  land fill.
+- **M3**: three new pixel/feature-proof e2e tests for the Layers panel eyes beyond the Data row's
+  (Zone outlines: `programarea_ln` rendered-feature count >0 -> 0; Selection: the picked cell's
+  ring >0 -> 0; Land & water: the theme's plain background colour shows through once both Data and
+  Land & water are hidden) — every one proves the layer stays registered (`getLayer` still
+  resolves), never merely removed.
+- **M4**: a move that lands its own button at the stack's edge (top/bottom) disables that button;
+  since a disabled element cannot hold focus, a keyboard user's focus used to silently revert to
+  `<body>`. `move()` now refocuses a real button in the same row after the DOM settles (the same
+  direction if still enabled, otherwise the opposite one).
+- **M5**: a real zone choropleth fill (computed stops) now classifies as role `"choropleth"` ->
+  group `data-raster` ("the lens's data"), not `data-zones` — dimming "Program Areas" used to
+  silently ALSO dim a real choropleth's fill, which is the lens's data, not the outline row. The
+  `data-zones` row is renamed "Zone outlines" (it now only ever holds the outline/label roles and
+  B3's invisible query-fill placeholder).
+- **M6**: "code right, test missing" — `scoresMapInputs` already preferred the manifest's short
+  metric label over `boot.layers[].label`'s long description; no fixture exercised a populated
+  `metricLabels` at all. New unit + e2e coverage against v7's REAL primprod strings (long: "Primary
+  productivity VGPM/VIIRS npp_avg (mg C/m2/day)"; short: "prim prod, 2014-2023 avg (mg C/m^2/day)").
+  The Data row's description paragraph is now hidden when it would repeat the option text verbatim
+  (a release with no short label of its own).
+- **M7**: `data-raster < data-zones < data-places` is now a FIXED relative order and `data-places`
+  is PINNED — `moveLayerStackEntry()` rejects any move that would invert that order or place
+  anything at/above Selection's own position, and a move starting FROM `data-places` is a no-op.
+  Selection can no longer be buried under Program Areas or the raster by accident.
+- **M8 (partial)**: corrected two stale "no release ever publishes a second, ecoregion-outline
+  unit" comments (`scripts/verify.mjs`, `tests/map/style.test.ts`) that predated the standalone,
+  manifest-published ecoregion outline this same 0.10.36 already draws — both now say SELECTABLE
+  explicitly and cross-reference the separate manifest feature. Deferred: consolidating `out=`'s
+  per-lens default into one named, tested helper — a real refactor, not a comment fix; today's
+  `DEFAULT_OUT_BY_LENS`/`zoneUnitsWithOutline()` behavior is unchanged and correct.
+- **m1–m10 of 11 minors** (m11 folded into the merge itself): 44px Switch hit area (SC 2.5.5);
+  `aria-valuetext` on the opacity slider; the slider now commits on `onchange` (once per drag)
+  instead of `oninput` (every ~0.05 step, which could exceed Safari's `history.replaceState` rate
+  limit); the Bathymetry "coming soon" row's switch/move buttons are now `disabled` alongside its
+  slider; `aria-controls` on the Data row's expander; deleted `layersControlItems()` and its whole
+  describe block (dead code since R3 built the real, interactive panel — parity page evidence
+  repointed at the M3 eye-toggle e2e); `Shell.svelte` now skips the manifest ecoregion outline if
+  `zonesForStyle` already carries a real "ecoregion" selectable unit (no release does this today,
+  but two "ecoregion" zone entries would collide into duplicate layer ids); `composeStyle` no
+  longer throws on a `layerStack` input missing a whole group — `normalizeLayerStack()` appends it
+  at its default.
+- Version bumped 0.10.35 -> 0.10.36; merged `main` (F1a, U6, flower, study-area camera) per the
+  review's own merge notes.
 
 # atlas 0.10.35
 
