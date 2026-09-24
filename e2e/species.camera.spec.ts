@@ -163,9 +163,12 @@ test.describe("D8: selecting a model frames its extent, not the default study ar
     await expect(page.getByTestId("species-title-sci")).toHaveText("Odobenus rosmarus");
 
     // let the INITIAL species-change effect finish its own fit (round 1's fix) before exercising
-    // the SEPARATE `zoomToLayer()` action below.
+    // the SEPARATE `zoomToLayer()` action below. Generous timeout (P6c: a fixed 5s predicate here
+    // flaked on Firefox in CI — a real engine's flyTo animation + this test's TWO sequential mocked
+    // network round-trips (`/cog/info` then `/cog/point`) have no fixed duration, especially on a
+    // loaded CI runner, so the wait is sized for that rather than guessed tight).
     await expect
-      .poll(async () => (await readCamera(page)).zoom, { timeout: 5_000 })
+      .poll(async () => (await readCamera(page)).zoom, { timeout: 15_000 })
       .toBeGreaterThan(STUDY_AREA_ZOOM_CEILING);
 
     // pan the camera away with a plain, INSTANT MapLibre call (not this app's own
@@ -180,7 +183,7 @@ test.describe("D8: selecting a model frames its extent, not the default study ar
       w.__atlasMap.handle.map.jumpTo({ center: [0, 0], zoom: 2 });
     });
     await expect
-      .poll(async () => (await readCamera(page)).zoom, { timeout: 2_000 })
+      .poll(async () => (await readCamera(page)).zoom, { timeout: 5_000 })
       .toBeLessThan(3);
 
     await page.evaluate(() => {
@@ -189,10 +192,15 @@ test.describe("D8: selecting a model frames its extent, not the default study ar
       ).__atlasSpecies.zoomToLayer();
     });
 
+    // same generous, CI-Firefox-safe timeout as the initial fit's own poll above -- this is the
+    // exact assertion that flaked (5s was too tight once real animation + mocked round-trip
+    // latency compounded on a loaded Firefox CI runner; a fixed short window can never be "made
+    // proportional" to an animation whose own duration MapLibre computes from distance, so this
+    // widens the ceiling rather than trying to predict it).
     await expect
       .poll(async () => (await readCamera(page)).zoom, {
         message: "zoomToLayer() never reached the COG-bounds last resort",
-        timeout: 5_000,
+        timeout: 20_000,
       })
       .toBeGreaterThan(STUDY_AREA_ZOOM_CEILING);
 

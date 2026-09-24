@@ -223,19 +223,33 @@ describe("the fit target (section 6.3, fix round 1's chain)", () => {
       expect(cam?.source).toBe("study-area");
     });
 
-    it("the ecoregion extent (when the caller supplies one) is preferred OVER a sibling's — a critical-habitat mask's bbox can be a tiny sliver of the real range, less representative than a curated ecoregion", () => {
-      // the leatherback's OWN merged bbox is null (spans the globe) but `ch_fws` (a mask input)
-      // carries a real, small critical-habitat bbox — proving the ORDER, not just the presence.
+    // P6c (orchestrator, real-CI regression, 2026-09-24): `anyInputBbox` used to NOT filter mask
+    // inputs, on the theory that the caller's ecoregion fallback (tried first) would always catch
+    // a taxon like this before the mask bbox mattered. In practice `state.svelte.ts` never supplies
+    // an ecoregion bbox at all, so that theory never held: the leatherback's `ch_fws` critical-
+    // habitat mask (`[-64.95, 17.65, -64.85, 17.7]`, 0.1 x 0.05 deg — a single reef off Puerto
+    // Rico) was picked up as if it were "the species' own ground" and flew the WHOLE-taxon default
+    // camera there, stranding `e2e/species.smoke.spec.ts`'s PMTiles range gate (real CI regression,
+    // all three engines). Masks are now skipped entirely (see `anyInputBbox`'s own header) — a
+    // taxon with bboxes on ONLY its mask inputs now behaves exactly like one with no bbox anywhere.
+    it("a critical-habitat MASK's bbox is never used as the sibling extent — only a real distribution model's is", () => {
+      // the leatherback's OWN merged bbox is null (spans the globe); its only non-null bboxes are
+      // on MASK inputs (`ch_fws`/`ch_nmfs`/`rng_fws`) — its two real distribution models (`am`/
+      // `ax`) publish none, so `anyInputBbox` must find nothing to fly to.
       expect(CARDS.leatherback().merged?.bbox).toBeNull();
-      expect(anyInputBbox(CARDS.leatherback())).not.toBeNull();
+      expect(inputBbox(CARDS.leatherback(), "am")).toBeNull();
+      expect(inputBbox(CARDS.leatherback(), "ax")).toBeNull();
+      expect(inputBbox(CARDS.leatherback(), "ch_fws")).not.toBeNull(); // the mask DOES carry one
+      expect(anyInputBbox(CARDS.leatherback())).toBeNull();
+      // WITH an ecoregion supplied, that is still what's used (unaffected by the mask filter).
       const withEcoregion = bounds(
         cameraFor(CARDS.leatherback(), MERGED_IN, { fallbackBbox: ER_BBOX }),
       );
       expect(withEcoregion.source).toBe("ecoregion");
-      // and WITHOUT an ecoregion supplied, the sibling step is what actually saves it from the
-      // study area (verifying the step exists and is reachable, not just skipped every time).
-      const withoutEcoregion = bounds(cameraFor(CARDS.leatherback(), MERGED_IN));
-      expect(withoutEcoregion.source).toBe("sibling");
+      // and WITHOUT one, the taxon now falls all the way to the study area (a "center" camera,
+      // never a mask sliver).
+      const withoutEcoregion = cameraFor(CARDS.leatherback(), MERGED_IN, { studyArea: FULL });
+      expect(withoutEcoregion?.source).toBe("study-area");
     });
   });
 
