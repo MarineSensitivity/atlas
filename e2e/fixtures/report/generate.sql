@@ -97,15 +97,26 @@ COPY (
 
 -- ---- zone_taxon: two Program Areas (GAA, ALA), a handful of species each, er_score a 0-1
 -- fraction (species_for_zone.sql's own contract) --------------------------------------------------
+-- V5 fix (Opus eyes-on, phone-15/desktop-14): GAA's five ADDED rows below (NMFS:EN/FWS:LC/
+-- IUCN:EN/IUCN:VU/IUCN:NT) give it all 8 `ER_CAT_ORDER` categories (report/er.ts) beside its
+-- original three (USA:TN/IUCN:CR/other), so e2e/report.spec.ts's scroll-affordance test gets a
+-- REAL 10-column (8 ER + Category + Total) species counts table -- exactly the shape wide enough
+-- to overflow a 390px report, the same way a real release's counts table did. ALA/Z3..Z20 are
+-- untouched (other tests key on ALA's exact two rows).
 COPY (
   SELECT zone_fld, zone_value, sp_cat, sp_common, sp_scientific, taxon_id, taxon_authority,
          er_code, er_score::DOUBLE AS er_score, is_mmpa, is_mbta, mdl_key,
          area_km2::DOUBLE AS area_km2, avg_suit::DOUBLE AS avg_suit
     FROM (
       VALUES
-        ('programarea_key', 'GAA', 'bird',  'Marbled Murrelet',  'Brachyramphus marmoratus', 't1', 'FWS',  'FWS:TN',  0.50, true,  true,  'z1', 1200.0, 0.6),
-        ('programarea_key', 'GAA', 'fish',  'Pacific Herring',   'Clupea pallasii',          't2', 'IUCN', 'IUCN:LC', 0.01, false, false, 'z2',  800.0, 0.3),
-        ('programarea_key', 'GAA', 'coral', 'Elkhorn Coral',     'Acropora palmata',         't3', 'IUCN', 'IUCN:CR', 0.50, false, false, 'z3',  400.0, 0.2),
+        ('programarea_key', 'GAA', 'bird',   'Marbled Murrelet',   'Brachyramphus marmoratus', 't1',  'FWS',  'FWS:TN',   0.50, true,  true,  'z1', 1200.0, 0.6),
+        ('programarea_key', 'GAA', 'fish',   'Pacific Herring',    'Clupea pallasii',          't2',  'IUCN', 'IUCN:LC',  0.01, false, false, 'z2',  800.0, 0.3),
+        ('programarea_key', 'GAA', 'coral',  'Elkhorn Coral',      'Acropora palmata',         't3',  'IUCN', 'IUCN:CR',  0.50, false, false, 'z3',  400.0, 0.2),
+        ('programarea_key', 'GAA', 'turtle', 'Leatherback Turtle', 'Dermochelys coriacea',     't6',  'NMFS', 'NMFS:EN',  1.00, false, false, 'z6',  700.0, 0.5),
+        ('programarea_key', 'GAA', 'mammal', 'Harbor Seal',        'Phoca vitulina',           't7',  'FWS',  'FWS:LC',   0.01, true,  false, 'z7',  500.0, 0.4),
+        ('programarea_key', 'GAA', 'bird',   'Short-tailed Albatross', 'Phoebastria albatrus', 't8',  'IUCN', 'IUCN:EN',  0.25, false, true,  'z8',  350.0, 0.3),
+        ('programarea_key', 'GAA', 'fish',   'Nassau Grouper',     'Epinephelus striatus',     't9',  'IUCN', 'IUCN:VU',  0.05, false, false, 'z9',  450.0, 0.35),
+        ('programarea_key', 'GAA', 'invertebrate', 'Queen Conch',  'Aliger gigas',             't10', 'IUCN', 'IUCN:NT',  0.02, false, false, 'z10', 300.0, 0.25),
         ('programarea_key', 'ALA', 'bird',  'Ashy Storm-Petrel', 'Hydrobates homochroa',     't4', 'IUCN', 'IUCN:EN', 0.25, false, true,  'z4',  900.0, 0.5),
         ('programarea_key', 'ALA', 'mammal','Steller Sea Lion',  'Eumetopias jubatus',       't5', 'FWS',  'FWS:LC',  0.01, true,  false, 'z5',  600.0, 0.4)
     ) AS t(zone_fld, zone_value, sp_cat, sp_common, sp_scientific, taxon_id, taxon_authority,

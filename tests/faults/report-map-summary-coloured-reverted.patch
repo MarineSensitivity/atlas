@@ -1,0 +1,13 @@
+diff --git a/src/lib/report/model.ts b/src/lib/report/model.ts
+index 582900b..5771586 100644
+--- a/src/lib/report/model.ts
++++ b/src/lib/report/model.ts
+@@ -481,7 +481,7 @@ function describeMap(places: readonly ReportMapPlace[], domain: [number, number]
+   return (
+     // P round V5 fix (Opus eyes-on: phone-14's caption spelled "coloured", desktop-13's map intro
+     // spelled "colored", in the SAME report) -- American English throughout, matching the docs book.
+-    `Map: ${places.length} place${places.length === 1 ? "" : "s"} colored by mean score, ` +
++    `Map: ${places.length} place${places.length === 1 ? "" : "s"} coloured by mean score, ` +
+     `ramp ${formatScore0(domain[0])} to ${formatScore0(domain[1])} (red = high); ` +
+     `highest ${hi.name} ${formatScore0(hi.score)}, lowest ${lo.name} ${formatScore0(lo.score)}.`
+   );

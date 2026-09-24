@@ -1,0 +1,13 @@
+diff --git a/src/lens/species/data/card.ts b/src/lens/species/data/card.ts
+index ac13b50..55a2abb 100644
+--- a/src/lens/species/data/card.ts
++++ b/src/lens/species/data/card.ts
+@@ -114,7 +114,7 @@ export function speciesCard(card: TaxonCard, opts: CardOptions): SpeciesCard {
+   // P round V5 fix (Opus eyes-on: desktop-17/18 "Category: turtle"/"mammal" lowercase in the
+   // species lens sidebar) -- the DISPLAY value goes through categoryLabel(); card.spCat itself
+   // (used elsewhere for filtering/matching) stays the raw taxonomy string.
+-  facts.push({ label: "Category", value: categoryLabel(card.spCat) });
++  facts.push({ label: "Category", value: card.spCat });
+   const esa = esaListing(card.esa?.code ?? null, card.esa?.source ?? null);
+   if (esa) facts.push({ label: "ESA Listing", value: esa });
+   if (card.rl) facts.push({ label: "IUCN RedList", value: card.rl });

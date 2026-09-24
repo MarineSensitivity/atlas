@@ -1,3 +1,30 @@
+# atlas 0.10.60
+
+Round 2, V5: follow-up on the Opus eyes-on review of 0.10.59 — the eyes-on harness's own desktop
+tap points were stale, a report table hid columns with no cue, and assorted copy/label nits.
+
+- **Fixed: the eyes-on screenshot harness's desktop tap points had gone stale**
+  (`scripts/eyes-shots.mjs`) — all three fixed pixels landed on land for the current globe camera,
+  so four desktop states silently shot the whole study area instead of a per-cell flower/table,
+  with no warning in the log. Taps are now computed by PROJECTING known real scored lon/lat points
+  (northern Gulf of Mexico, Gulf of Alaska, mid-Atlantic shelf) with the live map's own
+  `map.project()`, so they survive any future camera/zoom change; a miss now prints a WARN and
+  marks the shot filename `-MISSED`. New "programarea" state selects a real Program Area through
+  the Scores-lens search field, so the flower/table's Program Area name routing is finally on
+  screen.
+- **Fixed: the report's species-counts table hid up to 6 of 8 extinction-risk columns with no cue
+  that more existed** — the cut happened to fall exactly on a column edge, so a truncated table
+  looked complete. It now shows a right-edge fade and a "Scroll right for more columns" hint,
+  narrow screens only, and only when the table genuinely has more to scroll to.
+- **Fixed: inconsistent spelling ("coloured" vs "colored") in the same report** — American English
+  throughout, matching the docs book.
+- **Fixed: source common names in the Top-20 table were shown exactly as published** ("great
+  hammerhead shark") — now sentence-cased for display ("Great hammerhead shark"); the underlying
+  data and every link are unaffected.
+- **Fixed: the species category showed as a raw, lowercase key in three more places** — the report's
+  species-counts summary sentence, and the species-lens sidebar's own "Category" fact — now read
+  "Turtle"/"Mammal" the same way every other category label in the app already does.
+
 # atlas 0.10.59
 
 Round 2, V4: the phone species camera squeezed a wide model's range into the bottom of the screen

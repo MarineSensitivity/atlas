@@ -3,6 +3,7 @@
 // back into the model, which is why the CSV writes the RAW frame instead.
 import { describe, expect, it } from "vitest";
 import {
+  formatCommonName,
   formatCount,
   formatCoveragePct,
   formatCoveragePctFloor,
@@ -95,6 +96,21 @@ describe("round1HalfEven -- R's round(x, 1), which the map's fill value goes thr
     expect(round1HalfEven(40.4484)).toBe(40.4);
     expect(round1HalfEven(40.4984)).toBe(40.5);
     expect(round1HalfEven(-3.14)).toBe(-3.1);
+  });
+});
+
+// P round V5 fix (Opus eyes-on desktop-15: lowercase "great hammerhead shark"/"sicklefin devil
+// ray" in the Top-20 table) -- sentence-case, not title-case: only the first letter changes, so a
+// name like "great hammerhead shark" reads "Great hammerhead shark", never "Great Hammerhead Shark".
+describe("formatCommonName -- sentence-cases a source common name for DISPLAY only", () => {
+  it.each([
+    ["great hammerhead shark", "Great hammerhead shark"],
+    ["sicklefin devil ray", "Sicklefin devil ray"],
+    ["Walrus", "Walrus"],
+    ["", ""],
+    ["  leatherback turtle  ", "Leatherback turtle"],
+  ])("%o -> %o", (input, want) => {
+    expect(formatCommonName(input)).toBe(want);
   });
 });
 

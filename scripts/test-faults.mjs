@@ -1399,6 +1399,88 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4466" },
   },
+  // --- P round V5 (Opus eyes-on follow-up on 0.10.59) --------------------------------------------
+  {
+    id: "eyes-shots-desktop-projection-reverted",
+    patch: "tests/faults/eyes-shots-desktop-projection-reverted.patch",
+    describe:
+      "eyes-shots.mjs's screenPointFor() stops projecting a known lon/lat with map.project() and " +
+      "returns a hand-picked pixel again -- the exact bug that made desktop states 06/07/09/10 " +
+      "silently shoot the full study area once the globe camera moved",
+    gate: [
+      "npx",
+      "vitest",
+      "run",
+      "tests/scripts/eyesShots.test.ts",
+      "-t",
+      "projects with the live map",
+    ],
+  },
+  {
+    id: "report-counts-scroll-hint-dropped",
+    patch: "tests/faults/report-counts-scroll-hint-dropped.patch",
+    describe:
+      "report.css's narrow-screen scroll-hint rule reverts to display: none -- the species counts " +
+      "table's cut-column edge (Opus eyes-on phone-15/desktop-14) looks complete again, with no " +
+      "cue that 6 of 8 extinction-risk columns are still off-screen",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.spec.ts",
+      "-g",
+      "shows the scroll hint",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4472" },
+  },
+  {
+    id: "report-map-summary-coloured-reverted",
+    patch: "tests/faults/report-map-summary-coloured-reverted.patch",
+    describe:
+      "describeMap()'s summary sentence reverts to \"coloured\" -- the same report's map caption " +
+      "and desktop map intro spell the word two different ways again (Opus eyes-on)",
+    gate: ["npx", "vitest", "run", "tests/lib/report/model.test.ts", "-t", "spells 'colored'"],
+  },
+  {
+    id: "report-common-name-casing-dropped",
+    patch: "tests/faults/report-common-name-casing-dropped.patch",
+    describe:
+      "formatCommonName() stops sentence-casing and prints a source common name verbatim again -- " +
+      '"great hammerhead shark" reappears lowercase in the Top-20 table (Opus eyes-on desktop-15)',
+    gate: ["npx", "vitest", "run", "tests/lib/report/format.test.ts", "-t", "formatCommonName"],
+  },
+  {
+    id: "report-species-counts-category-raw-reverted",
+    patch: "tests/faults/report-species-counts-category-raw-reverted.patch",
+    describe:
+      "describeCounts()'s largest-category clause reverts to the raw sp_cat string -- the report's " +
+      'species summary sentence reads "largest turtle 1" again instead of "largest Turtle 1"',
+    gate: [
+      "npx",
+      "vitest",
+      "run",
+      "tests/lib/report/model.test.ts",
+      "-t",
+      "names the largest category through categoryLabel",
+    ],
+  },
+  {
+    id: "species-card-category-raw-reverted",
+    patch: "tests/faults/species-card-category-raw-reverted.patch",
+    describe:
+      "speciesCard()'s Category fact reverts to the raw sp_cat string -- the species lens sidebar " +
+      'reads "Category: turtle"/"mammal" lowercase again (Opus eyes-on desktop-17/18)',
+    gate: [
+      "npx",
+      "vitest",
+      "run",
+      "tests/lens/species/card.test.ts",
+      "-t",
+      "title-cases the Category fact",
+    ],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

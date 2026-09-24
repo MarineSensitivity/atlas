@@ -16,6 +16,7 @@
   import { announce } from "../lib/ui/announcer";
   import Legend from "../lib/ui/Legend.svelte";
   import { nextRovingIndex } from "../lib/ui/roving";
+  import { scrollAffordance } from "../lib/ui/scrollAffordance";
   import { agencyDisplayName, shouldShowSeal } from "../lib/ui/sealVisibility";
   import { createAnalytics } from "../lib/analytics/analytics";
   import { analyticsLogUrl } from "../lib/analytics/logUrl";
@@ -31,6 +32,7 @@
   import { paletteStopsFromBoot } from "../lib/raster/ramps";
   import { formatScore } from "../lib/format";
   import {
+    formatCommonName,
     formatCoveragePct,
     formatCount,
     formatErScore,
@@ -372,6 +374,15 @@
     a.download = model.species[i].csvFilename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  // ---- species counts table scroll affordance (V5 fix) --------------------------------------
+  // Opus eyes-on, 2026-09-24: the counts table hid columns inside `.table-scroll` with no cue.
+  // Keyed by place index `i` (one counts table per place, same as `downloadSpeciesCsvFor` above);
+  // `report.css`'s `data-scrollable` selectors read this per-table via the attribute it sets below.
+  let countsOverflow = $state<boolean[]>([]);
+  function setCountsOverflow(i: number, overflows: boolean) {
+    countsOverflow[i] = overflows;
   }
 
   // ---- exports --------------------------------------------------------------------------------
@@ -760,7 +771,14 @@
           <!-- V4 fix (owner phone report, 2026-09-24): caption moved above the scroll container --
                see report.css's `.table-caption` header for why. -->
           <p class="table-caption" id={`species-counts-caption-${i}`}>{species.caption}</p>
-          <div class="table-scroll">
+          <!-- V5 fix (Opus eyes-on: the counts table hid columns with no scroll cue) --
+               `data-scrollable` and the `.scroll-hint` sibling right below are both driven by the
+               REAL measured overflow (scrollAffordance.ts), never a guess at column count. -->
+          <div
+            class="table-scroll"
+            data-scrollable={countsOverflow[i] ? "true" : "false"}
+            use:scrollAffordance={{ onOverflow: (v) => setCountsOverflow(i, v) }}
+          >
             <table
               aria-labelledby={`species-counts-caption-${i}`}
               aria-describedby={`species-summary-${i}`}
@@ -794,6 +812,9 @@
               </tbody>
             </table>
           </div>
+          <!-- must stay the IMMEDIATE next sibling of the .table-scroll div above -- report.css's
+               `+ .scroll-hint` selector is what keeps this hidden when the table already fits. -->
+          <p class="scroll-hint" aria-hidden="true">Scroll right for more columns &rarr;</p>
 
           {#if species.top}
             <!-- V4 fix (owner phone report, 2026-09-24, phone-15): caption moved above the scroll
@@ -820,7 +841,10 @@
                       <td>{categoryLabel(row.sp_cat)}</td>
                       <td>
                         {#if row.sp_common}
-                          <a href={species.top.hrefs[j]}>{row.sp_common}</a>
+                          <!-- P round V5 fix (Opus eyes-on desktop-15: lowercase "great hammerhead
+                               shark"/"sicklefin devil ray") -- DISPLAY only; the href below still
+                               keys on row.mdl_key, never this sentence-cased text. -->
+                          <a href={species.top.hrefs[j]}>{formatCommonName(row.sp_common)}</a>
                         {:else}
                           —
                         {/if}

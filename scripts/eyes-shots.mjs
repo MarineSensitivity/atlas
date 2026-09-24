@@ -21,6 +21,21 @@
 // to a peek" on phone, "Collapse to a pill" on desktop) so it shows a clean map, distinct from 03.
 // (d) the phone tap points sat low enough in the map area that a resulting popup could land partly under
 // the legend chip -- moved higher into the free map area, above the chip's own band.
+// 2026-09-25 fourth pass (P round V5 fix, Opus eyes-on review of 0.10.59): the THREE FIXED desktop pixel
+// guesses below all sampled land for the current globe camera ((335,400)/(490,585)/(600,520) all read
+// RGB 14,14,14 in the desktop-02 shot) -- the "stop at first real popup" loop from the third pass never
+// found one, so states 06/07/09/10 silently shot the whole study area instead of a per-cell flower/table,
+// and the log read clean because nothing WARNed about it (a hand-picked pixel is only ever correct for
+// ONE camera). `tapScoredCell` no longer guesses pixels at all: it PROJECTS a short list of known,
+// real-world scored lon/lat points (northern Gulf of Mexico, Gulf of Alaska, mid-Atlantic shelf) with
+// the live `window.__atlasMap.handle.map.project()` (the exact technique e2e/places.pick.spec.ts's own
+// `screenPointFor` and scripts/verify.mjs already use), so a tap survives any camera/zoom/projection the
+// app ships next. When NONE of the candidates lands a real scored-cell popup, this WARNs explicitly and
+// the caller marks the shot filename `-MISSED` (never a clean-looking log for an untested state again).
+// Also new: a "programarea" state that selects a real Program Area through the Scores-lens search field
+// (ScoresSearch.svelte -- same mechanism the Places picker's "Add a Program Area" uses) so the flower/
+// table's PROGRAM AREA NAME ROUTING (map popup, flower title, table header) is actually visible in a
+// screenshot for the first time -- every prior state only ever tapped a raw cell.
 import { chromium } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 const BASE = process.env.ATLAS_URL ?? "http://localhost:4380/atlas";
@@ -81,37 +96,50 @@ async function collapseSheet(page) {
     }
   }
 }
+// fourth pass (2026-09-25, V5 fix): known real-world points that are scored US ocean cells on
+// every released version this harness targets -- never a pixel, which is only ever right for one
+// camera. Each is `[lon, lat, label]`; `label` is for the WARN line only.
+const KNOWN_SCORED_POINTS = [
+  [-90.55, 28.6, "northern Gulf of Mexico"],
+  [-150.0, 57.0, "Gulf of Alaska"],
+  [-74.5, 38.5, "mid-Atlantic shelf"],
+];
+
+/** `map.project()` returns CANVAS-relative pixels; a real `page.mouse.click()` needs
+ * viewport-absolute ones, so this adds the canvas's own `getBoundingClientRect()` offset -- the
+ * SAME technique e2e/places.pick.spec.ts's `screenPointFor` and scripts/verify.mjs already use.
+ * Returns `null` when the map handle is not mounted yet (a caller must not click blind on that). */
+async function screenPointFor(page, lonLat) {
+  return page.evaluate((ll) => {
+    const map = window.__atlasMap?.handle?.map;
+    if (!map) return null;
+    const rect = map.getCanvas().getBoundingClientRect();
+    const p = map.project(ll);
+    return { x: rect.left + p.x, y: rect.top + p.y };
+  }, lonLat);
+}
+
+/**
+ * Taps the first of `KNOWN_SCORED_POINTS` that produces a REAL scored-cell popup, PROJECTED with
+ * the live camera at shoot time rather than a hand-picked pixel (fourth-pass fix: the third pass's
+ * fixed desktop pixels all sampled land once the globe camera changed, and the loop below -- kept
+ * from the third pass -- silently found nothing to stop on, so four desktop states shot the whole
+ * study area with no warning at all). V4's own "stop at first REAL popup" rule is unchanged: every
+ * atlas popup carries `.atlas-popup` (`src/lib/map/popup.ts#createPopup`), but a click on
+ * land/unscored ocean ALSO opens one, just with "No scored cell here" text, so a later candidate
+ * must not fire once an earlier one already landed a real popup.
+ *
+ * Returns `true` on a hit, `false` when every candidate missed -- the caller WARNs and marks the
+ * shot filename `-MISSED` rather than silently shooting the full study area again.
+ */
 async function tapScoredCell(page, vp) {
-  // a point in the Gulf of Alaska / California Current after the padded first view; try a few.
-  // third pass (d): the phone points sit HIGHER in the map's free area than before -- a point low in
-  // the map (closer to the bottom sheet's own band) put the resulting popup partly under the legend
-  // chip (Opus re-shot finding); these stay well above where either the chip or a peek-detent sheet
-  // sits.
-  const pts =
-    vp === "phone"
-      ? [
-          [75, 170],
-          [60, 140],
-          [90, 200],
-        ]
-      : [
-          [335, 400],
-          [490, 585],
-          [600, 520],
-        ];
-  // V4 fix (owner phone report, 2026-09-24, harness item 4): this used to click every candidate
-  // point regardless of outcome, so when an EARLIER point already landed a scored cell (a real
-  // popup) a LATER point landing on land or open ocean could still fire and dismiss/replace it
-  // (`closeOnClick`/a no-data reset) -- measured: states 06/07/09/10 (flower/table) ended up
-  // showing the full study area instead of a scored-cell popup on desktop. Stop at the first tap
-  // that produces a REAL scored-cell popup -- every atlas popup carries `.atlas-popup`
-  // (`src/lib/map/popup.ts#createPopup`, the ONE popup constructor both lenses use), but a click on
-  // land/unscored ocean ALSO opens one, just with "No scored cell here" text (`src/lens/scores/
-  // popup.ts#cellPopupLoadingText`'s no-value sibling) -- second draft (Opus re-check) caught this
-  // when the FIRST candidate point landed exactly that "no scored cell" popup and the loop stopped
-  // there instead of trying the next point.
-  for (const [x, y] of pts) {
-    await page.mouse.click(x, y);
+  for (const [lon, lat, label] of KNOWN_SCORED_POINTS) {
+    const pt = await screenPointFor(page, [lon, lat]);
+    if (!pt) {
+      log(`  tapScoredCell: no map handle yet, skipping ${label}`);
+      continue;
+    }
+    await page.mouse.click(pt.x, pt.y);
     await page.waitForTimeout(2500);
     const popup = page.locator(".atlas-popup");
     if (await popup.count()) {
@@ -119,9 +147,12 @@ async function tapScoredCell(page, vp) {
         .first()
         .innerText()
         .catch(() => "");
-      if (!text.includes("No scored cell")) return;
+      if (!text.includes("No scored cell")) return true;
     }
+    log(`  tapScoredCell: ${label} (${lon}, ${lat}) missed`);
   }
+  log(`WARN tapScoredCell: every candidate point missed for ${vp} -- no per-cell state shot`);
+  return false;
 }
 // third pass (b): "Loading species..." (TablePanel.svelte) takes ~7s on a cold DuckDB-WASM query --
 // waits (bounded, never longer than timeoutMs total) for that text to clear AND a real
@@ -156,6 +187,60 @@ async function shot(page, vp, name) {
   const p = `${OUT}/${vp}-${name}.png`;
   await page.screenshot({ path: p, timeout: 30_000 });
   log("shot", p);
+}
+// V5 fix (new state): selects a real Program Area through the Scores-lens search field
+// (ScoresSearch.svelte) so the flower/table's PROGRAM AREA NAME ROUTING (map popup, flower title,
+// table header) is actually on screen -- every earlier state only ever tapped a raw cell, so a
+// review could never check the routing this way (Opus eyes-on: "The routing of Program Area names
+// through the name table ... cannot be checked from these shots, because no state selects a
+// Program Area in the Scores lens"). Phone opens the search field inside its own modal first
+// (Shell.svelte's `openPhoneSearch`); desktop's field is already in the topbar.
+//
+// Shell.svelte mounts BOTH the desktop topbar field (`[data-control="search"]`) and the phone
+// modal's copy (inside its own `<dialog>`, role="dialog" name="Search") at once (same lazy
+// `ScoresSearchComp` load gates both `{:else if}` branches) -- `page.getByLabel(...)` alone
+// matched BOTH regardless of viewport, and `.waitFor()` on that 2-element locator failed
+// silently (`.catch(() => false)`) rather than picking either -- measured: this WARNed on every
+// phone run despite the modal genuinely being open and visible. Scoping to the ONE container
+// each viewport actually uses removes the ambiguity.
+async function selectProgramArea(page, vp) {
+  let container;
+  if (vp === "phone") {
+    const trigger = page.getByRole("button", { name: "Search species and places" });
+    if (await trigger.count()) {
+      await trigger.click({ timeout: 10_000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    container = page.getByRole("dialog", { name: "Search" });
+  } else {
+    container = page.locator('[data-control="search"]');
+  }
+  const input = container.getByRole("combobox", { name: "Search Program Areas or coordinates" });
+  const ok = await input
+    .waitFor({ state: "visible", timeout: 10_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!ok) {
+    log(`WARN selectProgramArea: no search field found for ${vp}`);
+    return false;
+  }
+  // by KEY, not name: search.ts#matchZones matches only the release's own PUBLISHED zone `name`
+  // (never the app-side PROGRAM_AREA_NAMES fallback labels use) -- the real v7 release publishes
+  // no `name` at all for GAA (the same gap V1's fix documented for the report/flower/table
+  // labels), so "Gulf of America" gets "No matches" while the key still resolves every time. The
+  // rendered OPTION label still reads "Gulf of America (GAA)" via that same fallback, so this is
+  // a robust way to reach it, not a workaround that only proves something else. (The search-by-
+  // name gap itself is out of this round's scope -- reported, not fixed, in the hand-back.)
+  await input.fill("GAA");
+  await page.waitForTimeout(500);
+  const option = container.getByRole("option", { name: /Gulf of America|GAA/i }).first();
+  if (!(await option.count())) {
+    log(`WARN selectProgramArea: no GAA match for ${vp}`);
+    return false;
+  }
+  await option.click({ timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+  return true;
 }
 const STATES = [
   {
@@ -206,9 +291,13 @@ const STATES = [
     run: async (p, vp) => {
       await go(p, "?ver=v7&theme=dark");
       await explore(p);
-      await tapScoredCell(p, vp);
+      // V5 fix: a MISSED tap (no candidate lon/lat landed a scored cell) still shoots, so the
+      // orchestrator sees a real image -- but the filename itself now says so, rather than a
+      // clean-looking log hiding four untested states the way it did before this fix.
+      const hit = await tapScoredCell(p, vp);
+      const missed = hit ? "" : "-MISSED";
       await tool(p, "Flower plot");
-      await shot(p, vp, "06-flower-half");
+      await shot(p, vp, `06-flower-half${missed}`);
       // third pass (a): petals are `path.petal` (Flower.svelte), never a bare `svg path` -- and a
       // real petal can be a zero-score DEGENERATE path (`d=""`, flowerGeometry.ts) with no area to
       // click, so this also skips those. A low-score petal is still a real (non-degenerate) path,
@@ -233,9 +322,9 @@ const STATES = [
           .catch(() => false);
       }
       if (!labelShown) log("WARN flower petal tap produced no visible label");
-      await shot(p, vp, "07-flower-petal");
+      await shot(p, vp, `07-flower-petal${missed}`);
       await sheet(p, "Full height");
-      await shot(p, vp, "08-flower-full");
+      await shot(p, vp, `08-flower-full${missed}`);
     },
   },
   {
@@ -243,15 +332,16 @@ const STATES = [
     run: async (p, vp) => {
       await go(p, "?ver=v7&theme=dark");
       await explore(p);
-      await tapScoredCell(p, vp);
+      const hit = await tapScoredCell(p, vp);
+      const missed = hit ? "" : "-MISSED";
       await tool(p, "Table");
       // third pass (b): the per-cell species list takes ~7s cold -- wait for it rather than
       // shooting mid-"Loading species…" (bounded; WARNs and shoots anyway if it never resolves).
       await waitForSpeciesLoaded(p);
-      await shot(p, vp, "09-table-half");
+      await shot(p, vp, `09-table-half${missed}`);
       await sheet(p, "Full height");
       await waitForSpeciesLoaded(p);
-      await shot(p, vp, "10-table-full");
+      await shot(p, vp, `10-table-full${missed}`);
     },
   },
   {
@@ -319,6 +409,21 @@ const STATES = [
       await explore(p);
       await p.waitForTimeout(6000);
       await shot(p, vp, "18-species-model");
+    },
+  },
+  {
+    id: "programarea",
+    run: async (p, vp) => {
+      await go(p, "?ver=v7&theme=dark");
+      await explore(p);
+      const picked = await selectProgramArea(p, vp);
+      const missed = picked ? "" : "-MISSED";
+      await shot(p, vp, `19-programarea-popup${missed}`);
+      await tool(p, "Flower plot");
+      await shot(p, vp, `20-programarea-flower${missed}`);
+      await tool(p, "Table");
+      await waitForSpeciesLoaded(p);
+      await shot(p, vp, `21-programarea-table${missed}`);
     },
   },
 ];
