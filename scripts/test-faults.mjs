@@ -599,6 +599,42 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4388" },
   },
+  // --- P6 round (0.10.45): map + lens defects from the Opus 5.5 eyes-on assessment ----------------
+  {
+    id: "popup-no-value-cellid-title",
+    patch: "tests/faults/popup-no-value-cellid-title.patch",
+    describe:
+      "cellPopupText() drops its no-value branch -- a click outside the scored area is back to " +
+      "'Cell {id} ... {long layer title}: 0' instead of 'No scored cell here' (D3, the owner's " +
+      "original Utah-click defect)",
+    gate: ["npx", "vitest", "run", "tests/lens/scores/popup.test.ts"],
+  },
+  {
+    id: "species-camera-sibling-skipped",
+    patch: "tests/faults/species-camera-sibling-skipped.patch",
+    describe:
+      "cameraFor()'s D8 'sibling' fallback step never runs -- selecting a model whose own input " +
+      "and the merged surface both publish no bbox (the walrus am|ITS-Mam-180639 case) skips the " +
+      "fly-to and stays on the whole study area",
+    gate: ["npx", "vitest", "run", "tests/lens/species/camera.test.ts", "-t", "D8"],
+  },
+  {
+    id: "study-area-shift-uncapped",
+    patch: "tests/faults/study-area-shift-uncapped.patch",
+    describe:
+      "MAX_STUDY_AREA_SHIFT_PX raised past any real padding -- the phone first-view camera shift " +
+      "goes back to rotating the low-zoom globe past the free area (P2's own ~100 CSS px empty-sky " +
+      "defect, reproduced)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.firstview.phone.spec.ts",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4393" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
