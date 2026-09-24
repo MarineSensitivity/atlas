@@ -100,7 +100,11 @@ export function popupContent(input: PopupInput): PopupContent {
       displayValue: null,
       pinColor: "grey",
       textColor: null,
-      text: "no value here",
+      // D3 fold-in (orchestrator round 2): same one-line rule the scores lens already got
+      // (`lens/scores/popup.ts#noScoredCellText`) — "no value" reads as a lookup failure, not as
+      // "you clicked outside where this model has data." `popupHtml`/`popupAnnounceText` below
+      // also drop the Cell ID line for this kind, even when `cellId` resolved to a real grid cell.
+      text: "No scored cell here",
     };
   }
   if (input.kind === "presence") {
@@ -115,8 +119,8 @@ export function popupContent(input: PopupInput): PopupContent {
   }
 
   // "value": both `value` and `rescale` are required by the type, but a caller building this from
-  // untyped data (e.g. relaying a worker message) could still omit them — fail to "no value here"
-  // rather than color a swatch with `undefined`.
+  // untyped data (e.g. relaying a worker message) could still omit them — fail to "No scored cell
+  // here" rather than color a swatch with `undefined`.
   if (input.value === undefined || !input.rescale) {
     return {
       ...base,
@@ -124,7 +128,7 @@ export function popupContent(input: PopupInput): PopupContent {
       displayValue: null,
       pinColor: "grey",
       textColor: null,
-      text: "no value here",
+      text: "No scored cell here",
     };
   }
   const displayValue = roundValue(input.value);
@@ -165,23 +169,31 @@ function escapeHtml(s: string): string {
 
 /**
  * The popup's HTML (§6.5 step 5's `<b>{sci}</b><br>Cell ID: {id}<br>Lon: {x}<br>Lat:
- * {y}<br>Value: {round(val,3)}`, adapted for the two atlas-only states "presence only" and "no
- * value here"): a swatch square colored `pinColor`, text colored `textColor` when there is a ramp
- * value to contrast against. The caller hands this to a real `maplibregl.Popup#setHTML` — this
- * module still touches no DOM itself, only builds the string.
+ * {y}<br>Value: {round(val,3)}`, adapted for the two atlas-only states "presence only" and "No
+ * scored cell here"): a swatch square colored `pinColor`, text colored `textColor` when there is a
+ * ramp value to contrast against. The caller hands this to a real `maplibregl.Popup#setHTML` —
+ * this module still touches no DOM itself, only builds the string.
+ *
+ * D3 fold-in (orchestrator round 2, 2026-09-24): a `kind: "no-value"` popup omits the Cell ID line
+ * entirely, even when `content.cellId` resolved to a real grid cell — showing an internal id next
+ * to "no value" reads as a data/lookup bug, not as "this model has no data here" (the scores lens'
+ * `noScoredCellText` fix, same rule).
  */
 export function popupHtml(content: PopupContent): string {
-  const cell = content.cellId === null ? "—" : String(content.cellId);
   const lon = content.lon.toFixed(3);
   const lat = content.lat.toFixed(3);
   const swatchStyle =
     content.textColor === null
       ? `background:${escapeHtml(content.pinColor)}`
       : `background:${escapeHtml(content.pinColor)};color:${content.textColor}`;
+  const cellLine =
+    content.kind === "no-value"
+      ? ""
+      : `Cell ID: ${content.cellId === null ? "—" : String(content.cellId)}<br>`;
   return (
     `<div class="species-popup">` +
     `<b><i>${escapeHtml(content.sci)}</i></b><br>` +
-    `Cell ID: ${cell}<br>` +
+    cellLine +
     `Lon: ${lon}<br>` +
     `Lat: ${lat}<br>` +
     `<span class="species-popup-swatch" style="${swatchStyle}">${escapeHtml(content.text)}</span>` +
@@ -193,10 +205,17 @@ export function popupHtml(content: PopupContent): string {
  * fix list #12 (SC 4.1.3): the `announce()` counterpart of {@link popupHtml} -- a plain sentence,
  * not markup. `announce()` sets a live region's TEXT content (Svelte's `{message}` interpolation,
  * never `innerHTML`), so nothing here needs `escapeHtml` at all.
+ *
+ * D3 fold-in (orchestrator round 2): same cell-id omission as {@link popupHtml} for `kind:
+ * "no-value"` — `content.text` is already "No scored cell here", so the cell/id clause is dropped
+ * rather than prefixed onto it.
  */
 export function popupAnnounceText(content: PopupContent): string {
-  const cell = content.cellId === null ? "no cell" : `cell ${content.cellId}`;
   const lon = content.lon.toFixed(3);
   const lat = content.lat.toFixed(3);
+  if (content.kind === "no-value") {
+    return `${content.sci}: ${content.text}, lon ${lon}, lat ${lat}`;
+  }
+  const cell = content.cellId === null ? "no cell" : `cell ${content.cellId}`;
   return `${content.sci}: ${cell}, lon ${lon}, lat ${lat}, ${content.text}`;
 }

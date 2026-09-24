@@ -1,0 +1,18 @@
+diff --git a/src/lib/raster/bounds.ts b/src/lib/raster/bounds.ts
+index 81a8ea9..c2bd346 100644
+--- a/src/lib/raster/bounds.ts
++++ b/src/lib/raster/bounds.ts
+@@ -141,7 +141,12 @@ export function createTitilerBoundsSource(
+       if (!nums.every((v) => typeof v === "number" && Number.isFinite(v))) return null;
+       const bbox: Bbox = [xmin, ymin, xmax, ymax];
+       if (!bboxSpansGlobe(bbox, GLOBE_SPAN_DEG)) return bbox;
+-      return narrowLongitude(fetchJson, config, cogUrl, bbox);
++      // SEEDED FAULT (tests/faults/bounds-narrow-longitude-skipped.patch): narrowLongitude() never
++      // runs -- a degenerate whole-360-degree-longitude /cog/info answer (the real walrus v7 case)
++      // is handed straight to the camera, framing the whole globe's width instead of narrowing to
++      // where the data actually sits. Must turn tests/raster/bounds.test.ts's "narrows a
++      // degenerate ... real walrus numbers" red.
++      return bbox;
+     },
+   };
+ }

@@ -3,6 +3,7 @@
 // `zoneTooltip()`, now actually wired to something).
 import { describe, expect, it } from "vitest";
 import {
+  cellPopupAnnounceText,
   cellPopupLoadingText,
   cellPopupText,
   escapeHtml,
@@ -44,15 +45,35 @@ describe("cellPopupText", () => {
     ).toContain("x: 17.01");
   });
 
-  it("no value (off-grid / unscored) reads 'no value', never NaN or blank", () => {
+  // D3 (Opus 5.5 eyes-on, 2026-09-24): a click outside the scored area (Utah, on the owner's
+  // screenshot) used to read "Cell 2711027 · lon -113.526, lat 38.932 · {30-word layer
+  // description}: no value" -- a cell id (implying the app found a scored cell — it did not) and
+  // the FULL layer title, both misleading. Superseded by the fixture below: the OLD assertion
+  // ("Cell 1 · lon 0.000, lat 0.000 · Overall score: no value") is the exact bug, not a spec to
+  // keep passing.
+  it("D3: a click with NO value (off-grid / unscored) reads a plain 'No scored cell here' + coordinates — never a cell id, never the layer label", () => {
     const text = cellPopupText({
-      cellId: 1,
-      lon: 0,
-      lat: 0,
-      layerLabel: "Overall score",
+      cellId: 2711027,
+      lon: -113.526,
+      lat: 38.932,
+      layerLabel: "Primary productivity: Oregon State Vertically Generalized Production Model",
       value: null,
     });
-    expect(text).toBe("Cell 1 · lon 0.000, lat 0.000 · Overall score: no value");
+    expect(text).toBe("No scored cell here · lon -113.526, lat 38.932");
+    expect(text).not.toContain("2711027");
+    expect(text).not.toContain("Primary productivity");
+    expect(text).not.toContain("no value"); // the old, data-blaming wording
+  });
+
+  it("D3: the announce() text matches (no escaping needed — no dynamic label is interpolated)", () => {
+    const text = cellPopupAnnounceText({
+      cellId: 2711027,
+      lon: -113.526,
+      lat: 38.932,
+      layerLabel: "<b>whatever</b>",
+      value: null,
+    });
+    expect(text).toBe("No scored cell here · lon -113.526, lat 38.932");
   });
 
   it("the layer label is escaped (a release string is untrusted text, never markup)", () => {

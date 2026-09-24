@@ -18,14 +18,20 @@ import { createPopup } from "../../lib/map/popup";
 import { announce } from "../../lib/ui/announcer";
 import { mapClick, type LngLat, type QueryableMap } from "../../lib/map/interaction";
 import { createTitilerValueSource, type ValueSource } from "../../lib/raster/point";
+import { createTitilerBoundsSource, type BoundsSource } from "../../lib/raster/bounds";
 import { paletteStopsFromBoot, type PaletteName } from "../../lib/raster/ramps";
+import { bboxSpansGlobe } from "../../lib/grid/grid";
 import type { SelStore } from "../../lib/state/sel.svelte";
 import type { Representation } from "../../lib/state/types";
 import type { SessionLike } from "../../lib/release/dataBase";
 import {
   cameraFor,
+  cogUrlForBoundsFallback,
   refitNeeded,
   studyAreaView,
+  minimalFrame,
+  boundsOf,
+  GLOBE_SPAN_DEG,
   FULL_STUDY_AREA,
   DEFAULT_CAMERA_PADDING,
   type Camera,
@@ -70,6 +76,9 @@ export interface SpeciesLensDeps {
   track?: (event: string, params: unknown) => void;
   fetchJson?: (url: string) => Promise<unknown>;
   valueSource?: ValueSource;
+  /** D8's own last resort (`refineCameraFromCogBounds` below) — defaults to a real titiler
+   * `/cog/bounds` fetch through `fetchJson`, same convention as `valueSource` above. */
+  boundsSource?: BoundsSource;
 }
 
 export interface SpeciesLens {
@@ -109,6 +118,7 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
   const { selStore } = deps;
   const fetchJson = deps.fetchJson ?? builtinFetchJson;
   const valueSource = deps.valueSource ?? createTitilerValueSource(fetchJson);
+  const boundsSource = deps.boundsSource ?? createTitilerBoundsSource(fetchJson);
   const track = deps.track ?? (() => {});
 
   let bootStarted = false;
@@ -195,6 +205,36 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     } else {
       handle.flyTo({ key: cam.source, lon: cam.center[0], lat: cam.center[1], zoom: cam.zoom });
     }
+  }
+
+  // D8 (Opus 5.5 eyes-on, 2026-09-24): `cameraFor()`'s own bundle-only chain (input -> merged ->
+  // ecoregion -> sibling) is pure and network-free by contract (data/camera.ts's own header). A
+  // release that publishes NO bbox anywhere for this taxon on ANY input (v7 — measured on the
+  // walrus, mdl_seq 54383: every asset's `bbox` is null) falls all the way to `kind: "center"` (the
+  // whole study area), so a small range reads as a sliver on the globe's limb. The COG this lens is
+  // ABOUT to draw still carries its own true extent — `/cog/bounds` is the one place left to ask.
+  // Fire-and-forget, guarded by a token (a later species change supersedes an in-flight fetch) AND
+  // by re-checking `selStore.sel.sp` once the fetch resolves (the same "did the world move on
+  // while I was awaiting" rule `showCellPopup`/`fetchCellValue` follow elsewhere in this codebase).
+  let cameraRefineToken = 0;
+  async function refineCameraFromCogBounds(card: TaxonCard, key: CameraKey): Promise<void> {
+    const cogUrl = cogUrlForBoundsFallback(card, selStore.sel.in, selStore.sel.rep);
+    if (!cogUrl) return;
+    const token = ++cameraRefineToken;
+    const bbox = await boundsSource.cogBounds(cogUrl);
+    if (token !== cameraRefineToken) return; // a later species/refit superseded this fetch
+    if (!bbox) return;
+    // the SAME antimeridian rule cameraFor()'s own chain applies to a published bbox: a wrapped
+    // frame is re-expressed to its minimal span, and a genuinely circumglobal one is not a camera.
+    const frame = minimalFrame(bbox);
+    if (bboxSpansGlobe(frame, GLOBE_SPAN_DEG)) return;
+    if (cameraKeyOf(selStore.sel).sp !== key.sp) return; // the species itself changed meanwhile
+    applyCamera({
+      kind: "bounds",
+      bounds: boundsOf(frame),
+      padding: DEFAULT_CAMERA_PADDING,
+      source: "cog-bounds",
+    });
   }
 
   async function bootstrap(ver: string): Promise<void> {
@@ -313,6 +353,9 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
       padding: DEFAULT_CAMERA_PADDING,
     });
     applyCamera(cam);
+    // D8: the bundle published no bbox anywhere for this taxon — try the COG's own extent before
+    // giving up on framing it at all.
+    if (cam?.kind === "center") void refineCameraFromCogBounds(card, key);
   });
 
   return {
@@ -384,6 +427,11 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
         padding: DEFAULT_CAMERA_PADDING,
       });
       applyCamera(cam);
+      // D8 fold-in (orchestrator round 2, 2026-09-24): the manual "zoom to layer" button used to
+      // stop at `cameraFor()`'s own bundle-only chain, so a taxon with NO published bbox anywhere
+      // (v7's walrus) fell to `kind: "center"` here too — the SAME COG-bounds last resort the
+      // species-change `$effect` above already applies, now wired to this explicit action as well.
+      if (cam?.kind === "center") void refineCameraFromCogBounds(card, cameraKeyOf(selStore.sel));
     },
 
     async handleMapClick(lngLat: LngLat, point: { x: number; y: number }): Promise<void> {

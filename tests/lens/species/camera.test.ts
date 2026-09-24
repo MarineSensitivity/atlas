@@ -3,8 +3,10 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CAMERA_PADDING,
+  anyInputBbox,
   cameraFor,
   centerLon,
+  cogUrlForBoundsFallback,
   inputBbox,
   lonSpanOf,
   minimalFrame,
@@ -189,6 +191,96 @@ describe("the fit target (section 6.3, fix round 1's chain)", () => {
 
   it("an input this taxon does not have falls through to the merged extent", () => {
     expect(bounds(cameraFor(CARDS.dateline(), "not_a_dataset")).source).toBe("merged");
+  });
+
+  // D8 (Opus 5.5 eyes-on, 2026-09-24): `?lens=species&mdl_seq=54383` (walrus) selecting the `am`
+  // input used to fall all the way to the study-area default (the range read as "a sliver on the
+  // globe's limb") because NEITHER `am` NOR `card.merged` publish a bbox — even though the SAME
+  // taxon's `ax` input does. `anyInputBbox`/the "sibling" chain step below fix it.
+  describe("D8: a sibling input's bbox (anyInputBbox)", () => {
+    it("the walrus `am` input has no bbox of its own, and neither does merged", () => {
+      const walrus = CARDS.walrus();
+      expect(inputBbox(walrus, "am")).toBeNull();
+      expect(walrus.merged?.bbox ?? null).toBeNull();
+    });
+
+    it("anyInputBbox finds the walrus's `ax` sibling's extent", () => {
+      expect(anyInputBbox(CARDS.walrus())).toEqual([-177.7, 60.65, -139.15, 79]);
+    });
+
+    it("cameraFor selecting `am` frames the SIBLING extent, not the whole study area", () => {
+      const cam = bounds(cameraFor(CARDS.walrus(), "am", { studyArea: FULL }));
+      expect(cam.source).toBe("sibling");
+      expect(cam.bounds).toEqual([
+        [-177.7, 60.65],
+        [-139.15, 79],
+      ]);
+    });
+
+    it("a taxon with no bbox on ANY input (v7: assets always []) still falls all the way to the study area", () => {
+      expect(anyInputBbox(CARDS.walrusV7())).toBeNull();
+      const cam = cameraFor(CARDS.walrusV7(), MERGED_IN, { studyArea: studyAreaFor("v7") });
+      expect(cam?.source).toBe("study-area");
+    });
+
+    it("the ecoregion extent (when the caller supplies one) is preferred OVER a sibling's — a critical-habitat mask's bbox can be a tiny sliver of the real range, less representative than a curated ecoregion", () => {
+      // the leatherback's OWN merged bbox is null (spans the globe) but `ch_fws` (a mask input)
+      // carries a real, small critical-habitat bbox — proving the ORDER, not just the presence.
+      expect(CARDS.leatherback().merged?.bbox).toBeNull();
+      expect(anyInputBbox(CARDS.leatherback())).not.toBeNull();
+      const withEcoregion = bounds(
+        cameraFor(CARDS.leatherback(), MERGED_IN, { fallbackBbox: ER_BBOX }),
+      );
+      expect(withEcoregion.source).toBe("ecoregion");
+      // and WITHOUT an ecoregion supplied, the sibling step is what actually saves it from the
+      // study area (verifying the step exists and is reachable, not just skipped every time).
+      const withoutEcoregion = bounds(cameraFor(CARDS.leatherback(), MERGED_IN));
+      expect(withoutEcoregion.source).toBe("sibling");
+    });
+  });
+
+  // D8's true last resort: mdl_seq 54383 (walrus, v7) publishes NO bbox anywhere (assets: []) —
+  // camera.ts stays network-free by contract, so this is the pure "what COG should the caller ask
+  // titiler's /cog/bounds about" half; state.svelte.ts does the actual fetch.
+  describe("D8: cogUrlForBoundsFallback (the COG-bounds last resort)", () => {
+    it("the v7 walrus (mdl_seq 54383) has no bbox on the merged surface, but its `merged.url` IS a real COG", () => {
+      const card = CARDS.walrusV7();
+      expect(card.merged?.bbox ?? null).toBeNull();
+      expect(card.merged?.type).toBe("cog");
+      expect(cogUrlForBoundsFallback(card, MERGED_IN)).toBe(card.merged?.url);
+    });
+
+    it("a selected INPUT (not merged) resolves to that input's own COG url, rep-preferred", () => {
+      const walrus = CARDS.walrus();
+      const ax = walrus.inputs.find((i) => i.dsKey === "ax")!;
+      const nativeAsset = ax.assets.find((a) => a.rep === "native")!;
+      expect(cogUrlForBoundsFallback(walrus, "ax", "native")).toBe(nativeAsset.url);
+    });
+
+    it("a pmtiles-only input (no COG of its own) falls through to the merged COG, same as cameraFor's own chain", () => {
+      const walrus = CARDS.walrus();
+      // rng_iucn is pmtiles-only on this fixture — see tests/fixtures/species/v9/taxon/75.json
+      expect(cogUrlForBoundsFallback(walrus, "rng_iucn")).toBe(walrus.merged?.url);
+    });
+
+    it("a pmtiles-only input AND no merged COG resolves to null (nothing left to ask titiler about)", () => {
+      const leatherback = CARDS.leatherback();
+      // rng_iucn is pmtiles-only, and this taxon's merged bbox test already proves merged is present
+      // but let's use a taxon whose merged surface is null outright: v1 residual (whelk).
+      expect(cogUrlForBoundsFallback(CARDS.whelk(), "rng_iucn")).toBeNull();
+      // and confirm the leatherback case IS the merged-fallback, not a coincidental null:
+      expect(cogUrlForBoundsFallback(leatherback, "rng_iucn")).toBe(leatherback.merged?.url);
+    });
+
+    it("no matching input at all falls through to the merged COG url (never a throw)", () => {
+      const walrus = CARDS.walrus();
+      expect(cogUrlForBoundsFallback(walrus, "not_a_dataset")).toBe(walrus.merged?.url);
+    });
+
+    it("no matching input AND no merged COG resolves to null", () => {
+      // v1 residual: merged is null entirely (see CARDS.whelk's own comment)
+      expect(cogUrlForBoundsFallback(CARDS.whelk(), "not_a_dataset")).toBeNull();
+    });
   });
 });
 

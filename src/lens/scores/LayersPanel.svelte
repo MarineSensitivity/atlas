@@ -82,6 +82,25 @@
     return desc === layerOptionLabel({ metric_key: l!.metric_key, label: l!.label }) ? null : desc;
   });
 
+  // D2 fix round 2 (CI: [webkit] gate, three-engine run 35971206753): a native <select>'s own
+  // CLOSED-box value text is UA-internal rendering that CSS cannot reliably style everywhere --
+  // measured directly (a real WebKit build, both locally and on CI's linux runner): the computed
+  // `text-overflow`/`overflow` values differ BETWEEN THE TWO WEBKIT BUILDS THEMSELVES (hidden
+  // locally, visible on CI), and even where the computed style claims "ellipsis", the control
+  // visually hard-clips mid-word with no "…" glyph either way -- text-overflow simply never
+  // reaches a <select>'s internal text layout on this engine, so no CSS fix "closes" it there (a
+  // custom combobox would, at the cost of reimplementing native keyboard/ARIA select behaviour --
+  // out of this round's scope). `title` is the portable fallback the original eyes-on assessment's
+  // own "what right looks like" named alongside the ellipsis ("...plus the full name as `title`"):
+  // works via native tooltip on every engine regardless of whether the visual ellipsis does, so
+  // the full text is never SILENTLY lost, only visually clipped where the platform allows nothing
+  // else. `layerOptionLabel`, not `currentLayerDescription`, above -- the ellipsis clips the
+  // OPTION text you'd read in the closed box, not the description note.
+  const currentLayerLabel = $derived.by(() => {
+    const l = layerByKey(boot, lyr);
+    return l ? layerOptionLabel({ metric_key: l.metric_key, label: l.label }) : null;
+  });
+
   const PALETTE_OPTIONS = [
     { value: "spectral_r", label: "Spectral" },
     { value: "viridis", label: "Viridis" },
@@ -149,6 +168,7 @@
       <select
         class="select"
         aria-labelledby="scores-lyr-label"
+        title={currentLayerLabel ?? undefined}
         value={lyr ?? ""}
         onchange={onLyrChange}
       >

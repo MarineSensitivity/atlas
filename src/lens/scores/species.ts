@@ -58,6 +58,22 @@ function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * D3(b) (Opus 5.5 eyes-on, 2026-09-24): the Table panel's own empty-state copy, the species-table
+ * counterpart of `flower.ts#flowerEmptyText` — see that function's header for the shared rationale.
+ * The owner's report: a land click's popup gave "no value" and the Table panel THEN read "The
+ * species table could not be loaded", a wording that reads as a bug even for a click that never
+ * landed on a scored cell at all. `state.svelte.ts`'s D3(a) fix means a plain no-value click no
+ * longer changes the selection, so this text is reached only by a genuinely empty/failed load for
+ * whatever selection IS active — `errorMessage` set (a real thrown error from `loadSpeciesRows`,
+ * `TablePanel.svelte`'s own `reload()`) keeps that condition textually distinct from "nothing
+ * scored is selected".
+ */
+export function speciesTableEmptyText(errorMessage?: string | null): string {
+  if (errorMessage) return `The species table could not be loaded: ${errorMessage}`;
+  return "Click a scored cell on the map to see its species.";
+}
+
 /** `"{stem}_{YYYY-MM-DD}.csv"` (parity doc §8). */
 export function csvFilename(stem: string, now: Date = new Date()): string {
   return `${stem}_${isoDate(now)}.csv`;

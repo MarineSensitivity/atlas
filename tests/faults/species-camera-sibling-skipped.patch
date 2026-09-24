@@ -1,0 +1,19 @@
+diff --git a/src/lens/species/data/camera.ts b/src/lens/species/data/camera.ts
+index 6c77981..da193eb 100644
+--- a/src/lens/species/data/camera.ts
++++ b/src/lens/species/data/camera.ts
+@@ -215,8 +215,12 @@ export function cameraFor(
+   if (merged) return { kind: "bounds", bounds: boundsOf(merged), padding, source: "merged" };
+   const er = framed(opts.fallbackBbox);
+   if (er) return { kind: "bounds", bounds: boundsOf(er), padding, source: "ecoregion" };
+-  const sibling = framed(anyInputBbox(card, opts.rep));
+-  if (sibling) return { kind: "bounds", bounds: boundsOf(sibling), padding, source: "sibling" };
++  // SEEDED FAULT (tests/faults/species-camera-sibling-skipped.patch): D8's "sibling" step
++  // (a bbox from a DIFFERENT input of the same taxon) never runs -- skips the fly-to for a
++  // taxon whose OWN selected input/merged surface publish no bbox (the walrus `am` case).
++  // Must turn tests/lens/species/camera.test.ts's "D8: a sibling input's bbox" describe red.
++  const sibling = null;
++  if (sibling) return sibling;
+   const area = opts.studyArea;
+   if (area)
+     return { kind: "center", center: [area.lon, area.lat], zoom: area.zoom, source: "study-area" };

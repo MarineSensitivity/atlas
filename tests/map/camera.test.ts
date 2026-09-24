@@ -201,6 +201,57 @@ describe("boundsToCameraView", () => {
     );
     expect(zoom).toBeGreaterThanOrEqual(3);
   });
+
+  // P6/D8 (Opus 5.5 eyes-on, 2026-09-24): a docked panel/sheet occludes only ONE side, so the
+  // caller needs the SAME asymmetric-padding shift `paddedStudyAreaCenter` already applies to the
+  // initial camera — a uniform number (every caller before this round) is the degenerate case
+  // (shift zero, as the pre-existing tests above already pin) and must keep behaving exactly as
+  // before.
+  describe("asymmetric padding (ChromePadding)", () => {
+    const bounds: [[number, number], [number, number]] = [
+      [-10, -10],
+      [10, 10],
+    ];
+    const viewport = { width: 800, height: 600 };
+
+    it("a uniform ChromePadding (all four sides equal) matches the plain-number form", () => {
+      const byNumber = boundsToCameraView(bounds, viewport, { padding: 100 });
+      const byPadding = boundsToCameraView(bounds, viewport, {
+        padding: { top: 100, right: 100, bottom: 100, left: 100 },
+      });
+      expect(byPadding.center[0]).toBeCloseTo(byNumber.center[0], 9);
+      expect(byPadding.center[1]).toBeCloseTo(byNumber.center[1], 9);
+      expect(byPadding.zoom).toBeCloseTo(byNumber.zoom, 9);
+    });
+
+    it("a right-only reservation (a right-docked panel) shifts the fitted center EAST, same direction paddedStudyAreaCenter uses", () => {
+      const shifted = boundsToCameraView(bounds, viewport, {
+        padding: { top: 0, right: 300, bottom: 0, left: 0 },
+      });
+      const unpadded = boundsToCameraView(bounds, viewport, { padding: 0 });
+      expect(shifted.center[0]).toBeGreaterThan(unpadded.center[0]);
+      expect(shifted.center[1]).toBeCloseTo(unpadded.center[1], 6);
+    });
+
+    it("a bottom-only reservation (a phone sheet) shifts the fitted center SOUTH, and still shrinks the available height for the zoom", () => {
+      const shifted = boundsToCameraView(bounds, viewport, {
+        padding: { top: 0, right: 0, bottom: 300, left: 0 },
+      });
+      const unpadded = boundsToCameraView(bounds, viewport, { padding: 0 });
+      expect(shifted.center[1]).toBeLessThan(unpadded.center[1]);
+      expect(shifted.zoom).toBeLessThan(unpadded.zoom);
+    });
+
+    it("is uncapped, monotonic — a fit's own (content-scaled) zoom already keeps the shift proportionate", () => {
+      const at300 = boundsToCameraView(bounds, viewport, {
+        padding: { top: 0, right: 300, bottom: 0, left: 0 },
+      });
+      const at200 = boundsToCameraView(bounds, viewport, {
+        padding: { top: 0, right: 200, bottom: 0, left: 0 },
+      });
+      expect(at300.center[0]).toBeGreaterThan(at200.center[0]);
+    });
+  });
 });
 
 // usability M4: "frame the study area with padding for the panel/sheet". `paddedStudyAreaCenter`
@@ -247,10 +298,24 @@ describe("paddedStudyAreaCenter", () => {
     expect(out.lat).toBeLessThan(CENTER.lat);
   });
 
-  it("a bigger reservation shifts the center further, monotonically", () => {
-    const small = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 200 });
-    const big = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 500 });
+  it("a bigger reservation shifts the center further, monotonically, uncapped", () => {
+    const small = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 50 });
+    const big = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 150 });
+    const huge = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, right: 452 }); // a real "half" sheet's own bottom reservation, applied here to the right axis
     expect(big.lon - CENTER.lon).toBeGreaterThan(small.lon - CENTER.lon);
+    expect(huge.lon - CENTER.lon).toBeGreaterThan(big.lon - CENTER.lon);
+  });
+
+  // P2 round 2 (orchestrator, real-build eyes-on, 2026-09-24): round 1 capped this shift at a flat
+  // 200px, which turned out to be the WRONG fix (camera.ts's own `PHONE_STUDY_AREA_ZOOM_BOOST`
+  // header has the measured proof: capping still left Canada/Greenland dominant on the real v7
+  // build, at every latitude tried). This function is deliberately UNCAPPED now -- the caller
+  // (`Shell.svelte`) is responsible for passing a zoom where a flat-Mercator shift is a fair
+  // stand-in for the globe's own low-zoom rendering.
+  it("is UNCAPPED — a huge bottom reservation shifts proportionally, not clamped", () => {
+    const bottom300 = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, bottom: 300 });
+    const bottom452 = paddedStudyAreaCenter(CENTER, ZOOM, { ...NO_PADDING, bottom: 452 });
+    expect(CENTER.lat - bottom452.lat).toBeGreaterThan(CENTER.lat - bottom300.lat);
   });
 
   it("a higher zoom (a smaller world-px shift per degree) shifts the center LESS for the same padding", () => {

@@ -157,6 +157,22 @@ test.describe("axe on the popover", () => {
   test("zero serious/critical violations while the tour's first step is open", async ({ page }) => {
     await gotoScores(page, "/?tour=on");
     await expect(popover(page)).toBeVisible({ timeout: 10_000 });
+    // flaky [webkit] finding (three-engine run 35971206753): driver.js's own `.driver-fade
+    // .driver-popover { animation: animate-fade-in var(--driver-animation-duration, .4s) }`
+    // (driver.js/dist/driver.css, unmodified -- this app sets no `animate:false`) fades the WHOLE
+    // popover in from opacity 0, and axe's color-contrast check samples whatever is actually
+    // PAINTED at the moment it runs -- caught mid-fade on a slower engine, that is a blend of the
+    // popover's own colors against the page behind it, not either color's final value (the CI
+    // finding's own numbers, bgColor #414a62 at 1.93:1, match neither driver.js's default white
+    // background nor this app's own tokens). `toBeVisible()` only checks display/size, not
+    // opacity, so it does not wait for this. Poll the popover's own OPACITY to settle instead of a
+    // guessed fixed delay -- the real condition, not a proxy for it.
+    await expect
+      .poll(() => popover(page).evaluate((el) => Number(getComputedStyle(el).opacity)), {
+        message: "the popover's fade-in animation never settled to opacity: 1",
+        timeout: 5_000,
+      })
+      .toBeGreaterThanOrEqual(0.99);
     const bad = await seriousOrCritical(page);
     expect(bad, JSON.stringify(bad, null, 2)).toEqual([]);
   });

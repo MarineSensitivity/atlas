@@ -60,50 +60,6 @@ export interface Viewport {
   height: number;
 }
 
-export interface BoundsToCameraOptions {
-  /** CSS px on every edge; the species lens' default is 40 (data/camera.ts's `DEFAULT_CAMERA_PADDING`). */
-  padding?: number;
-  minZoom?: number;
-  maxZoom?: number;
-}
-
-/**
- * The center+zoom that frames `bounds` in `viewport`, computed by hand in linear Mercator space so
- * `bounds[1][0]` (east) may exceed 180 without wrapping — the whole point of this module existing
- * instead of calling MapLibre's own `fitBounds`. Degenerate input (a zero-area box, a non-finite
- * viewport) still returns a sane camera: the box's own center at `maxZoom`'s bound, never `NaN`.
- */
-export function boundsToCameraView(
-  bounds: CameraBoundsInput,
-  viewport: Viewport,
-  opts: BoundsToCameraOptions = {},
-): { center: [number, number]; zoom: number } {
-  const padding = opts.padding ?? 0;
-  const minZoom = opts.minZoom ?? MERCATOR_MIN_ZOOM;
-  const maxZoom = opts.maxZoom ?? MERCATOR_MAX_ZOOM;
-  const [[west, south], [east, north]] = bounds;
-
-  const x0 = lngToMercatorX(west);
-  const x1 = lngToMercatorX(east);
-  const y0 = latToMercatorY(north); // north has the SMALLER y (Mercator y grows southward)
-  const y1 = latToMercatorY(south);
-
-  const width = Math.max(x1 - x0, 1e-12);
-  const height = Math.max(y1 - y0, 1e-12);
-
-  const availW = Math.max((viewport.width || 0) - 2 * padding, 1);
-  const availH = Math.max((viewport.height || 0) - 2 * padding, 1);
-
-  const scaleX = availW / (width * MERCATOR_TILE_SIZE);
-  const scaleY = availH / (height * MERCATOR_TILE_SIZE);
-  const scale = Math.min(scaleX, scaleY);
-  const zoom = Math.min(maxZoom, Math.max(minZoom, Math.log2(Math.max(scale, 1e-9))));
-
-  const cx = (x0 + x1) / 2;
-  const cy = (y0 + y1) / 2;
-  return { center: [mercatorXToLng(cx), mercatorYToLat(cy)], zoom };
-}
-
 /** CSS px reserved on each edge of the viewport by shell chrome (a docked panel, the phone sheet,
  * the bottom tab bar) -- never MapLibre's own persisted `padding` state (see `paddedStudyAreaCenter`
  * below for why). */
@@ -116,6 +72,124 @@ export interface ChromePadding {
 
 export const NO_PADDING: ChromePadding = { top: 0, right: 0, bottom: 0, left: 0 };
 
+/** the uncapped shift math both {@link paddedStudyAreaCenter} and {@link boundsToCameraView} share
+ * -- letting `worldPx = MERCATOR_TILE_SIZE * 2^zoom`, the shift is `(frontPad - backPad) / 2 /
+ * worldPx` in normalized world units, on each axis independently: exact (not a linear
+ * approximation) because it operates in the map's own Mercator space, the same one `zoom`/
+ * `worldPx` already describe. Takes the two DIFFERENCES directly (never the full
+ * {@link ChromePadding}) so a caller that needs to bound them first (`paddedStudyAreaCenter`) can,
+ * without reconstructing a padding object just to have this re-subtract it. */
+function shiftForPadding(
+  center: { lon: number; lat: number },
+  zoom: number,
+  hDiff: number,
+  vDiff: number,
+): { lon: number; lat: number } {
+  const worldPx = MERCATOR_TILE_SIZE * 2 ** zoom;
+  const x = lngToMercatorX(center.lon) - hDiff / 2 / worldPx;
+  const y = latToMercatorY(center.lat) - vDiff / 2 / worldPx;
+  return { lon: mercatorXToLng(x), lat: mercatorYToLat(y) };
+}
+
+export interface BoundsToCameraOptions {
+  /** CSS px reserved on every edge (the species lens' default is a uniform 40 —
+   * `data/camera.ts`'s `DEFAULT_CAMERA_PADDING`), OR an asymmetric {@link ChromePadding} when the
+   * caller also has a docked panel/sheet to keep the content out from under (P6/D8: "reuse it for
+   * D8" — the SAME chrome-aware math the initial camera uses, so a model fit is not centred behind
+   * the very chrome that is hiding half of it). A bare number is shorthand for all four edges equal. */
+  padding?: number | ChromePadding;
+  minZoom?: number;
+  maxZoom?: number;
+}
+
+function paddingOf(padding: number | ChromePadding | undefined): ChromePadding {
+  if (padding === undefined) return NO_PADDING;
+  if (typeof padding === "number")
+    return { top: padding, right: padding, bottom: padding, left: padding };
+  return padding;
+}
+
+/**
+ * The center+zoom that frames `bounds` in `viewport`, computed by hand in linear Mercator space so
+ * `bounds[1][0]` (east) may exceed 180 without wrapping — the whole point of this module existing
+ * instead of calling MapLibre's own `fitBounds`. Degenerate input (a zero-area box, a non-finite
+ * viewport) still returns a sane camera: the box's own center at `maxZoom`'s bound, never `NaN`.
+ *
+ * P6/D8: an ASYMMETRIC {@link ChromePadding} (a docked panel/sheet occluding one side only) both
+ * shrinks the available space (used for the zoom/scale, same as a uniform number) AND shifts the
+ * fitted center toward the free area's own middle (`paddedStudyAreaCenter`'s same shift, reused
+ * here at the FIT's own computed zoom rather than a caller-supplied one) — a uniform `padding`
+ * (every existing caller) shifts by exactly zero, so this is additive, not a behaviour change for
+ * them.
+ */
+export function boundsToCameraView(
+  bounds: CameraBoundsInput,
+  viewport: Viewport,
+  opts: BoundsToCameraOptions = {},
+): { center: [number, number]; zoom: number } {
+  const padding = paddingOf(opts.padding);
+  const minZoom = opts.minZoom ?? MERCATOR_MIN_ZOOM;
+  const maxZoom = opts.maxZoom ?? MERCATOR_MAX_ZOOM;
+  const [[west, south], [east, north]] = bounds;
+
+  const x0 = lngToMercatorX(west);
+  const x1 = lngToMercatorX(east);
+  const y0 = latToMercatorY(north); // north has the SMALLER y (Mercator y grows southward)
+  const y1 = latToMercatorY(south);
+
+  const width = Math.max(x1 - x0, 1e-12);
+  const height = Math.max(y1 - y0, 1e-12);
+
+  const availW = Math.max((viewport.width || 0) - padding.left - padding.right, 1);
+  const availH = Math.max((viewport.height || 0) - padding.top - padding.bottom, 1);
+
+  const scaleX = availW / (width * MERCATOR_TILE_SIZE);
+  const scaleY = availH / (height * MERCATOR_TILE_SIZE);
+  const scale = Math.min(scaleX, scaleY);
+  const zoom = Math.min(maxZoom, Math.max(minZoom, Math.log2(Math.max(scale, 1e-9))));
+
+  const cx = (x0 + x1) / 2;
+  const cy = (y0 + y1) / 2;
+  const rawCenter = { lon: mercatorXToLng(cx), lat: mercatorYToLat(cy) };
+  // an asymmetric padding shifts the fitted content toward the free area's own middle, at the
+  // FIT's own zoom — a bounds fit's zoom already scales with the content being framed, so this
+  // never falls into the low-zoom "globe shows the whole world" regime `paddedStudyAreaCenter`'s
+  // own header (`PHONE_STUDY_AREA_ZOOM_BOOST`) describes.
+  const shifted = shiftForPadding(
+    rawCenter,
+    zoom,
+    padding.left - padding.right,
+    padding.top - padding.bottom,
+  );
+  return { center: [shifted.lon, shifted.lat], zoom };
+}
+
+/**
+ * P2 round 2 (orchestrator, real-v7-build eyes-on, 2026-09-24 -- supersedes round 1's
+ * `MAX_STUDY_AREA_SHIFT_PX` cap, which fixed the SYNTHETIC hermetic fixture's "empty sky" pixel
+ * count but not the real defect): capping the SHIFT was the wrong lever. Measured directly against
+ * the live v7 build (`?map=lon,lat,zoom`, real CARTO tiles, no fixture) at the study area's own
+ * zoom (2.16): the visible frame shows most of the GLOBE -- Canada, Greenland, Finland, Norway,
+ * Iceland -- almost regardless of which latitude the shift targets (17, 27, 35, 43 all measured
+ * "Canada/Greenland dominant"). This is not a shift-math bug: MapLibre's GLOBE projection renders
+ * a true sphere below roughly zoom 3, so "how much of the world is visible" is set by ZOOM, not by
+ * center -- a translate-only correction, however capped, cannot escape it. Capping the shift also
+ * threw away real precision for no benefit: it forced the SAME under-shot fallback (200px) at
+ * every zoom, when the correct shift at a higher zoom is smaller anyway (an uncapped shift's own
+ * `1/worldPx` term already shrinks it as zoom grows -- see `shiftForPadding`'s own header).
+ *
+ * The fix is {@link PHONE_STUDY_AREA_ZOOM_BOOST} below: raise the zoom BEFORE computing the
+ * (uncapped) shift. At the boosted zoom the real, uncapped shift both (a) lands the free area on
+ * CONUS + the Gulf/Atlantic coast instead of the Arctic (measured: zoom 3.0, real padding -> lat
+ * 33.4, "Canada" reduced to a minor top-of-frame label) and (b) happens to also close the "empty
+ * sky" gap round 1 was chasing (a higher zoom renders a visually LARGER globe disc, covering more
+ * of the free area, not less). `boundsToCameraView` never needed a cap or a boost: a bounds fit's
+ * OWN zoom already scales with the content being framed (a small species range fits at a zoom
+ * where flat Mercator IS globe-accurate), so the runaway low-zoom regime this note describes
+ * cannot occur there.
+ */
+export const PHONE_STUDY_AREA_ZOOM_BOOST = 0.85;
+
 /**
  * usability M4 ("the panel/sheet cover the study area... frame the study area with padding for
  * the panel/sheet"): shifts a center+zoom camera so the SAME geographic point instead appears at
@@ -127,21 +201,17 @@ export const NO_PADDING: ChromePadding = { top: 0, right: 0, bottom: 0, left: 0 
  * map with, and nothing else in the app ever reads MapLibre's padding state (`docs/map.md`: "no
  * fitBounds, anywhere" carries the same "no antimeridian-unsafe native camera math" spirit).
  *
- * Pure Mercator-space arithmetic (the same projection helpers `boundsToCameraView` above uses):
- * letting `worldPx = MERCATOR_TILE_SIZE * 2^zoom`, the shift is `((frontPad - backPad) / 2) /
- * worldPx` in normalized world units, on each axis independently. Small-shift-safe at any zoom;
- * exact (not a linear approximation) because it operates in the map's own Mercator space, the same
- * one `zoom`/`worldPx` already describe.
+ * UNCAPPED (round 2 -- see {@link PHONE_STUDY_AREA_ZOOM_BOOST}'s own header for why a cap on this
+ * shift was the wrong fix): the caller is responsible for passing a `zoom` where a flat-Mercator
+ * shift is a fair stand-in for the globe's own rendering -- `Shell.svelte`'s `initialStudyArea`
+ * adds the phone boost to `zoom` before calling this, exactly once, for exactly this reason.
  */
 export function paddedStudyAreaCenter(
   center: { lon: number; lat: number },
   zoom: number,
   padding: ChromePadding,
 ): { lon: number; lat: number } {
-  const worldPx = MERCATOR_TILE_SIZE * 2 ** zoom;
-  const x = lngToMercatorX(center.lon) - (padding.left - padding.right) / 2 / worldPx;
-  const y = latToMercatorY(center.lat) - (padding.top - padding.bottom) / 2 / worldPx;
-  return { lon: mercatorXToLng(x), lat: mercatorYToLat(y) };
+  return shiftForPadding(center, zoom, padding.left - padding.right, padding.top - padding.bottom);
 }
 
 // --- sel.area -> camera, the fly-on-load/fly-on-change decision -------------------------------
