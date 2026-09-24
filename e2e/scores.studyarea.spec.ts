@@ -250,6 +250,13 @@ test.describe("S-01: the study area is a CAMERA — sel.area drives it on load a
     await waitForCameraNear(page, { lon: AK.lon, lat: AK.lat });
 
     await flyAndWaitForMoveEnd(page, () => page.getByLabel("Study area").selectOption(FULL.key));
+    // WebKit-only flake, found under repeat: a native <select> change can fire the `flyTo`
+    // animation's OWN moveend more than once before the camera has actually finished travelling
+    // (e.g. an intermediate easing tick), so `flyAndWaitForMoveEnd`'s "count went up once" check
+    // can resolve on a MID-FLIGHT frame -- reproduced 2/3 runs, camera still partway to AK's own
+    // longitude. `waitForCameraNear` (poll until settled, not "a moveend fired at all") is the
+    // same fix this file's own default-camera assertions already use for the identical race.
+    await waitForCameraNear(page, { lon: FULL.lon, lat: FULL.lat });
 
     const camera = await getCamera(page);
     expect(camera.lng).toBeCloseTo(FULL.lon, 0);
