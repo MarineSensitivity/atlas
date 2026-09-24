@@ -35,10 +35,10 @@ index 5fff8bb..b7eb42a 100644
    // `flower.ts`/`species.ts` need it verbatim for titles and headers).
    const selection = $derived(lens.selection);
 diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
-index 46f8cf3..3378757 100644
+index 46b200f..7f14861 100644
 --- a/src/shell/Shell.svelte
 +++ b/src/shell/Shell.svelte
-@@ -509,6 +509,13 @@
+@@ -521,12 +521,17 @@
    // every read of it below is null-safe and falls back to "the shell's own base view", same as
    // the old `{}` default did.
    let scoresLens = $state<ScoresLensState | null>(null);
@@ -46,13 +46,18 @@ index 46f8cf3..3378757 100644
 +  // purpose -- a bucket only ScoresLens.svelte (the PANEL body) ever writes, via bind:mapExtra,
 +  // instead of reading scoresLens.mapExtra directly. A collapsed desktop panel never mounts that
 +  // component, so this stays null forever.
-+  let scoresPanelMapExtra = $state<import("../lens/scores/mapInputs").ScoresMapInputs | null>(
-+    null,
-+  );
++  let scoresPanelMapExtra = $state<import("../lens/scores/mapInputs").ScoresMapInputs | null>(null);
+ 
+   // P1 fix: hoisted out of the template (it used to be a `{@const}` inline where the legend chip
+   // rendered) so BOTH the floating placement and the "full" detent's inline-in-sheet placement can
+   // read the SAME value without recomputing it or duplicating the lens/kind branch.
+   const phoneLegend = $derived(
+-    sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresLens?.mapExtra.legend ?? null),
++    sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresPanelMapExtra?.legend ?? null),
+   );
  
    // G-25 fix: `Sel.out`'s ONE effect on the map, applied to whichever `zones` array (the shell's
-   // own outline-only `zoneUnits`, or the scores lens' richer `scoresLens.mapExtra.zones`) is about
-@@ -521,7 +528,7 @@
+@@ -540,7 +545,7 @@
    // never mounted on a species view in the first place.
    const zonesForStyle = $derived<ZoneUnitSpec[]>(
      zoneUnitsWithOutline(
@@ -61,25 +66,22 @@ index 46f8cf3..3378757 100644
        sel.out,
      ),
    );
-@@ -814,11 +821,14 @@
+@@ -833,11 +838,11 @@
      projection: sel.proj,
      zones: ecoregionUnit ? [...zonesForStyle, ecoregionUnit] : zonesForStyle,
      raster:
 -      sel.lens === "scores" ? (scoresLens?.mapExtra.raster ?? null) : speciesLens.mapInputs.raster,
-+      sel.lens === "scores"
-+        ? (scoresPanelMapExtra?.raster ?? null)
-+        : speciesLens.mapInputs.raster,
++      sel.lens === "scores" ? (scoresPanelMapExtra?.raster ?? null) : speciesLens.mapInputs.raster,
      range: sel.lens === "species" ? speciesLens.mapInputs.range : null,
 -    overlays: sel.lens === "scores" ? (scoresLens?.mapExtra.overlays ?? []) : [],
 +    overlays: sel.lens === "scores" ? (scoresPanelMapExtra?.overlays ?? []) : [],
      selection:
 -      placesSelection ?? (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
-+      placesSelection ??
-+      (sel.lens === "scores" ? (scoresPanelMapExtra?.selection ?? null) : null),
++      placesSelection ?? (sel.lens === "scores" ? (scoresPanelMapExtra?.selection ?? null) : null),
      layerStack,
    });
  
-@@ -1373,6 +1383,7 @@
+@@ -1417,6 +1422,7 @@
              lens={scoresLens}
              {layerStack}
              {onLayerStackChange}
@@ -87,23 +89,12 @@ index 46f8cf3..3378757 100644
            />
          {:else}
            <p>{TOOL_BODY[activeTool]}</p>
-@@ -1407,7 +1418,9 @@
-        -- `isPhone` gates the two branches, so exactly one ever renders, never both. -->
-   {#if isPhone}
-     {@const legend =
--      sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresLens?.mapExtra.legend ?? null)}
-+      sel.lens === "species"
-+        ? speciesLens.mapInputs.legend
-+        : (scoresPanelMapExtra?.legend ?? null)}
-     {#if legend}
-       <div class="legend-chip-region">
-         <LegendChip title={legend.title}>
-@@ -1426,7 +1439,7 @@
-     <Comp legend={speciesLens.mapInputs.legend} />
+@@ -1480,7 +1486,7 @@
    {:else if sel.lens === "scores" && ScoresLegendComp}
      {@const Comp = ScoresLegendComp}
--    <Comp legend={scoresLens?.mapExtra.legend ?? null} />
-+    <Comp legend={scoresPanelMapExtra?.legend ?? null} />
+     <div class="lens-legend-region">
+-      <Comp legend={scoresLens?.mapExtra.legend ?? null} />
++      <Comp legend={scoresPanelMapExtra?.legend ?? null} />
+     </div>
    {/if}
  </main>
- 
