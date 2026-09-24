@@ -62,6 +62,13 @@ export interface ScoresMapState {
     | { kind: "cell"; lon: number; lat: number; halfW: number; halfH: number }
     | { kind: "zone"; unit: string; key: string }
     | null;
+  /** R3 orchestrator audit item 3: `metric_key` -> the manifest's own SHORT label
+   * (`boot.ts#metricLabelsFromManifest`) — `boot.layers[].label` is the LONG description
+   * ("Primary productivity: Oregon State Vertically Generalized Production Model (VGPM)..."), not
+   * a short name, so the legend title prefers this when the manifest has one. `undefined`/`{}`
+   * (manifest not loaded yet) falls back to the pre-fix behaviour (`layer?.label`, i.e. the long
+   * text) — never a blank title. */
+  metricLabels?: Record<string, string>;
 }
 
 /** the currently-selected zone's boundary as a `SelectionSpec`, resolved from the vector tile the
@@ -163,7 +170,12 @@ export function scoresMapInputs(state: ScoresMapState): ScoresMapInputs {
   // atlas-4 defect fix: the floating legend for whichever branch is on screen -- title is the
   // layer's own label (falling back to its metric key, then "Score", matching the removed
   // in-panel copy's own fallback so this is not a behaviour change, only a relocation).
-  const title = layer?.label ?? state.lyr ?? "Score";
+  //
+  // R3 orchestrator audit item 3: the manifest's SHORT label wins when published (`state.lyr` keys
+  // `state.metricLabels`, built from `manifest.metrics[]`) -- `layer?.label` (boot.json's LONG
+  // description) is now only the fallback for a manifest that has not loaded yet or omits this
+  // key, never the first choice.
+  const title = (state.metricLabels ?? {})[state.lyr ?? ""] ?? layer?.label ?? state.lyr ?? "Score";
   const legend: ScoresLegend = isCellBranch
     ? (() => {
         const rl = rasterLegend(

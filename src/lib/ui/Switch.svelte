@@ -4,10 +4,15 @@
   interface Props {
     label: string;
     checked: boolean;
+    /** m5 (review round 1): a control the release has not wired up yet (the Bathymetry "coming
+     * soon" row) should not toggle a state nothing reads -- the native `disabled` attribute (not
+     * merely `aria-disabled`) also removes it from the Tab order, matching the row's other
+     * disabled controls (the opacity slider already had `disabled`, the move buttons below). */
+    disabled?: boolean;
     onchange?: (checked: boolean) => void;
   }
 
-  let { label, checked, onchange }: Props = $props();
+  let { label, checked, disabled = false, onchange }: Props = $props();
 </script>
 
 <button
@@ -17,6 +22,7 @@
   aria-label={label}
   class="switch"
   class:switch--on={checked}
+  {disabled}
   onclick={() => onchange?.(!checked)}
 >
   <span class="switch-track">
@@ -26,12 +32,23 @@
 
 <style>
   .switch {
+    /* m1 (review round 1): the visual track stays 40x22 (below), but SC 2.5.5's 44x44 target size
+       is the CLICKABLE button box -- centered padding grows the hit area without growing what's
+       drawn. */
     display: inline-flex;
     align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
     border: 0;
     background: none;
     padding: 0;
     cursor: pointer;
+  }
+
+  .switch:disabled {
+    cursor: default;
+    opacity: 0.5;
   }
 
   .switch:focus-visible {

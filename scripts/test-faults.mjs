@@ -23,9 +23,7 @@
 //
 // Usage: npm run test:faults  (needs $TMPDIR exported, and a clean `git status` for HEAD to be
 // meaningful -- it worktrees off HEAD, not the working tree, on purpose: see each patch's header).
-// `--only <id>` (P3 round, 0.10.42) runs a single named entry -- for verifying ONE new fault while
-// developing it, without paying for every OTHER entry's own worktree+build+run cost (several of
-// which are full `npm run build` + Playwright, ~a minute each).
+// `node scripts/test-faults.mjs --only <id>` runs a single entry by its `id` field.
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -539,6 +537,40 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4398" },
   },
+  // R3 (round-2 plan §5 U4): `composeStyle`'s own `input.layerStack` — the Layers panel's
+  // reorder/opacity/visibility choices — used to be read on arrival. This patch reinstates exactly
+  // the regression the deliverable names ("the stack ignored by composeStyle"): the input is
+  // accepted but never consulted, so every Layers-panel change silently does nothing and the map
+  // always renders the default stack. Must turn e2e/layers.spec.ts's own reorder case red (moving
+  // `basemap-land` above `data-raster` no longer changes `map.getStyle()`'s order or the probed
+  // pixel).
+  //
+  // M4 (Opus 5.5 review): retargeted from the ORDER-only test (which used to also assert the
+  // vacuous `queryRenderedFeatures >= 0` -- never able to fail, deleted) to the "promoted basemap
+  // layer painting OVER the raster" pixel-probe test right after it. Verified empirically (round 2
+  // ride-along), not assumed: planting this exact patch turns BOTH tests red today -- the pixel
+  // probe is targeted not because the order test fails to catch the fault, but because it is the
+  // stronger, harder-to-satisfy-by-coincidence proof (a viewer moving a layer up expects to SEE it
+  // painted on top, not merely find its id at a different array index).
+  {
+    id: "layerstack-order-ignored",
+    patch: "tests/faults/layerstack-order-ignored.patch",
+    describe:
+      "composeStyle() stops reading input.layerStack -- every Layers-panel reorder/opacity/" +
+      "visibility change silently does nothing, and the map always renders the default stack " +
+      "(R3's own regression, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/layers.spec.ts",
+      "-g",
+      "a pixel probe shows the promoted basemap layer painting OVER the raster",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4377" },
+  },
   // U3 (round 2): the privacy rule behind "Send feedback"'s own checkbox -- `buildFeedbackPayload()`
   // must place the hash on `payload.url` ONLY when the reporter ticks "include my current view
   // link" (off by default). This patch makes it unconditional (see the patch's own comment) and
@@ -568,13 +600,149 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4388" },
   },
-  // P3 (owner-reported, live 0.10.37, 390x844: "Table is an absurdity of unintelligible ellipses")
-  // -- `columnWidthPx()` always returning the NARROW width drops the text-column minimum
-  // (dataTableCore.ts's own header: this is what the old "divide every column evenly" bug amounts
-  // to). Neither of this gate's other two assertions ("no header cell overflows", "the full text
-  // is present") actually catches it -- `overflow-wrap: break-word` means even a squeezed column
-  // just wraps its text onto more lines rather than truncating or dropping it -- so the fault must
-  // turn the REAL-RENDERED-COLUMN-WIDTH test red specifically.
+  // atlas-4 fix round 3 (owner, phone/dark/Scores/Flower, cell 3092526, 2026-09-24): three faults
+  // for the three bugs the round fixed, each a one-line mutation reverting exactly one piece of
+  // Flower.svelte's fix (see that file's own header). All three share PW_PORT 4373 (the round's
+  // assigned port) -- test-faults.mjs runs the FAULTS array sequentially (`runOne` is spawnSync,
+  // never parallel), so reusing a port across entries here is the same safe pattern several
+  // earlier entries already use (e.g. 4397 above, three times).
+  {
+    id: "flower-not-centred",
+    patch: "tests/faults/flower-not-centred.patch",
+    describe:
+      "Flower.svelte's `.flower` loses its `margin: 0 auto` -- the figure sits flush left in a " +
+      "panel wider than its 320px cap again (owner: 'Flower plot should be centered')",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.flower.spec.ts",
+      "-g",
+      "the flower SVG's bounding-box centre is within 2px",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4373" },
+  },
+  {
+    id: "flower-ua-outline-restored",
+    patch: "tests/faults/flower-ua-outline-restored.patch",
+    describe:
+      "Flower.svelte's `.petal` loses its unconditional `outline: none` -- the browser's default " +
+      "focus outline (a rectangle around the petal's BOUNDING BOX, never its annular-sector shape) " +
+      "reappears on the last-tapped petal",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.flower.spec.ts",
+      "-g",
+      "after clicking a petal: every element in the flower computes outline-style",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4373" },
+  },
+  {
+    id: "flower-tap-handler-dropped",
+    patch: "tests/faults/flower-tap-handler-dropped.patch",
+    describe:
+      "Flower.svelte's petal `<path>` loses its `onclick` handler -- a second tap/click on the " +
+      "already-active petal no longer dismisses it (native focus-on-click still shows the value " +
+      "the first time, so only the dismiss half of 'tapping ... again dismisses' breaks)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.flower.spec.ts",
+      "-g",
+      "tap shows a label with the SAME text",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4373" },
+  },
+  {
+    id: "legend-chip-modal-blank",
+    patch: "tests/faults/legend-chip-modal-blank.patch",
+    describe:
+      "ScoresLegend.svelte's viewport display:none (desktop-only 'no room beside the sheet') " +
+      "reinstated -- LegendChip.svelte's phone modal reuses the SAME component, so tapping the " +
+      "chip opens a dialog titled 'Legend' with nothing under it",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.legend-chip.spec.ts",
+      "-g",
+      "scores lens.*non-blank legend",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4371" },
+  },
+  {
+    id: "legend-chip-fixed-offset",
+    patch: "tests/faults/legend-chip-fixed-offset.patch",
+    describe:
+      "shell.css's .legend-chip-region drops the sheet-anchored --legend-chip-sheet-height term " +
+      "-- the chip is back to a FIXED offset from the bottom regardless of the sheet's detent, " +
+      "landing on the sheet's own collapse/half/full buttons when collapsed",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.legend-chip.spec.ts",
+      "-g",
+      "scores lens.*collapsed.*chip clears the sheet",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4371" },
+  },
+  {
+    id: "report-map-duplicated",
+    patch: "tests/faults/report-map-duplicated.patch",
+    describe:
+      "report.css's screen-only `.map-print { display: none }` rule dropped -- the static " +
+      "print/export snapshot sits visible right below the live interactive map again, reading " +
+      "as two stacked map figures",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.map.spec.ts",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4377" },
+  },
+  {
+    id: "report-map-fitbounds-skipped",
+    patch: "tests/faults/report-map-fitbounds-skipped.patch",
+    describe:
+      "Report.svelte#mountMap's final flyToBounds(finalBounds, ...) call is skipped -- the camera " +
+      "stays at the provisional full-study-area view it flew to first (to load the zone's pmtiles " +
+      "tiles) and never actually reaches the place, even though the correct target box was computed",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.map.spec.ts",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4377" },
+  },
+  {
+    id: "scores-footnote-floor-reverted",
+    patch: "tests/faults/scores-footnote-floor-reverted.patch",
+    describe:
+      "scores.ts#COVERAGE_FOOTNOTE_FLOOR_PCT reverted from 99 to 100 -- a component at 99.9% " +
+      "coverage footnotes again, and a fully-covered place with one component at 99.9% gets a " +
+      "footnote it should not (the original 'footnotes almost every cell' bug, replayed)",
+    gate: ["npx", "vitest", "run", "tests/lib/report/scores.test.ts"],
+  },
   {
     id: "datatable-min-width-drop",
     patch: "tests/faults/datatable-min-width-drop.patch",
@@ -689,6 +857,27 @@ function runOne(fault) {
   }
 }
 
+// atlas-4 fix round 3: `--only <id>` runs a single named entry (its `id` field) instead of the
+// whole manifest -- a fix round that adds one or two faults should be able to prove just those
+// without paying for the other ~25 (a real browser build each), the same way a fresh round would
+// want to verify its own work in isolation. `<id>` must be an exact match against a real entry;
+// an unknown one fails loudly rather than silently running everything (a typo here would
+// otherwise "pass" by running the wrong thing).
+function faultsToRun() {
+  const onlyIdx = process.argv.indexOf("--only");
+  if (onlyIdx === -1) return FAULTS;
+  const id = process.argv[onlyIdx + 1];
+  const match = FAULTS.filter((f) => f.id === id);
+  if (match.length === 0) {
+    process.stderr.write(
+      `test-faults: --only ${id ?? "<missing>"} matches no entry in FAULTS (known ids: ` +
+        `${FAULTS.map((f) => f.id).join(", ")})\n`,
+    );
+    process.exit(1);
+  }
+  return match;
+}
+
 function main() {
   if (!process.env.TMPDIR) {
     process.stderr.write(
@@ -698,16 +887,7 @@ function main() {
     process.exit(1);
   }
 
-  const onlyIdx = process.argv.indexOf("--only");
-  const onlyId = onlyIdx !== -1 ? process.argv[onlyIdx + 1] : null;
-  const faults = onlyId ? FAULTS.filter((f) => f.id === onlyId) : FAULTS;
-  if (onlyId && faults.length === 0) {
-    process.stderr.write(
-      `test-faults: --only ${onlyId} does not name a fault in FAULTS (see scripts/test-faults.mjs).\n`,
-    );
-    process.exit(1);
-  }
-
+  const faults = faultsToRun();
   const head = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
     cwd: ROOT,
     encoding: "utf8",

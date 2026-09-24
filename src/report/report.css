@@ -51,6 +51,17 @@ th.num {
   text-align: right;
 }
 
+/* P4 follow-up (owner report, 0.10.43): a footnote's <sup> marker (Report.svelte's Table of
+   Scores cell: `{score} {#each cell.footnotes...}<sup>{id}</sup>{/each}`) sat one whitespace text
+   node away from the score, so in a narrow numeric column the browser could break the line right
+   at that space -- the marker then rendered on its OWN line beneath the number ("21" then "3"
+   stacked, Ben's own phone screenshot). `td.num` only, never `th.num`: a couple of header labels
+   ("Study-area share") are real prose that may still need to wrap at 390px, and headers never
+   carry a footnote marker. */
+td.num {
+  white-space: nowrap;
+}
+
 caption {
   text-align: left;
   font-size: 0.85em;
@@ -60,6 +71,20 @@ caption {
 
 figure {
   margin: 0 0 1.5rem;
+}
+
+/* P4 fix (Ben, phone, "Report" tool): `.map-print` (the static print/export snapshot -- an <img>
+   once captured, else placeholder text) had NO rule hiding it on SCREEN, so it sat right below the
+   live interactive `.map-live` map, and the Map section showed what looked like two map figures
+   stacked -- one live, one static, both easy to mistake for "empty" before the capture lands. Only
+   `.map-live` carries `no-print` (report.css's own `@media print` block already hides that), so
+   `.map-print` needed the mirror rule for the screen case: hidden by default, shown only inside
+   `@media print` below. The HTML export's own `onDownloadHtml` transform (Report.svelte) sets
+   `.map-print`'s `style.display` to `"block"` DIRECTLY on the cloned node -- an inline style, which
+   wins over this class rule with no `!important` needed -- so the downloaded/offline document is
+   unaffected and still shows its static snapshot. */
+.map-print {
+  display: none;
 }
 
 .progress-line {
@@ -287,6 +312,12 @@ figure {
   .export-bar,
   .preview-banner {
     display: none !important;
+  }
+
+  /* P4: the mirror of `.map-print`'s screen-only `display: none` above -- print is exactly the
+     case that rule carves out, so the static snapshot reappears here. */
+  .map-print {
+    display: block;
   }
 
   .print-watermark {

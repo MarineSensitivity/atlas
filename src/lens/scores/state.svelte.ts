@@ -55,7 +55,7 @@ import {
 } from "./selection";
 import { scoresMapInputs, type ScoresMapInputs, type ScoresMapState } from "./mapInputs";
 import type { ManifestOverlayRow } from "./raster";
-import { layerByKey, zoneRows } from "./boot";
+import { layerByKey, metricLabelsFromManifest, zoneRows } from "./boot";
 import { fetchCellValue } from "./cellClick";
 import { getAnalysisSources } from "./engine";
 import {
@@ -91,6 +91,10 @@ export interface ScoresLens {
   /** `manifest.overlays`, read once here so `ScoresLens.svelte`/`LayersPanel.svelte` never derive
    * it a second time. */
   readonly manifestOverlays: readonly ManifestOverlayRow[] | null;
+  /** R3 orchestrator audit item 3: `metric_key` -> the manifest's own SHORT label
+   * (`boot.ts#metricLabelsFromManifest`) — read once here for the SAME reason as
+   * `manifestOverlays`, so the legend title and the layer picker's `<select>` never disagree. */
+  readonly metricLabels: Record<string, string>;
   /** `sel.sel` parsed (`selection.ts#parseScoresSelection`) — the selection AS THE FLOWER/SPECIES/
    * TABLE panels see it (`cell:<id>` keeps the raw cell id). */
   readonly selection: ScoresSelection;
@@ -120,6 +124,7 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
   const manifestOverlays = $derived(
     (deps.manifest() as { overlays?: ManifestOverlayRow[] } | null)?.overlays ?? null,
   );
+  const metricLabels = $derived(metricLabelsFromManifest(deps.manifest()));
 
   const unit = $derived(effectiveUnit(deps.selStore.sel.unit, deps.boot()));
   const lyr = $derived(effectiveLyr(deps.selStore.sel.lyr, deps.boot()));
@@ -145,6 +150,7 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       palette: deps.selStore.sel.pal,
       showOutsidePra,
       selection: mapSelection,
+      metricLabels,
     }),
   );
 
@@ -231,6 +237,9 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     },
     get manifestOverlays() {
       return manifestOverlays;
+    },
+    get metricLabels() {
+      return metricLabels;
     },
     get selection() {
       return selection;

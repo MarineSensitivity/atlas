@@ -310,6 +310,41 @@ function zoneVectorProbe() {
   };
 }
 
+// M3 (Opus 5.5 review): "the Program Areas eye is proven only at the panel-click e2e level, not in
+// the state matrix" -- `data-zones:h` used to assert only that the RASTER still painted
+// (`scoresRasterProbe()`), never that hiding the group actually zeroed the zone outline's rendered
+// features. `layout.visibility: "none"` (CLAUDE.md: never removed, so the layer/source still exist
+// and `zoneFeatureCount` never reads a false `-1`) is the whole point of B1/M3 -- this asserts the
+// COUNT, not just "the map still shows something."
+function zoneHiddenProbe(layerId = "programarea_ln") {
+  return async (page) => {
+    await page
+      .waitForFunction(() => !!window.__atlasMap?.handle.map.getLayer("r_lyr"), undefined, {
+        timeout: 15_000,
+      })
+      .catch(() => {});
+    let count = -1;
+    for (let i = 0; i < 10; i++) {
+      count = await zoneFeatureCount(page, "programarea_src", layerId);
+      if (count === 0) break;
+      await page.waitForTimeout(300);
+    }
+    return count === 0
+      ? []
+      : [`${layerId} expected HIDDEN (data-zones:h) but rendered ${count} feature(s)`];
+  };
+}
+
+/** runs several `assert` probes and concatenates their problems -- for a state that must satisfy
+ * more than one independent property (e.g. "the raster still paints" AND "the zones are hidden"). */
+function combinedProbe(...probes) {
+  return async (page) => {
+    const problems = [];
+    for (const probe of probes) problems.push(...(await probe(page)));
+    return problems;
+  };
+}
+
 // ---- M6 (atlas-8 review round 2): the 22 layout-only states get real assertions -----------------
 // `verify.mjs` used to check LAYOUT for 22 states (17 species, 3 shell, 2 `scores sel=cell:*`) and
 // nothing else -- a 404'd species raster, an empty selection layer, or a `sel=zone:*` state that
@@ -445,15 +480,26 @@ function speciesRangeProbe() {
  *
  * `out="ecoregion"` is the SAME structural zero as `out="none"`, not a bug: plan D17
  * (`src/lens/scores/boot.ts`'s own header, `docs/parity.html`'s intentional difference **ID-03**,
- * "Only Program Areas are drawn as a choropleth") — `boot.units[]` carries exactly ONE unit per
- * release (`programarea` on v2-v9, `planarea` on v1; confirmed against the real, orchestrator-
- * verified v7/v9 bundles trimmed into `tests/lens/scores/fixtures.ts`) and no release EVER
- * publishes a second, ecoregion-outline unit -- there is no PMTiles archive for `out=ecoregion`
- * to draw, on ANY release, so the zone LINE layer renders zero features by construction. ID-03's
+ * "Only Program Areas are drawn as a choropleth") — `boot.units[]` carries exactly ONE
+ * SELECTABLE unit per release (`programarea` on v2-v9, `planarea` on v1; confirmed against the
+ * real, orchestrator-verified v7/v9 bundles trimmed into `tests/lens/scores/fixtures.ts`) and no
+ * release EVER publishes a second, ecoregion-type SELECTABLE unit -- there is no PMTiles archive
+ * `out=ecoregion`/`zoneUnitsWithOutline()` (what THIS probe exercises, via `sel.out`) could ever
+ * pick, on ANY release, so `programarea_ln` (the one line layer `scoresOutlineProbe` below
+ * queries) renders zero features by construction whenever `out` is not `"programarea"`. ID-03's
  * own text ("subregion and ecoregion scores are still published and still used... they are simply
  * never drawn as a choropleth") is about FILLS, but the same "exactly one published unit" fact
- * governs outlines too -- there is only ever one `ZoneUnitSpec`, so `out=ecoregion` has nothing to
- * outline either. `out="programarea"` is the one real, always-published unit and must render.
+ * governs outlines too -- there is only ever one SELECTABLE `ZoneUnitSpec`, so `out=ecoregion` has
+ * nothing of its own to outline either. `out="programarea"` is the one real, always-published unit
+ * and must render.
+ *
+ * R3 orchestrator audit item 2 (unrelated to `out=` or this probe) separately draws a STANDALONE,
+ * always-on ecoregion outline read from the release's MANIFEST (`ecoregionZoneUnitFromManifest`,
+ * `src/shell/Shell.svelte`'s `ecoregionUnit`) on its own `ecoregion_ln` layer id -- appended
+ * outside `zoneUnitsWithOutline`/`zonesForStyle` entirely, so `sel.out` never reaches it (see
+ * `e2e/layers.spec.ts`'s own "ecoregion boundaries" describe block). It is a DIFFERENT PMTiles
+ * source from the one this paragraph is about, and does not change anything above: it never makes
+ * "ecoregion" a pickable/SELECTABLE unit, so it is not what `out=ecoregion` could ever mean.
  */
 function scoresOutlineProbe(out) {
   return async (page) => {
@@ -657,6 +703,21 @@ const SCORES_STATES = [
     kind: "scores",
     path: "/?sel=cell:100&map=146.075,74.725,8",
     assert: selectionLineProbe(),
+  },
+  // R3 (round-2 plan §5 U4): one `layers=` deviation in the matrix -- hides the Program-Area
+  // outline group (`data-zones`), proving a real Layers-panel state renders (and passes axe, via
+  // matrix.a11y.spec.ts) without breaking the raster itself. Only `data-zones` is touched (never a
+  // colour-affecting group): `scoresRasterProbe()`'s expected blend assumes the DEFAULT basemap/
+  // raster colours, so a state that also dimmed a colour group would need its own bespoke expected
+  // blend -- out of scope for "one state added to the matrix," not a limitation of the stack itself.
+  // M3 fix (Opus 5.5 review): `combinedProbe` also asserts `zoneFeatureCount === 0` for
+  // `programarea_ln` -- the raster painting normally is necessary but not SUFFICIENT proof that the
+  // eye actually hid the zone outline.
+  {
+    name: "scores layers=data-zones:h (Program Areas hidden)",
+    kind: "scores",
+    path: "/?layers=basemap-land,basemap-bathymetry,basemap-boundaries,basemap-roads,basemap-labels,data-raster,data-zones:h,data-places",
+    assert: combinedProbe(scoresRasterProbe(), zoneHiddenProbe()),
   },
 ];
 

@@ -326,6 +326,62 @@ describe("show / hide: comma-joined panel-id deltas, default empty", () => {
   });
 });
 
+// R3 layer stack model (round-2 plan §5 U4, `docs/usability.md` §7 R3): `layers=` -- the STACK's own
+// rule-level tests live in `tests/map/layerStack.test.ts` (parseLayerStack/formatLayerStack); this
+// describe block only proves `parseSel`/`formatSel` actually WIRE that codec in, the same
+// integration-proof shape `describe("composeStyle + zoneUnitsWithOutline (G-25...")` in
+// `tests/map/style.test.ts` uses for `out=`.
+describe("layers: the R3 layer stack (deltas against the default, via ../map/layerStack.ts)", () => {
+  it("defaults to undefined (the release's default stack; never written to the URL)", () => {
+    expect(parseSel(EMPTY).layers).toBeUndefined();
+    expect(formatSel(DEFAULT_SEL).search).toBe("");
+  });
+
+  it("a hidden group survives a parseSel round trip (a partial token also names every OTHER group, appended, per layerStack.ts's own forward-compat rule — so the re-formatted URL is IDEMPOTENT, not byte-identical to the hand-written partial input)", () => {
+    const loc = { search: "?layers=basemap-labels:h", hash: "" };
+    const sel = parseSel(loc);
+    expect(sel.layers?.find((e) => e.id === "basemap-labels")).toEqual({
+      id: "basemap-labels",
+      visible: false,
+      opacity: 1,
+    });
+    const reformatted = formatSel(sel).search;
+    expect(reformatted).not.toBe(""); // still a deviation from the default -- the key survives
+    expect(formatSel(parseSel({ search: reformatted, hash: "" })).search).toBe(reformatted); // idempotent
+  });
+
+  it("a reordered + dimmed stack round-trips", () => {
+    const loc = {
+      search:
+        "?layers=basemap-land,basemap-bathymetry,basemap-boundaries,data-raster:o50,basemap-roads,basemap-labels,data-zones,data-places",
+      hash: "",
+    };
+    const sel = parseSel(loc);
+    expect(sel.layers?.map((e) => e.id)).toEqual([
+      "basemap-land",
+      "basemap-bathymetry",
+      "basemap-boundaries",
+      "data-raster",
+      "basemap-roads",
+      "basemap-labels",
+      "data-zones",
+      "data-places",
+    ]);
+    expect(sel.layers?.find((e) => e.id === "data-raster")?.opacity).toBe(0.5);
+    expect(formatSel(sel).search).toBe(loc.search);
+  });
+
+  it("a garbage layers= value clamps to the default (never throws)", () => {
+    expect(() => parseSel({ search: "?layers=%%%not,a,valid,token%%%", hash: "" })).not.toThrow();
+    expect(parseSel({ search: "?layers=", hash: "" }).layers).toBeUndefined();
+  });
+
+  it("an unknown key sitting next to layers= is ignored (this field's own clamping doesn't widen)", () => {
+    const sel = parseSel({ search: "?layers=basemap-labels:h&bogus=1", hash: "" });
+    expect(sel.layers?.find((e) => e.id === "basemap-labels")?.visible).toBe(false);
+  });
+});
+
 describe("map: lon,lat,zoom[,bearing,pitch], default undefined (preset applies)", () => {
   it("parses a 3-field tuple", () => {
     expect(parseSel({ search: "?map=-122.4,37.8,6", hash: "" }).map).toEqual({
