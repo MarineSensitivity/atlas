@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultLayerKey,
+  ecoregionZoneUnitFromManifest,
   layerByKey,
   layerGroups,
+  metricLabelsFromManifest,
   primaryUnitLabel,
   primaryUnitNote,
   primaryUnitType,
@@ -116,5 +118,107 @@ describe("zoneRows", () => {
 
   it("an unpublished unit: [], never a throw", () => {
     expect(zoneRows(BOOT_V7, "ecoregion")).toEqual([]);
+  });
+});
+
+// R3 orchestrator audit item 2: the standalone ecoregion outline, read from the release's
+// MANIFEST (never `boot.units[]`, which D17 keeps at exactly one row) -- verified live against
+// v7's real manifest.json (`zones[]` carries a `zone_set_key: "ecoregion_2025-06"` row).
+describe("ecoregionZoneUnitFromManifest", () => {
+  const MANIFEST_WITH_ECOREGION = {
+    zones: [
+      {
+        tbl: "ply_ecoregions_2025",
+        fld: "ecoregion_key",
+        n: 12,
+        zone_set_key: "ecoregion_2025-06",
+        pmtiles: "https://s3.example/marine-atlas/zones/ecoregion_2025-06/zones.pmtiles",
+      },
+      {
+        tbl: "ply_programareas_2026_v7",
+        fld: "programarea_key",
+        n: 20,
+        zone_set_key: "programarea_2026-01",
+        pmtiles: "https://s3.example/marine-atlas/zones/programarea_2026-01/zones.pmtiles",
+      },
+    ],
+  };
+
+  it("finds the ecoregion row among several, and it is outline-only + always visible", () => {
+    expect(ecoregionZoneUnitFromManifest(MANIFEST_WITH_ECOREGION)).toEqual({
+      unit: "ecoregion",
+      pmtiles: "https://s3.example/marine-atlas/zones/ecoregion_2025-06/zones.pmtiles",
+      sourceLayer: "ecoregion",
+      lineVisible: true,
+    });
+  });
+
+  it("no fill, no labels, no highlightKey -- never a second choropleth-selectable unit (D17)", () => {
+    const unit = ecoregionZoneUnitFromManifest(MANIFEST_WITH_ECOREGION)!;
+    expect(unit.fill).toBeUndefined();
+    expect(unit.labels).toBeUndefined();
+    expect(unit.highlightKey).toBeUndefined();
+  });
+
+  it("null when the manifest has no zones array, no ecoregion row, or has not loaded yet", () => {
+    expect(ecoregionZoneUnitFromManifest(null)).toBeNull();
+    expect(ecoregionZoneUnitFromManifest(undefined)).toBeNull();
+    expect(ecoregionZoneUnitFromManifest({})).toBeNull();
+    expect(
+      ecoregionZoneUnitFromManifest({
+        zones: [MANIFEST_WITH_ECOREGION.zones[1]], // programarea only
+      }),
+    ).toBeNull();
+  });
+
+  it("a malformed ecoregion row (missing pmtiles) is skipped, never thrown", () => {
+    expect(() =>
+      ecoregionZoneUnitFromManifest({ zones: [{ fld: "ecoregion_key" }] }),
+    ).not.toThrow();
+    expect(ecoregionZoneUnitFromManifest({ zones: [{ fld: "ecoregion_key" }] })).toBeNull();
+  });
+});
+
+// R3 orchestrator audit item 3: `boot.layers[].label` carries the LONG description (verified live
+// on v7: `primprod`'s is a full paragraph), while the ported Shiny app's SHORT names ("fish: ext.
+// risk, ecorgn") come from the manifest's `metrics[]` array instead.
+describe("metricLabelsFromManifest", () => {
+  const MANIFEST_WITH_METRICS = {
+    metrics: [
+      {
+        metric_key: "extrisk_bird",
+        subregion_key: "GA",
+        label: "bird: ext. risk",
+        description: "Extinction risk for bird",
+      },
+      {
+        metric_key: "extrisk_bird",
+        subregion_key: "FULL",
+        label: "bird: ext. risk",
+        description: "Extinction risk for bird",
+      },
+      { metric_key: "primprod", subregion_key: "FULL", label: "primary productivity" },
+    ],
+  };
+
+  it("dedupes to one short label per metric_key (first occurrence wins)", () => {
+    expect(metricLabelsFromManifest(MANIFEST_WITH_METRICS)).toEqual({
+      extrisk_bird: "bird: ext. risk",
+      primprod: "primary productivity",
+    });
+  });
+
+  it("{} when the manifest has no metrics array or has not loaded yet", () => {
+    expect(metricLabelsFromManifest(null)).toEqual({});
+    expect(metricLabelsFromManifest({})).toEqual({});
+  });
+
+  it("a row missing metric_key or label is skipped, never thrown", () => {
+    expect(() =>
+      metricLabelsFromManifest({ metrics: [{ label: "no key" }, { metric_key: "no_label" }] }),
+    ).not.toThrow();
+    expect(
+      metricLabelsFromManifest({ metrics: [{ label: "no key" }, { metric_key: "no_label" }] }),
+    ).toEqual({});
   });
 });

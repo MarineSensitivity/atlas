@@ -5,6 +5,10 @@
 // written only when it differs from its default; an unknown key or a malformed value never throws —
 // it is ignored / clamped to the default instead.
 import { isVersionLabel } from "../release/version";
+// R3 (round-2 plan §5 U4): `layers=`'s parse/format live in the map domain's own layer-stack model
+// (`../map/layerStack.ts`), not duplicated here — this module just calls them, exactly like every
+// other field's parser.
+import { formatLayerStack, parseLayerStack } from "../map/layerStack";
 import { NO_ALIAS_LOOKUP, rewriteLegacyParams, type AliasLookup } from "./legacy";
 import {
   DEFAULT_SEL,
@@ -148,6 +152,7 @@ function parseSelUnsafe(loc: UrlLike, alias: AliasLookup): Sel {
     sel: parseSelToken(params.get("sel")),
     show: parseList(params.get("show")),
     hide: parseList(params.get("hide")),
+    layers: parseLayerStack(params.get("layers")) ?? undefined,
     theme: parseEnum(aliasTheme(params.get("theme")), THEMES, DEFAULT_SEL.theme),
     tour: parseEnum(params.get("tour"), ["on", "off"] as const, DEFAULT_SEL.tour),
     pl: cleanString(hashParams.get("pl")),
@@ -198,6 +203,8 @@ export function formatSel(sel: Sel): { search: string; hash: string } {
   if (sel.sel) params.set("sel", sel.sel);
   if (sel.show.length > 0) params.set("show", sel.show.join(","));
   if (sel.hide.length > 0) params.set("hide", sel.hide.join(","));
+  const layersToken = formatLayerStack(sel.layers);
+  if (layersToken !== null) params.set("layers", layersToken);
   if (sel.theme !== DEFAULT_SEL.theme) params.set("theme", sel.theme);
   if (sel.tour !== DEFAULT_SEL.tour) params.set("tour", sel.tour);
 

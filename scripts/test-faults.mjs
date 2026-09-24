@@ -536,6 +536,40 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4398" },
   },
+  // R3 (round-2 plan §5 U4): `composeStyle`'s own `input.layerStack` — the Layers panel's
+  // reorder/opacity/visibility choices — used to be read on arrival. This patch reinstates exactly
+  // the regression the deliverable names ("the stack ignored by composeStyle"): the input is
+  // accepted but never consulted, so every Layers-panel change silently does nothing and the map
+  // always renders the default stack. Must turn e2e/layers.spec.ts's own reorder case red (moving
+  // `basemap-land` above `data-raster` no longer changes `map.getStyle()`'s order or the probed
+  // pixel).
+  //
+  // M4 (Opus 5.5 review): retargeted from the ORDER-only test (which used to also assert the
+  // vacuous `queryRenderedFeatures >= 0` -- never able to fail, deleted) to the "promoted basemap
+  // layer painting OVER the raster" pixel-probe test right after it. Verified empirically (round 2
+  // ride-along), not assumed: planting this exact patch turns BOTH tests red today -- the pixel
+  // probe is targeted not because the order test fails to catch the fault, but because it is the
+  // stronger, harder-to-satisfy-by-coincidence proof (a viewer moving a layer up expects to SEE it
+  // painted on top, not merely find its id at a different array index).
+  {
+    id: "layerstack-order-ignored",
+    patch: "tests/faults/layerstack-order-ignored.patch",
+    describe:
+      "composeStyle() stops reading input.layerStack -- every Layers-panel reorder/opacity/" +
+      "visibility change silently does nothing, and the map always renders the default stack " +
+      "(R3's own regression, replayed)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/layers.spec.ts",
+      "-g",
+      "a pixel probe shows the promoted basemap layer painting OVER the raster",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4377" },
+  },
   // U3 (round 2): the privacy rule behind "Send feedback"'s own checkbox -- `buildFeedbackPayload()`
   // must place the hash on `payload.url` ONLY when the reporter ticks "include my current view
   // link" (off by default). This patch makes it unconditional (see the patch's own comment) and
