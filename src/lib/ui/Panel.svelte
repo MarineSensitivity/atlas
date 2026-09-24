@@ -295,6 +295,7 @@
 <div
   class="panel"
   class:panel--collapsed={geometry.collapsed}
+  class:panel--maximized={geometry.maximized}
   data-dock={geometry.dock}
   bind:this={rootEl}
 >
@@ -431,6 +432,16 @@
        (see above) -- either way `.panel-surface`'s own `height: 100%` needs SOMETHING definite to
        resolve against, which is what this supplies when one exists. */
     height: 100%;
+  }
+
+  /* V1 fix (Opus eyes-on review, 2026-09-24): "desktop Full screen panel is capped at 720px" --
+     `#panel-region[data-maximized="true"]` (shell.css) already spans the whole stage edge to edge,
+     but THIS element's own 720px ceiling (above, R1's docked-width cap) still applied on top of
+     it, so a maximized panel's content box stayed 720px wide inside a full-stage frame. Lifting
+     the cap only while maximized keeps the 720px docked/half-width ceiling intact (this rule does
+     not touch `.panel--collapsed`, which sets its own `width: fit-content`). */
+  .panel--maximized {
+    max-width: none;
   }
 
   /* usability M3: collapsed, `.panel` held its FULL width basis (`.panel-region`'s own width,

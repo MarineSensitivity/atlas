@@ -520,35 +520,39 @@
       </button>
     </h2>
     <div class="disclosure-body" hidden={!parametersOpen}>
-      <table>
-        <caption>Report parameters, per place.</caption>
-        <thead>
-          <tr>
-            <th scope="col">Place</th>
-            <th scope="col">Kind</th>
-            <th scope="col">Zone keys / vertices</th>
-            <th scope="col" class="num">Area (km²)</th>
-            <th scope="col" class="num">N cells</th>
-            <th scope="col" class="num">Study-area share</th>
-            <th scope="col">Token</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each model.parameters as p (p.token)}
+      <!-- V1 fix (Opus eyes-on review, 2026-09-24, phone 390px): wraps every table in its own
+           horizontal scroll container -- see report.css's `.table-scroll` header for why. -->
+      <div class="table-scroll">
+        <table>
+          <caption>Report parameters, per place.</caption>
+          <thead>
             <tr>
-              <td>{p.name}</td>
-              <td>{p.kind}</td>
-              <td>{p.zoneKeys ? p.zoneKeys.join(", ") : (p.vertexCount ?? "—")}</td>
-              <td class="num">{p.areaKm2 === null ? "—" : formatCount(p.areaKm2)}</td>
-              <td class="num">{formatCount(p.nCells)}</td>
-              <td class="num"
-                >{p.studyAreaPct === null ? "—" : formatCoveragePct(p.studyAreaPct / 100)}</td
-              >
-              <td><code>{p.token}</code></td>
+              <th scope="col">Place</th>
+              <th scope="col">Kind</th>
+              <th scope="col">Zone keys / vertices</th>
+              <th scope="col" class="num">Area (km²)</th>
+              <th scope="col" class="num">N cells</th>
+              <th scope="col" class="num">Study-area share</th>
+              <th scope="col">Token</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each model.parameters as p (p.token)}
+              <tr>
+                <td>{p.name}</td>
+                <td>{p.kind}</td>
+                <td>{p.zoneKeys ? p.zoneKeys.join(", ") : (p.vertexCount ?? "—")}</td>
+                <td class="num">{p.areaKm2 === null ? "—" : formatCount(p.areaKm2)}</td>
+                <td class="num">{formatCount(p.nCells)}</td>
+                <td class="num"
+                  >{p.studyAreaPct === null ? "—" : formatCoveragePct(p.studyAreaPct / 100)}</td
+                >
+                <td><code>{p.token}</code></td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
       <!-- fix round 2, item 2: D7b's own disclosure, per drawn place -- a zone place has none
            (d7bNote is null: a published zone IS the study area, nothing to disclose). -->
       {#each model.parameters as p (p.token)}
@@ -693,36 +697,38 @@
   <section aria-labelledby="s-scores">
     <h2 id="s-scores">Table of Scores</h2>
     <p class="narrative">{model.scores.narrative}</p>
-    <table aria-describedby="scores-summary">
-      <caption>Mean component and overall scores per area.</caption>
-      <thead>
-        <tr>
-          <th scope="col">Area</th>
-          <th scope="col" class="num">N cells</th>
-          {#each model.scores.components as c (c)}
-            <th scope="col" class="num">{c}</th>
-          {/each}
-          <th scope="col" class="num">Overall</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each model.scores.rows as row (row.name)}
+    <div class="table-scroll">
+      <table aria-describedby="scores-summary">
+        <caption>Mean component and overall scores per area.</caption>
+        <thead>
           <tr>
-            <th scope="row">{row.name}</th>
-            <td class="num">{formatCount(row.nCells)}</td>
-            {#each row.cells as cell (cell.component)}
-              <td class="num">
-                {cell.score === null ? "—" : formatScore0(cell.score)}
-                {#each cell.footnotes as id (id)}<sup>{id}</sup>{/each}
-              </td>
+            <th scope="col">Area</th>
+            <th scope="col" class="num">N cells</th>
+            {#each model.scores.components as c (c)}
+              <th scope="col" class="num">{c}</th>
             {/each}
-            <td class="num"
-              ><strong>{row.overall === null ? "—" : formatScore0(row.overall)}</strong></td
-            >
+            <th scope="col" class="num">Overall</th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each model.scores.rows as row (row.name)}
+            <tr>
+              <th scope="row">{row.name}</th>
+              <td class="num">{formatCount(row.nCells)}</td>
+              {#each row.cells as cell (cell.component)}
+                <td class="num">
+                  {cell.score === null ? "—" : formatScore0(cell.score)}
+                  {#each cell.footnotes as id (id)}<sup>{id}</sup>{/each}
+                </td>
+              {/each}
+              <td class="num"
+                ><strong>{row.overall === null ? "—" : formatScore0(row.overall)}</strong></td
+              >
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
     {#if model.scores.footnotes.length}
       <ol class="footnotes">
         {#each model.scores.footnotes as fn (fn.id)}
@@ -742,71 +748,77 @@
         {#if species.counts === null}
           <p>{species.empty ?? "Loading species…"}</p>
         {:else}
-          <table aria-describedby={`species-summary-${i}`}>
-            <caption>{species.caption}</caption>
-            <thead>
-              <tr>
-                <th scope="col">Category</th>
-                {#each species.counts.columns as col (col)}
-                  <th scope="col" class="num">{col}</th>
-                {/each}
-                <th scope="col" class="num">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each species.counts.rows as row (row.category)}
-                <tr>
-                  <th scope="row">{row.category}</th>
-                  {#each row.counts as c, j (j)}
-                    <td class="num">{formatCount(c)}</td>
-                  {/each}
-                  <td class="num">{formatCount(row.total)}</td>
-                </tr>
-              {/each}
-              <tr>
-                <th scope="row">Total</th>
-                {#each species.counts.totalRow.counts as c, j (j)}
-                  <td class="num">{formatCount(c)}</td>
-                {/each}
-                <td class="num">{formatCount(species.counts.totalRow.total)}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          {#if species.top}
-            <table>
-              <caption
-                >Top 20 highest-scoring species (by habitat-weighted extinction risk).</caption
-              >
+          <div class="table-scroll">
+            <table aria-describedby={`species-summary-${i}`}>
+              <caption>{species.caption}</caption>
               <thead>
                 <tr>
                   <th scope="col">Category</th>
-                  <th scope="col">Common</th>
-                  <th scope="col">Scientific</th>
-                  <th scope="col">ER code</th>
-                  <th scope="col" class="num">ER score</th>
-                  <th scope="col" class="num">Score</th>
+                  {#each species.counts.columns as col (col)}
+                    <th scope="col" class="num">{col}</th>
+                  {/each}
+                  <th scope="col" class="num">Total</th>
                 </tr>
               </thead>
               <tbody>
-                {#each species.top.rows as row, j (row.mdl_key)}
+                {#each species.counts.rows as row (row.category)}
                   <tr>
-                    <td>{row.sp_cat}</td>
-                    <td>
-                      {#if row.sp_common}
-                        <a href={species.top.hrefs[j]}>{row.sp_common}</a>
-                      {:else}
-                        —
-                      {/if}
-                    </td>
-                    <td><em>{row.sp_scientific}</em></td>
-                    <td>{row.er_code ?? "—"}</td>
-                    <td class="num">{row.er_score === null ? "—" : formatErScore(row.er_score)}</td>
-                    <td class="num">{formatCount(row.suit_er_area)}</td>
+                    <th scope="row">{row.category}</th>
+                    {#each row.counts as c, j (j)}
+                      <td class="num">{formatCount(c)}</td>
+                    {/each}
+                    <td class="num">{formatCount(row.total)}</td>
                   </tr>
                 {/each}
+                <tr>
+                  <th scope="row">Total</th>
+                  {#each species.counts.totalRow.counts as c, j (j)}
+                    <td class="num">{formatCount(c)}</td>
+                  {/each}
+                  <td class="num">{formatCount(species.counts.totalRow.total)}</td>
+                </tr>
               </tbody>
             </table>
+          </div>
+
+          {#if species.top}
+            <div class="table-scroll">
+              <table>
+                <caption
+                  >Top 20 highest-scoring species (by habitat-weighted extinction risk).</caption
+                >
+                <thead>
+                  <tr>
+                    <th scope="col">Category</th>
+                    <th scope="col">Common</th>
+                    <th scope="col">Scientific</th>
+                    <th scope="col">ER code</th>
+                    <th scope="col" class="num">ER score</th>
+                    <th scope="col" class="num">Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each species.top.rows as row, j (row.mdl_key)}
+                    <tr>
+                      <td>{row.sp_cat}</td>
+                      <td>
+                        {#if row.sp_common}
+                          <a href={species.top.hrefs[j]}>{row.sp_common}</a>
+                        {:else}
+                          —
+                        {/if}
+                      </td>
+                      <td><em>{row.sp_scientific}</em></td>
+                      <td>{row.er_code ?? "—"}</td>
+                      <td class="num"
+                        >{row.er_score === null ? "—" : formatErScore(row.er_score)}</td
+                      >
+                      <td class="num">{formatCount(row.suit_er_area)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
           {/if}
 
           <p>
@@ -858,23 +870,25 @@
         DuckDB-WASM
         {model.provenance.duckdbWasm ?? "—"}.
       </p>
-      <table>
-        <caption>Tables read.</caption>
-        <thead>
-          <tr>
-            <th scope="col">Table</th>
-            <th scope="col">Digest</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each model.provenance.tables as t (t.name)}
+      <div class="table-scroll">
+        <table>
+          <caption>Tables read.</caption>
+          <thead>
             <tr>
-              <td>{t.name}</td>
-              <td><code>{t.digest ?? "—"}</code></td>
+              <th scope="col">Table</th>
+              <th scope="col">Digest</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each model.provenance.tables as t (t.name)}
+              <tr>
+                <td>{t.name}</td>
+                <td><code>{t.digest ?? "—"}</code></td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
       {#each model.provenance.sql as run (run.name)}
         <details>
           <summary>{run.name}.sql</summary>

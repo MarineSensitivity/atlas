@@ -81,6 +81,7 @@
     desktopPanelPadding,
     phonePadding,
     phonePaddingFromMeasured,
+    phoneLiveChromePadding,
   } from "../lib/map/chromePadding";
   import { createAnalytics } from "../lib/analytics/analytics";
   import { analyticsLogUrl } from "../lib/analytics/logUrl";
@@ -503,6 +504,10 @@
     boot: () => boot,
     mapHandle: () => mapHandle,
     track: (name, params) => analytics.track(name as never, params as never),
+    // V1 fix: the species camera's model-bounds fit pads for whatever chrome is covering the map
+    // RIGHT NOW (see currentChromePadding's own header, below) instead of a flat 40px on every
+    // edge -- a getter, called fresh on every fit, never a value captured at this line.
+    chromePadding: () => currentChromePadding(),
   });
 
   // --- page title: the ONE writer (spec.md/atlas-3 step 3 deliverable 4; atlas-8 fix) -----------
@@ -601,6 +606,26 @@
     return desktopPanelPadding(
       loadPanelGeometry(storage(), "shell", viewportBucket(window.innerWidth)),
     );
+  }
+
+  // V1 fix (Opus eyes-on review, 2026-09-24): "the species camera fit sits under the sheet/legend
+  // chip on the phone, and under an open panel on desktop" -- {@link initialChromePadding} above
+  // reads a localStorage SNAPSHOT and is only ever called once, before Panel.svelte/Sheet.svelte
+  // have even mounted; a species re-fit happens long after that, so it needs the LIVE geometry
+  // this file already tracks (`panelGeom`/`sheetGeom`, this file's own `ongeometry` mirrors,
+  // above). The actual padding math is `chromePadding.ts#phoneLiveChromePadding` (a plain,
+  // testable function -- see its own header); this just feeds it the live state.
+  function currentChromePadding(): ChromePadding {
+    if (isPhone) {
+      const chipShowing = !!phoneLegend && legendChipMode(sheetGeom.detent) === "floating";
+      return phoneLiveChromePadding(
+        sheetGeom.height,
+        sheetGeom.detent,
+        window.innerHeight,
+        chipShowing,
+      );
+    }
+    return desktopPanelPadding(panelGeom);
   }
 
   // P9 (Opus docs re-check appendix finding A2, live-verified on 0.10.48): P2 round 2's fix

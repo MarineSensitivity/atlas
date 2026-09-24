@@ -30,6 +30,7 @@ import {
   createCameraWriter,
   type CameraBoundsInput,
   type CameraWriter,
+  type ChromePadding,
 } from "./camera";
 import { FALLBACK_FULL_STUDY_AREA, PROGRAMMATIC_EVENT_DATA, type StudyArea } from "./interaction";
 import { applyStyle } from "./style";
@@ -87,8 +88,15 @@ export interface MapHandle {
    * Mercator math) rather than calling MapLibre's own bounds-fitting method, which re-wraps
    * longitudes and inverts across the antimeridian — that native method is never called anywhere
    * in this module (see docs/map.md).
+   *
+   * V1 fix (Opus eyes-on review, 2026-09-24): `padding` accepts an asymmetric {@link ChromePadding}
+   * (a docked panel/phone sheet/legend chip occluding one side of the map), not just a uniform
+   * number — `boundsToCameraView` already shifts the fitted center toward the free area for this
+   * exact case (its own header: "P6/D8... a model fit is not centred behind the very chrome that
+   * is hiding half of it"); only this method's own type signature was still narrower than what it
+   * calls, so the species lens had no way to pass one through.
    */
-  flyToBounds(bounds: CameraBoundsInput, opts?: { padding?: number }): void;
+  flyToBounds(bounds: CameraBoundsInput, opts?: { padding?: number | ChromePadding }): void;
   /** the current camera, rounded for the URL. */
   camera(): MapView;
   resize(): void;
@@ -180,7 +188,7 @@ export function createMap(container: HTMLElement, opts: CreateMapOptions): MapHa
       writer?.cancel();
       map.flyTo({ center: [area.lon, area.lat], zoom: area.zoom }, { ...PROGRAMMATIC_EVENT_DATA });
     },
-    flyToBounds(bounds: CameraBoundsInput, opts?: { padding?: number }) {
+    flyToBounds(bounds: CameraBoundsInput, opts?: { padding?: number | ChromePadding }) {
       writer?.cancel();
       const rect = map.getContainer().getBoundingClientRect();
       const view = boundsToCameraView(

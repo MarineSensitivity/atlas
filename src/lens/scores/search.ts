@@ -79,8 +79,11 @@ export function matchZones(boot: unknown, query: string, limit = MAX_RESULTS): Z
     for (const z of zoneRows(boot, unit)) {
       const rank = matchRank(q, z.key, z.name);
       if (rank === null) continue;
+      // V1 fix: pass `unit` so the app-side PROGRAM_AREA_NAMES fallback (zoneStats.ts#paLabel)
+      // only applies to programarea matches -- a subregion/ecoregion match never borrows a
+      // same-keyed Program Area's name.
       ranked.push({
-        m: { kind: "zone", unit, key: z.key, label: paLabel(z.key, z.name) },
+        m: { kind: "zone", unit, key: z.key, label: paLabel(z.key, z.name, unit) },
         rank,
         order: order++,
       });

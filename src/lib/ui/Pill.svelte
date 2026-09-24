@@ -14,7 +14,7 @@
     controls?: string;
     disabled?: boolean;
     /** required in practice whenever `disabled` is true -- spec.md: "a dashed border,
-     * strike-through, aria-disabled, and a tooltip that says WHY" */
+     * strike-through, aria-disabled, and a reason that says WHY". */
     disabledReason?: string;
     onclick?: () => void;
     class?: string;
@@ -31,31 +31,8 @@
     class: className = "",
   }: Props = $props();
 
-  let showTooltip = $state(false);
   // per-INSTANCE, not per-label (SC 4.1.2) -- see HexButton.svelte's identical fix.
-  const tooltipId = uid("pill-tip");
-
-  // SC 1.4.13: hoverable (a short close delay covers the gap the pointer crosses to reach the
-  // tooltip) and Esc-dismissible without moving focus -- see HexButton.svelte's identical fix.
-  let closeTimer: ReturnType<typeof setTimeout> | undefined;
-
-  function showNow() {
-    clearTimeout(closeTimer);
-    showTooltip = true;
-  }
-
-  function scheduleHide() {
-    clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => (showTooltip = false), 150);
-  }
-
-  function handleKeydown(event: KeyboardEvent) {
-    if (event.key === "Escape" && showTooltip) {
-      event.stopPropagation();
-      clearTimeout(closeTimer);
-      showTooltip = false;
-    }
-  }
+  const reasonId = uid("pill-reason");
 </script>
 
 <span class="pill-wrap">
@@ -67,34 +44,35 @@
     aria-expanded={expanded}
     aria-controls={controls}
     aria-disabled={disabled ? "true" : undefined}
-    aria-describedby={disabled && disabledReason ? tooltipId : undefined}
+    aria-describedby={disabled && disabledReason ? reasonId : undefined}
     {onclick}
-    onkeydown={handleKeydown}
-    onfocus={showNow}
-    onblur={scheduleHide}
-    onmouseenter={showNow}
-    onmouseleave={scheduleHide}
   >
     {label}
   </button>
   {#if disabled && disabledReason}
-    <span
-      class="tooltip"
-      id={tooltipId}
-      role="tooltip"
-      hidden={!showTooltip}
-      onmouseenter={showNow}
-      onmouseleave={scheduleHide}
-    >
-      {disabledReason}
-    </span>
+    <!-- V1 fix (Opus eyes-on review, 2026-09-24): "struck-through 'Show analysis cells' has no
+         visible reason" -- this used to be a hover/focus-only tooltip (`position: absolute`,
+         shown by JS on pointerenter/focus), which (a) had nothing to show on a phone TAP (no
+         hover, and focus-then-immediately-blur on touch never gave it time to register) and (b)
+         clipped invisibly whenever an ancestor panel/list scrolled (`overflow: auto/hidden`
+         crops an absolutely-positioned child that extends past its box -- exactly what "clipped
+         at the panel edge" was). A plain, ALWAYS-RENDERED line of text in normal document flow
+         can neither: it needs no interaction to appear, and normal-flow content is never clipped
+         by an ancestor's overflow the way an absolutely-positioned one can be. -->
+    <span class="pill-reason" id={reasonId}>{disabledReason}</span>
   {/if}
 </span>
 
 <style>
   .pill-wrap {
-    position: relative;
-    display: inline-block;
+    /* V1 fix: stacks the pill above its always-visible reason line (below it, per the brief) --
+       `inline-flex` (not `inline-block`) so this wrapper still sits inline among sibling
+       buttons/pills in a toolbar row, wrapping the row's own flow to fit the extra line's
+       height rather than the old absolutely-positioned tooltip's zero-layout-impact footprint. */
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
   }
 
   .pill {
@@ -138,20 +116,15 @@
     cursor: not-allowed;
   }
 
-  .tooltip {
-    position: absolute;
-    left: 50%;
-    top: calc(100% + var(--space-1));
-    transform: translateX(-50%);
-    padding: var(--space-1) var(--space-3);
-    border: 1px solid var(--border-control);
-    border-radius: var(--radius-control);
-    background: var(--surface-raised);
-    color: var(--text-primary);
-    font-size: var(--text-sm);
-    white-space: nowrap;
-    box-shadow: var(--elev-2);
-    /* hoverable (SC 1.4.13): the pointer must be able to reach and rest on the tooltip itself */
-    z-index: 10;
+  /* V1 fix: a normal-flow line under the pill, ALWAYS rendered while disabled (never gated on
+     hover/focus/tap) -- see this file's own script header for why this replaces the old
+     absolutely-positioned hover tooltip (visible on a phone tap; never clipped by an ancestor's
+     `overflow`). Wraps at a readable width rather than a single unbroken `nowrap` line, since a
+     real reason ("Select a drawn or uploaded place first.") is a full sentence, not a short label. */
+  .pill-reason {
+    max-width: 220px;
+    font-size: var(--text-xs);
+    line-height: 1.3;
+    color: var(--text-secondary);
   }
 </style>

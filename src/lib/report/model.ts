@@ -388,7 +388,10 @@ export function expandPlaces(places: readonly Place[], boot: unknown): PlaceStub
           place: single,
           zoneKey: key,
           unit,
-          name: paLabel(key, typeof row?.name === "string" ? row.name : undefined),
+          // V1 fix: pass `unit` so the app-side PROGRAM_AREA_NAMES fallback (zoneStats.ts#paLabel)
+          // only fires for a Program Area place, never for an er/sr/pl place that happens to share
+          // a key with one.
+          name: paLabel(key, typeof row?.name === "string" ? row.name : undefined, unit),
           token: encodePlace(single),
         });
       }
