@@ -70,11 +70,12 @@
   import { studyAreaFromBoot, type StudyArea } from "../lib/map/interaction";
   import {
     INITIAL_AREA_CAMERA_STATE,
-    PHONE_STUDY_AREA_ZOOM_BOOST,
     paddedStudyAreaCenter,
+    phoneDefaultCamera,
     shouldFlyToArea,
     type AreaCameraState,
     type ChromePadding,
+    type Viewport,
   } from "../lib/map/camera";
   import {
     desktopPanelPadding,
@@ -595,21 +596,29 @@
     );
   }
 
-  // P2 round 2 (orchestrator, real-build eyes-on, 2026-09-24): the study-area preset's own zoom
-  // (~2.16) is in the regime where MapLibre's GLOBE projection renders the whole sphere regardless
-  // of the shift below -- boosting it here, BEFORE the shift, is what actually frames CONUS/the
-  // Gulf/Atlantic coast instead of Canada/Greenland (`PHONE_STUDY_AREA_ZOOM_BOOST`'s own header has
-  // the measured proof). Desktop's own free area is tall enough (topbar-only padding, no sheet)
-  // that this was never needed there.
-  function boostedForPhone(area: StudyArea): StudyArea {
-    return isPhone ? { ...area, zoom: area.zoom + PHONE_STUDY_AREA_ZOOM_BOOST } : area;
-  }
-
+  // P9 (Opus docs re-check appendix finding A2, live-verified on 0.10.48): P2 round 2's fix
+  // (boost the zoom of the SAME `FALLBACK_FULL_STUDY_AREA` centroid the desktop camera uses, then
+  // shift for chrome) still left the phone's free area on that centroid's own neighbourhood --
+  // central North Dakota, on the Canada border, nowhere near a scored ocean cell. Measured live:
+  // `lon -101.304, lat 33.509, zoom 3.01`, and the free area showed Canada/the Great Lakes, 0%
+  // scored cells. `camera.ts#phoneDefaultCamera`'s own header has the full measurement and why a
+  // DIFFERENT anchor (a real, hand-picked Gulf-of-Mexico/south-east-coast bbox), not a bigger boost
+  // of the same wrong point, is the fix. Desktop's own free area is tall enough (topbar-only
+  // padding, no sheet) that the FULL preset's own unboosted centroid already keeps real coastline
+  // in frame, so only the phone branch changes here.
   function initialStudyArea(area: StudyArea): StudyArea {
     if (sel.map) return area; // an explicit URL camera is never second-guessed
-    const boosted = boostedForPhone(area);
-    const padded = paddedStudyAreaCenter(boosted, boosted.zoom, initialChromePadding());
-    return { ...boosted, ...padded };
+    if (isPhone) {
+      // this call always resolves to `FALLBACK_FULL_STUDY_AREA` regardless of `sel.area`
+      // (`studyAreaFromBoot(null, sel.area)` cannot see a release's real rows before `boot`
+      // arrives -- see the "study-area camera" effect's own comment below) -- i.e. this IS always
+      // the default first view, never a real `?area=` pick caught mid-flight.
+      const viewport: Viewport = { width: window.innerWidth, height: window.innerHeight };
+      const fit = phoneDefaultCamera(viewport, initialChromePadding());
+      return { ...area, lon: fit.center[0], lat: fit.center[1], zoom: fit.zoom };
+    }
+    const padded = paddedStudyAreaCenter(area, area.zoom, initialChromePadding());
+    return { ...area, ...padded };
   }
 
   // usability M4's OTHER half: a light loader over the map until the first raster/basemap tile
@@ -791,12 +800,15 @@
   // construction, above) necessarily used `initialChromePadding()`'s pre-mount ESTIMATE of the
   // sheet's height (`phonePadding`'s own 46svh-derived fraction), because Sheet.svelte has not
   // mounted yet at that point. `sheetGeom` (this file's own `ongeometry` binding, P1's addition)
-  // reports the sheet's REAL `offsetHeight` shortly after -- this effect re-applies the padded fit
-  // ONCE, with that real number, PURELY for accuracy (`chromePadding.ts#phonePaddingFromMeasured`'s
-  // own header: usually within ~15px of the estimate; `PHONE_STUDY_AREA_ZOOM_BOOST`, applied both
-  // times, is what actually fixes the framing). Guarded to the DEFAULT area only and to fire at
+  // reports the sheet's REAL `offsetHeight` shortly after -- this effect re-applies the fit ONCE,
+  // with that real number, purely for accuracy (`chromePadding.ts#phonePaddingFromMeasured`'s own
+  // header: usually within ~15px of the estimate). Guarded to the DEFAULT area only and to fire at
   // most once, so it can never race or compete with the `sel.area`-driven effect just above (a
   // real `?area=` selection, or a user's own pan, always wins and this never touches either).
+  //
+  // P9: uses the SAME `phoneDefaultCamera` bbox fit `initialStudyArea` does above (never the old
+  // boost-the-desktop-centroid math -- see that function's own comment for why it was replaced) --
+  // just with the sheet's real measured height instead of the pre-mount estimate.
   let refitOnceForMeasuredSheet = false;
   $effect(() => {
     if (refitOnceForMeasuredSheet) return;
@@ -804,10 +816,10 @@
     if (sheetGeom.height <= 0) return; // Sheet.svelte has not reported a real measurement yet
     if (sel.map || sel.area !== DEFAULT_SEL.area) return; // not the default padded first view
     refitOnceForMeasuredSheet = true;
-    const area = boostedForPhone(studyAreaFromBoot(boot, sel.area));
-    const padding = phonePaddingFromMeasured(sheetGeom.height);
-    const padded = paddedStudyAreaCenter(area, area.zoom, padding);
-    mapHandle.flyTo({ ...area, ...padded });
+    const area = studyAreaFromBoot(boot, sel.area);
+    const viewport: Viewport = { width: window.innerWidth, height: window.innerHeight };
+    const fit = phoneDefaultCamera(viewport, phonePaddingFromMeasured(sheetGeom.height));
+    mapHandle.flyTo({ ...area, lon: fit.center[0], lat: fit.center[1], zoom: fit.zoom });
   });
 
   // one composed style, re-applied with setStyle(diff:true) whenever theme, projection, the

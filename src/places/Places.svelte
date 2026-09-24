@@ -61,8 +61,16 @@
     loadTerraDraw,
     type DrawSession,
     type DrawShape,
+    type FeatureId,
     type TerraDrawModules,
   } from "./draw";
+  import {
+    drawFeaturePlaceIndex,
+    emptyDrawFeatureIndex,
+    withDrawFeature,
+    withoutDrawPlace,
+    type DrawFeatureIndex,
+  } from "./drawFeatures";
   import { densifyGeometry } from "./densify";
   import { geomPlaceFrom } from "./geomPlace";
   import { cellsFeatureCollection, MAX_ANALYSIS_CELLS } from "./cellSquares";
@@ -249,6 +257,13 @@
   let drawModules: TerraDrawModules | undefined;
   let drawMode = $state<DrawShape | "select" | null>(null);
   let drawBusy = $state(false);
+  // P9: terra-draw's own `finish` event fires on an EDIT of an already-drawn feature too (drag a
+  // corner, resize, drag the whole shape), not only on a fresh draw (`draw.ts`'s own `onFinish`
+  // comment) -- this maps THIS session's feature ids to the place index each one created, so
+  // `onDrawFinish` can tell "a new shape" from "the same shape moved" instead of appending a
+  // duplicate row every time. Scoped to one session: `ensureDrawSession` starts it fresh, `stopDraw`
+  // drops it (`drawFeatures.ts`'s own header explains why nothing needs to survive past a session).
+  let drawFeatures: DrawFeatureIndex = emptyDrawFeatureIndex();
 
   // item M1's regression (placesMap.svelte.ts's own header): keep the store's "who owns map
   // clicks" flag in sync with local pick/draw state, so Shell.svelte's click dispatch can skip the
@@ -263,15 +278,37 @@
     return rings.reduce((n, poly) => n + poly.reduce((m, r) => m + r.length, 0), 0);
   }
 
-  function onDrawFinish(rawGeometry: AreaGeometry) {
+  // P9: an edit of a feature THIS session already turned into a place (`onDrawFinish` below,
+  // keyed by terra-draw's own feature id) updates that SAME row -- same index, same name,
+  // re-analysed through `geomPlaceFrom` -- never appends a new one (the "dragging a drawn shape's
+  // corner adds a duplicate place" bug, live-verified on 0.10.48).
+  function editDrawnPlace(index: number, rawGeometry: AreaGeometry) {
+    const existing = places[index];
+    if (!existing || existing.kind !== "geom") return; // the row moved/vanished under us -- drop it
+    const place = geomPlaceFrom(rawGeometry, existing.name);
+    const next = places.slice();
+    next[index] = place;
+    writePlaces(next, index);
+    mapStore.setOutline(featureCollectionOf(densifyGeometry(place.geometry)));
+    announce("Place updated.");
+  }
+
+  function onDrawFinish(featureId: FeatureId, rawGeometry: AreaGeometry, isNewFeature: boolean) {
+    const editIndex = isNewFeature ? undefined : drawFeaturePlaceIndex(drawFeatures, featureId);
+    if (editIndex !== undefined) {
+      editDrawnPlace(editIndex, rawGeometry);
+      return;
+    }
     const place = geomPlaceFrom(rawGeometry, `Drawn place ${places.length + 1}`);
     const result = addPlace(places, place);
     if (!result.ok) {
       announce(result.reason ?? "Couldn't add that shape.");
       return;
     }
+    const index = result.places.length - 1;
+    drawFeatures = withDrawFeature(drawFeatures, featureId, index);
     remember(place);
-    writePlaces(result.places, result.places.length - 1);
+    writePlaces(result.places, index);
     track(
       "place_draw",
       placeDrawParams(vertexCountOf(place.geometry), approxAreaKm2(place.geometry)),
@@ -298,6 +335,7 @@
     try {
       drawModules ??= await loadTerraDraw();
       drawSession = createDrawSession({ map, onFinish: onDrawFinish }, drawModules);
+      drawFeatures = emptyDrawFeatureIndex(); // a fresh TerraDraw instance -> a fresh id namespace
       return drawSession;
     } catch {
       announce("Couldn't load the drawing tools — try Enter coordinates instead.");
@@ -616,6 +654,10 @@
   function remove(i: number) {
     remember(places[i]);
     const next = removePlaceAt(places, i);
+    // P9: a row this DRAW SESSION mapped to `i` no longer exists -- drop it and shift every later
+    // mapped index down, so a later edit of an active drawn feature lands on the row it actually
+    // drew instead of whatever now sits at a stale index (drawFeatures.ts's own header).
+    drawFeatures = withoutDrawPlace(drawFeatures, i);
     selStore.set({
       pl: hashFromPlaces(next),
       sel: sel.sel === `place:${i}` ? undefined : sel.sel,

@@ -1,0 +1,15 @@
+diff --git a/src/lib/map/camera.ts b/src/lib/map/camera.ts
+index e4e0971..d3c0998 100644
+--- a/src/lib/map/camera.ts
++++ b/src/lib/map/camera.ts
+@@ -252,8 +252,8 @@ export function paddedStudyAreaCenter(
+  * centroid already keeps real coastline in frame at the study-area preset's own zoom).
+  */
+ export const PHONE_DEFAULT_BOUNDS: CameraBoundsInput = [
+-  [-92, 24],
+-  [-84, 31],
++  [-102, 45],
++  [-100, 47],
+ ];
+ 
+ /** the phone's DEFAULT first-view camera -- see {@link PHONE_DEFAULT_BOUNDS}'s own header. */
