@@ -46,21 +46,41 @@ export function describeShareSummary(s: ShareSummary): string {
  * verbatim in that case copies the ORIGINAL, unsimplified (and often far longer) link while the
  * dialog is showing the SIMPLIFIED one's length: a real link/number divergence, not a cosmetic one.
  *
- * A plain string substring-replace, not a `URLSearchParams` round trip: `oldPl` and `newHash` are
- * both the codec's own alphabet (`g1`'s base64url token, or `z.`/`u.` place tokens joined by
- * literal `~`/`,` -- every one of those characters is already a valid, unescaped URL-fragment
- * character, RFC 3986 `pchar` `/` `sub-delims`), so replacing `pl=<oldPl>` with `pl=<newHash>`
- * changes exactly the bytes that differ and nothing else -- which is also what makes
- * `shareUrl(...).length` land EXACTLY on `fit.length` (both are `base + hash.length` over the
- * IDENTICAL base), not merely close.
+ * P8 item 5 (Opus docs review, app finding #6): the fix above STILL did a plain string
+ * substring-replace of `pl=<oldPl>` against `href` -- and that assumption ("every one of those
+ * characters is already a valid, unescaped URL-fragment character") is false for the REAL address
+ * bar. `formatSel` (`lib/state/codec.ts`) writes the hash through `URLSearchParams`, which DOES
+ * percent-encode `~` (the multi-place separator) to `%7E`, and a place name's own internal "%20"
+ * escape (a space, `encodeName()` in `lib/geo/placeCodec.ts`) becomes a literal `%` re-encoded to
+ * "%2520". `oldPl` is always the RAW, undecoded g1 token, so with more than one place or a name
+ * containing a space, the literal substring `pl=<oldPl>` never actually appears in `href` and
+ * `.replace()` silently no-ops -- "Copy link anyway" then copied the FULL ORIGINAL link,
+ * unsimplified, while the dialog's own summary showed the fitted length. Live-shaped repro:
+ * `href = ".../#pl=g1.Big%20Box.AAA%7Eg1.Small.BBB"`, `oldPl = "g1.Big Box.AAA~g1.Small.BBB"` --
+ * `pl=g1.Big Box.AAA~g1.Small.BBB` is nowhere in `href`.
+ *
+ * Fixed by never comparing strings at all: parse `href` with `URL`/`URLSearchParams` (which
+ * decodes exactly the one layer `formatSel` applied) and set `pl` on the PARSED param bag, so the
+ * copied link always carries the dialog's own fitted hash regardless of what characters it or any
+ * other place in the (unread) old value contained. `oldPl` is kept in the signature for call-site
+ * stability -- `URLSearchParams#set` already replaces-or-inserts on its own, so the "existing vs.
+ * none" branch this used to need is gone.
  */
 export function shareUrl(href: string, oldPl: string | undefined, newHash: string): string {
-  if (oldPl) return href.replace(`pl=${oldPl}`, `pl=${newHash}`);
-  // no existing #pl= to replace (sharing before any place has ever been written back) -- insert
-  // one at the front of the hash, ahead of any other hash key (e.g. `t=`).
+  void oldPl;
   const url = new URL(href);
-  const rest = url.hash.replace(/^#/, "");
-  url.hash = rest ? `#pl=${newHash}&${rest}` : `#pl=${newHash}`;
+  const existing = new URLSearchParams(url.hash.replace(/^#/, ""));
+  existing.delete("pl");
+  // `pl` first, matching `codec.ts#formatSel`'s own key order (it calls `hashParams.set("pl", …)`
+  // before `"t"`) -- so a copied link reads the same way the address bar always has, whether or
+  // not this href already carried a `pl=`.
+  const hashParams = new URLSearchParams();
+  hashParams.set("pl", newHash);
+  for (const [k, v] of existing) hashParams.append(k, v);
+  // the same cosmetic un-escaping `codec.ts#prettyEncode` applies when the address bar itself
+  // writes this hash, so a copied link reads the same way (",": "%2C", ":": "%3A" -- neither
+  // character is ever part of a `pl=` token itself, both can appear in a `t=` title).
+  url.hash = `#${hashParams.toString().replace(/%2C/g, ",").replace(/%3A/g, ":")}`;
   return url.toString();
 }
 

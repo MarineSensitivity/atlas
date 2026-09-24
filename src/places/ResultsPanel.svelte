@@ -21,6 +21,7 @@
     type ScoreResults,
   } from "./results";
   import { estimateFetchPlan, formatMb, needsConfirmation, type FetchPlan } from "./fetchPlan";
+  import { downloadCsv, slugStem, toCsv } from "./csv";
 
   interface Props {
     place: GeomPlace;
@@ -193,6 +194,19 @@
       sortable: true,
     },
   ];
+
+  // P8 item 4: wires `DataTable`'s own `onExport` hook -- see csv.ts's header for why this is
+  // fixed rather than removed (no other CSV reaches a drawn/entered place's own components or
+  // species). `stem` reruns per place, never cached, so a rename before exporting is reflected.
+  const stem = $derived(slugStem(place.name));
+
+  function onExportComponents(rows: ComponentScore[]) {
+    downloadCsv(toCsv(rows, componentColumns), `${stem}_components`);
+  }
+
+  function onExportSpecies(rows: SpeciesRow[]) {
+    downloadCsv(toCsv(rows, speciesColumns), `${stem}_species`);
+  }
 </script>
 
 <section class="results" aria-label="Results for {place.name}">
@@ -224,6 +238,7 @@
         rows={scoreResults.components}
         getRowId={(r) => r.metric_key}
         height={200}
+        onExport={onExportComponents}
       />
     {/if}
   {/if}
@@ -238,6 +253,7 @@
           rows={speciesRows}
           getRowId={(r) => r.mdl_key}
           height={260}
+          onExport={onExportSpecies}
         />
       {:else if loadingSpecies}
         <p class="status">

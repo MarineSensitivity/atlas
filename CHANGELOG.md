@@ -1,3 +1,36 @@
+# atlas 0.10.47
+
+P8 (Places defects found by P7's handback and the Opus 5.5 docs review, dark theme):
+
+- **A place touching land or past a release's published footprint no longer fails.** A drawn place
+  asks for `app/cell` tiles by grid position, and a release does not always publish every tile
+  (live-reproduced: v7, `-170,50,-130,60` — tile 593 answers 403 while its neighbours answer 200).
+  A missing tile is now read as "no scored cells there," and the row still shows its composite from
+  whichever tiles the release DID publish; a genuine failure (a 5xx, a network error) still surfaces
+  the same honest "analysis unavailable…" message as before.
+- **Fixed: a Program Area row never showed numbers.** It was reading `composite`/`score`/
+  `pct_covered`/`coverage` off the top of a `boot.json` zone row — fields no release actually
+  publishes. The composite lives nested under `metrics`, keyed by the release's own composite
+  metric; a row now reads it from there, and reads "not published for this release" (never "not
+  analysed yet") when a release genuinely carries none.
+- **Fixed: a row's "Open in report" reported every place in the panel, not just that row.** It now
+  builds the report link from only the clicked row's own place.
+- **Fixed: "Export CSV" on a place's Components/Species tables did nothing.** Both tables now
+  download a real CSV of the visible rows.
+- **Fixed: the Share dialog's "Copy link anyway" could copy the full, unsimplified original link**
+  when several places were in the URL or a place's name contained a space — the address bar
+  percent-encodes the link (`~` → `%7E`, a name's own internal `%20` escape doubled to `%2520`), and
+  the copy logic compared against the RAW, unencoded value. The copied link is now built by parsing
+  the address bar, never by matching text against it.
+- **Fixed: the coordinate-entry dialog skipped the "must touch the U.S. study area" check** that
+  file uploads already enforce — typing or pasting coordinates entirely outside the study area is
+  now refused with the same message an out-of-area upload gets.
+- **GeoPackage now says plainly that it isn't supported yet** ("export as GeoJSON or a zipped
+  shapefile"), instead of telling you to wait for the map to finish loading and try again — that
+  could never succeed. The upload drop-zone's format list marks it "(not yet)".
+- **Fixed: the "Done" button after drawing a shape didn't actually end draw mode** — it stayed on
+  screen and the draw session kept claiming map clicks. Clicking it now really ends the session.
+
 # atlas 0.10.46
 
 P7 (Ben, live 0.10.43, "Places" tool, dark theme): after drawing a second place, BOTH places'
