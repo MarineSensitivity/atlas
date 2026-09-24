@@ -1,12 +1,20 @@
 <script lang="ts">
   // atlas-4 step 3 — the release picker (parity doc §5.5 modal 1) + D15's "under review" notice,
   // consolidated into one modal (a documented simplification over the ported app's three separate
-  // dialogs — see the atlas-4 report). A restricted release is offered ONLY as a link to the
-  // preview host's `/{ver}/atlas/` path (never `?ver=` on Pages, D15); a public one is an ordinary
+  // dialogs — see the atlas-4 report). A restricted release is offered as a link to the preview
+  // host's `/{ver}/atlas/` path (never `?ver=` on Pages, D15) ONCE atlas-9 has deployed that route
+  // (`VITE_PREVIEW_ATLAS_ROUTE`, round 2 Q4 — see `previewContinuation` below); until then it falls
+  // back to the Scores/Species apps that already exist there. A public release is an ordinary
   // `?ver=` link (a real navigation, matching the ported app's own version switch).
   import Modal from "../../lib/ui/Modal.svelte";
   import { accessOf, type VersionRow } from "../../lib/release/access";
-  import { previewLinkFor, type PreviewLinkLoc } from "../../lib/release/previewLink";
+  import {
+    previewAtlasRouteEnabled,
+    previewLinkFor,
+    previewScoresLinkFor,
+    previewSpeciesLinkFor,
+    type PreviewLinkLoc,
+  } from "../../lib/release/previewLink";
 
   interface Props {
     open: boolean;
@@ -24,7 +32,22 @@
     "unknown-version": "is not a version this host recognizes.",
     "registry-unreadable": "could not be resolved (the version registry did not load).",
   };
+
+  // round 2, Q4 (P8 item 8, deferred): atlas-9 has not deployed the preview host's `/{ver}/atlas/`
+  // route yet -- a link to it would 404 a reviewer who followed it in good faith. Gated behind the
+  // build-time flag; see previewLink.ts's own header for the flag's shape and the fallback links.
+  const atlasRouteEnabled = previewAtlasRouteEnabled(import.meta.env.VITE_PREVIEW_ATLAS_ROUTE);
 </script>
+
+{#snippet previewContinuation(ver: string)}
+  {#if atlasRouteEnabled}
+    <a href={previewLinkFor(ver, loc)}>Continue on the preview host</a>
+  {:else}
+    The preview host does not serve the Atlas yet; open the <a href={previewScoresLinkFor(ver)}
+      >Scores</a
+    >/<a href={previewSpeciesLinkFor(ver)}>Species</a> apps there instead.
+  {/if}
+{/snippet}
 
 <Modal {open} title="Data release" {onclose}>
   {#if denied}
@@ -32,7 +55,7 @@
       <strong>{denied.ver}</strong>
       {DENIAL_TEXT[denied.reason] ?? "is not available on this host."}
       {#if denied.reason === "restricted"}
-        <a href={previewLinkFor(denied.ver, loc)}>Continue on the preview host</a>.
+        {@render previewContinuation(denied.ver)}
       {/if}
     </p>
   {/if}
@@ -52,7 +75,7 @@
           {/if}
           {#if access !== "public"}
             <span class="badge badge--restricted">restricted</span>
-            <a href={previewLinkFor(row.ver ?? "", loc)}>Continue on the preview host</a>
+            {@render previewContinuation(row.ver ?? "")}
           {:else if row.ver === currentVer}
             <span class="badge">current</span>
           {:else}
