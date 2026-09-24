@@ -1,6 +1,7 @@
 # Atlas — round-2 status (updated by the orchestrator at every push)
 
-Last update: 2026-09-24 06:45 CEST (0.10.36 pushed: dockable panel, About + Feedback in the top bar, padded first view, attribution, phone legend chip) ·
+Last update: 2026-09-24 08:03 CEST (0.10.41 pushed: P1 phone legend chip + legend modal, P2 flower; 0.10.40 and
+0.10.38 before it) ·
 dated log: `workflows/.claude/plans_todo/atlas-8 verification, accessibility, performance.md` (Progress log) ·
 user-facing changes per version: `CHANGELOG.md`.
 
