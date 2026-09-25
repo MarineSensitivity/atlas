@@ -32,7 +32,9 @@ test.use({ viewport: { width: 1280, height: 800 } });
 // "Flower plot" for the Scores lens). Opening it is now "Layers" (the rail tool) then "Flower
 // plot" (the tab) -- the second click is a no-op if that tab is already showing.
 async function openFlower(page: Page) {
-  await page.getByRole("button", { name: "Layers", exact: true }).click();
+  // scoped to `#rail-region`: the Layers pane's own tab switch ALSO has a button labelled "Layers"
+  // (the active-tab pill) once the panel is open, so an unscoped lookup is ambiguous (strict mode).
+  await page.locator("#rail-region").getByRole("button", { name: "Layers", exact: true }).click();
   await page.getByRole("button", { name: "Flower plot" }).click();
   const flower = page.locator(".flower-title");
   await expect(flower).toBeVisible({ timeout: 10_000 });

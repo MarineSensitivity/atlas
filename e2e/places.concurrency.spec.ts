@@ -137,7 +137,11 @@ async function gotoRelease(page: Page, hold = false): Promise<Held> {
   await routeSealFixture(page);
   await page.goto("/");
   await waitForHydration(page);
-  await page.locator("#rail-region button[aria-label='Places']").click();
+  // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- open the
+  // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
+  // even if a PRIOR step on this page already switched to the Report tab).
+  await page.locator("#rail-region button[aria-label='Report']").click();
+  await page.getByRole("button", { name: "Places", exact: true }).click();
   return { requested, release };
 }
 

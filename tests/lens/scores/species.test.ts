@@ -8,6 +8,7 @@ import {
   formatPercent2,
   modelHref,
   modelSelPatch,
+  placesSubjectHeader,
   speciesFilenameStem,
   speciesHeader,
   speciesTableEmptyText,
@@ -71,6 +72,19 @@ describe("speciesHeader", () => {
     expect(
       speciesHeader({ selection: null, unit: "cell", unitLabel: null, zoneAllKey: "USA" }),
     ).toBe("Species in All US waters");
+  });
+});
+
+// R3-W8 item 5: the Table's own subject line when a non-empty EXPLICIT Places list governs
+// (reportSubjects(), src/lib/state/subjects.ts) -- names the LIST, not a single cell/zone.
+describe("placesSubjectHeader", () => {
+  it("singular for exactly one place", () => {
+    expect(placesSubjectHeader(1)).toBe("Species for 1 place");
+  });
+
+  it("plural for two or more places", () => {
+    expect(placesSubjectHeader(2)).toBe("Species for 2 places");
+    expect(placesSubjectHeader(5)).toBe("Species for 5 places");
   });
 });
 

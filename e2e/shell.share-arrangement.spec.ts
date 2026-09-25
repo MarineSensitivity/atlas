@@ -78,7 +78,9 @@ test.describe("R3-W8 item 3: Share reproduces the UI arrangement", () => {
     await expect(page).toHaveURL(/[?&]zl=0(&|$)/);
 
     const shared = await clickShareAndCapture(page);
-    expect(shared).toMatch(/[?&]ui=1\./);
+    // R3-W8 item 4 bumped the `ui=` token to version 2 (a 7th `tab` field for the Layers pane's
+    // own two tabs) -- see uiState.ts's own header.
+    expect(shared).toMatch(/[?&]ui=2\./);
     expect(shared).toMatch(/[?&]in=rng_fws(&|$)/);
     expect(shared).toMatch(/[?&]zl=0(&|$)/);
 

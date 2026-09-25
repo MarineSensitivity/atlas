@@ -17,6 +17,7 @@
   import {
     csvFilename,
     modelSelPatch,
+    placesSubjectHeader,
     speciesFilenameStem,
     speciesHeader,
     speciesTableEmptyText,
@@ -29,8 +30,9 @@
   import type { CompositionRow } from "./composition";
   // atlas-7 step 4: "Report on selected" builds the SAME `z.<set>.<keys>` token the Places panel's
   // own zone places use (places/model.ts) -- never a second zone-place encoding.
-  import { hashFromPlaces, zoneSetForUnit } from "../../places/model";
+  import { hashFromPlaces, placesFromHash, zoneSetForUnit } from "../../places/model";
   import { paLabel } from "../../places/zoneStats";
+  import { reportSubjects } from "../../lib/state/subjects";
 
   // `Composition.svelte` is loaded via a DYNAMIC `import()`, never a static one, even though it
   // contains no forbidden-marker text itself: it is what dynamically imports `Treemap.svelte`, and
@@ -92,15 +94,27 @@
       ? paLabel(currentZone.key, currentZone.name, selection.unit)
       : undefined,
   );
+  // R3-W8 item 5: "the Table's subject line uses the same rule and says so" -- `reportSubjects()`
+  // (src/lib/state/subjects.ts) is the ONE rule that decides whether a non-empty EXPLICIT Places
+  // list (`sel.pl`) or the Last-clicked slot (`sel.sel`, this panel's own `selection` prop already
+  // IS that slot, parsed once upstream in ScoresLens.svelte) governs. While no place has been
+  // explicitly added, this is a no-op (`subject.kind` is always "last-clicked" and the header text
+  // is byte-identical to before this item) -- the species/zones DATA this panel queries still comes
+  // from `selection`/`unit`/`lyr` alone (aggregating species across an explicit multi-place list is
+  // a larger feature left to a later round; see this item's own report for the scoping note).
+  const places = $derived(placesFromHash(sel.pl));
+  const subject = $derived(reportSubjects(sel, places));
   const header = $derived(
-    speciesHeader({
-      selection,
-      zoneName: currentZoneLabel,
-      unit: selection?.kind === "zone" ? selection.unit : unit,
-      unitLabel: unitLabel ?? null,
-      zoneAllKey: allKey,
-      cellCoords,
-    }),
+    subject.kind === "places"
+      ? placesSubjectHeader(subject.items.length)
+      : speciesHeader({
+          selection,
+          zoneName: currentZoneLabel,
+          unit: selection?.kind === "zone" ? selection.unit : unit,
+          unitLabel: unitLabel ?? null,
+          zoneAllKey: allKey,
+          cellCoords,
+        }),
   );
   const filenameStem = $derived(
     speciesFilenameStem({

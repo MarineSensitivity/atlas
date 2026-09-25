@@ -14,7 +14,8 @@
 // timed out with the sheet's content intercepting the tap").
 //
 // The phone species search (m1-adjacent, a different owner) is out of scope here -- this spec only
-// taps the Places rail item and reads the sheet's own title, never species state.
+// taps the Report rail item (R3-W8 item 5: Places folded into the Report pane as its own default
+// tab) and reads the sheet's own title, never species state.
 import { expect, test, type Page } from "@playwright/test";
 import { gotoPublicShell, waitForHydration } from "./hermetic";
 
@@ -45,7 +46,7 @@ async function setDetent(page: Page, buttonLabel: string) {
 
 test.describe("B4: the phone tool rail is reachable at every sheet detent", () => {
   for (const { name, buttonLabel } of DETENTS) {
-    test(`detent "${name}": tapping the Places rail item actually opens Places`, async ({
+    test(`detent "${name}": tapping the Report rail item actually opens Report (defaulting to its Places tab)`, async ({
       page,
     }) => {
       await gotoPhoneShell(page);
@@ -58,9 +59,11 @@ test.describe("B4: the phone tool rail is reachable at every sheet detent", () =
 
       // the real tap: Playwright refuses to click a target another element visually covers, so
       // this alone reproduces the bug (a timeout) on unfixed CSS -- no custom hit-testing needed.
-      await page.locator("#rail-region button[aria-label='Places']").click({ timeout: 5_000 });
+      await page.locator("#rail-region button[aria-label='Report']").click({ timeout: 5_000 });
 
-      await expect(page.locator(".sheet-title")).toHaveText("Places");
+      // R3-W8 item 5: the Report pane opens on its default "Places" tab, and the sheet's own title
+      // says so ("Report · Places", Shell.svelte's `panelTitle`).
+      await expect(page.locator(".sheet-title")).toHaveText("Report · Places");
     });
   }
 

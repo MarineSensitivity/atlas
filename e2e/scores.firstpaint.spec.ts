@@ -129,6 +129,11 @@ for (const ver of ["v7", "v9"] as const) {
       // in-panel copy, visible only while the Layers tool happened to be open) -- clicking a
       // DIFFERENT tool first proves this no longer matters.
       await gotoScoresMap(page, ver);
+      // R3-W8 item 4: the Flower plot moved into the Layers pane's own second tab.
+      await page
+        .locator("#rail-region")
+        .getByRole("button", { name: "Layers", exact: true })
+        .click();
       await page.getByRole("button", { name: "Flower plot" }).click();
       const legend = page.locator('[data-testid="scores-legend"]');
       await expect(legend).toBeVisible({ timeout: 10_000 });
@@ -141,6 +146,11 @@ for (const ver of ["v7", "v9"] as const) {
 
     test("shows the default flower (nothing selected, Tier 0 only)", async ({ page }) => {
       await gotoScoresMap(page, ver);
+      // R3-W8 item 4: the Flower plot moved into the Layers pane's own second tab.
+      await page
+        .locator("#rail-region")
+        .getByRole("button", { name: "Layers", exact: true })
+        .click();
       await page.getByRole("button", { name: "Flower plot" }).click();
       const flower = page.locator(".flower-title");
       // UI-4/UI-5 (round-3 review): "All US waters" -- the SAME no-selection subject the

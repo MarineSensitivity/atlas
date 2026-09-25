@@ -16,6 +16,9 @@ export interface TourActions {
   setLens(lens: Lens): void;
   /** opens a rail tool's panel (Shell.svelte's own `selectTool`, reused verbatim). */
   selectTool(name: ToolName): void;
+  /** R3-W8 item 5: switches the Report pane's own tab ("places" | "report", Shell.svelte's
+   * `activeReportTab`) -- a no-op on any other tool's own panel. */
+  selectReportTab(tab: "places" | "report"): void;
   /** captures the CURRENT lens/tool before the tour starts, so `restore()` can put them back --
    * the tour must leave the view exactly as it found it (CalCOFI's `src/tour.ts` pattern). */
   snapshot(): void;
@@ -98,12 +101,19 @@ export const SCORES_TOUR_STEPS: TourStep[] = [
     before: (a) => a.selectTool("table"),
   },
   {
+    // R3-W8 item 5: "Places folds into the Report tool as its first tab" -- the rail no longer has
+    // a "places" button (`[data-tour="rail-places"]` is gone with it); this step now opens the
+    // Report tool and points at the pane's own tab switch (Shell.svelte's
+    // `[data-tour="report-tabs"]`), landing on "Places" (the default tab).
     id: "places",
-    element: '[data-tour="rail-places"]',
+    element: '[data-tour="report-tabs"]',
     side: "right",
     title: "Places",
     description: "Draw your own area, enter coordinates or upload a file.",
-    before: (a) => a.selectTool("places"),
+    before: (a) => {
+      a.selectTool("report");
+      a.selectReportTab("places");
+    },
   },
   {
     // owner review item 3 (live 0.10.62): the desktop topbar's own Report button was dropped
@@ -111,12 +121,18 @@ export const SCORES_TOUR_STEPS: TourStep[] = [
     // so this step now anchors the rail's Report tool instead of `[data-tour="report-top"]`, which
     // no longer exists -- same `before`/`side` convention as its "table"/"places" siblings above.
     // "Share" (still a topbar button) keeps no tour step of its own, same as before this fix.
+    // R3-W8 item 5: also switches to the "Report" tab (the sibling "places" step above leaves the
+    // pane on its default "places" tab) so this step's own anchor/description matches what's on
+    // screen.
     id: "report",
     element: '[data-tour="rail-report"]',
     side: "right",
     title: "Report",
     description: "Build a printable, downloadable report for what you selected.",
-    before: (a) => a.selectTool("report"),
+    before: (a) => {
+      a.selectTool("report");
+      a.selectReportTab("report");
+    },
   },
 ];
 

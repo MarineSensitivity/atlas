@@ -18,7 +18,7 @@
   import { buildRailItems, TOOL_BODY, TOOL_LABEL, type ToolName } from "./tools";
   // R3-W8 item 3: the `ui=` token's parse/format core — see that module's own header for what it
   // carries and why it is a separate token from Sel's own query keys.
-  import { formatUi, parseUi, type UiExpandedRow, type UiTab } from "./uiState";
+  import { formatUi, parseUi, type UiExpandedRow, type UiReportTab, type UiTab } from "./uiState";
   import type { LayerGroupId } from "../lib/map/layerStack";
   // R5: the wave-in-hexagon mark replaces the old two-file "wave in a circle" pair
   // (mst-mark.svg/mst-mark-dark.svg, kept vendored only for history -- Report.svelte moved to
@@ -30,6 +30,7 @@
   import Panel from "../lib/ui/Panel.svelte";
   import Sheet from "../lib/ui/Sheet.svelte";
   import Segmented from "../lib/ui/Segmented.svelte";
+  import ReportPane from "./ReportPane.svelte";
   import VersionBadge from "../lib/ui/VersionBadge.svelte";
   import Announcer from "../lib/ui/Announcer.svelte";
   import Toast from "../lib/ui/Toast.svelte";
@@ -227,12 +228,24 @@
   // `LibLayersPanel`'s own internal state) for the same reason `expandedRow` is: Share reads it
   // (`shareUrl()`, below) and a `ui=` link restores it before first interaction.
   let activeTab = $state<UiTab>(initialUi?.tab ?? "layers");
+
+  // R3-W8 item 5: which of the Report pane's own two tabs is showing ("places" | "report" --
+  // Places is the default, folded in from its own former rail tool). Same "chrome, restorable
+  // from a link, Share reads it back" treatment as `activeTab` above.
+  let activeReportTab = $state<UiReportTab>(initialUi?.reportTab ?? "places");
+
   // the phone sheet / desktop panel title: normally the active tool's label, but while the Layers
   // pane's "info" tab is showing, the tab names itself instead ("Flower plot" for Scores, "Species
-  // info" for Species) -- item 4: "the sheet's title shows the active tab's name."
+  // info" for Species) -- item 4: "the sheet's title shows the active tab's name." Item 5: while
+  // the Report pane's own "Places" tab is showing, the title reads "Report · Places" (Ben:
+  // discoverability mitigation for a tool that used to have its own rail button).
   const infoTabLabel = $derived(sel.lens === "species" ? "Species info" : "Flower plot");
   const panelTitle = $derived(
-    activeTool === "layers" && activeTab === "info" ? infoTabLabel : TOOL_LABEL[activeTool],
+    activeTool === "layers" && activeTab === "info"
+      ? infoTabLabel
+      : activeTool === "report" && activeReportTab === "places"
+        ? "Report · Places"
+        : TOOL_LABEL[activeTool],
   );
 
   // R3-W8 item 3: the Layers pane's own expanded row (`LibLayersPanel`'s controlled-row-expansion
@@ -358,6 +371,7 @@
         detent: sheetGeom.detent,
         expandedRow: toUiExpandedRow(expandedRow),
         tab: activeTab,
+        reportTab: activeReportTab,
       }),
     );
     return url.toString();
@@ -458,18 +472,24 @@
   let tourActive = $state(false);
 
   function buildTourActions(): TourActions {
-    let tourSnapshot: { lens: Lens; activeTool: ToolName } | null = null;
+    let tourSnapshot: {
+      lens: Lens;
+      activeTool: ToolName;
+      activeReportTab: UiReportTab;
+    } | null = null;
     return {
       getLens: () => sel.lens,
       setLens: (lens) => onLensChange(lens),
       selectTool: (name) => selectTool(name),
+      selectReportTab: (tab) => (activeReportTab = tab),
       snapshot: () => {
-        tourSnapshot = { lens: sel.lens, activeTool };
+        tourSnapshot = { lens: sel.lens, activeTool, activeReportTab };
       },
       restore: () => {
         if (!tourSnapshot) return;
         if (sel.lens !== tourSnapshot.lens) onLensChange(tourSnapshot.lens);
         activeTool = tourSnapshot.activeTool;
+        activeReportTab = tourSnapshot.activeReportTab;
         tourSnapshot = null;
       },
     };
@@ -1339,7 +1359,8 @@
   // SpeciesLensPanel/Picker/Legend/NotFoundModal, Places, VersionPickerModal, WelcomeModal) --
   // 450.4 KB gzip static, 0.4 KB over budget, and a species-only deep link downloaded the ENTIRE
   // scores lens it never renders. Each becomes its own dynamic `import()` chunk, chosen by
-  // `sel.lens` (Places by `activeTool === "places"` instead -- it mounts on either lens). This is
+  // `sel.lens` (Places by `activeTool === "report"` instead, R3-W8 item 5 -- it mounts on either
+  // lens, as the Report pane's own default tab). This is
   // the SAME dynamic-component pattern `TablePanel.svelte`/`Composition.svelte` already use for
   // `Composition.svelte`/`Treemap.svelte` (a `Component<any>` held in `$state`, resolved by a
   // `$effect`, rendered via `{@const Comp = ...}` -- `Component`'s real generic Props type is not
@@ -1516,8 +1537,11 @@
     }
   });
 
+  // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- loaded whenever
+  // the Report tool opens, on EITHER tab, so the default "Places" tab never shows a blank flash
+  // while its chunk is still in flight the first time a viewer opens Report at all.
   $effect(() => {
-    if (activeTool === "places" && !PlacesComp) {
+    if (activeTool === "report" && !PlacesComp) {
       import("../places/Places.svelte")
         .then((mod) => (PlacesComp = mod.default))
         .catch(() => announceChunkFailure("the Places panel"));
@@ -2002,31 +2026,47 @@
     data-maximized={isPhone ? undefined : panelGeom.maximized}
     style={isPhone ? undefined : `--panel-size: ${panelGeom.size}px`}
   >
-    <!-- the ONE panel body: places owns its tool on either lens; otherwise the active lens
-         decides what the tool's panel shows (the scores lens takes every tool and falls back to
-         the tool's own text; the species lens takes "layers" only). -->
+    <!-- the ONE panel body: report (which now includes Places as its default tab, item 5) owns its
+         tool on either lens; otherwise the active lens decides what the tool's panel shows (the
+         scores lens takes every tool and falls back to the tool's own text; the species lens takes
+         "layers" only). -->
     {#snippet panelBody()}
-      {#if activeTool === "places"}
-        {#if PlacesComp}
-          {@const Comp = PlacesComp}
-          <!-- P round deliverable 2 follow-up: `manifest` threads down to ResultsPanel.svelte's own
-               Flower (the SAME flowerMaxComponentScore(manifest) the scores lens' Flower tool uses),
-               so a custom place's/zone's flower ring is never a second, disagreeing source. -->
-          <Comp {sel} {selStore} {boot} {manifest} {mapHandle} {zoneUnits} mapStore={placesMap} />
-        {:else}
-          <p>{TOOL_BODY[activeTool]}</p>
-        {/if}
-      {:else if activeTool === "report"}
-        <!-- U6 (round 2): intercepted here, BEFORE the lens branches below, so "Report" is the
-             SAME chooser+recent-reports panel on either lens -- ScoresLens.svelte's own fallback
-             (`fallbackBody`) never renders for this tool any more (its own header already says
-             "places" and "report" belong to other phases). -->
-        {#if ReportToolComp}
-          {@const Comp = ReportToolComp}
-          <Comp {sel} {boot} ver={earlyVersion} onOpenPlaces={() => selectTool("places")} />
-        {:else}
-          <p>{TOOL_BODY[activeTool]}</p>
-        {/if}
+      {#if activeTool === "report"}
+        <!-- R3-W8 item 5: "Places folds into the Report tool as its first tab." "Places" (today's
+             Places.svelte, unchanged behaviour) is the DEFAULT tab; "Report" is today's
+             ReportTool.svelte. U6 (round 2)'s own note still applies: intercepted here, BEFORE the
+             lens branches below, so this is the SAME panel on either lens. -->
+        {#snippet placesContent()}
+          {#if PlacesComp}
+            {@const Comp = PlacesComp}
+            <!-- P round deliverable 2 follow-up: `manifest` threads down to ResultsPanel.svelte's
+                 own Flower (the SAME flowerMaxComponentScore(manifest) the scores lens' Flower tab
+                 uses), so a custom place's/zone's flower ring is never a second, disagreeing
+                 source. -->
+            <Comp {sel} {selStore} {boot} {manifest} {mapHandle} {zoneUnits} mapStore={placesMap} />
+          {:else}
+            <p>Select, draw and upload tools arrive in a later phase.</p>
+          {/if}
+        {/snippet}
+        {#snippet reportContent()}
+          {#if ReportToolComp}
+            {@const Comp = ReportToolComp}
+            <Comp
+              {sel}
+              {boot}
+              ver={earlyVersion}
+              onOpenPlaces={() => (activeReportTab = "places")}
+            />
+          {:else}
+            <p>The report builder arrives in a later phase.</p>
+          {/if}
+        {/snippet}
+        <ReportPane
+          {activeReportTab}
+          onActiveReportTabChange={(t) => (activeReportTab = t)}
+          places={placesContent}
+          report={reportContent}
+        />
       {:else if sel.lens === "species" && activeTool === "layers"}
         {#if SpeciesLensPanelComp}
           {@const Comp = SpeciesLensPanelComp}

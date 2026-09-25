@@ -102,21 +102,21 @@ status text.
 Everything below is a requirement for the component build, not a suggestion;
 `tests/mockup-shell.test.ts` asserts the ones a mockup can prove.
 
-### 5.1 The tool rail is FOUR controls, the same four, in the same order, on every viewport and lens
+### 5.1 The tool rail is THREE controls, the same three, in the same order, on every viewport and lens
 
-`Layers · Places · Table · Report` (Ben, 2026-09-21; **R3-W8 item 4, 2026-09-25**: "drop the Flower
-plot from the toolbar (which only applies to the Scores lens)" — the flower plot moved INTO the
-Layers pane as its own second tab, §5.1a below, so the rail no longer carries a Scores-only control
-at all). Desktop: a floating honeycomb column on the left. Phone: the identical four as a bottom
-bar. 44 px targets everywhere, no words on the control itself (the tooltip carries them), roving
-`tabindex` inside the group.
+`Layers · Table · Report` (Ben, 2026-09-21; **R3-W8 item 4, 2026-09-25**: "drop the Flower plot from
+the toolbar" — the flower plot moved INTO the Layers pane as its own second tab, §5.1a below;
+**R3-W8 item 5, 2026-09-25**: "Places folds into the Report tool as its first tab" — Places moved
+INTO the Report pane as its own first tab, §5.1b below — so the rail no longer carries either a
+Scores-only control or a second "pick where" control alongside Report). Desktop: a floating
+honeycomb column on the left. Phone: the identical three as a bottom bar. 44 px targets everywhere,
+no words on the control itself (the tooltip carries them), roving `tabindex` inside the group.
 
 | control    | opens                                                                                                                                                                               | icon                     |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
 | **Layers** | the LAYERS panel: score layer (or species surface), palette, zone outlines, bathymetry, OBIS occurrences, other related layers, PLUS a second tab of read-only information (§5.1a). | `mdiLayers`              |
-| **Places** | select · draw · upload                                                                                                                                                              | `mdiMapMarker`           |
 | **Table**  | the data table (species or zones, per lens)                                                                                                                                         | `mdiTable`               |
-| **Report** | the report builder                                                                                                                                                                  | `mdiFileDocumentOutline` |
+| **Report** | select · draw · upload (its own first tab, §5.1b) · the report builder (its second tab)                                                                                             | `mdiFileDocumentOutline` |
 
 Two controls that used to be in the rail are **gone**:
 
@@ -144,8 +144,49 @@ Tapping a scored cell while the "Layers" tab is showing does not switch tabs —
 shows the value; the info tab is where a viewer goes to see the breakdown. If the info tab is
 already open, a new tap updates it in place. On the phone, the sheet's own title tracks whichever
 tab is active ("Layers" vs. the info tab's own label). The active tab is carried in the `ui=` share
-token (§9's `tool`/`dock`/`size`/`detent`/`expandedRow`/`tab` fields) so a shared link reopens on
-the same tab.
+token (§9's `tool`/`dock`/`size`/`detent`/`expandedRow`/`tab`/`reportTab` fields) so a shared link
+reopens on the same tab.
+
+### 5.1b The Report pane is a two-tab panel: Places (default), then the report builder
+
+R3-W8 item 5 (Ben, 2026-09-25, proposed by him and not objected to): "Places folds into the Report
+tool as its first tab." The Report pane (opened by the rail's **Report** control, either lens) shows
+the same `Segmented` tab switch shape as the Layers pane (§5.1a):
+
+- **"Places"** (default): today's Places content, unchanged behaviour — pick a Program Area, draw,
+  enter coordinates, upload a file; the per-place results list; Share and Download places. Its own
+  **"Last clicked"** row sits at the top (item 5's selection model, below).
+- **"Report"**: today's report builder — options, generate, exports. Opening it from the "Places"
+  tab's own "Open the report builder" link switches this tab in place (`ReportPane.svelte`'s
+  `onOpenPlaces`/tab-switch pair — same mechanics `LayersPanel.svelte`'s `infoTab` prop uses).
+
+The pane title reads **"Report · Places"** while the Places tab is active (discoverability: Places
+used to have its own rail button/tooltip), and the tour's own "Places" step anchors this tab switch
+rather than a rail button that no longer exists. The active tab is carried in the `ui=` share
+token's `reportTab` field (§5.1a's own list, above). **Not yet done, this round**: the Table tool's
+own empty state pointing here with a "Select places under Report → Places" button and an explicit
+"Add to places" affordance on the Last-clicked row — the Table already shows a real (non-empty)
+all-US-waters aggregate when nothing is selected, so there is no existing "nothing selected, explain
+how" state to attach this copy to without a larger restructure; left for a later round.
+
+**Selection model** (Ben, 2026-09-25, verbatim): "still allow clickable selection (highlighted in
+pink as now) of either Cell or Program Area depending on Scores layer chosen, such that the last
+clicked element defaults to the current Report Place and therefore also the one applied to the Table
+tool... some care should be given to not wiping out existing selections that have been explicitly
+added to Places, but then a most recently selected slot that can be updated with subsequent
+selection." One pure rule, `reportSubjects(sel, places)` (`src/lib/state/subjects.ts`, unit-tested):
+a non-empty explicit Places list (`sel.pl`) always wins over the map-click "Last clicked" slot
+(`sel.sel`) — a fresh click only ever replaces the slot itself, never the explicit list (the two are
+independent URL fields, written by entirely separate code paths; `tests/faults/places-list-wiped-by-click.patch`
+is the seeded regression for a caller that violates this). The Table's own subject line reads the
+SAME rule: an explicit list reads "Species for N places" (`placesSubjectHeader()`, `species.ts`);
+the Last-clicked case keeps its existing, more specific wording ("Species in Cell 3350704 ·
+28.625° N, 90.575° W" / "Species in <Program Area>" / "Species in All US waters",
+`speciesHeader()`) rather than a generic "Species for the last clicked cell" — a deliberate scoping
+call (this round) to avoid rewording an already-well-tested string; a future round may fold the two
+phrasings together. The species/zone DATA the Table queries still comes from the single
+`selection`/`unit`/`lyr` triple, unchanged by this item — aggregating species across an explicit
+multi-place list is a larger feature left to a later round.
 
 ### 5.3 Panel header controls: collapse · half · full, upper right
 

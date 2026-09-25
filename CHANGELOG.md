@@ -34,6 +34,27 @@ Report`, `src/shell/tools.ts`'s `TOOL_ORDER`/`buildRailItems()` — no lens argu
   Layers pane on the info tab instead (`parseUiV1`, unit-tested). On the phone, the sheet's title
   tracks whichever tab is showing. Seeded fault: `ui-token-tab-dropped` (`formatUi()` hardcodes the
   tab field instead of encoding the live tab).
+- **Places folds into the Report pane as its own (default) first tab; the rail drops to three
+  tools** (Ben, 2026-09-25, proposed by him and not objected to). The rail is now
+  `Layers · Table · Report` (`src/shell/tools.ts`). A new `ReportPane.svelte` gives the Report tool
+  the same two-tab shape item 4 gave Layers: "Places" (today's `Places.svelte`, unchanged behaviour,
+  default) and "Report" (today's `ReportTool.svelte`); the pane title reads "Report · Places" while
+  the Places tab is active. The `ui=` Share token bumps to version 3 (an 8th `reportTab` field);
+  version-1/version-2 tokens naming the retired "places" tool code open Report on its Places tab
+  (`parseUiV1`/`parseUiV2`, unit-tested). The tour's "Places" step now anchors the pane's own tab
+  switch instead of a rail button that no longer exists.
+- **Added the selection model Ben asked for**: "the last clicked element defaults to the current
+  Report Place... care should be given to not wiping out existing selections that have been
+  explicitly added to Places." `reportSubjects(sel, places)` (new, `src/lib/state/subjects.ts`,
+  8 unit tests) is the one pure rule: a non-empty explicit Places list always wins over the
+  map-click "Last clicked" slot; a click only ever replaces the slot, never the explicit list (the
+  two are independent URL fields — `sel.sel` vs. `sel.pl` — written by separate code paths, proven
+  end-to-end by the new `e2e/places.last-clicked.spec.ts` and its seeded fault
+  `places-list-wiped-by-click`). The species table's own subject line now reads "Species for N
+  places" when an explicit list governs (`placesSubjectHeader()`, `species.ts`) — the Last-clicked
+  case keeps its existing, more specific wording. **Not yet done**: the Table's own empty state
+  pointing at Report → Places, and an explicit "Add to places" button on a Last-clicked row inside
+  the Places tab — left for a later round (see this slice's own report for the scoping note).
 
 # atlas 0.10.77
 

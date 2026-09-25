@@ -84,7 +84,8 @@ try {
   });
   await shot(page, "scores-cellpopup-1280-dark");
 
-  // 6. Flower tool for that cell
+  // 6. Flower tool for that cell -- R3-W8 item 4: moved into the Layers pane's own second tab.
+  await page.getByRole("button", { name: "Layers", exact: true }).first().click();
   await page.getByRole("button", { name: "Flower plot", exact: true }).first().click();
   await page.waitForTimeout(5000);
   log.note("flower-cell", { panel: (await visibleText(page, "#panel-region"))?.slice(0, 600) });

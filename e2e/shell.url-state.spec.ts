@@ -60,7 +60,7 @@ test("opening every rail tool and every panel-size control never touches the URL
 }) => {
   await gotoShell(page);
   const rail = page.locator("#rail-region [role='toolbar']");
-  for (const label of ["Layers", "Places", "Table", "Report"]) {
+  for (const label of ["Layers", "Table", "Report"]) {
     await rail.locator(`button[aria-label="${label}"]`).click();
     expect(urlTail(page)).toBe("");
   }
@@ -96,7 +96,7 @@ test("a full interaction walk never calls history.pushState, and never grows his
   await page.locator(".topbar").getByRole("button", { name: "Scores" }).click();
   await page.locator('[data-control="theme"]').click();
   const rail = page.locator("#rail-region [role='toolbar']");
-  for (const label of ["Layers", "Places", "Flower plot", "Table", "Report"]) {
+  for (const label of ["Layers", "Table", "Report"]) {
     await rail.locator(`button[aria-label="${label}"]`).click();
   }
   const panel = page.locator("#panel-region");

@@ -105,7 +105,11 @@ async function expectCameraSettlesIn(
     .toBe(true);
 }
 
+// R3-W8 item 4: the Flower plot moved into the Layers pane's own second tab -- opening it is
+// "Layers" (the rail tool) then "Flower plot" (the tab), scoped to #rail-region since the panel's
+// own tab switch also has a "Layers" button once open (e2e/scores.flower.spec.ts's identical fix).
 async function openFlower(page: Page) {
+  await page.locator("#rail-region").getByRole("button", { name: "Layers", exact: true }).click();
   await page.getByRole("button", { name: "Flower plot" }).click();
   const flower = page.locator(".flower-title");
   await expect(flower).toBeVisible({ timeout: 10_000 });

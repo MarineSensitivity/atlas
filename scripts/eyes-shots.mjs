@@ -366,10 +366,14 @@ const STATES = [
     },
   },
   {
+    // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- opening it is
+    // "Report" (the rail tool) then, defensively, the "Places" tab (in case a prior state on this
+    // page left it on "Report").
     id: "places",
     run: async (p, vp) => {
       await go(p, "?ver=v7&theme=dark");
       await explore(p);
+      await tool(p, "Report");
       await tool(p, "Places");
       await shot(p, vp, "11-places");
       await sheet(p, "Full height");

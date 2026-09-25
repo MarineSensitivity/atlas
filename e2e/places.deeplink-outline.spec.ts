@@ -105,8 +105,8 @@ test.describe("0.10.21: a deep-linked drawn place still draws its outline withou
       .poll(() => page.evaluate(() => location.search), { timeout: 10_000 })
       .toMatch(/sel=place(?:%3A|:)0/);
 
-    // the Places tool was NEVER activated -- `#rail-region button[aria-label='Places']` is never
-    // clicked anywhere in this spec, unlike e2e/places.spec.ts's own `openPlaces()` helper.
+    // the Places tab was NEVER activated -- the Report rail tool/Places tab pair is never clicked
+    // anywhere in this spec, unlike e2e/places.spec.ts's own `openPlaces()` helper.
     await expect
       .poll(
         () =>

@@ -9,13 +9,16 @@
 // R3-W8 item 4 (Ben, 2026-09-25): "drop the Flower plot from the toolbar (which only applies to
 // the Scores lens)." The Flower plot moved INTO the Layers pane as its second tab (Scores lens:
 // "Flower plot"; Species lens: "Species info", same tab slot -- `src/lib/ui/LayersPanel.svelte`'s
-// `infoTab` prop) -- the rail drops from five tools to four, and since every REMAINING tool
-// (Layers, Places, Table, Report) is active in both lenses, `buildRailItems` no longer needs a
-// lens argument or an `inactive`/`inactiveReason` concept at all (the Species-only-fades-Flower
-// rule this file's own history carried is gone with the tool it applied to).
+// `infoTab` prop) -- the rail dropped from five tools to four.
+//
+// R3-W8 item 5 (Ben, 2026-09-25, proposed by him and not objected to): "Places folds into the
+// Report tool as its first tab." The rail drops to THREE tools -- Places moved INTO the Report
+// pane as its own first tab (Shell.svelte's `activeReportTab`), the same two-tab shape item 4 gave
+// the Layers pane. Every remaining tool (Layers, Table, Report) stays active in both lenses, so
+// `buildRailItems` still needs no lens argument or inactive/inactiveReason concept.
 import type { IconName } from "../lib/ui/icon-paths";
 
-export type ToolName = "layers" | "places" | "table" | "report";
+export type ToolName = "layers" | "table" | "report";
 
 /** structurally identical to src/lib/ui/Rail.svelte's exported `RailItem` -- Svelte's prop typing
  * accepts this by shape, not by declaration identity. */
@@ -25,15 +28,14 @@ export interface ToolRailItem {
   label: string;
 }
 
-/** spec.md §5.1: the tool rail is FOUR controls, the SAME four, in the SAME order, on every
- * viewport and every lens (R3-W8 item 4 -- was five, with Flower fading in the Species lens; the
- * Flower plot now lives inside the Layers pane's own second tab instead). This array's order IS
- * that order -- `buildRailItems` below never reorders it. */
-export const TOOL_ORDER: readonly ToolName[] = ["layers", "places", "table", "report"];
+/** spec.md §5.1: the tool rail is THREE controls, the SAME three, in the SAME order, on every
+ * viewport and every lens (R3-W8 item 5 -- was four after item 4, then Places folded into the
+ * Report pane as its own first tab). This array's order IS that order -- `buildRailItems` below
+ * never reorders it. */
+export const TOOL_ORDER: readonly ToolName[] = ["layers", "table", "report"];
 
 export const TOOL_LABEL: Record<ToolName, string> = {
   layers: "Layers",
-  places: "Places",
   table: "Table",
   report: "Report",
 };
@@ -44,12 +46,11 @@ export const TOOL_LABEL: Record<ToolName, string> = {
 // means equal painted height.
 export const TOOL_BODY: Record<ToolName, string> = {
   layers: "Layers, palette and outline options arrive in a later phase.",
-  places: "Select, draw and upload tools arrive in a later phase.",
   table: "The species and zone tables arrive in a later phase.",
   report: "The report builder arrives in a later phase.",
 };
 
-/** every tool is always active, in both lenses, on every viewport (R3-W8 item 4). */
+/** every tool is always active, in both lenses, on every viewport (R3-W8 item 4/5). */
 export function buildRailItems(): ToolRailItem[] {
   return TOOL_ORDER.map((name) => ({
     name,

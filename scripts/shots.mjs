@@ -182,6 +182,13 @@ async function atlasTool(page, name) {
   await page.getByRole("button", { name, exact: true }).first().click({ timeout: 20_000 });
   await page.waitForTimeout(3000);
 }
+// R3-W8 item 4: the Flower plot moved into the Layers pane's own second tab -- "Layers" (the rail
+// tool, `.first()` above already resolves the rail one over the panel tab, DOM-order) then
+// "Flower plot" (the tab).
+async function atlasFlowerTool(page) {
+  await atlasTool(page, "Layers");
+  await atlasTool(page, "Flower plot");
+}
 
 async function atlasRendered(page, { report = false } = {}) {
   if (report) {
@@ -278,7 +285,7 @@ export const STATES = [
     },
     atlas: {
       search: "?ver=v7&theme=dark",
-      after: async (page) => atlasTool(page, "Flower plot"),
+      after: async (page) => atlasFlowerTool(page),
     },
   },
   {
