@@ -1,14 +1,22 @@
 <script lang="ts">
   // V3 (P round, 2026-09-24): Ben's report -- titiler-v8 and the API were down for an hour and the
   // live atlas kept rendering a perfectly normal map with NO raster and NO word to the user. This is
-  // the visible half of src/lib/health/*: a fixed top banner naming the failing service, what it
-  // breaks, and a Retry.
+  // the visible half of src/lib/health/*: a banner naming the failing service, what it breaks, and
+  // a Retry.
   //
-  // "Fixed", not in normal document flow, ON PURPOSE (brief: "no layout shift of the map controls")
-  // -- the rail/panel/legend are all `position: absolute`/`fixed` INSIDE `.stage` already (shell.css:
-  // ".rail-region { position: absolute; ... }"), so inserting this banner into `.app`'s grid flow
-  // would resize `.stage` and move every one of them. A fixed overlay changes nothing about that
-  // layout; it only ever paints OVER the top strip of it.
+  // P round 2 fix (CI run 36070452831): this used to be `position: fixed` at the VIEWPORT's top
+  // edge, which painted over `.topbar` and swallowed every click meant for a topbar control
+  // underneath it (feedback, the lens switch, ⋯, Help > Docs, theme) -- every hermetic e2e spec
+  // that clicked one timed out the moment the data-origin probe misread a fixture's ordinary
+  // app/boot.json 404 as "down" (see probe.ts's own P round 2 comment). Now `position: absolute`,
+  // rendered by Shell.svelte as the FIRST child of `.stage` (below `.topbar` entirely -- they are
+  // separate CSS Grid rows in `.app`, shell.css -- and above the map, which may be overlapped): a
+  // real `.stage`-scoped overlay, never a viewport-wide one. Still never in NORMAL flow (brief: "no
+  // layout shift of the map controls") -- the rail/panel/legend are all `position: absolute` inside
+  // `.stage` already (shell.css: ".rail-region { position: absolute; ... }"), so inserting this
+  // banner into `.stage`'s own flow would resize it and move every one of them; a z-index BELOW
+  // theirs (see the style block) keeps the rail/panel/sheet/tab bar the top, clickable layer
+  // wherever their boxes and this banner's top strip happen to overlap.
   //
   // Dismissible but RE-APPEARING (brief): dismissing only silences the CURRENT result. The banner
   // reappears the moment a later probe reports a NEWER "down" result for the same service --
@@ -53,12 +61,24 @@
 
 <style>
   .health-banner {
-    position: fixed;
+    /* `absolute`, not `fixed`: this is now rendered INSIDE `.stage` (Shell.svelte), which is
+       `position: relative` (shell.css) -- so `top/left/right: 0` resolve against `.stage`'s own
+       box, never the viewport, and this can no longer paint over `.topbar` (a separate CSS Grid
+       row entirely). */
+    position: absolute;
     top: 0;
     left: 0;
     right: 0;
-    z-index: 59; /* above every fixed/absolute shell region (shell.css tops out at 40); below the
-      skip-link's 60, which only matters while keyboard-focused */
+    /* ABOVE every floating shell region `.stage` positions near its top edge (the map's own
+       overlays at 1-2, the legend at 5, the rail at 15, the panel at 16, the legend-chip at 17) --
+       first tried BELOW them (so those controls would win any overlap), which broke this banner's
+       OWN Retry button instead: `#panel-region` (z-index 16, docked top-right with only a
+       `var(--space-3)` gap) sat on top of it and silently ate the click
+       (e2e/shell.health-banner.spec.ts's "Retry ... clears the banner" test, caught on firefox).
+       A banner reporting a real outage has to be the thing you can actually act on, so it now
+       outranks that chrome instead -- still BELOW a maximized panel (40) or an open `<dialog>`
+       (native top-layer regardless of z-index), which stay the more urgent surface. */
+    z-index: 18;
     display: flex;
     align-items: center;
     gap: var(--space-2);

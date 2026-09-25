@@ -35,14 +35,15 @@ export function tilerServiceDef(host: string = DEFAULT_TITILER_HOST): ServiceDef
  * (`src/lib/release/dataBase.ts#dataUrl`, "the ONE place a data origin is formed") -- reusing it
  * rather than inventing a second route keeps this module honest about what it is actually testing.
  *
- * Known gap (not fixed by this round -- see the hand-back "saw but did not fix"): a restricted
- * preview session's `session.data` prefix is not threaded through here, so on the preview host this
- * probes the PUBLIC bucket origin, not the signed-in prefix `dataBase()` would otherwise prefer.
- * Both are the same S3 host today, so the probe is still meaningful; it would need `session` wired
- * from Shell.svelte to be exact for a future prefix that points elsewhere.
+ * `base`, when given, is the ALREADY-RESOLVED origin `window.__early.base` carried (the same value
+ * index.html's own early-fetch script used for its `app/boot.json` fetch) -- P round 2 fix (was
+ * "known gap": a restricted preview session's `session.data` prefix was never threaded through, so
+ * this always probed the PUBLIC bucket even when the release itself loaded from a signed-in
+ * prefix). Falls back to {@link dataUrl}'s public-bucket URL when no resolved base is available
+ * (e.g. a unit test, or `probeData` called before `window.__early.base` settles).
  */
-export function dataServiceDef(ver: string): ServiceDef {
-  const url = dataUrl(ver, "app/boot.json");
+export function dataServiceDef(ver: string, base?: string): ServiceDef {
+  const url = base ? `${base}${ver}/app/boot.json` : dataUrl(ver, "app/boot.json");
   return {
     id: "data",
     url,

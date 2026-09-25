@@ -443,6 +443,11 @@
   // the resolved version off window.__early, the same global VersionBadge.svelte reads.
   interface Early {
     version: Promise<string | null>;
+    // P round 2 fix (health.svelte.ts#probeData's `base` param): the SAME resolved data origin
+    // index.html's early-fetch script used for its OWN `app/boot.json` fetch -- reading it back
+    // here (never re-deriving it) means the health probe can never disagree with what actually
+    // loaded, preview session prefix included.
+    base?: Promise<string | null>;
     boot?: Promise<unknown>;
     // atlas-4: the scores lens' raster/overlay/legend inputs come from `manifest.overlays`
     // (boot.json carries no `overlays` key today) -- read the same global VersionBadge.svelte and
@@ -478,8 +483,14 @@
     early?.version
       .then((v) => {
         earlyVersion = v;
-        // V3 trigger (a), data half: only once the release itself is known.
-        if (v) health.probeData(v);
+        // V3 trigger (a), data half: only once the release itself is known. P round 2 fix: probe
+        // the SAME resolved base `early.base` carries (the one index.html's own fetch of
+        // app/boot.json used), not always the public bucket -- falls back to no base (the public
+        // bucket URL) if `early.base` is absent or itself rejects.
+        if (v) {
+          const base = early.base ?? Promise.resolve(null);
+          base.then((b) => health.probeData(v, b ?? undefined)).catch(() => health.probeData(v));
+        }
       })
       .catch(() => {});
     // boot.json is the map's only data source at this step (Tier 0, plan D3): the zone units and
@@ -1296,14 +1307,6 @@
      fires before ANYONE has subscribed at all. -->
 <Announcer />
 
-<!-- V3 (Ben's report, 2026-09-24): titiler-v8 was down for an hour and the map stayed silent --
-     `position: fixed` (HealthBanner.svelte's own header), so its order here does not matter for
-     layout; placed beside Announcer as the shell's other always-mounted, no-lens-required chrome. -->
-<HealthBanner
-  banner={health.banner}
-  onretry={() => health.banner && health.retry(health.banner.def.id)}
-/>
-
 <header class="topbar" data-tour="topbar">
   <span data-tour="brand" style="display:flex;align-items:center;gap:var(--space-2)">
     <WaveHexMark size={28} />
@@ -1529,6 +1532,17 @@
   data-panel-maximized={isPhone ? undefined : panelGeom.maximized}
   style={isPhone ? undefined : `--panel-size: ${panelGeom.size}px`}
 >
+  <!-- P round 2 fix (CI run 36070452831, Ben's report): this used to render OUTSIDE `.stage`, a
+       `position: fixed` overlay pinned to the viewport's top edge -- which put it ON TOP of
+       `.topbar` (z-index 20) and intercepted every click meant for a topbar control underneath
+       (feedback, the lens switch, ⋯, Help > Docs, theme). Moved inside `.stage` (below the topbar
+       ENTIRELY -- they are separate CSS Grid rows in `.app`, shell.css, so one can never cover the
+       other) and scoped to `.stage`'s own box (HealthBanner.svelte's `position: absolute`, not
+       `fixed`): the map may be overlapped, but the topbar/rail/panel/sheet/tab bar never are. -->
+  <HealthBanner
+    banner={health.banner}
+    onretry={() => health.banner && health.retry(health.banner.def.id)}
+  />
   <!-- D1 (Opus eyes-on assessment, 2026-09-24): `data-panel-dock`/`data-panel-maximized`/
        `--panel-size` above mirror `panelGeom` the SAME way `#panel-region` itself already does
        (its own comment just below) -- ScoresLegend.svelte/SpeciesLegend.svelte read them off THIS

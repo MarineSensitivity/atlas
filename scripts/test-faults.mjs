@@ -1492,6 +1492,41 @@ const FAULTS = [
       "owner-reported: found while shooting the Program Area harness state)",
     gate: ["npx", "vitest", "run", "tests/lens/scores/search.test.ts"],
   },
+  // V7 round (P round 2, CI run 36070452831): the V3 health banner's `position: fixed` overlay
+  // covered the top bar (see HealthBanner.svelte's own header for the placement fix), AND the
+  // data-origin probe's `!res.ok` gate misread every hermetic fixture's ordinary app/boot.json 404
+  // as the release data being "down" (see probe.ts's own header) -- together, this raised the
+  // banner (and blocked every topbar click underneath it) on nearly every shell spec, which is what
+  // actually produced the CI run's 97 failures across chromium/webkit/firefox. Two faults, one per
+  // half of the fix.
+  {
+    id: "health-banner-fixed-overlay-restored",
+    patch: "tests/faults/health-banner-fixed-overlay-restored.patch",
+    describe:
+      "HealthBanner.svelte's `.health-banner` reverts to `position: fixed` (the pre-fix, viewport- " +
+      "covering overlay) -- with the tiler routed down, the banner sits back on top of `.topbar` and " +
+      "a click on Feedback/the lens switch is intercepted by it again",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.health-banner.spec.ts",
+      "-g",
+      "with the tiler down, a click on Feedback and on the lens switch still work",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4491" },
+  },
+  {
+    id: "health-probe-404-treated-as-down",
+    patch: "tests/faults/health-probe-404-treated-as-down.patch",
+    describe:
+      "probeUrl() reverts to the pre-fix `!res.ok` gate -- any non-2xx (including the 403/404 a " +
+      "hermetic fixture's own app/boot.json legitimately answers) is misclassified as `down` again, " +
+      "not just a real 5xx/network-error/timeout",
+    gate: ["npx", "vitest", "run", "tests/health/probe.test.ts"],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

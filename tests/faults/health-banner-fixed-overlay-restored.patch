@@ -1,0 +1,15 @@
+diff --git a/src/lib/ui/HealthBanner.svelte b/src/lib/ui/HealthBanner.svelte
+index 7affcf4..cbaec21 100644
+--- a/src/lib/ui/HealthBanner.svelte
++++ b/src/lib/ui/HealthBanner.svelte
+@@ -65,7 +65,9 @@
+        `position: relative` (shell.css) -- so `top/left/right: 0` resolve against `.stage`'s own
+        box, never the viewport, and this can no longer paint over `.topbar` (a separate CSS Grid
+        row entirely). */
+-    position: absolute;
++    /* SEEDED FAULT (tests/faults/health-banner-fixed-overlay-restored.patch): reverts to
++       `position: fixed` -- the pre-fix, viewport-covering overlay that sat on top of `.topbar`. */
++    position: fixed;
+     top: 0;
+     left: 0;
+     right: 0;
