@@ -32,7 +32,7 @@
   import type { SpeciesRow } from "../../lib/analysis/queries";
   import type { Sel } from "../../lib/state/types";
   import { categoryLabel } from "../../lib/ui/categories";
-  import { formatAreaKm2, formatErScore, formatPercent2, modelHref, taxonUrl } from "./species";
+  import { formatAreaKm2, formatPercent0, formatPercent2, modelHref, taxonUrl } from "./species";
   import { SPECIES_PHONE_DEFAULT_COLUMNS, visibleSpeciesColumnKeys } from "./speciesTableColumns";
   import { speciesColumnsState } from "./speciesTableColumnsState.svelte";
 
@@ -76,9 +76,7 @@
       key: "er_score",
       label: "ER score",
       value: (r) => r.er_score,
-      // P3 fix (Opus eyes-on review, 2026-09-24, desktop-10): "1%"/"10%" -- the release's own
-      // 1-100 scale, restored (see `formatErScore`'s own header, species.ts).
-      format: (r) => formatErScore(r.er_score),
+      format: (r) => formatPercent0(r.er_score),
       sortable: true,
       numeric: true,
     },

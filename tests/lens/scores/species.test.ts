@@ -4,7 +4,7 @@ import { DEFAULT_SEL } from "../../../src/lib/state/types";
 import {
   csvFilename,
   formatAreaKm2,
-  formatErScore,
+  formatPercent0,
   formatPercent2,
   modelHref,
   modelSelPatch,
@@ -109,15 +109,11 @@ describe("csvFilename", () => {
   });
 });
 
-describe("formatErScore / formatPercent2 / formatAreaKm2", () => {
-  // P3 fix (Opus eyes-on review, 2026-09-24, desktop-10): the release's own 1-100 scale, as a
-  // bare number -- NEVER a percent (the pre-fix behavior this replaces: "1%", "10%", "100%").
-  it("er_score: the release's own 1-100 scale, restored from this query's internal 0-1 fraction", () => {
-    expect(formatErScore(0.5)).toBe("50");
-    expect(formatErScore(1)).toBe("100");
-    expect(formatErScore(0.01)).toBe("1");
-    expect(formatErScore(0.1)).toBe("10");
-    expect(formatErScore(null)).toBe("");
+describe("formatPercent0 / formatPercent2 / formatAreaKm2", () => {
+  it("er_score: 0dp percent", () => {
+    expect(formatPercent0(0.5)).toBe("50%");
+    expect(formatPercent0(1)).toBe("100%");
+    expect(formatPercent0(null)).toBe("");
   });
 
   it("avg_suit/pct_cat: 2dp percent", () => {

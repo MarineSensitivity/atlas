@@ -41,10 +41,7 @@
 - [ ] Headers and filename stems exactly as §7.3 (`species_cellid-{id}`, `species_programarea-{name}`,
       `species_{zone_all_key}`), CSV = the unformatted frame + `_{YYYY-MM-DD}.csv`.
 - [ ] Columns in order: `cat, taxon, scientific, common, er_code, er_score, model, is_mmpa, is_mbta,
-      area_km2, avg_suit, pct_cat`; `er_score` as the release's own plain 1–100 number, never a
-      percent (**fixes** P3/W3: the reference app's `formatPercentage(er_score, 0)` prints "1%"/
-      "10%" for this query's own internal 0–1 fraction, which reads as a tiny, uninformative share
-      of something — Ben's own live-review direction, 2026-09-24), `avg_suit`/`pct_cat` 2 dp percent,
+      area_km2, avg_suit, pct_cat`; `er_score` as 0 dp percent, `avg_suit`/`pct_cat` 2 dp percent,
       `area_km2` 4 significant; per-column filter, sort, keyboard cell navigation.
 - [ ] `taxon` links: BOTW → birdsoftheworld.org, else WoRMS `aphia.php?p=taxdetails&id=`. `model` link
       switches to the Species lens **in place** (`lens=species&sp=<key>`, place and camera kept);

@@ -1668,15 +1668,6 @@ const FAULTS = [
     env: { PW_PORT: "4534" },
   },
   {
-    id: "er-score-percent-restored",
-    patch: "tests/faults/er-score-percent-restored.patch",
-    describe:
-      "formatErScore() (species.ts, W3 item 5: the species table's 'ER score' column rendered as " +
-      "a percent, '1%'/'10%') appends a '%' sign again instead of the release's own plain 1-100 " +
-      "number",
-    gate: ["npx", "vitest", "run", "tests/lens/scores/species.test.ts"],
-  },
-  {
     id: "modeled-spelling-reverted",
     patch: "tests/faults/modeled-spelling-reverted.patch",
     describe:

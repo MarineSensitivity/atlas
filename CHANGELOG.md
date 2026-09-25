@@ -18,8 +18,6 @@ plot's hub number and half-detent size, segmented-control widths, and three smal
 - **Fixed: on the phone, the bigger flower plot could push the Component | Score table below the
   fold at the sheet's "Half" height** — the flower is now capped at a smaller size at Half height so
   the table's first rows stay in view; "Full" height still shows the bigger flower.
-- **Fixed: the species table's "ER score" column showed a percent ("1%", "10%")** — it now shows
-  the release's own plain 1–100 number.
 - **Report copy: "modelled" → "modeled"**, and the AquaMaps citation's "Unported License" now
   reads with its own space, not run together.
 
