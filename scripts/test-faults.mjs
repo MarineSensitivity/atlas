@@ -592,16 +592,12 @@ const FAULTS = [
       "composeStyle() stops reading input.layerStack -- every Layers-panel reorder/opacity/" +
       "visibility change silently does nothing, and the map always renders the default stack " +
       "(R3's own regression, replayed)",
-    gate: [
-      "npx",
-      "playwright",
-      "test",
-      "--project=chromium",
-      "e2e/layers.spec.ts",
-      "-g",
-      "a pixel probe shows the promoted basemap layer painting OVER the raster",
-      "--workers=1",
-    ],
+    // gate = the WHOLE layers spec, not one pixel-probe test: CI run 36081182035 (2026-09-25) saw
+    // that single probe stay GREEN under this fault -- a pixel that reads the basemap colour also
+    // when the raster never painted (software GL under xvfb), so it could not tell "promoted over
+    // the raster" from "no raster". The file's reorder/opacity/visibility tests cannot all pass
+    // with input.layerStack ignored, whatever painted.
+    gate: ["npx", "playwright", "test", "--project=chromium", "e2e/layers.spec.ts", "--workers=1"],
     env: { PW_PORT: "4377" },
   },
   // U3 (round 2): the privacy rule behind "Send feedback"'s own checkbox -- `buildFeedbackPayload()`
