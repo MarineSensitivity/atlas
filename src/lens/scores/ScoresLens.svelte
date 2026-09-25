@@ -36,11 +36,9 @@
     type LayersProjectionControl,
     type LayersRowState,
     type LayersUnitToggle,
-    type LayersZoomField,
   } from "../../lib/ui/LayersPanel.svelte";
   import { layerByKey, layerGroups, metricKeyLabel, primaryUnitNote, unitOptions } from "./boot";
   import { isPlacesSelectionEmpty } from "../../lib/state/types";
-  import { studyAreasFromBoot, type StudyArea } from "../../lib/map/interaction";
   import FlowerPanel from "./FlowerPanel.svelte";
   import TablePanel from "./TablePanel.svelte";
   import type { LayerStackEntry, Outline } from "../../lib/state/types";
@@ -113,12 +111,16 @@
     "data-places": { empty: isPlacesSelectionEmpty(sel.sel), hint: "— nothing selected" },
   });
 
-  // R3 deliverable 3 (Ben, 2026-09-25): "Move Layer selector to top... Rename 'Study area' to
-  // 'Zoom to region'" -- both promoted from `ScoresLayersPanel`'s own body to the shared panel's
-  // panel-level fields, built here from the SAME pure boot readers that component used to call
-  // directly (`layerGroups`/`layerByKey`/`studyAreasFromBoot`), so the move changes nothing about
-  // what each control reads or writes, only where it renders.
-  const studyAreas = $derived(studyAreasFromBoot(boot));
+  // R3 deliverable 3 (Ben, 2026-09-25): "Move Layer selector to top" -- promoted from
+  // `ScoresLayersPanel`'s own body to the shared panel's panel-level field, built here from the
+  // SAME pure boot readers that component used to call directly (`layerGroups`/`layerByKey`), so
+  // the move changes nothing about what the control reads or writes, only where it renders.
+  //
+  // W6 (Ben, 2026-09-25): "Regions move into the Search bar" -- the "Zoom to region" select this
+  // deliverable ALSO promoted (its own `studyAreasFromBoot`-derived `zoomField`, `onAreaChange`)
+  // moved OUT again, into `ScoresSearch.svelte`'s "Regions" group (`search.ts#matchRegions`,
+  // `state.svelte.ts#selectRegion`) -- "the Search bar is really a zoom to this place... Region
+  // ... could also [live] there too" (Ben). `LibLayersPanel`'s `zoomField` prop is gone with it.
   const groups = $derived(layerGroups(boot));
 
   // Fix round (orchestrator, 2026-09-25, R3-B1): the WHOLE `metricLabels ?? layer.label` chain
@@ -156,22 +158,6 @@
       if (unitNote && layerDesc) return `${unitNote} ${layerDesc}`;
       return unitNote ?? layerDesc;
     })(),
-  });
-
-  function onAreaChange(value: string) {
-    // atlas-8 defect fix (owner report, 2026-09-24): the camera used to fly from HERE, the panel
-    // BODY — which never runs for a `sel.area` arriving from the URL on load (a collapsed/unmounted
-    // panel means it never runs at all). `Shell.svelte`'s own `$effect` (camera.ts's
-    // `shouldFlyToArea`) now owns the fly, for both load and change; clearing `map` here is what
-    // lets it (its own guard skips while an explicit `sel.map` camera is set).
-    selStore.set({ area: value, map: undefined });
-  }
-
-  const zoomField = $derived<LayersZoomField>({
-    label: "Zoom to region",
-    value: sel.area,
-    options: studyAreas.map((a: StudyArea) => ({ value: a.key, label: a.label ?? a.key })),
-    onChange: onAreaChange,
   });
 
   // R3 deliverable 6: the "Outlines" row's outline CHOICE, bound to `Sel.out`.
@@ -280,7 +266,6 @@
     onChange={onLayerStackChange}
     {unitToggle}
     {layerField}
-    {zoomField}
     {outline}
     {projection}
     {rowState}

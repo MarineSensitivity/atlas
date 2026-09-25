@@ -1,0 +1,54 @@
+/*
+ * UI-11 (Opus 5.5 eyes-on review, round 3): "three tooltip mechanisms" -- a CSS-only hover/focus
+ * tooltip existed twice, independently, scoped to `.tool[data-tooltip]` (shell.css, the top bar)
+ * and `.move-btn[data-tooltip]` (LayersPanel.svelte, the reorder buttons), and every OTHER
+ * icon-only button in the app (the panel's Dock/Full screen/Collapse controls, the phone sheet's
+ * three detent buttons, the Table's info/download buttons, a popup's close button) had no tooltip
+ * mechanism to opt into at all. One global utility, imported once at the app root
+ * (`shell.css`/`src/gallery/main.ts`, the SAME two places `touch-targets.css` is imported for the
+ * identical reason -- one file, every consumer): ANY element carrying `data-tooltip` gets the
+ * tooltip, regardless of which component renders it. Plain, unscoped CSS (not a Svelte
+ * component's own <style> block), for the same reason `touch-targets.css` is: Svelte's per-file
+ * style scoping only adds an extra hash class alongside the original selector, it never renames
+ * it, so a plain `[data-tooltip]` selector here still matches every consumer.
+ *
+ * `data-tooltip` is always Sentence case and equal to the element's own `aria-label` (never a
+ * second, drifting copy of the accessible name -- About's tooltip used to read "Info" while its
+ * label was "About this release"). `content: attr(data-tooltip)` is decorative only (generated
+ * content is not exposed to the accessibility tree), so nothing is announced twice.
+ */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 30;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  box-shadow: var(--elev-2);
+  pointer-events: none;
+}
+
+/* UI-11: "the Help tooltip paints over the open Help menu" -- a `[data-tooltip]` button that ALSO
+   opens a menu/dialog/popover (`aria-haspopup`, the APG trigger convention Help/About/Download all
+   carry) suppresses its own tooltip while that thing is open (`aria-expanded="true"`): the
+   menu/dialog is already the more useful thing on screen, and the tooltip's absolute box (anchored
+   top:/right: 0 on the trigger) has no way to know it should route around a sibling popup taller
+   than itself. Scoped to `[aria-haspopup]` specifically -- NOT every `[aria-expanded="true"]` --
+   because `aria-expanded` also describes plain disclosure state with no floating popup at all
+   (Panel.svelte's own "Collapse to a pill" carries `aria-expanded="true"` for the PANEL BODY, not
+   a popup; suppressing ITS tooltip on that basis would just always hide it). */
+[data-tooltip][aria-haspopup][aria-expanded="true"]:hover::after,
+[data-tooltip][aria-haspopup][aria-expanded="true"]:focus-visible::after {
+  display: none;
+}

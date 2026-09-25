@@ -295,6 +295,44 @@ export function zoneBboxFromFeatures(
   ];
 }
 
+/** W6 fix (Ben's live-site report, 2026-09-25): "a SECOND Program-Area search pick does not zoom."
+ * Root cause: `zoneBoundsFromMap` (state.svelte.ts) queried `querySourceFeatures` FILTERED to the
+ * one key just picked -- MapLibre only answers that from tiles currently loaded for the viewport
+ * NOW, and the first pick's own `flyToBounds` had already zoomed the camera in tight on the FIRST
+ * zone, so the second zone's tile (elsewhere on the map, never visited) was never requested and the
+ * filtered query came back empty every time after the first. The first pick "worked" only because
+ * the app's initial, wide default camera happens to have every Program Area's outline already
+ * loaded (they are always-on chrome, `layerStack.ts`'s "Outlines" group).
+ *
+ * The fix (this function): query UNFILTERED instead, once, and group EVERY key seen into its own
+ * bbox in one pass -- so a caller building a persistent cache (`state.svelte.ts`'s
+ * `zoneBoundsCache`) absorbs every OTHER zone's tile that happened to already be loaded (which, at
+ * the initial wide camera, is normally all of them) in the same call that resolves the one zone it
+ * actually needs, and every LATER pick is a cache hit that needs no live map query at all. */
+export function zoneBboxesByKeyFromFeatures(
+  features: readonly {
+    properties?: Record<string, unknown> | null;
+    geometry: { type: string; coordinates: unknown };
+  }[],
+  keyProperty: string,
+): Map<string, [[number, number], [number, number]]> {
+  const byKey = new Map<string, { geometry: { type: string; coordinates: unknown } }[]>();
+  for (const f of features) {
+    const raw = f.properties?.[keyProperty];
+    if (raw === undefined || raw === null) continue;
+    const key = String(raw);
+    const list = byKey.get(key);
+    if (list) list.push(f);
+    else byKey.set(key, [f]);
+  }
+  const out = new Map<string, [[number, number], [number, number]]>();
+  for (const [key, feats] of byKey) {
+    const bounds = zoneBboxFromFeatures(feats);
+    if (bounds) out.set(key, bounds);
+  }
+  return out;
+}
+
 // --- Q3 (P round, 2026-09-24): "Selecting a Program Area place opens no results panel in
 // Places" -- the same `ResultsPanel.svelte` a drawn/uploaded place gets now renders for a
 // `kind: "zone"` place too, reading everything below straight off `boot` (published, synchronous

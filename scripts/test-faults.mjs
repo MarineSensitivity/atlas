@@ -1844,6 +1844,23 @@ export const FAULTS = [
     env: { PW_PORT: "4437" },
     duckdbExt: true,
   },
+  // --- round 3, W6 (consistency slice A: shell + shared UI) ---------------------------------------
+  {
+    id: "notify-toast-dropped",
+    patch: "tests/faults/notify-toast-dropped.patch",
+    describe:
+      "announcer.ts's notify() drops its pushToast() call -- a user-initiated action's result/" +
+      "error goes back to reaching only a screen reader, with no visible toast at all (UI-1)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.toast.spec.ts",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4471" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

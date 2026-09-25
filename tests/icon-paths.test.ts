@@ -38,6 +38,9 @@ const SPEC_ICON_NAMES = [
   "chevronUp",
   "collapseSide",
   "collapseDown",
+  // UI-19 (round 3): the phone sheet's "peek" detent -- the collapse control's own flipped
+  // direction ("Expand to half") instead of a dead "Collapse to a peek" no-op there.
+  "collapseUp",
   "dockRight",
   "dockBottom",
   "dockLeft",

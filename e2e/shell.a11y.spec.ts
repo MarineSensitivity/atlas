@@ -99,8 +99,23 @@ async function gotoShell(page: import("@playwright/test").Page, theme: string, p
 // own token pair (`--text-secondary`/`--text-primary` on `--surface-panel-basis`) is one of the
 // pairs `node scripts/contrast.mjs` independently resolves and passes -- the same conclusion
 // every prior re-triage on this constant reached for the identical shape of change.
+// RE-TRIAGED round 3, W6 (2026-09-25): phone 19 -> 21, desktop UNCHANGED at 26 (measured 18,
+// comfortably under -- the W6 round's own "Zoom to region" field removal, below, nets desktop
+// FEWER glass-panel text nodes, not more). Two sources on phone specifically: (1) UI-2's fix
+// anchors `.map-attribution` to the sheet's real height instead of a flat offset -- its own
+// `color-mix()` glass background (unchanged token pair, already one of the 90
+// `scripts/contrast.mjs` resolves) now sits somewhere the sheet/rail glass panels are newly
+// BEHIND it at some detents, an additional `bgOverlap`/`pseudoContent` axe cannot resolve through,
+// the identical shape of "the pixels are fine, the tool cannot see through two stacked surfaces"
+// this constant's own history already covers. (2) the W6 round ALSO removed the "Zoom to region"
+// field-label node (moved into the Search bar) -- one fewer -- so the net phone change is smaller
+// than the raw new-node count suggests. Dumped and read every node's `target`/`html` (a temporary
+// debug branch in this test, removed before commit) to confirm each new node is plain TEXT over
+// this app's own glass chrome (no new checkbox/native-control node, so UI-10's `accent-color`
+// addition this same round is NOT a contributor) -- the reason keys stay within the
+// already-allowed set below, never a new, untriaged one.
 const COLOR_CONTRAST_INCOMPLETE_CEILING: Record<string, number> = {
-  phone: 19,
+  phone: 21,
   desktop: 26,
 };
 // `imgNode` joined `pseudoContent` in the same re-triage: axe reports it when the element's

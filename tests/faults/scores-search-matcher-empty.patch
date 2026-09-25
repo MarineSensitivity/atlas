@@ -1,13 +1,13 @@
 diff --git a/src/lens/scores/search.ts b/src/lens/scores/search.ts
-index 8612b2c..e7aefb8 100644
+index 5165b56..6d10b12 100644
 --- a/src/lens/scores/search.ts
 +++ b/src/lens/scores/search.ts
-@@ -72,7 +72,7 @@ function matchRank(query: string, key: string, name: string | undefined): number
+@@ -142,7 +142,7 @@ function rankRegions(boot: unknown, q: string, orderStart = 0): Ranked<RegionSea
   */
  export function matchZones(boot: unknown, query: string, limit = MAX_RESULTS): ZoneSearchMatch[] {
    const q = fold(query);
 -  if (!q) return [];
 +  if (q.length >= 0) return []; // SEEDED FAULT: the matcher never returns a zone
-   const ranked: Array<{ m: ZoneSearchMatch; rank: number; order: number }> = [];
-   let order = 0;
-   for (const unit of searchableZoneUnits(boot)) {
+   const ranked = rankZones(boot, q);
+   ranked.sort((a, b) => a.rank - b.rank || a.order - b.order);
+   return ranked.slice(0, limit).map((r) => r.m);

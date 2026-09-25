@@ -7,6 +7,17 @@
 //
 // Exactly ONE <Announcer /> renders the actual region (mount it once, near the app root); every
 // other component calls `announce(text)` and renders no region of its own.
+//
+// UI-1 (round 3, Opus 5.5 eyes-on review): "About 60 announce() messages go only to a
+// screen-reader live region. A sighted user sees nothing happen" (Share's own copy confirmation,
+// pick-mode on/off, draw hints, every 'couldn't...' error). `notify()` is the fix: it calls
+// `announce()` (unchanged -- screen readers still hear it) AND enqueues a VISIBLE toast
+// (`toastQueue.ts#pushToast`, read by whichever `<Toast>` is mounted -- Shell.svelte's, or
+// report.html's own). Every USER-INITIATED action's result/error goes through `notify()` now;
+// `announce()` alone stays for chatty status (a live row count as a filter changes, say) that
+// would be noisy as a popping toast on every keystroke.
+import { pushToast, type ToastTone } from "./toastQueue";
+
 type Listener = (text: string) => void;
 
 let listeners: Listener[] = [];
@@ -23,6 +34,15 @@ export function announce(text: string): void {
   zeroWidthToggle = !zeroWidthToggle;
   lastMessage = text + (zeroWidthToggle ? ZERO_WIDTH_SPACE : "");
   for (const listener of listeners) listener(lastMessage);
+}
+
+/** Announces `text` (same as `announce()`) AND enqueues a visible toast -- the fix for a
+ * user-initiated action whose result/error must be seen, not just heard. `opts.tone` marks an
+ * error toast (a subtle visual difference only; the SCREEN-READER text is identical either way,
+ * `announce()` carries no tone concept and never will). */
+export function notify(text: string, opts?: { tone?: ToastTone }): void {
+  announce(text);
+  pushToast(text, opts?.tone);
 }
 
 /** Subscribes to every future announcement; returns an unsubscribe function. Called by

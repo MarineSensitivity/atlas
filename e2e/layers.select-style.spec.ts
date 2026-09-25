@@ -83,13 +83,13 @@ for (const [name, viewport] of [
     // deliverable), which has no chevron to span in the first place. The Layer picker joins this
     // loop instead: R3-B2 made it a real `Select.svelte` too (it used to be a bespoke native
     // `<select>` with no `.select-wrap`/chevron at all, covered separately below).
-    test("Zoom to region / Layer: the box spans to the chevron, never past it", async ({
-      page,
-    }) => {
+    //
+    // W6 (Ben, 2026-09-25): "Zoom to region" is gone from this loop -- moved into the Search bar's
+    // Regions group (`ScoresSearch.svelte`), which has no `Select.svelte`/chevron of its own; the
+    // Layer field is now the panel's only one, and full width.
+    test("Layer: the box spans to the chevron, never past it", async ({ page }) => {
       await gotoLayers(page);
-      for (const label of ["Zoom to region", "Layer"]) {
-        await assertSelectSpansChevron(page, label);
-      }
+      await assertSelectSpansChevron(page, "Layer");
     });
 
     // D2 fix round 2 (CI: three-engine run 35971206753, [webkit] red): a native <select>'s own
