@@ -1,3 +1,23 @@
+# atlas 0.10.76
+
+Round 3, CI-reds fix (CI run 36158947685). A Program-Area search pick's camera flight could
+silently do nothing under load (webkit 3/3, firefox flaky, chromium fine).
+
+- **Fixed: a Program-Area search pick could fail to fly the camera at all, under load** —
+  `selectZone`'s bounds resolution (`src/lens/scores/state.svelte.ts`) made exactly ONE
+  synchronous attempt, at the instant Enter was pressed: a published `bbox`, else a live,
+  unfiltered `querySourceFeatures` query over the zones PMTiles source. MapLibre only answers
+  that query from tiles that have already finished BOTH their network fetch and their
+  worker-side vector-tile parse — a real race, not a geometry bug (the same class `report/
+reportMap.ts#waitForIdle` already exists to close for `queryRenderedFeatures`) — so a script
+  (or a person) pressing Enter before the zones layer's tiles are parsed could see the URL/
+  selection update with no camera move at all, permanently: no retry. Fixed by retrying the
+  exact same resolution once more after the map's next `"idle"` (bounded by a 1.5s fallback
+  timer), guarded so a stale retry can never override a later selection. New pure helpers
+  `zoneCacheKey`/`zoneKnownBounds` (`src/lens/scores/boot.ts`) factor the resolution out so both
+  the immediate attempt and the retry call the identical logic, and so it is unit-testable
+  without a real map (`tests/lens/scores/boot.test.ts`).
+
 # atlas 0.10.74
 
 Round 3, W3b (accessibility fix, CI run 36158947685). The gallery's axe gate flagged
