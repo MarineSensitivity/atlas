@@ -1,0 +1,15 @@
+diff --git a/src/lib/health/probe.ts b/src/lib/health/probe.ts
+index 7f5e8cd..85d9d7f 100644
+--- a/src/lib/health/probe.ts
++++ b/src/lib/health/probe.ts
+@@ -55,7 +55,9 @@ export async function probeUrl(url: string, opts: ProbeOptions = {}): Promise<Pr
+       signal: controller.signal,
+     });
+     const durationMs = now() - start;
+-    if (res.status >= 500) {
++    // SEEDED FAULT (tests/faults/health-probe-404-treated-as-down.patch): reverts to `!res.ok`
++    // -- any non-2xx (a hermetic fixture's own legitimate 403/404 included) is "down" again.
++    if (!res.ok) {
+       return { status: "down", url, reason: `HTTP ${res.status}`, checkedAt: now(), durationMs };
+     }
+     const status: ProbeStatus = durationMs >= slowMs ? "slow" : "ok";

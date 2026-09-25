@@ -49,6 +49,26 @@ describe("probeUrl: a healthy response", () => {
   });
 });
 
+// P round 2 (CI run 36070452831): a hermetic e2e fixture's app/boot.json legitimately 404s (no
+// release publishes it yet, routeBucket()'s own default when no `boot` fixture is given) -- the
+// OLD `!res.ok` gate misread that as "down", raising the banner on nearly every shell spec and
+// blocking every topbar click underneath it. A 403/404 proves the host answered; only a genuine
+// 5xx (or a network error/timeout, below) means the service itself is broken.
+describe("probeUrl: a reachable-but-non-2xx response (403/404) is NOT down", () => {
+  it("classifies a 404 as ok, not down", async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 404 }) as Response);
+    const result = await probeUrl("https://example.test/app/boot.json", { fetchImpl });
+    expect(result).toMatchObject({ status: "ok", url: "https://example.test/app/boot.json" });
+    expect(result.reason).toBeUndefined();
+  });
+
+  it("classifies a 403 as ok, not down", async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 403 }) as Response);
+    const result = await probeUrl("https://example.test/app/boot.json", { fetchImpl });
+    expect(result.status).toBe("ok");
+  });
+});
+
 describe("probeUrl: a real failure — every kind is 'down', with the reason the banner quotes", () => {
   it("classifies a non-2xx response as down, reason 'HTTP <code>'", async () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 503 }) as Response);

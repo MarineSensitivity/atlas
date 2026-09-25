@@ -27,10 +27,18 @@ function classifyFetchError(err: unknown): string {
 
 /**
  * One probe of `url`: `ok` (2xx, under `slowMs`), `slow` (2xx, `slowMs`..`timeoutMs`), or `down`
- * (non-2xx, a network error, or the timeout firing) -- classification P8/analysis/sources.ts's
- * `isMissingTileStatus` already uses for a MISSING tile (403/404 = empty, not a failure) does NOT
- * apply here: this probes a route that is either healthy (200) or actually broken, never a
- * "legitimately absent" 403/404 the way a per-model tile can be.
+ * (a 5xx, a network error, or the timeout firing).
+ *
+ * P round 2 fix (CI run 36070452831, Ben's report): this used to gate on `!res.ok`, so ANY
+ * non-2xx -- including a 403/404 -- read as the service being DOWN. `dataServiceDef`'s probe
+ * target is `{ver}/app/boot.json`, which legitimately 404s in every hermetic e2e fixture that
+ * doesn't hand `routeBucket()` a `boot` fixture (it isn't published for any release yet, atlas-1)
+ * -- so the banner showed on nearly every shell spec and, being a covering overlay, blocked every
+ * topbar click underneath it (feedback.spec.ts, shell.chrome.spec.ts, shell.url-state.spec.ts,
+ * shell.chunk-error.spec.ts, ...). A 403/404 (or any other non-5xx status) proves the HOST
+ * answered -- reachable, not down -- matching P8/analysis/sources.ts's own `isMissingTileStatus`
+ * precedent (403/404 = legitimately absent, not a failure). Only a genuine 5xx, a network error or
+ * the timeout firing still means the service itself is broken.
  */
 export async function probeUrl(url: string, opts: ProbeOptions = {}): Promise<ProbeResult> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -47,7 +55,7 @@ export async function probeUrl(url: string, opts: ProbeOptions = {}): Promise<Pr
       signal: controller.signal,
     });
     const durationMs = now() - start;
-    if (!res.ok) {
+    if (res.status >= 500) {
       return { status: "down", url, reason: `HTTP ${res.status}`, checkedAt: now(), durationMs };
     }
     const status: ProbeStatus = durationMs >= slowMs ? "slow" : "ok";

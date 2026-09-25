@@ -150,3 +150,65 @@ test.describe("V3: titiler-v8 down — a visible banner replaces the silent empt
     await expect(banner(page)).toBeHidden({ timeout: 15_000 });
   });
 });
+
+// P round 2 (CI run 36070452831, three-engine job: 97/1119 failed on chromium, webkit AND
+// firefox): the banner used to be `position: fixed` at the viewport's top edge, so whenever it
+// showed it painted OVER `.topbar` and swallowed every click meant for a control underneath it --
+// this is the real-browser proof that a topbar control stays clickable with the banner up. See
+// HealthBanner.svelte's own header comment for the placement fix (now `.stage`-scoped, below the
+// topbar's separate CSS Grid row).
+test.describe("P round 2: the banner never covers the top bar", () => {
+  test("with the tiler down, a click on Feedback and on the lens switch still work", async ({
+    page,
+  }) => {
+    const down = routeTilerDown(page);
+    await gotoWithFailingTiler(page, down);
+    await expect(banner(page)).toBeVisible({ timeout: 15_000 });
+
+    // Feedback: a real topbar control the OLD fixed overlay sat directly on top of -- clicking it
+    // opens the screenshot-feedback <dialog> (TopBarActions.svelte's onFeedbackClick).
+    await page.locator('[data-control="feedback"]').click();
+    await expect(page.locator("dialog[open]")).toBeVisible({ timeout: 2000 });
+    await page.keyboard.press("Escape");
+    await expect(page.locator("dialog[open]")).toBeHidden();
+
+    // the lens switch: another topbar control, further along the same strip the banner used to
+    // cover end to end.
+    const speciesButton = page
+      .locator('[data-control="lens-switch"]')
+      .getByRole("button", { name: "Species" });
+    await speciesButton.click();
+    await expect(speciesButton).toHaveAttribute("aria-pressed", "true", { timeout: 2000 });
+
+    // the banner itself is still up throughout -- this proves the controls are reachable WITH it
+    // showing, not merely that it happened to have cleared.
+    await expect(banner(page)).toBeVisible();
+  });
+});
+
+// P round 2, second half of the same incident: the data-origin probe misread an ORDINARY hermetic
+// fixture's app/boot.json 404 (no release publishes it yet -- routeBucket()'s own 404 when no
+// `boot` fixture is given, hermetic.ts) as the release data being DOWN, so this banner appeared on
+// nearly every shell spec that never asked for it -- see probe.ts's own P round 2 comment. This is
+// the regression test for that: the plain hermetic fixture (no `boot` argument, tiler healthy)
+// must show NO banner, ever.
+test.describe("P round 2: an ordinary hermetic fixture never raises a banner", () => {
+  test("no boot.json fixture, tiler healthy: no banner within 5s of boot", async ({ page }) => {
+    await blockWasm(page);
+    await routeBucket(page); // NO `boot` arg -- app/boot.json 404s, like most shell specs
+    await routeSession(page, null);
+    await routeSealFixture(page);
+    await routeZonesPmtiles(page);
+    await routeBasemapStyle(page);
+    await routeGlyphs(page);
+    await page.goto("/");
+    await waitForHydration(page);
+    await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
+    await expect(banner(page)).toBeHidden();
+
+    // the boot-time data-origin probe (trigger a) fires as soon as `early.version` resolves --
+    // give it (and a misclassification, were the bug still present) time to actually land.
+    await page.waitForTimeout(5000);
+    await expect(banner(page)).toBeHidden();
+  });
+});

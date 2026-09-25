@@ -31,4 +31,20 @@ describe("dataServiceDef", () => {
     expect(dataServiceDef("v7").url).toContain("/v7/app/boot.json");
     expect(dataServiceDef("v9").url).toContain("/v9/app/boot.json");
   });
+
+  // P round 2 fix: `base`, when given, is `window.__early.base` -- the SAME resolved origin
+  // index.html's own early-fetch script used for its `app/boot.json` fetch (a preview session's
+  // signed-in data prefix, on the preview host). Threading it through here (services.ts's former
+  // "known gap") means the probe can never disagree with what the release itself actually loaded.
+  it("probes under a GIVEN resolved base, not the public bucket, when one is passed", () => {
+    const def = dataServiceDef("v9", "https://data.example.org/prefix/");
+    expect(def.url).toBe("https://data.example.org/prefix/v9/app/boot.json");
+    expect(def.hostLabel).toBe("data.example.org");
+  });
+
+  it("falls back to the public bucket when no base is given", () => {
+    expect(dataServiceDef("v9").url).toBe(
+      "https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v9/app/boot.json",
+    );
+  });
 });

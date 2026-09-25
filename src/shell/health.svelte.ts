@@ -39,8 +39,11 @@ export interface HealthStore {
    * never has to wait on anything. */
   probeTiler(): void;
   /** trigger (a), data half: call once `ver` resolves (`window.__early.version`). Registers the
-   * `"data"` service on first call (its URL depends on `ver`, unlike the tiler's). */
-  probeData(ver: string): void;
+   * `"data"` service on first call (its URL depends on `ver`, unlike the tiler's). `base`, when
+   * given, is the resolved data origin `window.__early.base` carried (P round 2 fix: probe the
+   * SAME base the release's own boot.json fetch used, not always the public bucket -- see
+   * services.ts#dataServiceDef). */
+  probeData(ver: string, base?: string): void;
   /** trigger (b): hand the map's raw `error` event straight from `map.on("error", ...)` -- this
    * classifies it itself (ignoring a missing-tile 403/404 and anything not under the tiler host)
    * and, for a real failure, kicks a backoff-gated re-probe; the banner's own text always comes
@@ -96,9 +99,9 @@ export function createHealthStore(opts: HealthStoreOptions = {}): HealthStore {
     probeTiler() {
       void run("tiler", tiler, false);
     },
-    probeData(ver: string) {
+    probeData(ver: string, base?: string) {
       if (!defFor("data")) {
-        defs = [...defs, dataServiceDef(ver)];
+        defs = [...defs, dataServiceDef(ver, base)];
         state = { ...state, data: state.data ?? { attempt: 0, inFlight: false } };
       }
       const def = defFor("data");

@@ -1,3 +1,22 @@
+# atlas 0.10.62
+
+Round 2, V7: fix for CI run 36070452831 (three-engine job, 97/1119 failed on chromium, webkit AND
+firefox) — the V3 service-health banner covered the top bar and misread ordinary hermetic-fixture
+404s as an outage.
+
+- **Fixed: the health banner (titiler/data-origin outage notice) covered the top bar, blocking
+  every click underneath it** — it rendered as a `position: fixed` overlay pinned to the viewport's
+  top edge, on top of the Feedback control, the Scores/Species switch, the ⋯ menu, Help > Docs and
+  the theme toggle whenever it showed. It now renders inside the map stage, below the top bar's own
+  row (which it can no longer cover) and above the map (which it may overlap).
+- **Fixed: the release-data health check treated an ordinary 403/404 as the service being down** —
+  it probed `{release}/app/boot.json`, which legitimately does not exist yet for any release, and
+  read that as an outage rather than a normal "nothing published here" response. Combined with the
+  placement bug above, this raised the banner (and blocked topbar clicks) on nearly every page load
+  that didn't already have `app/boot.json` published. Only a genuine server error, timeout, or
+  network failure now counts as down. The check also now looks at the same data location the page
+  itself already loaded from, rather than assuming the public default.
+
 # atlas 0.10.61
 
 Round 2, V6: fix for the Scores-lens top-bar search found while shooting the Program Area harness
