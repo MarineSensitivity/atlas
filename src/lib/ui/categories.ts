@@ -60,7 +60,12 @@ export const CATEGORIES: readonly (Category & { key: CategoryKey })[] = [
   { key: "invertebrate", label: "Invertebrate", icon: null, color: "--cat-invertebrate" },
   { key: "mammal", label: "Mammal", icon: null, color: "--cat-mammal" },
   { key: "other", label: "Other", icon: null, color: "--cat-other" },
-  { key: "primprod", label: "Primary producer", icon: null, color: "--cat-primprod" },
+  // owner review item 8 (live 0.10.62): renamed to match the docs' own scoring-page wording
+  // (https://preview.marinesensitivity.org/docs/v9/scoring.html#flower-plot) -- "Primary
+  // production", never "Primary producer". The KEY ("primprod") and every underlying datum are
+  // untouched; only this display label changes, everywhere it is read from (categoryFor/
+  // categoryLabel), so the flower, the composition treemap and every score table pick it up.
+  { key: "primprod", label: "Primary production", icon: null, color: "--cat-primprod" },
   { key: "turtle", label: "Turtle", icon: null, color: "--cat-turtle" },
 ];
 

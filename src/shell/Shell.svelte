@@ -1124,6 +1124,12 @@
   let ScoresSearchComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let SpeciesLensPanelComp = $state<Component<any> | null>(null);
+  // owner review item 7 (live 0.10.62): the species lens' "Table" tool body -- lazy ON-DEMAND
+  // (activeTool==="table", below), same convention as PlacesComp/ReportToolComp, not part of the
+  // eager species-UI-group effect further down (a species session that never opens Table should
+  // not download it).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let SpeciesInputsTableComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let SpeciesPickerComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1280,6 +1286,16 @@
     }
   });
 
+  // owner review item 7 (live 0.10.62): loaded only once the species lens' Table tool is actually
+  // opened -- same on-demand convention as places/report above.
+  $effect(() => {
+    if (sel.lens === "species" && activeTool === "table" && !SpeciesInputsTableComp) {
+      import("../lens/species/SpeciesInputsTable.svelte")
+        .then((mod) => (SpeciesInputsTableComp = mod.default))
+        .catch(() => announceChunkFailure("the species inputs table"));
+    }
+  });
+
   $effect(() => {
     if (!VersionPickerModalComp) {
       import("../lens/scores/VersionPickerModal.svelte")
@@ -1380,23 +1396,27 @@
 
   <span class="spacer"></span>
 
+  <!-- owner review item 5 (live 0.10.62, "let's drop words but add tooltip on hover: Share, Help,
+       Feedback, Info"): icon-only, matching Help/About/Theme's existing convention -- `aria-label`
+       keeps the SAME accessible name the visible text used to give (keyboard/screen-reader users
+       see no change), and `data-tooltip` (shell.css) draws a hover/focus tooltip with the same
+       text, CSS-only (no JS state), so it shows in a plain headless screenshot too. -->
+  <!-- owner review item 3 (live 0.10.62, "Drop Report from upper right utility menu, since
+       duplicative with left toolbar"): the desktop Report button (data-control report-top, no
+       longer a real attribute anywhere in this file -- tests/shell/shell-invariants.test.ts scans
+       for the literal `attr="value"` text, so this comment deliberately never spells it that way)
+       that used to sit here is REMOVED -- the rail's own Report tool (data-tour rail-report,
+       tour.ts) and the phone ⋯ menu's Report item (TopBarActions.svelte, unchanged) both stay. -->
   <button
     type="button"
     class="tool topbar-desktop-only"
     data-tour="share"
     data-control="share"
+    aria-label="Share"
+    data-tooltip="Share"
     onclick={onShare}
   >
-    <Icon name="share" size={18} />Share
-  </button>
-  <button
-    type="button"
-    class="tool topbar-desktop-only"
-    data-tour="report-top"
-    data-control="report-top"
-    onclick={onReport}
-  >
-    <Icon name="report" size={18} />Report
+    <Icon name="share" size={18} />
   </button>
   <!-- U6 (round 2): the (?) Help menu -- tour, keyboard shortcuts, a docs link. Always rendered
        (never {#if helpOpen}), toggled with `hidden`, so `aria-controls` on the trigger names an
@@ -1418,6 +1438,7 @@
       aria-expanded={helpOpen}
       aria-controls="help-menu"
       aria-label="Help"
+      data-tooltip="Help"
       bind:this={helpTriggerEl}
       onclick={onHelp}
     >
@@ -1694,6 +1715,21 @@
         {#if SpeciesLensPanelComp}
           {@const Comp = SpeciesLensPanelComp}
           <Comp lens={speciesLens} rep={sel.rep} {layerStack} {onLayerStackChange} />
+        {:else}
+          <p>{TOOL_BODY[activeTool]}</p>
+        {/if}
+      {:else if sel.lens === "species" && activeTool === "table"}
+        <!-- owner review item 7 (live 0.10.62): the placeholder text below used to be the WHOLE
+             body here ("The species and zone tables arrive in a later phase.") -- now the selected
+             model's own inputs, reshaped from the SAME `speciesLens.bar` the layer bar already
+             computes (SpeciesInputsTable.svelte's own header). -->
+        {#if SpeciesInputsTableComp}
+          {@const Comp = SpeciesInputsTableComp}
+          <Comp
+            bar={speciesLens.bar}
+            loading={speciesLens.loading}
+            cardError={!!speciesLens.cardError}
+          />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
         {/if}

@@ -294,3 +294,36 @@ describe("atlas-4 fix round 2: every real component resolves to a defined color 
     expect(categoryFor("other").color).not.toBe(NO_DATA_CATEGORY.color);
   });
 });
+
+// owner review item 9 (Ben, live 0.10.62): "In v1 I am seeing flower plot with component 'No
+// data', which should not exist." RED-FIRST: fails on the pre-fix tree (a petal literally labelled
+// "No data" for the real, scored `extrisk_reptile_ecoregion_rescaled` component -- see
+// BOOT_V1_PLANAREA's own header, `tests/lens/scores/fixtures.ts`, for where the real v1 metrics
+// this exercises came from).
+describe("owner review item 9: v1's real reptile component never renders as 'No data'", () => {
+  it("every one of v1's real zone components resolves to a real petal with its OWN label, never the literal 'No data'", () => {
+    const rows = zoneRows(BOOT_V1_PLANAREA, "ecoregion");
+    const flower = zoneFlowerComponents(rows, "CAC")!;
+    expect(flower).not.toBeNull();
+    // 8 real _ecoregion_rescaled keys minus the dropped "all" total = 8 components (bird, coral,
+    // fish, invertebrate, mammal, other, reptile, primprod).
+    expect(flower.components).toHaveLength(8);
+    expect(flower.droppedLabels).toEqual([]);
+
+    const geometry = computeFlowerGeometry(flower.components);
+    expect(geometry.petals).toHaveLength(8);
+    for (const p of geometry.petals) {
+      expect(p.category.label, `petal "${p.key}" must never read literally "No data"`).not.toBe(
+        "No data",
+      );
+    }
+
+    // the reptile component specifically: a real, sentence-cased name (categoryLabel()'s own
+    // rule, matching every other surface -- ResultsPanel/SpeciesTable/ZonesTable), not the
+    // "not reportable" grey bucket's own hardcoded text.
+    const reptile = geometry.petals.find((p) => p.key === "reptile")!;
+    expect(reptile).toBeDefined();
+    expect(reptile.category.label).toBe("Reptile");
+    expect(reptile.score).toBeCloseTo(15.8720487921304, 6);
+  });
+});

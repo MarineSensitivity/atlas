@@ -294,8 +294,8 @@ describe("petalLabelText (the tap/hover/focus label -- one decimal, the SAME tex
 
   it("uses the category's own label, not the raw input key", () => {
     // "primary producer" normalizes to the SAME category as "primprod" (categories.ts) -- the
-    // label in the text must be the canonical one ("Primary producer"), not whatever spelling the
-    // caller happened to pass in.
+    // label in the text must be the canonical one ("Primary production", owner review item 8),
+    // not whatever spelling the caller happened to pass in.
     const petal = computeFlowerGeometry([{ key: "primary producer", score: 5 }]).petals[0];
     expect(petalLabelText(petal)).toBe(`${categoryFor("primprod").label}: 5.0`);
   });

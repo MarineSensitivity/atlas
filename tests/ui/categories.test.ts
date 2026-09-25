@@ -126,7 +126,9 @@ describe("categoryKeyFor / categoryFor: the two primary-producer spellings", () 
 // own Title/sentence-case label.
 describe("categoryLabel: the report/panel DISPLAY text for a raw component/category key", () => {
   it("a known category's raw string resolves to its local table label, never the raw spelling", () => {
-    expect(categoryLabel("primprod")).toBe("Primary producer");
+    // owner review item 8 (live 0.10.62): "Primary producer" -> "Primary production", matching
+    // the docs' own scoring-page wording.
+    expect(categoryLabel("primprod")).toBe("Primary production");
     expect(categoryLabel("bird")).toBe("Bird");
     expect(categoryLabel("mammal")).toBe("Mammal");
   });

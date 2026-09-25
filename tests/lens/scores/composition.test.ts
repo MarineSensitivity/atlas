@@ -30,8 +30,9 @@ describe("compositionTree (default measure: count, R8)", () => {
       { sp_cat: "primary_producer", suit_er_area: 4 },
       { sp_cat: "primprod", suit_er_area: 6 },
     ]);
+    // owner review item 8 (live 0.10.62): "Primary producer" -> "Primary production".
     expect(tree.children).toEqual([
-      { name: "Primary producer", categoryKey: "primprod", value: 2 },
+      { name: "Primary production", categoryKey: "primprod", value: 2 },
     ]);
   });
 

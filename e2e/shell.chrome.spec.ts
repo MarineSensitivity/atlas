@@ -60,6 +60,22 @@ test.describe("R2: About popover", () => {
     await expect(dialog.getByRole("link", { name: "What changed" })).toBeVisible();
   });
 
+  // owner review item 4 (live 0.10.62): "In About, credit Ben Best of Ocean Metrics LLC
+  // (https://oceanmetrics.io) and Timothy White of MMA."
+  test("credits Ben Best of Ocean Metrics LLC (linked) and Timothy White of MMA", async ({
+    page,
+  }) => {
+    await gotoShell(page, DESKTOP);
+    await page.locator('[data-control="about"]').click();
+    const dialog = page.getByRole("dialog", { name: "About this release" });
+    await expect(dialog).toContainText("Prepared by Ben Best of Ocean Metrics LLC");
+    await expect(dialog).toContainText("Timothy White of MMA");
+    await expect(dialog.getByRole("link", { name: "Ocean Metrics LLC" })).toHaveAttribute(
+      "href",
+      "https://oceanmetrics.io",
+    );
+  });
+
   test("a restricted release carries the watermark note; a public one does not", async ({
     page,
   }) => {
@@ -97,7 +113,10 @@ test.describe("R2: Send feedback", () => {
   test("the top-bar Feedback control opens the real feedback dialog", async ({ page }) => {
     await gotoShell(page, DESKTOP);
     const feedback = page.locator('[data-control="feedback"]');
-    await expect(feedback).toHaveText(/Feedback/);
+    // owner review item 5 (live 0.10.62): icon-only now, no visible "Feedback" text -- the
+    // accessible name/hover tooltip carry it instead (shell.css's `.tool[data-tooltip]`).
+    await expect(feedback).toHaveAttribute("aria-label", "Feedback");
+    await expect(feedback).toHaveAttribute("data-tooltip", "Feedback");
     // the href fallback (JS disabled/failed, middle-click) is still a real GitHub issue link --
     // unaffected by the dialog now handling a plain left click instead.
     await expect(feedback).toHaveAttribute("href", /github\.com/);

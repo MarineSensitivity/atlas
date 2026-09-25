@@ -451,27 +451,25 @@
         <span class="spacer"></span>
 
         <!--
-          flat siblings of .topbar, exactly matching src/shell/Shell.svelte's Share/Report/Help/
-          theme buttons (no wrapping element -- an extra wrapper here would change how .topbar's
-          own `gap` is distributed and shift everything after it; e2e/shell.cls.spec.ts's
-          geometry-equality gate caught exactly that). Each icon placeholder is 18x18, the exact
-          size Shell.svelte passes to <Icon size={18}/> for these four (--icon class is 20px, sized
-          for the search field's icon instead).
+          flat siblings of .topbar, exactly matching src/shell/Shell.svelte's Share/Help buttons
+          (no wrapping element -- an extra wrapper here would change how .topbar's own `gap` is
+          distributed and shift everything after it; e2e/shell.cls.spec.ts's geometry-equality gate
+          caught exactly that). Each icon placeholder is 18x18, the exact size Shell.svelte passes
+          to <Icon size={18}/> for these (--icon class is 20px, sized for the search field's icon
+          instead). Icon-only, no trailing label text (owner review item 5, live 0.10.62 -- the
+          hydrated buttons dropped their visible words for a hover tooltip, shell.css's
+          `.tool[data-tooltip]`). The desktop Report button (`report-top`) that used to sit between
+          Share and Help is REMOVED here too (owner review item 3) -- the skeleton and the hydrated
+          shell must agree on every `data-control`/`data-tour` anchor
+          (tests/shell/shell-invariants.test.ts).
         -->
         <span
           class="tool topbar-desktop-only"
           aria-hidden="true"
           data-tour="share"
           data-control="share"
-          ><span class="sk-icon-tool"></span>Share</span
-        >
-        <span
-          class="tool topbar-desktop-only"
-          aria-hidden="true"
-          data-tour="report-top"
-          data-control="report-top"
-          ><span class="sk-icon-tool"></span>Report</span
-        >
+          ><span class="sk-icon-tool"></span
+        ></span>
         <span
           class="tool topbar-desktop-only"
           aria-hidden="true"
@@ -506,8 +504,8 @@
           aria-hidden="true"
           data-tour="feedback"
           data-control="feedback"
-          ><span class="sk-icon-tool"></span>Feedback</span
-        >
+          ><span class="sk-icon-tool"></span
+        ></span>
         <span
           class="tool topbar-desktop-only"
           aria-hidden="true"

@@ -14,7 +14,7 @@
   } from "../lib/geo/placeCodec";
   import { hashFromPlaces } from "./model";
   import { diffSimplification, describeShareSummary, shareUrl, summarizeShare } from "./share";
-  import { downloadGeoJson, placesToGeoJson } from "./download";
+  import { downloadGeoJson, placesToGeoJson, type ZonePolygonSource } from "./download";
   import type { Place, GeomPlace } from "../lib/geo/placeCodec";
   import type { Sel } from "../lib/state/types";
   import type { SelStore } from "../lib/state/sel.svelte";
@@ -27,12 +27,18 @@
     selStore: SelStore;
     places: Place[];
     grid: GridSpec | null;
+    /** owner review item 2: the SAME `boot`/live-map polygon query `Places.svelte`'s own "Download
+     * places" passes to `placesToGeoJson` -- this dialog's "Download" button hits the identical
+     * bug (bare-key name, `geometry: null`) otherwise. Both optional so a caller with neither still
+     * downloads a file, just without the resolved name/geometry (`placesToGeoJson`'s own doc). */
+    boot?: unknown;
+    polygons?: ZonePolygonSource;
     /** Deliverable 7: counts/buckets only -- defaults to a no-op until the GA4 loader is wired
      * app-wide (analytics.ts's own header; this stays a no-op call site until that lands). */
     onShare?: (linkLength: number) => void;
   }
 
-  let { open, onclose, sel, selStore, places, grid, onShare }: Props = $props();
+  let { open, onclose, sel, selStore, places, grid, boot, polygons, onShare }: Props = $props();
 
   let fit = $state<FitResult | null>(null);
   let busy = $state(false);
@@ -114,7 +120,7 @@
   }
 
   function download() {
-    downloadGeoJson(placesToGeoJson(places));
+    downloadGeoJson(placesToGeoJson(places, boot, polygons));
     announce("Downloaded places as GeoJSON.");
   }
 </script>

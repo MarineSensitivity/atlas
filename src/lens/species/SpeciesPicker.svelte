@@ -279,13 +279,27 @@
 </div>
 
 <style>
+  /* owner review item 6 (live 0.10.62, "Search bar is narrower for Species than Scores... can we
+     keep it clean and wide without [the extra inset outline]?"): `width: 100%` -- WITHOUT it, this
+     flex item of the topbar's `.search-field` (inline-flex, row) sizes to its own content instead
+     of stretching to fill the field, unlike `ScoresSearch.svelte`'s own `.scores-search`, which
+     already carries this rule -- that mismatch was the width difference Ben saw between the two
+     lenses. */
   .species-picker {
     position: relative;
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+    width: 100%;
   }
 
+  /* owner review item 6's SECOND half ("the extra inset outline"): this component's own field
+     still carries its full border/padding/background here -- the PHONE search modal
+     (`.search-field-phone-control`, shell.css) has no ancestor chrome of its own and genuinely
+     needs it. The DESKTOP topbar field's redundant, doubled ring (`.search-field` already draws
+     the SAME border/padding/background one level up) is instead stripped by a DESKTOP-SCOPED
+     override in `shell.css` (`.topbar .search-field .picker-input`) -- see that rule's own header
+     for why it lives there, not here. */
   .picker-input {
     /* NOT --size-touch (44px): this field is desktop-only (Shell.svelte's `.search-field` is
        `topbar-desktop-only`, hidden entirely on phone) and its container is a fixed 32 px pill
