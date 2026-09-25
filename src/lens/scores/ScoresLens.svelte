@@ -174,9 +174,11 @@
     onChange: onAreaChange,
   });
 
-  // R3 deliverable 6: the "Outlines" row's outline CHOICE, bound to `Sel.out`.
-  function onOutlineChange(value: "programarea" | "ecoregion") {
-    selStore.set({ out: value as Outline });
+  // R3 deliverable 6, fix round D7: the "Outlines" row's Program-Areas on/off toggle, bound to
+  // `Sel.out`. `value` is the wider `Outline` type now (`LayersOutlineChoice`'s own header) --
+  // unchecking the checkbox writes "none" directly.
+  function onOutlineChange(value: Outline) {
+    selStore.set({ out: value });
   }
   const outline = $derived<LayersOutlineChoice>({ value: sel.out, onChange: onOutlineChange });
 

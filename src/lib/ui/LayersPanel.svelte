@@ -58,15 +58,21 @@
     onChange: (value: string) => void;
   }
 
-  /** R3 deliverable 6: the "Outlines" row's expander body — a two-option radio choice bound
-   * to `Sel.out`. `"none"` is deliberately NOT a third radio option: the row's own visible
-   * checkbox (every row has one) already hides the whole `data-zones` group — unchecking IS
-   * "none", so the radio group only ever offers the two real outlines. `value` may still arrive as
-   * `"none"` (a lens whose default is `"none"`, e.g. species) — the radio group then simply shows
-   * neither option checked, a legal state for a native radio group with no `checked` member. */
+  /** R3 deliverable 6, reshaped by the fix round (Opus 5.5 review, D7): the "Outlines" row's
+   * expander body — bound to `Sel.out`, but no longer a two-option RADIO. Read from
+   * `Shell.svelte`/`boot.ts` (not guessed): `Sel.out` gates exactly ONE real outline (the
+   * Program-Area selectable unit's own line, `zoneUnitsWithOutline()`); the ecoregion boundary is
+   * a separate, always-on decoration `boot.ts#ecoregionZoneUnitFromManifest` appends independent
+   * of `sel.out`/`sel.unit` — `boot.units[]` never publishes ecoregion as a selectable unit at all
+   * (D17). So there is one real ON/OFF toggle here, not a choice between two outlines; the panel
+   * now renders two independent checkboxes (Program Areas, live; Ecoregions, permanently
+   * checked+disabled, an honest "this is always on" rather than a dead radio option). `onChange`
+   * takes the WIDER `Outline` type (not just `"programarea" | "ecoregion"`) because unchecking
+   * Program Areas now writes `"none"` directly, the same value the row's own visible checkbox
+   * above already reaches by hiding the whole `data-zones` group. */
   export interface LayersOutlineChoice {
     value: Outline;
-    onChange: (value: "programarea" | "ecoregion") => void;
+    onChange: (value: Outline) => void;
   }
 
   /** R3 deliverable 7: "Sphere" moved out of the Data row's body to the bottom of the whole panel
@@ -128,10 +134,10 @@
     LAYER_GROUP_ENABLED,
     LAYER_GROUP_IN_PANEL,
     LAYER_GROUP_LABEL,
-    canMoveLayerStackEntry,
+    canMoveLayerStackEntryVisible,
     defaultLayerStackEntries,
     isDefaultLayerStack,
-    moveLayerStackEntry,
+    moveLayerStackEntryVisible,
     type LayerGroupId,
     type LayerStackEntry,
   } from "../map/layerStack";
@@ -197,15 +203,15 @@
 
   // "the stack in draw order (top of the list = top of the map)" (Deliverable 3) -- the MODEL's own
   // array is bottom-to-top (style.ts#LAYER_ORDER's convention: index 0 paints first, i.e. lowest),
-  // so the panel reverses it for DISPLAY only. `arrIndex` is kept alongside each row so a move
-  // button can call `moveLayerStackEntry` against the model's own indexing without the caller
-  // re-deriving it from the reversed position. R3: filtered to `LAYER_GROUP_IN_PANEL` -- the three
+  // so the panel reverses it for DISPLAY only. R3: filtered to `LAYER_GROUP_IN_PANEL` -- the three
   // dropped basemap rows stay in `stack` (so reorder/opacity on them, if a `layers=` link set any,
-  // is never lost), they simply have no row here to change them from.
+  // is never lost), they simply have no row here to change them from. Fix round (Opus 5.5 review,
+  // D2): the move buttons now call `moveLayerStackEntryVisible`/`canMoveLayerStackEntryVisible` by
+  // `entry.id` (they re-derive the underlying array index themselves, hopping hidden rows) --
+  // this derivation no longer needs to hand out each row's raw `arrIndex` alongside it.
   const rows = $derived(
     stack
-      .map((entry, arrIndex) => ({ entry, arrIndex }))
-      .filter(({ entry }) => LAYER_GROUP_IN_PANEL[entry.id])
+      .filter((entry) => LAYER_GROUP_IN_PANEL[entry.id])
       .slice()
       .reverse(),
   );
@@ -254,14 +260,18 @@
   }
 
   /** ▲ (toward the top of the LIST) moves toward the END of the model array (toward the top of the
-   * MAP); ▼ is the reverse. `label` is only for the `aria-live` announcement's wording. */
-  function move(arrIndex: number, toArrIndex: number, label: string, dir: "up" | "down") {
-    const id = stack[arrIndex].id;
-    const next = moveLayerStackEntry(stack, arrIndex, toArrIndex);
+   * MAP); ▼ is the reverse. Fix round (Opus 5.5 review, D2): moves over the VISIBLE (in-panel)
+   * rows only now -- see `layerStack.ts#moveLayerStackEntryVisible`'s own header for why a plain
+   * one-step array move could silently swap with a hidden basemap row. `label` is only for the
+   * `aria-live` announcement's wording; the announced position is the row's position among the
+   * PANEL's own visible rows (what the viewer sees), not the full model array. */
+  function move(id: LayerGroupId, label: string, dir: "up" | "down") {
+    const next = moveLayerStackEntryVisible(stack, id, dir, LAYER_GROUP_IN_PANEL);
     onChange(next);
-    const newArrIndex = next.findIndex((e) => e.id === id);
-    const displayPosition = next.length - newArrIndex; // 1 = top of the list
-    announce(`${label} moved to position ${displayPosition} of ${next.length}`);
+    const visible = next.filter((e) => LAYER_GROUP_IN_PANEL[e.id]);
+    const newVisibleIndex = visible.findIndex((e) => e.id === id);
+    const displayPosition = visible.length - newVisibleIndex; // 1 = top of the list
+    announce(`${label} moved to position ${displayPosition} of ${visible.length}`);
     tick().then(() => refocusRow(id, dir));
   }
 
@@ -325,7 +335,7 @@
     <h3>Layers on the map</h3>
   </div>
   <ul class="stack-list">
-    {#each rows as { entry, arrIndex } (entry.id)}
+    {#each rows as entry (entry.id)}
       {@const enabled = LAYER_GROUP_ENABLED[entry.id]}
       {@const label = LAYER_GROUP_LABEL[entry.id]}
       {@const isExpandable = EXPANDABLE_ROW_IDS.includes(entry.id)}
@@ -409,10 +419,11 @@
               class="move-btn"
               aria-label={`Move ${label} up (toward the top of the map)`}
               data-tooltip="Move up (draw above)"
-              disabled={!enabled || !canMoveLayerStackEntry(stack, arrIndex, arrIndex + 1)}
+              disabled={!enabled ||
+                !canMoveLayerStackEntryVisible(stack, entry.id, "up", LAYER_GROUP_IN_PANEL)}
               data-move-id={entry.id}
               data-move-dir="up"
-              onclick={() => move(arrIndex, arrIndex + 1, label, "up")}
+              onclick={() => move(entry.id, label, "up")}
             >
               <Icon name="arrowUp" size={14} />
             </button>
@@ -421,10 +432,11 @@
               class="move-btn"
               aria-label={`Move ${label} down (toward the bottom of the map)`}
               data-tooltip="Move down (draw below)"
-              disabled={!enabled || !canMoveLayerStackEntry(stack, arrIndex, arrIndex - 1)}
+              disabled={!enabled ||
+                !canMoveLayerStackEntryVisible(stack, entry.id, "down", LAYER_GROUP_IN_PANEL)}
               data-move-id={entry.id}
               data-move-dir="down"
-              onclick={() => move(arrIndex, arrIndex - 1, label, "down")}
+              onclick={() => move(entry.id, label, "down")}
             >
               <Icon name="arrowDown" size={14} />
             </button>
@@ -436,40 +448,40 @@
             {@render dataControls()}
           </div>
         {:else if entry.id === ZONES_ROW_ID && expandedId === ZONES_ROW_ID && outline}
-          <!-- R3 deliverable 6: the outline CHOICE (which unit's own outline draws) -- "none" is
-               reached via the row's own visible checkbox above, never a third radio here. -->
+          <!-- Fix round (Opus 5.5 eyes-on review, D7): this used to be a RADIO group, which claims
+               a real exclusive choice between two outlines -- it was not. Read (not guessed) from
+               `Shell.svelte`/`boot.ts`: `Sel.out` only ever gates ONE selectable unit's outline
+               (`zoneUnitsWithOutline()`; `boot.units[]` NEVER publishes an "ecoregion" selectable
+               unit, D17 -- see `boot.ts#ecoregionZoneUnitFromManifest`'s own header), and the
+               ecoregion boundary is a SEPARATE, always-on decoration appended after that, entirely
+               independent of `sel.out`/`sel.unit` (`Shell.svelte`'s own "R3 orchestrator audit item
+               2" comment). So there is exactly ONE real toggle here (Program Areas' own outline,
+               on/off) and one fact with nothing to switch (Ecoregions is always drawn) -- two
+               independent checkboxes say that honestly; a radio group does not. "none" is still
+               reached the same way as before (the row's own visible checkbox above). -->
           <div class="row-body" id={ZONES_ROW_BODY_ID}>
-            <div class="outline-choice" role="radiogroup" aria-label="Outline">
+            <div class="outline-choice" role="group" aria-label="Outlines">
               <label class="outline-option">
                 <input
-                  type="radio"
-                  name="layers-zone-outline"
+                  type="checkbox"
                   checked={outline.value === "programarea"}
                   disabled={!entry.visible}
-                  onchange={() => outline?.onChange("programarea")}
+                  onchange={(e) =>
+                    outline?.onChange(e.currentTarget.checked ? "programarea" : "none")}
                 />
                 <span class="outline-option-text">
                   <span class="outline-option-label">Program Areas</span>
                   <span class="outline-option-note"
-                    >BOEM's 2026 Program Areas — the planning units the scores are reported for (a
-                    thin outline).</span
+                    >BOEM's 2026 planning units the scores are reported for.</span
                   >
                 </span>
               </label>
-              <label class="outline-option">
-                <input
-                  type="radio"
-                  name="layers-zone-outline"
-                  checked={outline.value === "ecoregion"}
-                  disabled={!entry.visible}
-                  onchange={() => outline?.onChange("ecoregion")}
-                />
+              <label class="outline-option outline-option--fixed">
+                <input type="checkbox" checked disabled />
                 <span class="outline-option-text">
                   <span class="outline-option-label">Ecoregions</span>
                   <span class="outline-option-note"
-                    >the marine ecoregions each component is rescaled within (0-100 by ecoregion
-                    min/max) — this release always draws the ecoregion boundary itself (a thick
-                    black line) when published, independent of this choice.</span
+                    >Always shown — the regions each score rescales within (0–100).</span
                   >
                 </span>
               </label>
@@ -503,10 +515,21 @@
 </div>
 
 <style>
+  /* fix round (Opus 5.5 eyes-on review): "Reset layers" clipped at the docked-panel default
+     (1280x800) -- read, not guessed: `.panel-body`'s own `overflow: auto` + bottom padding were
+     both already correct; the panel's CONTENT (this whole stack, 7 sections deep with the Data
+     row expanded) was measured ~26px taller than the available area, so the initial (unscrolled)
+     view clipped the last ~1.5px of the footer button's own bottom border before ever reaching
+     that padding -- adding padding AFTER the button cannot pull the button itself back into view,
+     only reducing the space ABOVE it can. `var(--space-3)` (12px) -> `var(--space-2)` (8px)
+     across the stack's own 6 section gaps recovers 24px, closing nearly all of it; combined with
+     `.stack-footer`'s own added bottom padding (its comfortable-clearance half of the same fix,
+     for whenever a taller manifest/description genuinely does need a small scroll), the button
+     renders fully at this viewport again. */
   .layers-stack {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
+    gap: var(--space-2);
   }
 
   .unit-toggle {
@@ -842,9 +865,24 @@
     cursor: pointer;
   }
 
+  /* fix round (D7): now a real checkbox toggle among others in this pane (not a single-choice
+     radio pair any more) -- moved to the SAME muted token every other stack checkbox uses. */
   .outline-option input {
     margin-top: 3px;
-    accent-color: var(--fill-accent); /* same rule as .visible-check above */
+    accent-color: var(--border-control);
+    cursor: pointer;
+  }
+
+  .outline-option input:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+
+  /* the "Ecoregions" row: permanently checked+disabled (it cannot be turned off from here) --
+     dimmed as a whole so it reads as "always on," not as a broken/unclickable live control. */
+  .outline-option--fixed {
+    cursor: default;
+    opacity: 0.75;
   }
 
   .outline-option-text {
@@ -883,9 +921,19 @@
     cursor: pointer;
   }
 
+  /* fix round (Opus 5.5 eyes-on review): "Reset layers" clipped -- measured at the docked-panel
+     default (1280x800), the button's own bottom edge sat ~1.5px PAST `.panel-body`'s own
+     scrollable bottom edge (Panel.svelte's `padding-bottom: var(--space-4)`, apparently consumed
+     by ordinary flex-gap rounding across this panel's several sections) -- enough for the
+     button's own border/corner to visibly clip in a screenshot, with no scrollbar obviously
+     showing the true (barely) overflowed state. A dedicated bottom padding HERE, on top of the
+     panel's own, is deliberate slack against exactly that kind of small cross-browser rounding
+     drift -- never rely on a scroll container's padding landing at a sub-pixel-exact multiple of
+     its content's own height. */
   .stack-footer {
     display: flex;
     justify-content: flex-end;
+    padding-bottom: var(--space-2);
   }
 
   .reset-btn {

@@ -583,3 +583,56 @@ export function canMoveLayerStackEntry(
   if (result.length !== entries.length) return true;
   return result.some((e, i) => e.id !== entries[i].id);
 }
+
+/**
+ * fix round (Opus 5.5 eyes-on review of main, D2): the panel's ▲/▼ used to move an entry exactly
+ * ONE step in the underlying array via {@link moveLayerStackEntry} -- which may be a HIDDEN
+ * basemap row (`LAYER_GROUP_IN_PANEL`'s own header). "Place labels ↓" swapped with the hidden
+ * `basemap-roads` row: the visible panel order never changed, yet the button stayed enabled
+ * (`canMoveLayerStackEntry` only checks the underlying array's own boundary/pin rules, blind to
+ * visibility) -- a click that visibly does nothing.
+ *
+ * This is the panel's REAL move: find the nearest entry in the requested direction that IS a
+ * panel row (`inPanel`), hopping over any number of hidden entries to get there, and swap with
+ * THAT via {@link moveLayerStackEntry} (still the one function enforcing the data-group
+ * pin/fixed-order rules -- unchanged). Passing the neighbour's OWN pre-removal index as `to`
+ * (never `from ± 1`) is what makes the hop work: `moveLayerStackEntry`'s splice-then-insert
+ * lands `from` immediately adjacent to that neighbour, and every hidden entry that sat between
+ * them keeps its own relative position, undisturbed. A row with no visible neighbour in that
+ * direction (Place labels' own "down" today -- every basemap row below it is hidden) returns
+ * `entries` unchanged: a real no-op, not a swap with something invisible -- the caller is
+ * expected to disable the button in that case ({@link canMoveLayerStackEntryVisible}).
+ */
+export function moveLayerStackEntryVisible(
+  entries: readonly LayerStackEntry[],
+  id: LayerGroupId,
+  dir: "up" | "down",
+  inPanel: Readonly<Record<LayerGroupId, boolean>>,
+): LayerStackEntry[] {
+  const from = entries.findIndex((e) => e.id === id);
+  if (from === -1) return [...entries];
+  const step = dir === "up" ? 1 : -1;
+  let neighborIdx = -1;
+  for (let i = from + step; i >= 0 && i < entries.length; i += step) {
+    if (inPanel[entries[i].id]) {
+      neighborIdx = i;
+      break;
+    }
+  }
+  if (neighborIdx === -1) return [...entries];
+  return moveLayerStackEntry(entries, from, neighborIdx);
+}
+
+/** the visible-aware sibling of {@link canMoveLayerStackEntry} -- see
+ * {@link moveLayerStackEntryVisible}'s own header for why this is the check the panel's ▲/▼
+ * `disabled` attribute must use instead. */
+export function canMoveLayerStackEntryVisible(
+  entries: readonly LayerStackEntry[],
+  id: LayerGroupId,
+  dir: "up" | "down",
+  inPanel: Readonly<Record<LayerGroupId, boolean>>,
+): boolean {
+  const result = moveLayerStackEntryVisible(entries, id, dir, inPanel);
+  if (result.length !== entries.length) return true;
+  return result.some((e, i) => e.id !== entries[i].id);
+}
