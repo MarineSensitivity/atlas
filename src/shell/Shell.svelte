@@ -133,7 +133,19 @@
   import { createPlacesMapStore } from "../places/placesMap.svelte";
   // R3-W2: the Download menu -- `places/model.ts#placesFromHash` (never a second parser of `sel.pl`)
   // gives it the current places list for "Selected places · GeoJSON"'s enabled/disabled state.
-  import { placesFromHash } from "../places/model";
+  // R3-W8 item 5 fix round: the SAME decode also feeds `reportSubjects()` below (`addPlace` is the
+  // generic mutation `addZonePlace`/a drawn place both bottom out in -- see `lastClicked.ts`'s own
+  // header for why "Add to places" reuses it rather than a bespoke cell-place path).
+  import { addPlace, hashFromPlaces, placesFromHash } from "../places/model";
+  import { reportSubjects } from "../lib/state/subjects";
+  // `lastClicked.ts`/`lastClickedPlace.ts` are BOTH reached only through a dynamic `import()`
+  // (`lastClickedLabelFn`, below, and `onAddLastClicked()`'s own `import()`) -- `lastClicked.ts`
+  // looks cheap on its own, but its transitive imports (`places/zoneStats.ts#paLabel` pulls in
+  // `lib/analysis/queries.ts` and `lib/zones/programAreaNames.ts`; `lens/scores/boot.ts#zoneRows`
+  // pulls in `lib/map/layers/zones.ts`) pushed the 450 KB static-critical-path budget over by a
+  // few KB when statically imported -- none of it is needed before the Report tool's own panel
+  // body ever renders. Type-only import (erased at build time) for the function's own shape.
+  import type { lastClickedLabel as LastClickedLabelFn } from "../lens/scores/lastClicked";
   // type-only (erased at build time) -- DownloadMenu.svelte's RUNTIME module is loaded dynamically
   // (see `openDownload()`, below, and that file's own "LAZY" header note): its map-capture/SVG/
   // COG-fetch logic pushed the static "before first interaction" budget to 449.9/450.0 KB gzip
@@ -247,6 +259,14 @@
         ? "Report · Places"
         : TOOL_LABEL[activeTool],
   );
+
+  // R3-W8 item 5 fix round: "The Table: when there is no selection, add a line... with a button
+  // that opens that tab" -- the SAME tab-open the Report tool's own "Draw, enter coordinates or
+  // upload a file" hand-off (`ReportTool.svelte`'s `onOpenPlaces`) already uses.
+  function openReportPlaces() {
+    selectTool("report");
+    activeReportTab = "places";
+  }
 
   // R3-W8 item 3: the Layers pane's own expanded row (`LibLayersPanel`'s controlled-row-expansion
   // pair) — lifted here (rather than left as that component's own internal state) so Share can read
@@ -680,6 +700,56 @@
   // every read of it below is null-safe and falls back to "the shell's own base view", same as
   // the old `{}` default did.
   let scoresLens = $state<ScoresLensState | null>(null);
+
+  // R3-W8 item 5 fix round (Ben, verbatim): the ONE `reportSubjects()` result the Places tab's own
+  // "Last clicked" row, the Report tab's own sentence, and the Table's subject line all read --
+  // `reportPlaces` is a fresh `placesFromHash(sel.pl)` decode (the same pattern ScoresLens.svelte/
+  // SpeciesLens.svelte/TablePanel.svelte already each call independently, never a shared cache
+  // that could silently go stale against a later `sel.pl` write).
+  const reportPlaces = $derived(placesFromHash(sel.pl));
+  const reportSubject = $derived(reportSubjects(sel, reportPlaces));
+  // the Last-clicked slot is a SCORES-lens concept only (a clicked cell/Program Area) -- the
+  // Species lens' own map click sets a different kind of selection entirely (which species surface
+  // is shown), never `sel.sel`'s cell:/zone: shape, so this reads `null` (row hidden) there.
+  const lastClickedSelection = $derived(
+    sel.lens === "scores" ? (scoresLens?.selection ?? null) : null,
+  );
+  // lazy lens/panel chunks (same convention as ScoresLensComp/VersionPickerModalComp below): loads
+  // unconditionally, right after mount (nothing here is gated on `sel.lens`/`activeTool`, so there
+  // is no single "first opens the Report tool" moment to gate on either) -- `null` until it
+  // resolves, which the row already treats as "hide" (see `lastClickedRowLabel`'s own fallback).
+  let lastClickedLabelFn = $state<typeof LastClickedLabelFn | null>(null);
+  $effect(() => {
+    if (!lastClickedLabelFn) {
+      import("../lens/scores/lastClicked").then(
+        (mod) => (lastClickedLabelFn = mod.lastClickedLabel),
+      );
+    }
+  });
+  const lastClickedRowLabel = $derived(
+    lastClickedLabelFn ? lastClickedLabelFn(lastClickedSelection, boot) : null,
+  );
+
+  async function onAddLastClicked() {
+    const selection = lastClickedSelection;
+    if (!selection) return;
+    const { placeFromLastClicked } = await import("../lens/scores/lastClickedPlace");
+    const place = placeFromLastClicked(selection, boot);
+    if (!place) return;
+    // R3-W8 item 5 fix round: appends through the SAME generic `addPlace()` mutation
+    // `addZonePlace()`/a drawn or typed place already bottoms out in (`places/model.ts`) -- never
+    // a second, bespoke "add" path. Writes ONLY `pl`, deliberately never touching `sel` (unlike
+    // Places.svelte's own `writePlaces()`, which also selects the newly-added place): the
+    // Last-clicked row must keep showing the SAME subject afterward, per item 5's own selection
+    // model ("a most recently selected slot that can be updated with subsequent selection").
+    const result = addPlace(reportPlaces, place);
+    if (!result.ok) {
+      notify(result.reason ?? "Couldn't add that to places.", { tone: "error" });
+      return;
+    }
+    selStore.set({ pl: hashFromPlaces(result.places) || undefined });
+    notify("Added to places.");
+  }
 
   // P1 fix: hoisted out of the template (it used to be a `{@const}` inline where the legend chip
   // rendered) so BOTH the floating placement and the "full" detent's inline-in-sheet placement can
@@ -2066,6 +2136,9 @@
           onActiveReportTabChange={(t) => (activeReportTab = t)}
           places={placesContent}
           report={reportContent}
+          subject={reportSubject}
+          lastClickedLabel={lastClickedRowLabel}
+          {onAddLastClicked}
         />
       {:else if sel.lens === "species" && activeTool === "layers"}
         {#if SpeciesLensPanelComp}
@@ -2130,6 +2203,7 @@
             onExpandedRowChange={(id: LayerGroupId | null) => (expandedRow = id)}
             tab={activeTab}
             onTabChange={(t: UiTab) => (activeTab = t)}
+            onOpenPlaces={openReportPlaces}
           />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>

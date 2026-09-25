@@ -43,3 +43,17 @@ export function reportSubjects(sel: Pick<Sel, "sel">, places: readonly Place[]):
   if (places.length > 0) return { kind: "places", items: places };
   return { kind: "last-clicked", selection: parseScoresSelection(sel.sel) };
 }
+
+/** R3-W8 item 5 fix round: the Report tab's own one-sentence explanation of what it is about to
+ * report on, driven by the SAME `reportSubjects()` result the Places tab's "Last clicked" row and
+ * the Table's subject line already read -- so the three can never disagree. Verbatim wording from
+ * the brief; the "last-clicked" case reads the same whether or not anything has actually been
+ * clicked yet (the Report tool's own chooser, `ReportTool.svelte`, already covers "nothing to
+ * report on" with its own UI -- this sentence is about what WOULD govern, not a substitute for
+ * that). */
+export function reportSubjectSentence(subject: ReportSubject): string {
+  if (subject.kind === "places") {
+    return `Reporting on ${subject.items.length} place${subject.items.length === 1 ? "" : "s"}.`;
+  }
+  return "Reporting on the last clicked place — add it to Places to keep it, or add more places below.";
+}

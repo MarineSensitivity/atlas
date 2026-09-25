@@ -78,6 +78,10 @@
      * owns the value (one Layers pane, shared across lenses). */
     tab?: "layers" | "info";
     onTabChange?: (tab: "layers" | "info") => void;
+    /** R3-W8 item 5 fix round: forwarded straight through to `TablePanel`'s own prop of the same
+     * name -- switches the rail to the Report tool's Places tab (the empty-state hand-off, "Select
+     * places under Report → Places"). */
+    onOpenPlaces?: () => void;
   }
 
   let {
@@ -97,6 +101,7 @@
     onExpandedRowChange,
     tab,
     onTabChange,
+    onOpenPlaces,
   }: Props = $props();
 
   const unit = $derived(lens.unit);
@@ -328,7 +333,18 @@
     {/snippet}
   </LibLayersPanel>
 {:else if activeTool === "table"}
-  <TablePanel {sel} {selStore} {boot} {manifest} {ver} {unit} {lyr} {selection} {cellCoords} />
+  <TablePanel
+    {sel}
+    {selStore}
+    {boot}
+    {manifest}
+    {ver}
+    {unit}
+    {lyr}
+    {selection}
+    {cellCoords}
+    {onOpenPlaces}
+  />
 {:else}
   <p>{fallbackBody}</p>
 {/if}

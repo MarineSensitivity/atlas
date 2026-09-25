@@ -52,9 +52,22 @@ Report`, `src/shell/tools.ts`'s `TOOL_ORDER`/`buildRailItems()` — no lens argu
   end-to-end by the new `e2e/places.last-clicked.spec.ts` and its seeded fault
   `places-list-wiped-by-click`). The species table's own subject line now reads "Species for N
   places" when an explicit list governs (`placesSubjectHeader()`, `species.ts`) — the Last-clicked
-  case keeps its existing, more specific wording. **Not yet done**: the Table's own empty state
-  pointing at Report → Places, and an explicit "Add to places" button on a Last-clicked row inside
-  the Places tab — left for a later round (see this slice's own report for the scoping note).
+  case keeps its existing, more specific wording.
+- **Fix round: the "Last clicked" row, the Report tab's own sentence, and the Table's
+  discoverability hint** (Ben, verbatim — the part of the selection model that could not be
+  deferred). The Places tab now shows a "Last clicked: {subject}" row at its top (hidden when
+  nothing has been clicked) with an "Add to places" button that appends it to the explicit list
+  through the SAME generic `addPlace()` mutation a drawn/typed place already uses — a clicked
+  Program Area becomes the same `ZonePlace` `addZonePlace()` builds; a clicked cell becomes a
+  `GeomPlace` over the cell's own square (`lens/scores/lastClicked.ts`/`lastClickedPlace.ts`, the
+  mutation kept as its own dynamically-imported module so the place codec's heavier encode/decode
+  pipeline never enters the static bundle). The Report tab shows one sentence driven by
+  `reportSubjects()`: "Reporting on the last clicked place — add it to Places to keep it, or add
+  more places below." or "Reporting on N places." The Table's own header now adds "Select places
+  under Report → Places" next to the all-US-waters aggregate (never replacing it) when nothing at
+  all is selected, with a button that opens that tab. `e2e/places.last-clicked.spec.ts` extended:
+  clicking a cell then "Add to places" leaves `#pl=` with exactly one entry, and the row keeps
+  showing afterward.
 
 # atlas 0.10.77
 

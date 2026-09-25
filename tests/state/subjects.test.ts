@@ -5,7 +5,7 @@
 // CALLERS (never cross-writing `pl` from a click handler), not of this function.
 import { describe, expect, it } from "vitest";
 import type { Place, ZonePlace } from "../../src/lib/geo/placeCodec";
-import { reportSubjects } from "../../src/lib/state/subjects";
+import { reportSubjectSentence, reportSubjects } from "../../src/lib/state/subjects";
 
 const ZONE_PLACE: ZonePlace = { kind: "zone", set: "pa", keys: ["GAA"] };
 const OTHER_ZONE_PLACE: ZonePlace = { kind: "zone", set: "pa", keys: ["GOA"] };
@@ -64,5 +64,33 @@ describe("reportSubjects", () => {
       kind: "last-clicked",
       selection: null,
     });
+  });
+});
+
+// R3-W8 item 5 fix round: the Report tab's own one-sentence explanation, driven by the SAME
+// reportSubjects() result the Places tab's "Last clicked" row and the Table's subject line read.
+describe("reportSubjectSentence", () => {
+  it("last-clicked (with or without a real selection): the verbatim add-to-keep-it sentence", () => {
+    const sentence =
+      "Reporting on the last clicked place — add it to Places to keep it, or add more places below.";
+    expect(reportSubjectSentence({ kind: "last-clicked", selection: null })).toBe(sentence);
+    expect(
+      reportSubjectSentence({
+        kind: "last-clicked",
+        selection: { kind: "cell", cellId: 1 },
+      }),
+    ).toBe(sentence);
+  });
+
+  it("places, singular", () => {
+    expect(reportSubjectSentence({ kind: "places", items: [ZONE_PLACE] })).toBe(
+      "Reporting on 1 place.",
+    );
+  });
+
+  it("places, plural", () => {
+    expect(reportSubjectSentence({ kind: "places", items: [ZONE_PLACE, OTHER_ZONE_PLACE] })).toBe(
+      "Reporting on 2 places.",
+    );
   });
 });

@@ -163,11 +163,7 @@ the same `Segmented` tab switch shape as the Layers pane (§5.1a):
 The pane title reads **"Report · Places"** while the Places tab is active (discoverability: Places
 used to have its own rail button/tooltip), and the tour's own "Places" step anchors this tab switch
 rather than a rail button that no longer exists. The active tab is carried in the `ui=` share
-token's `reportTab` field (§5.1a's own list, above). **Not yet done, this round**: the Table tool's
-own empty state pointing here with a "Select places under Report → Places" button and an explicit
-"Add to places" affordance on the Last-clicked row — the Table already shows a real (non-empty)
-all-US-waters aggregate when nothing is selected, so there is no existing "nothing selected, explain
-how" state to attach this copy to without a larger restructure; left for a later round.
+token's `reportTab` field (§5.1a's own list, above).
 
 **Selection model** (Ben, 2026-09-25, verbatim): "still allow clickable selection (highlighted in
 pink as now) of either Cell or Program Area depending on Scores layer chosen, such that the last
@@ -187,6 +183,31 @@ call (this round) to avoid rewording an already-well-tested string; a future rou
 phrasings together. The species/zone DATA the Table queries still comes from the single
 `selection`/`unit`/`lyr` triple, unchanged by this item — aggregating species across an explicit
 multi-place list is a larger feature left to a later round.
+
+**Fix round (Ben, verbatim — this part of the selection model could not be deferred):**
+
+- The Places tab's own **"Last clicked"** row sits at its top, hidden when `sel.sel` is empty:
+  `"Last clicked: {subject}"` (the SAME `formatSubject()`/`paLabel()` line every other panel already
+  uses, `lens/scores/lastClicked.ts#lastClickedLabel`), with an **"Add to places"** button beside it
+  that appends the current selection to the explicit list through the SAME generic `addPlace()`
+  mutation `addZonePlace()`/a drawn place already bottoms out in (`lastClickedPlace.ts`) — a clicked
+  Program Area becomes a `ZonePlace`; a clicked cell becomes a `GeomPlace` over the cell's own square
+  (`places/cellSquares.ts#cellSquare`). Writes ONLY `pl`, never `sel` — the row keeps showing the
+  SAME subject afterward, matching "a most recently selected slot that can be updated with
+  subsequent selection." `lastClickedPlace.ts` (the mutation, which pulls in the place codec's
+  heavier encode/decode/simplify pipeline) is reached only through a dynamic `import()`, never
+  statically, so a session that never presses the button never pays for it.
+- The Report tab shows one sentence, driven by `reportSubjects()`
+  (`subjects.ts#reportSubjectSentence()`): "Reporting on the last clicked place — add it to Places
+  to keep it, or add more places below." when `kind` is `"last-clicked"`, "Reporting on N places."
+  when `kind` is `"places"`.
+- The Table's own header now adds **"Select places under Report → Places"** (with a button that
+  opens that tab, `onOpenPlaces`) next to the existing all-US-waters aggregate when NEITHER a click
+  nor an explicit place governs (`reportSubjects()`'s own "nothing at all" shape) — the aggregate
+  itself is never replaced.
+
+`e2e/places.last-clicked.spec.ts` proves clicking a cell then "Add to places" leaves `#pl=` with
+exactly one entry and the row still shows afterward.
 
 ### 5.3 Panel header controls: collapse · half · full, upper right
 
