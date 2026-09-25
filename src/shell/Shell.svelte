@@ -18,7 +18,7 @@
   import { buildRailItems, TOOL_BODY, TOOL_LABEL, type ToolName } from "./tools";
   // R3-W8 item 3: the `ui=` token's parse/format core — see that module's own header for what it
   // carries and why it is a separate token from Sel's own query keys.
-  import { formatUi, parseUi } from "./uiState";
+  import { formatUi, parseUi, type UiExpandedRow } from "./uiState";
   import type { LayerGroupId } from "../lib/map/layerStack";
   // R5: the wave-in-hexagon mark replaces the old two-file "wave in a circle" pair
   // (mst-mark.svg/mst-mark-dark.svg, kept vendored only for history -- Report.svelte moved to
@@ -159,7 +159,6 @@
   // never written by `history.replaceState` (`selStore`/`formatSel` do not know it exists) — U1's
   // rule ("layout is chrome, never the URL") holds for every ORDINARY interaction exactly as
   // before; only Share's own one-shot link build touches this token at all.
-  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- write-once, never a template read
   const initialUi = parseUi(new URLSearchParams(location.search).get("ui"));
 
   // V3: created once, up front -- trigger (a) (boot) fires from the `early.version` onMount below,
@@ -325,11 +324,27 @@
   // `uiState.ts`'s own header): built fresh, here, from the shell's own live state — never written
   // by `selStore`/`history.replaceState`, so an ordinary drag/dock/tab change never touches the URL
   // (U1's rule, unchanged).
+  // `expandedRow` (the shared Layers-pane row expander) is typed as the WIDER `LayerGroupId | null`
+  // (it is also handed straight to `LibLayersPanel`'s `onExpandedRowChange`, which reports any
+  // group id) even though only "data-raster"/"data-zones" are ever actually expandable rows
+  // (`LayersPanel.svelte`'s own `EXPANDABLE_ROW_IDS`) — `uiState.ts`'s `UiExpandedRow` is the
+  // narrower two-value shape the `ui=` token actually encodes, so this narrows explicitly rather
+  // than widening the token's own type to match.
+  function toUiExpandedRow(id: LayerGroupId | null): UiExpandedRow {
+    return id === "data-raster" || id === "data-zones" ? id : null;
+  }
+
   function shareUrl(): string {
     const url = new URL(location.href);
     url.searchParams.set(
       "ui",
-      formatUi({ tool: activeTool, dock: panelGeom.dock, size: panelGeom.size, detent: sheetGeom.detent, expandedRow }),
+      formatUi({
+        tool: activeTool,
+        dock: panelGeom.dock,
+        size: panelGeom.size,
+        detent: sheetGeom.detent,
+        expandedRow: toUiExpandedRow(expandedRow),
+      }),
     );
     return url.toString();
   }
@@ -2019,7 +2034,7 @@
             {selStore}
             {mapHandle}
             {expandedRow}
-            onExpandedRowChange={(id) => (expandedRow = id)}
+            onExpandedRowChange={(id: LayerGroupId | null) => (expandedRow = id)}
           />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
@@ -2056,7 +2071,7 @@
             {onLayerStackChange}
             compactFlower={isPhone && sheetGeom.detent === "half"}
             {expandedRow}
-            onExpandedRowChange={(id) => (expandedRow = id)}
+            onExpandedRowChange={(id: LayerGroupId | null) => (expandedRow = id)}
           />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>

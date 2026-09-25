@@ -58,8 +58,15 @@ const CODE_DOCK: Partial<Record<string, Dock>> = { l: "left", r: "right", b: "bo
 const DETENT_CODE: Record<SheetDetent, string> = { peek: "p", half: "h", full: "f" };
 const CODE_DETENT: Partial<Record<string, SheetDetent>> = { p: "peek", h: "half", f: "full" };
 
-const ROW_CODE: Record<Exclude<UiExpandedRow, null>, string> = { "data-raster": "d", "data-zones": "z" };
-const CODE_ROW: Partial<Record<string, UiExpandedRow>> = { d: "data-raster", z: "data-zones", n: null };
+const ROW_CODE: Record<Exclude<UiExpandedRow, null>, string> = {
+  "data-raster": "d",
+  "data-zones": "z",
+};
+const CODE_ROW: Partial<Record<string, UiExpandedRow>> = {
+  d: "data-raster",
+  z: "data-zones",
+  n: null,
+};
 
 const INT_RE = /^\d+$/;
 
@@ -70,9 +77,14 @@ const INT_RE = /^\d+$/;
 export function formatUi(ui: UiState): string {
   const size = clampPanelSize(ui.size);
   const row = ui.expandedRow ? ROW_CODE[ui.expandedRow] : "n";
-  return [UI_TOKEN_VERSION, TOOL_CODE[ui.tool], DOCK_CODE[ui.dock], size, DETENT_CODE[ui.detent], row].join(
-    ".",
-  );
+  return [
+    UI_TOKEN_VERSION,
+    TOOL_CODE[ui.tool],
+    DOCK_CODE[ui.dock],
+    size,
+    DETENT_CODE[ui.detent],
+    row,
+  ].join(".");
 }
 
 /** Parse a `ui=` value. `null` (never a partial `UiState`) on ANY malformed input — wrong version,
