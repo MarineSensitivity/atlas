@@ -24,6 +24,7 @@ import {
   gotoSpecies,
   routeSpeciesShards,
 } from "./species-hermetic";
+import { studyAreaBboxFallback, studyAreaView } from "../src/lens/species/data/camera";
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -42,6 +43,56 @@ async function readCamera(page: Page): Promise<CameraState> {
     const map = w.__atlasMap.handle.map;
     return { center: map.getCenter(), zoom: map.getZoom() };
   });
+}
+
+async function cameraIsMoving(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const w = window as unknown as { __atlasMap?: { handle: { map: { isMoving(): boolean } } } };
+    return !!w.__atlasMap?.handle.map.isMoving();
+  });
+}
+
+/**
+ * CI flakiness fix (orchestrator addendum, 2026-09-25, real CI run 36158947685): waits for the
+ * camera to reach a genuinely settled resting state, without assuming anything about WHEN the fit
+ * that gets it there starts or finishes relative to the first poll tick. Two failure modes this
+ * replaces, both real, both caught by three-engine CI:
+ *   - a plain numeric-threshold poll (`zoom > ceiling`, `zoom > 0`) with no settle-wait can read a
+ *     value still mid-flight on a slower engine (webkit) — the flight's OWN final resting
+ *     zoom/centre can differ from whatever a snapshot taken while `isMoving()` is still true
+ *     happens to show.
+ *   - an "isMoving() was true, then false" two-step poll can find NEITHER true, when the fit is
+ *     synchronous/instant and finishes between page-load and this function's own first poll tick
+ *     (`cameraFor()`'s bundle-only chain returns a bounds camera with no async step in between) --
+ *     "the camera never started flying" even though it already correctly arrived.
+ * Requires the SAME reading twice in a row (never moving in between) before calling it settled, so
+ * a transient one-frame lull mid-animation is not mistaken for the end.
+ */
+async function waitForCameraStable(page: Page, opts?: { timeout?: number }): Promise<CameraState> {
+  let prev: CameraState | null = null;
+  await expect
+    .poll(
+      async () => {
+        if (await cameraIsMoving(page)) {
+          prev = null;
+          return false;
+        }
+        const now = await readCamera(page);
+        const stable =
+          prev !== null &&
+          Math.abs(now.zoom - prev.zoom) < 0.001 &&
+          Math.abs(now.center.lng - prev.center.lng) < 0.0001 &&
+          Math.abs(now.center.lat - prev.center.lat) < 0.0001;
+        prev = now;
+        return stable;
+      },
+      {
+        message: "the camera never reached a stable, settled resting position",
+        timeout: opts?.timeout ?? 15_000,
+      },
+    )
+    .toBe(true);
+  return readCamera(page);
 }
 
 // the release's own default/study-area camera (FALLBACK_FULL_STUDY_AREA / boot.study_areas[FULL]
@@ -136,20 +187,20 @@ test.describe("D8: selecting a model frames its extent, not the default study ar
     await routeGlyphs(page);
     await routeTitilerTiles(page); // the wildcard, registered FIRST so the overrides below win
     await routeWalrusCogBoundsFallback(page);
+    // baseline BEFORE navigation resolves anything species-specific -- the pre-fit default camera,
+    // read as early as possible so `waitForCameraToChangeFrom` below can tell "moved" from "hasn't
+    // moved yet", not just "isMoving() happened to be true at some poll tick" (CI flakiness fix,
+    // orchestrator addendum 2026-09-25: a plain `zoom > ceiling` poll with no settle-wait could read
+    // a value still mid-flight on a slower engine — webkit — and land inside the ceiling by
+    // coincidence before the flight's OWN final resting zoom).
     await page.goto("/?mdl_seq=54383&ver=v7");
     await waitForHydration(page);
     await expect(page.getByTestId("species-title-sci")).toHaveText("Odobenus rosmarus");
+    const baseline = await readCamera(page);
 
-    // the fix is a FOLLOW-UP fly-to once /cog/info + the point-probe narrowing answers -- poll
-    // rather than a fixed wait.
-    await expect
-      .poll(async () => (await readCamera(page)).zoom, {
-        message: "camera never zoomed in past the study-area default after /cog/info answered",
-        timeout: 5_000,
-      })
-      .toBeGreaterThan(STUDY_AREA_ZOOM_CEILING);
-
-    const camera = await readCamera(page);
+    // the fix is a FOLLOW-UP fly-to once /cog/info + the point-probe narrowing answers -- wait for
+    // a REAL, settled change from the baseline, not just a single numeric threshold.
+    const camera = await waitForCameraToChangeFrom(page, baseline, "walrus COG-bounds fit");
     // narrowed bbox: [-190, 53.15, -150, 73.75] -> center (-170, 63.45). W5 fix (Opus 5.5 eyes-on
     // review 5, 2026-09-25): the desktop docked panel's own reserve grew by
     // `PANEL_OUTER_INSET_PX + FIT_GUTTER_PX` (chromePadding.ts) to clear its real outer edge, so
@@ -219,7 +270,11 @@ test.describe("D8: selecting a model frames its extent, not the default study ar
     // exact assertion that flaked (5s was too tight once real animation + mocked round-trip
     // latency compounded on a loaded Firefox CI runner; a fixed short window can never be "made
     // proportional" to an animation whose own duration MapLibre computes from distance, so this
-    // widens the ceiling rather than trying to predict it).
+    // widens the ceiling rather than trying to predict it). CI flakiness fix (orchestrator addendum,
+    // 2026-09-25, webkit repeat run): a plain `zoom > ceiling` poll with no settle-wait could read a
+    // value still mid-flight -- `waitForCameraStable` (module-level, this file's own header) first
+    // confirms the ceiling (proving `zoomToLayer()`'s own re-fit actually fired, not a leftover
+    // animation), then waits for a genuinely settled resting position before the exact-bounds read.
     await expect
       .poll(async () => (await readCamera(page)).zoom, {
         message: "zoomToLayer() never reached the COG-bounds last resort",
@@ -227,7 +282,7 @@ test.describe("D8: selecting a model frames its extent, not the default study ar
       })
       .toBeGreaterThan(STUDY_AREA_ZOOM_CEILING);
 
-    const camera = await readCamera(page);
+    const camera = await waitForCameraStable(page);
     // narrowed bbox: [-190, 53.15, -150, 73.75] -> center (-170, 63.45), same as the effect's own.
     // W5 fix: same widened bound as that test above (the desktop panel's larger reserve), same
     // reason.
@@ -435,36 +490,11 @@ test.describe("V4 fix: the species camera fills the free area under globe projec
       .toBe(true);
   }
 
-  /** the single-flight counterpart to {@link waitForCameraSettled} above -- for a taxon whose
-   * `cameraFor()` bundle-only chain already returns a bounds camera synchronously (the leatherback
-   * fixture below: `card.merged.bbox` is non-null, no async `/cog/info` step needed), there is only
-   * ONE `flyTo` in play, so a zoom-ceiling proxy is unnecessary and, for a bbox this WIDE, actively
-   * unreliable (a 170deg-wide fit legitimately settles BELOW the study area's own 2.16 zoom on a
-   * narrow phone viewport -- width, not height, is the limiting scale here). Waits for movement to
-   * actually START first (proving the species-change effect's own `flyTo` has fired, not just the
-   * map's un-animated initial placement) and then to STOP. */
-  async function waitForSingleFlightSettled(page: Page): Promise<void> {
-    async function isMoving(): Promise<boolean> {
-      return page.evaluate(() => {
-        const w = window as unknown as {
-          __atlasMap?: { handle: { map: { isMoving(): boolean } } };
-        };
-        return !!w.__atlasMap?.handle.map.isMoving();
-      });
-    }
-    await expect
-      .poll(() => isMoving(), {
-        message: "the species camera never started flying",
-        timeout: 10_000,
-      })
-      .toBe(true);
-    await expect
-      .poll(() => isMoving(), {
-        message: "the species camera never stopped flying",
-        timeout: 15_000,
-      })
-      .toBe(false);
-  }
+  // the single-flight counterpart to `waitForCameraSettled` above (a taxon whose `cameraFor()`
+  // bundle-only chain already returns a bounds camera synchronously, no async `/cog/info` step)
+  // used to be a LOCAL `waitForSingleFlightSettled` here; superseded by the module-level
+  // `waitForCameraStable` (this file's own header on it explains the CI flakiness it fixes,
+  // orchestrator addendum 2026-09-25) -- used directly at each call site below.
 
   test("the leatherback's own (wide, real-published) range fills the free area", async ({
     page,
@@ -530,7 +560,12 @@ test.describe("V4 fix: the species camera fills the free area under globe projec
     await waitForHydration(page);
     await expect(page.getByTestId("species-title-sci")).toHaveText("Dermochelys coriacea");
 
-    await waitForSingleFlightSettled(page);
+    // CI flakiness fix (orchestrator addendum, 2026-09-25): this fit is SYNCHRONOUS
+    // (`cameraFor()`'s bundle-only chain, no async `/cog/info` step) -- `waitForSingleFlightSettled`
+    // relied on observing `isMoving()` flip true then false, which raced when the (instant) fit
+    // finished before its own first poll tick. `waitForCameraStable` (module-level, this file's own
+    // header) makes no assumption about the fit's timing at all.
+    await waitForCameraStable(page);
     assertMostlyInside(await freeAreaCoverage(page, BBOX));
   });
 
@@ -630,13 +665,12 @@ test.describe("R3-A1: a wide-range model frames its IN-US portion, with a Zoom-t
     // ~236.9 (adding 360 for a negative wrapped value) -- so the assertion is "inside the
     // intersection's own bounds", the geometric fact the toggle exists to prove, not a hand-guessed
     // exact number.
-    await expect
-      .poll(async () => (await readCamera(page)).zoom, {
-        message: "the initial narrowed fit never settled",
-        timeout: 15_000,
-      })
-      .toBeGreaterThan(0);
-    const narrowed = await readCamera(page);
+    // CI flakiness fix (orchestrator addendum, 2026-09-25, CI run 36158947685): `zoom > 0` alone
+    // is true from the very first (un-fit, default) frame, and reading immediately once it's true
+    // could land mid-flight on a slower engine (webkit measured: east edge 291.1 vs the expected
+    // <=260, and a later `toBeCloseTo` mismatch on the returned-to-US camera) -- `waitForCameraStable`
+    // (module-level, this file's own header) waits for a genuinely settled resting position instead.
+    const narrowed = await waitForCameraStable(page);
     const narrowedContinuous =
       narrowed.center.lng < 0 ? narrowed.center.lng + 360 : narrowed.center.lng;
     expect(
@@ -721,15 +755,11 @@ test.describe("R3-A1: a wide-range model frames its IN-US portion, with a Zoom-t
     // the same US-intersection bounds as the synthetic-fixture test above ([130,10,260,65] narrowed
     // against the SAME derived study-area box is [158.0057,10,260,65]) -- the centre must land
     // INSIDE it, in the continuous (never re-wrapped) frame, not merely somewhere on the whole
-    // Pacific-spanning whole range.
-    const center = await page.evaluate(() =>
-      (
-        window as unknown as {
-          __atlasMap: { handle: { map: { getCenter(): { lng: number; lat: number } } } };
-        }
-      ).__atlasMap.handle.map.getCenter(),
-    );
-    const continuous = center.lng < 0 ? center.lng + 360 : center.lng;
+    // Pacific-spanning whole range. CI flakiness fix (orchestrator addendum, 2026-09-25): reading
+    // the centre right as the toggle becomes visible could catch the fit still mid-flight on a
+    // slower engine (webkit) -- `waitForCameraStable` first.
+    const settled = await waitForCameraStable(page);
+    const continuous = settled.center.lng < 0 ? settled.center.lng + 360 : settled.center.lng;
     expect(
       continuous,
       "camera centre lands OUTSIDE the US intersection's west edge",
@@ -738,5 +768,210 @@ test.describe("R3-A1: a wide-range model frames its IN-US portion, with a Zoom-t
       continuous,
       "camera centre lands OUTSIDE the US intersection's east edge",
     ).toBeLessThanOrEqual(260);
+  });
+
+  // R3-rr fix 1 (Opus 5.5 eyes-on review round 3, SECOND pass, 2026-09-25): the sibling test above
+  // mocked `/cog/info` with "a real, wide, non-degenerate span" ([130,10,260,65]) -- a shape the
+  // LIVE data never actually returns. Probed live 2026-09-25 against
+  // `https://titiler-v8.marinesensitivity.org/cog/info?url=…/usa05/9fe6f75498affae1.tif` (the
+  // leatherback, `?mdl_seq=54241`), the real body is `[-180, -17.700000000000017, 180,
+  // 60.44999999999999]` -- the model reaches American Samoa/Guam across the antimeridian, so the
+  // raster's OWN bbox is already the full globe in longitude. `minimalFrame()` cannot narrow a box
+  // that wide (its complement is zero-width), and the code used to read that as "not a camera at
+  // all" and return BEFORE `wideRangeAware()` ever ran -- so on the REAL live bounds the toggle
+  // never rendered, even though the sibling test above (with its narrower mocked span) passed.
+  // `cogBoundsCamera()` (`data/camera.ts`) is the fix; this test proves it end-to-end with the
+  // EXACT live bounds shape, not a stand-in.
+  // R3-rr fix 1, rounds 2-4 (Opus 5.5 eyes-on review round 3, real-build eyes-on, 2026-09-25): the
+  // FIRST version of this test (round 1) mocked only `/cog/info`, leaving `/cog/point` unmocked --
+  // which, against the REAL live app, `src/lib/raster/bounds.ts#narrowLongitude` ALSO calls
+  // whenever `/cog/info`'s own bbox is degenerate (every candidate answered null with nothing
+  // mocked, so `narrowLongitude` returned `null` and no camera update ever happened at all: the
+  // toggle never rendered, even with round 1's `cogBoundsCamera` fix in place). Live-probed
+  // 2026-09-25, the real leatherback holds data at FOUR widely separated candidates (-165
+  // Aleutians, -66 Atlantic/Caribbean, -157 Hawaii, 145 Guam/CNMI) -- this test now mocks that
+  // EXACT real pattern, exercising the full, real chain: `/cog/info` (degenerate) ->
+  // `narrowLongitude` (multi-region spread -> hands back the confirmed-data ARC, not the raw
+  // -180..180 box -- round 2's fix, since fitting the raw box for "Whole range" was verified LIVE
+  // to land on lng=0/Africa, the opposite side of the world from any real data) -> `cogBoundsCamera`
+  // (round 1's fix, narrows the arc to US waters) -> the toggle.
+  test("v7's OWN COG-bounds path with the EXACT live leatherback shape (globe-spanning /cog/info + the real multi-region /cog/point hits) narrows to US waters, and 'Whole range' lands on real data, not Africa", async ({
+    page,
+  }) => {
+    await blockWasm(page);
+    await routeBucket(page, "v7", bootFor("v7"));
+    await routeSpeciesShards(page); // the REAL, unmodified e1.json: merged.bbox null, assets: []
+    await routeSession(page, null); // v7 is public
+    await routeSealFixture(page);
+    await routeGlyphs(page);
+    await routeTitilerTiles(page);
+    const LIVE_LEATHERBACK_COG_BOUNDS = [-180, -17.700000000000017, 180, 60.44999999999999];
+    const LIVE_HIT_LONS = new Set([-165, -66, -157, 145]);
+    await page.route(
+      (url) => url.hostname === "titiler-v8.marinesensitivity.org" && url.pathname === "/cog/info",
+      (route: Route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ bounds: LIVE_LEATHERBACK_COG_BOUNDS }),
+        }),
+    );
+    await page.route(
+      (url) =>
+        url.hostname === "titiler-v8.marinesensitivity.org" &&
+        url.pathname.startsWith("/cog/point/"),
+      (route: Route) => {
+        const m = /\/cog\/point\/(-?\d+(?:\.\d+)?),/.exec(route.request().url());
+        const lon = m ? Number(m[1]) : NaN;
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ values: [LIVE_HIT_LONS.has(lon) ? 100 : null] }),
+        });
+      },
+    );
+    await page.goto("/?mdl_seq=54241&ver=v7");
+    await waitForHydration(page);
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Dermochelys coriacea");
+
+    // BUG (before this fix): this toggle never rendered at all on the live bounds shape (either
+    // it never appeared -- round 1 alone -- or `narrowLongitude` returned `null` for want of a
+    // `/cog/point` mock -- the same visible symptom, no camera update at all).
+    const toggle = page.getByRole("group", { name: "Zoom to" });
+    await expect(toggle).toBeVisible({ timeout: 20_000 });
+    await expect(toggle.getByRole("button", { name: "US waters" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // the camera centre lies INSIDE the (v7) study-area's own US box -- not on the whole,
+    // Pacific-spanning globe extent the pre-fix camera stayed on.
+    const usBbox = studyAreaBboxFallback(studyAreaView(bootFor("v7"), "FULL")!);
+    const center = await page.evaluate(() =>
+      (
+        window as unknown as {
+          __atlasMap: { handle: { map: { getCenter(): { lng: number; lat: number } } } };
+        }
+      ).__atlasMap.handle.map.getCenter(),
+    );
+    const continuous = center.lng < 0 ? center.lng + 360 : center.lng;
+    const usWest = usBbox[0] < 0 ? usBbox[0] + 360 : usBbox[0];
+    const usEast = usBbox[2] < 0 ? usBbox[2] + 360 : usBbox[2];
+    expect(continuous, "camera centre lands OUTSIDE the US box's west edge").toBeGreaterThanOrEqual(
+      Math.min(usWest, usEast) - 1,
+    );
+    expect(continuous, "camera centre lands OUTSIDE the US box's east edge").toBeLessThanOrEqual(
+      Math.max(usWest, usEast) + 1,
+    );
+
+    // "Whole range" is available, and — round 2's own regression — lands on the confirmed-data
+    // ARC (roughly 145..294 continuous, the leatherback's own real hit longitudes), never on
+    // lng=0 (Africa/the Gulf of Guinea): the raw -180..180 box's own `cameraForBounds()` fit,
+    // verified LIVE to centre there, the opposite side of the world from any real data.
+    const wholeButton = toggle.getByRole("button", { name: "Whole range" });
+    await expect(wholeButton).toHaveAttribute("aria-pressed", "false");
+    await wholeButton.click();
+    await expect(wholeButton).toHaveAttribute("aria-pressed", "true");
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(
+            () =>
+              (
+                window as unknown as {
+                  __atlasMap: { handle: { map: { getCenter(): { lng: number; lat: number } } } };
+                }
+              ).__atlasMap.handle.map.getCenter().lng,
+          ),
+        { message: "the 'Whole range' camera never settled away from the US-waters centre" },
+      )
+      .not.toBeCloseTo(center.lng, 0);
+    const wholeCenter = await page.evaluate(() =>
+      (
+        window as unknown as {
+          __atlasMap: { handle: { map: { getCenter(): { lng: number; lat: number } } } };
+        }
+      ).__atlasMap.handle.map.getCenter(),
+    );
+    const wholeContinuous = wholeCenter.lng < 0 ? wholeCenter.lng + 360 : wholeCenter.lng;
+    // NOT near lng=0 (continuous 0 or 360) -- the bug this round's own eyes-on caught live.
+    expect(
+      Math.min(Math.abs(wholeContinuous - 0), Math.abs(wholeContinuous - 360)),
+      "'Whole range' camera landed near lng=0 (Africa) -- the exact live bug",
+    ).toBeGreaterThan(30);
+  });
+
+  // R3-rr fix 1, round 4 (Opus 5.5 eyes-on review round 3, real-build eyes-on, 2026-09-25): live-
+  // verified that a FRESH page load never showed the toggle at all, even with rounds 1-3's fixes in
+  // place -- `deps.boot()` (Shell.svelte's own `boot` state, filled once `early.boot` resolves) can
+  // still be incomplete on the species camera effect's FIRST pass (the taxon shard can resolve
+  // before boot.json does, over real network latency), so `cameraFor()` returns `null` (no study
+  // area to fall back to) on pass 1 -- and the OLD code unconditionally latched `prevCameraKey`
+  // before that null check, so `refitNeeded()` reported "already fitted" on pass 2 (once boot DID
+  // arrive) and the species' own camera fit, including this COG-bounds last resort, was silently
+  // skipped for the rest of the session. Reproduces the live race with a deliberately delayed
+  // `boot.json` response (`slowRealWasm()`'s own "delay, never abort" pattern) so the taxon shard
+  // resolves first, exactly as it did live.
+  test("BUG: a FRESH load whose boot.json resolves AFTER the taxon shard still reaches the COG-bounds fallback and shows the toggle (does not silently give up forever)", async ({
+    page,
+  }) => {
+    await blockWasm(page);
+    // routeBucket FIRST (lowest priority -- Playwright routes are LIFO), routeSpeciesShards SECOND
+    // so its own alias/taxon handlers take priority over routeBucket's 404 fallback for those same
+    // paths, exactly the order every other test in this file uses. No `boot` param: routeBucket's
+    // OWN app/boot.json handler 404s by default; the custom, delayed handler registered LAST below
+    // overrides that specifically, so latest.txt/versions.json/manifest.json/the taxon shard all
+    // resolve at normal (hermetic, instant) speed and ONLY boot.json is late.
+    await routeBucket(page, "v7");
+    await routeSpeciesShards(page);
+    await routeSession(page, null);
+    await routeSealFixture(page);
+    await routeGlyphs(page);
+    await routeTitilerTiles(page);
+    await page.route(
+      (url) => url.href.includes("/v7/app/boot.json"),
+      async (route: Route) => {
+        await new Promise((r) => setTimeout(r, 800));
+        return route.fulfill({ status: 200, contentType: "application/json", json: bootFor("v7") });
+      },
+    );
+    const LIVE_LEATHERBACK_COG_BOUNDS = [-180, -17.700000000000017, 180, 60.44999999999999];
+    const LIVE_HIT_LONS = new Set([-165, -66, -157, 145]);
+    await page.route(
+      (url) => url.hostname === "titiler-v8.marinesensitivity.org" && url.pathname === "/cog/info",
+      (route: Route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ bounds: LIVE_LEATHERBACK_COG_BOUNDS }),
+        }),
+    );
+    await page.route(
+      (url) =>
+        url.hostname === "titiler-v8.marinesensitivity.org" &&
+        url.pathname.startsWith("/cog/point/"),
+      (route: Route) => {
+        const m = /\/cog\/point\/(-?\d+(?:\.\d+)?),/.exec(route.request().url());
+        const lon = m ? Number(m[1]) : NaN;
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ values: [LIVE_HIT_LONS.has(lon) ? 100 : null] }),
+        });
+      },
+    );
+    await page.goto("/?mdl_seq=54241&ver=v7");
+    await waitForHydration(page);
+    // generous timeout: the deep-link alias->taxon chain plus the deliberately-delayed boot.json
+    // (800ms) both have to settle before the species panel renders at all.
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Dermochelys coriacea", {
+      timeout: 15_000,
+    });
+
+    // BUG (before this fix): even after boot.json eventually arrived, the toggle never rendered --
+    // the species camera effect had already (wrongly) marked this species "already fitted" on its
+    // first, boot-less pass.
+    const toggle = page.getByRole("group", { name: "Zoom to" });
+    await expect(toggle).toBeVisible({ timeout: 20_000 });
   });
 });

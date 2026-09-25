@@ -1172,12 +1172,18 @@
   // one chapter path swapped -- `src/lib/release/docsUrl.ts#releaseNotesUrl` is the tested,
   // imported-from-a-test-only twin (`tests/release/docsUrl.test.ts`); this hand duplicate is what
   // `TopBarActions.svelte` actually renders.
+  //
+  // R3-rr fix 4 (Opus 5.5 eyes-on review round 3, second pass, 2026-09-25): this pointed at
+  // `release_notes.html`, a 404 -- the docs book's chapter source is `releases.qmd`
+  // (`docs/_quarto.yml`), which quarto renders to `releases.html`
+  // (`docsUrl.ts#RELEASE_NOTES_CHAPTER_PATH`'s own header has the verification); `release_notes`
+  // was the unrelated `data/release_notes.yml` data file's name, not the chapter's own filename.
   const releaseNotesHref = $derived(
     !earlyVersion || !currentVersionRow
       ? "https://marinesensitivity.org/docs/"
       : releaseRestricted
-        ? `https://preview.marinesensitivity.org/docs/${earlyVersion}/release_notes.html`
-        : `https://marinesensitivity.org/docs/${earlyVersion}/release_notes.html`,
+        ? `https://preview.marinesensitivity.org/docs/${earlyVersion}/releases.html`
+        : `https://marinesensitivity.org/docs/${earlyVersion}/releases.html`,
   );
 
   // --- Deliverable 4: "Report a problem" -> a prefilled GitHub issue, zero backend --------------

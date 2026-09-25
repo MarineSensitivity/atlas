@@ -20,18 +20,15 @@ import { mapClick, type LngLat, type QueryableMap } from "../../lib/map/interact
 import { createTitilerValueSource, type ValueSource } from "../../lib/raster/point";
 import { createTitilerBoundsSource, type BoundsSource } from "../../lib/raster/bounds";
 import { paletteStopsFromBoot, type PaletteName } from "../../lib/raster/ramps";
-import { bboxSpansGlobe } from "../../lib/grid/grid";
 import type { SelStore } from "../../lib/state/sel.svelte";
 import type { Representation } from "../../lib/state/types";
 import type { SessionLike } from "../../lib/release/dataBase";
 import {
   cameraFor,
+  cogBoundsCamera,
   cogUrlForBoundsFallback,
   refitNeeded,
   studyAreaView,
-  minimalFrame,
-  wideRangeAware,
-  GLOBE_SPAN_DEG,
   FULL_STUDY_AREA,
   DEFAULT_CAMERA_PADDING,
   type BoundsCamera,
@@ -264,10 +261,6 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     const bbox = await boundsSource.cogBounds(cogUrl);
     if (token !== cameraRefineToken) return; // a later species/refit superseded this fetch
     if (!bbox) return;
-    // the SAME antimeridian rule cameraFor()'s own chain applies to a published bbox: a wrapped
-    // frame is re-expressed to its minimal span, and a genuinely circumglobal one is not a camera.
-    const frame = minimalFrame(bbox);
-    if (bboxSpansGlobe(frame, GLOBE_SPAN_DEG)) return;
     if (cameraKeyOf(selStore.sel).sp !== key.sp) return; // the species itself changed meanwhile
     // D1 fix (Opus 5.5 eyes-on review round 2, 2026-09-25): this is v7's OWN path -- every v7
     // taxon (including the leatherback, the lens' default landing species) publishes no bbox
@@ -276,12 +269,23 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     // COG's own real extent, is what makes the leatherback's whole-Pacific span narrow to its US
     // portion and the "Zoom to" toggle appear on v7 at all -- `recordWideRangeCamera` (not just
     // `applyCamera`) is what the toggle's own `wideRange` getter reads.
-    const cam = wideRangeAware(
-      frame,
+    //
+    // R3-rr fix 1 (Opus 5.5 eyes-on review round 3, second pass, 2026-09-25): the D1 fix above
+    // still missed the leatherback's OWN live bounds -- `/cog/info` returns
+    // `[-180, -17.7, 180, 60.45]` (the model reaches Oceania across the antimeridian, so the
+    // raster's own bbox is already the full globe in longitude), and `minimalFrame()` cannot
+    // narrow a box that wide (its complement is zero-width). This used to `return` right here,
+    // BEFORE `wideRangeAware()` ever ran, because a globe-spanning frame was read as "not a
+    // camera" rather than as the WIDEST case the wide-range rule exists to handle.
+    // `cogBoundsCamera()` (data/camera.ts) now applies that rule to the raw bbox even when
+    // `minimalFrame()` couldn't narrow it -- see its own header for why `intersectBbox()`'s
+    // dateline-shift search still narrows a -180..180 box against the study area correctly.
+    const cam = cogBoundsCamera(
+      bbox,
       DEFAULT_CAMERA_PADDING,
-      "cog-bounds",
       studyAreaView(deps.boot(), FULL_STUDY_AREA),
     );
+    if (!cam) return;
     applyCamera(cam);
     recordWideRangeCamera(cam);
   }
@@ -392,7 +396,6 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     // is plain (non-reactive) state precisely so switching `in`/`rep` alone (no species change)
     // does not retrigger this effect a second time once the camera has already been applied.
     const needsFit = untrack(() => refitNeeded(prevCameraKey, key));
-    prevCameraKey = key;
     if (!needsFit) return;
     const boot = deps.boot();
     const cam = cameraFor(card, selStore.sel.in, {
@@ -401,11 +404,24 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
       studyArea: studyAreaView(boot, FULL_STUDY_AREA),
       padding: DEFAULT_CAMERA_PADDING,
     });
+    // R3-rr fix 1, round 4 (Opus 5.5 eyes-on review round 3, real-build eyes-on, 2026-09-25):
+    // `cameraFor()` returns `null` ONLY when it has no study area to fall back to (its own last
+    // resort) -- and on the LIVE app, `deps.boot()` -> `studyAreaView()` can still be incomplete
+    // on this effect's FIRST run (this same $effect reads `deps.boot()` reactively and re-runs once
+    // it fills in -- confirmed live: a real load hit `cam === null` on pass 1, then a real,
+    // populated `boot` on pass 2). The OLD code unconditionally wrote `prevCameraKey = key` before
+    // this null check, so `refitNeeded()` on pass 2 saw the SAME key and reported "already fitted"
+    // -- permanently skipping the species' own camera fit (and the COG-bounds last resort below)
+    // for the rest of the session, EVEN ONCE real study-area data existed. `prevCameraKey` is now
+    // only latched once a camera was actually computed, so a null-boot pass retries on the very
+    // next boot update instead of silently giving up forever.
+    if (!cam) return;
+    prevCameraKey = key;
     applyCamera(cam);
     recordWideRangeCamera(cam);
     // D8: the bundle published no bbox anywhere for this taxon — try the COG's own extent before
     // giving up on framing it at all.
-    if (cam?.kind === "center") void refineCameraFromCogBounds(card, key);
+    if (cam.kind === "center") void refineCameraFromCogBounds(card, key);
   });
 
   return {

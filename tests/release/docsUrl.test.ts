@@ -51,19 +51,19 @@ describe("atlasDocsUrl (P10)", () => {
 describe("releaseNotesUrl (UI-16)", () => {
   it("public release: the version's own release-notes chapter on the public book", () => {
     expect(releaseNotesUrl("v7", "public")).toBe(
-      "https://marinesensitivity.org/docs/v7/release_notes.html",
+      "https://marinesensitivity.org/docs/v7/releases.html",
     );
   });
 
   it("restricted release: the chapter on the signed-in preview host, not the public book", () => {
     expect(releaseNotesUrl("v9", "restricted")).toBe(
-      "https://preview.marinesensitivity.org/docs/v9/release_notes.html",
+      "https://preview.marinesensitivity.org/docs/v9/releases.html",
     );
   });
 
   it("restricted release honours an overridden preview base (test seam)", () => {
     expect(releaseNotesUrl("v9", "restricted", "https://preview.example.org")).toBe(
-      "https://preview.example.org/docs/v9/release_notes.html",
+      "https://preview.example.org/docs/v9/releases.html",
     );
   });
 
@@ -74,6 +74,6 @@ describe("releaseNotesUrl (UI-16)", () => {
   });
 
   it("the chapter path", () => {
-    expect(RELEASE_NOTES_CHAPTER_PATH).toBe("release_notes.html");
+    expect(RELEASE_NOTES_CHAPTER_PATH).toBe("releases.html");
   });
 });
