@@ -34,14 +34,17 @@
     type LayersLayerField,
     type LayersOutlineChoice,
     type LayersProjectionControl,
+    type LayersRowState,
     type LayersUnitToggle,
     type LayersZoomField,
   } from "../../lib/ui/LayersPanel.svelte";
   import { layerByKey, layerGroups, metricKeyLabel, primaryUnitNote, unitOptions } from "./boot";
+  import { isPlacesSelectionEmpty } from "../../lib/state/types";
   import { studyAreasFromBoot, type StudyArea } from "../../lib/map/interaction";
   import FlowerPanel from "./FlowerPanel.svelte";
   import TablePanel from "./TablePanel.svelte";
   import type { LayerStackEntry, Outline } from "../../lib/state/types";
+  import type { LayerGroupId } from "../../lib/map/layerStack";
 
   interface Props {
     sel: Sel;
@@ -99,6 +102,15 @@
     options: unitOptions(boot),
     value: unit,
     onChange: onUnitChange,
+  });
+
+  // Fix round (Ben, 2026-09-25): "dim Selection if there is none to display, otherwise its
+  // presence can cause confusion." `sel.sel` is the ONE field every kind of selection (a clicked
+  // cell, a zone, a drawn/uploaded place) writes -- `isPlacesSelectionEmpty` is the shared pure
+  // predicate (`lib/state/types.ts`, tested in `tests/state/codec.test.ts`) both lenses read so
+  // "empty" can never mean something different in scores vs species.
+  const rowState = $derived<Partial<Record<LayerGroupId, LayersRowState>>>({
+    "data-places": { empty: isPlacesSelectionEmpty(sel.sel), hint: "— nothing selected" },
   });
 
   // R3 deliverable 3 (Ben, 2026-09-25): "Move Layer selector to top... Rename 'Study area' to
@@ -271,6 +283,7 @@
     {zoomField}
     {outline}
     {projection}
+    {rowState}
   >
     {#snippet dataControls()}
       <ScoresLayersPanel

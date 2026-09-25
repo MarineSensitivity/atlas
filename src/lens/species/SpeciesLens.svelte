@@ -18,10 +18,13 @@
   import LibLayersPanel, {
     type LayersOutlineChoice,
     type LayersProjectionControl,
+    type LayersRowState,
   } from "../../lib/ui/LayersPanel.svelte";
   import type { LayerStackEntry, Outline, Representation, Sel } from "../../lib/state/types";
+  import { isPlacesSelectionEmpty } from "../../lib/state/types";
   import type { SelStore } from "../../lib/state/sel.svelte";
   import type { MapHandle } from "../../lib/map/map";
+  import type { LayerGroupId } from "../../lib/map/layerStack";
 
   interface Props {
     lens: SpeciesLens;
@@ -62,9 +65,15 @@
     checked: sel.proj === "globe",
     onChange: onProjChange,
   });
+
+  // Fix round (Ben, 2026-09-25) -- same rule as the scores lens, see that component's own header
+  // on `rowState`/`isPlacesSelectionEmpty`.
+  const rowState = $derived<Partial<Record<LayerGroupId, LayersRowState>>>({
+    "data-places": { empty: isPlacesSelectionEmpty(sel.sel), hint: "— nothing selected" },
+  });
 </script>
 
-<LibLayersPanel stack={layerStack} onChange={onLayerStackChange} {outline} {projection}>
+<LibLayersPanel stack={layerStack} onChange={onLayerStackChange} {outline} {projection} {rowState}>
   {#snippet dataControls()}
     <div class="species-panel" data-testid="species-panel">
       {#if lens.cardError}

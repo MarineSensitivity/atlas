@@ -587,6 +587,65 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     ).toBe(true);
     expect(errors).toEqual([]);
   });
+
+  // Fix round (Ben, 2026-09-25): "dim Selection if there is none to display, otherwise its
+  // presence can cause confusion" -- `LayersPanel.svelte`'s `rowState` prop, fed by
+  // `isPlacesSelectionEmpty(sel.sel)` (`lib/state/types.ts`, unit-tested in
+  // `tests/state/codec.test.ts`). Bare load (no `sel=`) = dimmed; the SAME real
+  // `sel=cell:1500000` deep link the row above already proves paints a real selection-line ring =
+  // not dimmed. The checkbox itself stays checked/enabled either way (never forced off by
+  // emptiness).
+  test("R3 fix round: the Selection row is dimmed when nothing is selected, and un-dims once a cell is", async ({
+    page,
+  }) => {
+    await gotoLayersScores(page, "");
+    const emptyRow = page.locator('[data-row-id="data-places"]');
+    await expect(emptyRow).toHaveClass(/stack-row--dim/);
+    await expect(emptyRow).toContainText("nothing selected");
+    const emptyCheckbox = page.getByRole("checkbox", { name: "Selection visible on the map" });
+    await expect(emptyCheckbox).toBeChecked();
+    await expect(emptyCheckbox).toBeEnabled();
+
+    await gotoLayersScores(page, "&sel=cell:1500000&map=-156.375,50.575,8");
+    const filledRow = page.locator('[data-row-id="data-places"]');
+    await expect(filledRow).not.toHaveClass(/stack-row--dim/);
+    await expect(filledRow).not.toContainText("nothing selected");
+    await expect(
+      page.getByRole("checkbox", { name: "Selection visible on the map" }),
+    ).toBeChecked();
+  });
+
+  // Fix round (Ben, 2026-09-25): "some extra visual differentiation" between the row expander and
+  // the reorder buttons -- proven two ways: the expander's icon path is `chevronRight`'s, never
+  // `chevronUp`/`chevronDown` (the reorder buttons' own family), and the reorder buttons carry a
+  // hover/focus tooltip the expander does not.
+  test("R3 fix round: the Data row's expander and its reorder buttons use DIFFERENT icon glyph families", async ({
+    page,
+  }) => {
+    await gotoLayersScores(page, "");
+    const expanderPath = await page
+      .getByRole("button", { name: "Data", exact: true })
+      .locator("svg path")
+      .getAttribute("d");
+    const upPath = await page
+      .getByRole("button", { name: "Move Data up (toward the top of the map)" })
+      .locator("svg path")
+      .getAttribute("d");
+    const downPath = await page
+      .getByRole("button", { name: "Move Data down (toward the bottom of the map)" })
+      .locator("svg path")
+      .getAttribute("d");
+    expect(expanderPath).not.toBe(upPath);
+    expect(expanderPath).not.toBe(downPath);
+    expect(upPath).not.toBe(downPath);
+
+    const moveUp = page.getByRole("button", {
+      name: "Move Data up (toward the top of the map)",
+    });
+    await expect(moveUp).toHaveAttribute("data-tooltip", "Move up (draw above)");
+    await moveUp.focus();
+    await expect(moveUp).toHaveCSS("position", "relative");
+  });
 });
 
 // M6 (review round 1, "short-label test missing"): the manifest's own SHORT metric label
@@ -873,26 +932,41 @@ test.describe("P round deliverable 1: the Layers panel's spatial-unit toggle (sc
 
   // Ben: "the toggles add too much yellow emphasis across whole panel" -- the P round's own fix
   // was `--border-control` (a "quiet" track FILL colour on the old Switch, distinct from a real
-  // selected/active control). R3 replaced the Switch with a plain checkbox and superseded that
-  // rule (orchestrator hand-off, Opus UI review of main, 2026-09-25): an unstyled native
-  // checkbox/radio/range rendered the BROWSER's own default blue on the paper theme, which
-  // `--border-control` never fixed either (it just avoided `--fill-accent`, not "no accent-color
-  // at all"). Every such control now sets `accent-color: var(--fill-accent)` -- the SAME token
-  // the toggle's own pressed segment uses, which is fine here: a checkbox's `accent-color` only
-  // tints ONE small native control, not a whole-row fill the way the old Switch's "too much
-  // yellow emphasis" was about. This test now asserts the POSITIVE property instead: a real,
-  // explicit accent-color is set (never the browser's own unstyled default).
-  test("the layer stack's ON checkboxes set a real accent-color (never the browser's own unstyled default)", async ({
+  // selected/active control). R3 replaced the Switch with a plain checkbox; the first fix round
+  // (orchestrator hand-off, Opus UI review of main, 2026-09-25) had moved every such control to
+  // `accent-color: var(--fill-accent)` (gold, matching the toggle's own pressed segment) so an
+  // unstyled native checkbox/radio/range would never fall back to the browser's own default blue
+  // on the paper theme. Round 2 (Ben, same day, live review of THAT fix): "use a more muted
+  // non-yellow checkbox" -- gold read as 5 simultaneous "selected/important" rows in a stack list,
+  // which is exactly the "too much yellow emphasis" complaint this whole rule exists to avoid; the
+  // stack-row/Sphere/"Cells outside Program Areas" checkboxes moved to `--border-control` (the
+  // SAME muted "steel" token the row's own border already uses), while a real selected/active
+  // control (the toggle's pressed segment, the Outline radios) keeps the gold accent. This test
+  // asserts BOTH halves of that rule: a real, explicit accent-color is set (never the browser's
+  // own unstyled default), and it is the MUTED token, not gold.
+  test("the layer stack's ON checkboxes set a real, MUTED accent-color (never the browser's own unstyled default, never gold)", async ({
     page,
   }) => {
     await gotoLayersScores(page, "");
-    const dataCheckboxAccent = await page
-      .getByRole("checkbox", { name: "Data visible on the map" })
-      .evaluate((el) => getComputedStyle(el).accentColor);
+    const dataCheckbox = page.getByRole("checkbox", { name: "Data visible on the map" });
+    const dataCheckboxAccent = await dataCheckbox.evaluate(
+      (el) => getComputedStyle(el).accentColor,
+    );
     expect(
       dataCheckboxAccent,
       "the Data row's checkbox has no explicit accent-color set (falls back to the browser's own default)",
     ).not.toBe("auto");
+    // a direct token-value comparison is brittle across themes; instead assert against the
+    // BORDER color, which this same rule ties the checkbox's accent to 1:1 ("the SAME token the
+    // row's own border already uses" -- see the fix round's own comment on `.visible-check`) --
+    // and is, by construction, never the gold `--fill-accent` the toggle's active segment uses.
+    const rowBorder = await page
+      .locator('[data-row-id="data-raster"]')
+      .evaluate((el) => getComputedStyle(el).borderColor);
+    expect(
+      dataCheckboxAccent,
+      `checkbox accent-color (${dataCheckboxAccent}) does not match the row's own muted border color (${rowBorder}) -- expected the same --border-control token`,
+    ).toBe(rowBorder);
   });
 
   // P3 fix (Opus eyes-on review, 2026-09-24, desktop-04): the panel's own `display: flex;

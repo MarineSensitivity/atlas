@@ -5,6 +5,7 @@ import {
   DEFAULT_SEL,
   defaultLens,
   defaultOut,
+  isPlacesSelectionEmpty,
   resolveTheme,
   type Sel,
 } from "../../src/lib/state/types";
@@ -216,6 +217,28 @@ describe("resolveTheme: the tri-state Sel.theme -> the two renderable brand them
   // resolve to navy (the MMA dark theme) instead, matching "navy when the media query is unavailable".
   it("'auto' + prefersDark null (media query unavailable) resolves to navy, NOT paper", () => {
     expect(resolveTheme("auto", null)).toBe("navy");
+  });
+});
+
+describe("isPlacesSelectionEmpty: the Layers pane's Selection row dims when Sel.sel is unset", () => {
+  it("undefined (no cell/zone/place selection) is empty", () => {
+    expect(isPlacesSelectionEmpty(undefined)).toBe(true);
+  });
+
+  it("an empty string is empty", () => {
+    expect(isPlacesSelectionEmpty("")).toBe(true);
+  });
+
+  it("a cell selection is NOT empty", () => {
+    expect(isPlacesSelectionEmpty("cell:12345")).toBe(false);
+  });
+
+  it("a zone selection is NOT empty", () => {
+    expect(isPlacesSelectionEmpty("zone:programarea:GOM")).toBe(false);
+  });
+
+  it("a drawn/uploaded place selection is NOT empty", () => {
+    expect(isPlacesSelectionEmpty("place:0")).toBe(false);
   });
 });
 

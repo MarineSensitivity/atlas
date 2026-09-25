@@ -75,6 +75,19 @@
     checked: boolean;
     onChange: (checked: boolean) => void;
   }
+
+  /** Fix round (Ben, 2026-09-25): "dim Selection if there is none to display, otherwise its
+   * presence can cause confusion." A row that HAS a checkbox/opacity/reorder but nothing under it
+   * on the map right now (today, only "Selection" / `data-places`) renders dimmed and carries a
+   * small hint — same treatment as a disabled row, but the checkbox itself is untouched (an empty
+   * row is not the same as a row the viewer turned off). The lens supplies this per group id
+   * because only the lens knows what "empty" means for that group (`Sel.sel` for Selection); this
+   * component only renders the signal, it never computes it. */
+  export interface LayersRowState {
+    empty: boolean;
+    /** shown after the row name, e.g. "— nothing selected"; ignored unless `empty`. */
+    hint?: string;
+  }
 </script>
 
 <script lang="ts">
@@ -146,6 +159,10 @@
     outline?: LayersOutlineChoice;
     /** R3 deliverable 7 — see {@link LayersProjectionControl}. */
     projection?: LayersProjectionControl;
+    /** Fix round — see {@link LayersRowState}. Omitted groups render normally (never dimmed);
+     * a lens that has nothing empty-able to report (there is none today besides Selection) simply
+     * does not pass this prop at all. */
+    rowState?: Partial<Record<LayerGroupId, LayersRowState>>;
   }
 
   let {
@@ -157,6 +174,7 @@
     zoomField,
     outline,
     projection,
+    rowState,
   }: Props = $props();
 
   function onUnitToggleChange(value: string) {
@@ -312,8 +330,26 @@
       {@const label = LAYER_GROUP_LABEL[entry.id]}
       {@const isExpandable = EXPANDABLE_ROW_IDS.includes(entry.id)}
       {@const bodyId = entry.id === DATA_ROW_ID ? DATA_ROW_BODY_ID : ZONES_ROW_BODY_ID}
-      <li class="stack-row" class:stack-row--disabled={!enabled} data-row-id={entry.id}>
+      {@const rState = rowState?.[entry.id]}
+      {@const rowEmpty = rState?.empty ?? false}
+      {@const hintId = `${entry.id}-empty-hint`}
+      <li
+        class="stack-row"
+        class:stack-row--disabled={!enabled}
+        class:stack-row--dim={rowEmpty}
+        data-row-id={entry.id}
+      >
         <div class="row-head">
+          <input
+            type="checkbox"
+            class="visible-check"
+            checked={entry.visible}
+            disabled={!enabled}
+            aria-label={`${label} visible on the map`}
+            aria-describedby={rowEmpty ? hintId : undefined}
+            onchange={(e) => setVisible(entry.id, e.currentTarget.checked)}
+          />
+
           {#if isExpandable}
             <button
               type="button"
@@ -322,7 +358,15 @@
               aria-controls={bodyId}
               onclick={() => toggleExpanded(entry.id)}
             >
-              <Icon name={expandedId === entry.id ? "chevronUp" : "chevronDown"} size={16} />
+              <!-- fix round (Ben): the expander glyph must not read as the same family as the
+                   ▲▼ reorder buttons at the row's other end -- a sideways caret that rotates open,
+                   never a chevronUp/chevronDown swap (see Accordion.svelte's identical
+                   rotate-one-icon convention, which this now matches instead of duplicating). -->
+              <Icon
+                name="chevronRight"
+                size={16}
+                class={`row-caret ${expandedId === entry.id ? "row-caret--open" : ""}`}
+              />
               {label}
             </button>
           {:else}
@@ -332,14 +376,9 @@
             </span>
           {/if}
 
-          <input
-            type="checkbox"
-            class="visible-check"
-            checked={entry.visible}
-            disabled={!enabled}
-            aria-label={`${label} visible on the map`}
-            onchange={(e) => setVisible(entry.id, e.currentTarget.checked)}
-          />
+          {#if rowEmpty && rState?.hint}
+            <span class="hint" id={hintId}>{rState.hint}</span>
+          {/if}
 
           <Popover label={`${label} opacity`} triggerClass="opacity-btn" align="right">
             {#snippet trigger()}
@@ -369,23 +408,25 @@
               type="button"
               class="move-btn"
               aria-label={`Move ${label} up (toward the top of the map)`}
+              data-tooltip="Move up (draw above)"
               disabled={!enabled || !canMoveLayerStackEntry(stack, arrIndex, arrIndex + 1)}
               data-move-id={entry.id}
               data-move-dir="up"
               onclick={() => move(arrIndex, arrIndex + 1, label, "up")}
             >
-              <Icon name="chevronUp" size={14} />
+              <Icon name="arrowUp" size={14} />
             </button>
             <button
               type="button"
               class="move-btn"
               aria-label={`Move ${label} down (toward the bottom of the map)`}
+              data-tooltip="Move down (draw below)"
               disabled={!enabled || !canMoveLayerStackEntry(stack, arrIndex, arrIndex - 1)}
               data-move-id={entry.id}
               data-move-dir="down"
               onclick={() => move(arrIndex, arrIndex - 1, label, "down")}
             >
-              <Icon name="chevronDown" size={14} />
+              <Icon name="arrowDown" size={14} />
             </button>
           </span>
         </div>
@@ -544,6 +585,14 @@
     opacity: 0.5;
   }
 
+  /* fix round (Ben): "dim Selection if there is none to display" -- same visual treatment as
+     `.stack-row--disabled` (a row the model has switched off entirely), but a DIFFERENT state: the
+     checkbox stays enabled/checked, only the map has nothing to show for it right now. Two class
+     names, one rule, kept separate on purpose so neither reads as "the other one" in the DOM. */
+  .stack-row--dim {
+    opacity: 0.5;
+  }
+
   .row-head {
     display: flex;
     align-items: center;
@@ -581,6 +630,18 @@
     outline-offset: 2px;
   }
 
+  /* fix round (Ben): the expander glyph rotates in place (Accordion.svelte's own convention --
+     one icon, CSS rotation, never an icon SWAP) -- pointing right (closed) to pointing down
+     (open), which reads as "this opens a panel", distinct from the move buttons' up/down ARROWS. */
+  .row-head :global(.row-caret) {
+    color: var(--icon-muted);
+    transition: transform var(--motion-fast) var(--ease-out);
+  }
+
+  .row-head :global(.row-caret--open) {
+    transform: rotate(90deg);
+  }
+
   .hint {
     color: var(--text-secondary);
     font-weight: 400;
@@ -589,18 +650,18 @@
 
   /* R3: a native checkbox replaces the Switch (Ben, 2026-09-25: "checkbox instead of toggle") --
      the app's own tokens, not the browser default appearance, but otherwise a plain checkbox.
-     Orchestrator hand-off (Opus UI review of main, 2026-09-25): an unstyled native checkbox/range
-     renders the BROWSER's own default blue accent on the paper theme -- off-brand and a real
-     regression the P-round's own "too much yellow emphasis" concern does not apply to (that was
-     about `--fill-accent` used for a WHOLE-TRACK fill on 4-5 simultaneous switches; accent-color
-     only tints a small native control, not a full row). `--fill-accent` here, everywhere a
-     checkbox/radio/range renders in this panel -- a later slice lands a global `:root {
-     accent-color }` default; scoping it here is deliberately not a duplicate of that, just early. */
+     Fix round (Ben, 2026-09-25): "use a more muted non-yellow checkbox, preferably situated left
+     of the label" -- `--fill-accent` (gold) was a WHOLE-TRACK-style emphasis wrong for a stack of
+     5+ simultaneous checkboxes (every visible row reads "selected/important" at once); moved to
+     the app's neutral "steel" control family (`--border-control`, the SAME token this row's own
+     border already uses) and moved first in DOM order so it reads checkbox-then-name, matching
+     every other checkbox list in the app. The markup order changed (see the `{#each}` block above)
+     -- this rule itself did not need to, `.row-head`'s flex order follows DOM order. */
   .visible-check {
     width: 20px;
     height: 20px;
     min-width: 20px;
-    accent-color: var(--fill-accent);
+    accent-color: var(--border-control);
     cursor: pointer;
   }
 
@@ -679,8 +740,15 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* fix round (Ben): "some extra visual differentiation" from the expander -- besides the glyph
+     swap above (caret vs arrows), the two reorder buttons now sit in one small BORDERED segment
+     (like a mini Segmented control) at the row's far right, instead of two bare icon buttons that
+     could read as part of the same control family as the expander's own bare icon+label button. */
   .move-buttons {
     display: inline-flex;
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-control);
+    overflow: hidden;
   }
 
   /* R3 (Ben, 2026-09-25): "the ▲▼ move buttons stay but at 32px and quiet" -- smaller than the
@@ -696,6 +764,13 @@
     background: none;
     color: var(--text-secondary);
     cursor: pointer;
+    position: relative;
+  }
+
+  /* the one internal divider between the two segments (not a border on each button, which would
+     double up at the shared edge). */
+  .move-btn + .move-btn {
+    border-left: 1px solid var(--border-control);
   }
 
   .move-btn:disabled {
@@ -707,6 +782,28 @@
   .move-btn:focus-visible {
     outline: 2px solid var(--focus-ring);
     outline-offset: -2px;
+  }
+
+  /* CSS-only hover/focus tooltip, the SAME `content: attr(data-tooltip)` convention as the top
+     bar's own `.tool[data-tooltip]` (shell.css) -- scoped locally here since `.move-btn` is a
+     component-scoped class, not `.tool`. `aria-label` above already carries the accessible name;
+     this pseudo-element is decorative only. */
+  .move-btn[data-tooltip]:hover::after,
+  .move-btn[data-tooltip]:focus-visible::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: calc(100% + var(--space-1));
+    right: 0;
+    z-index: 30;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-control);
+    background: var(--surface-raised);
+    color: var(--text-primary);
+    font-size: var(--text-xs);
+    white-space: nowrap;
+    box-shadow: var(--elev-2);
+    pointer-events: none;
   }
 
   .row-body {
@@ -765,7 +862,7 @@
   .sphere-check input {
     width: 20px;
     height: 20px;
-    accent-color: var(--fill-accent); /* same rule as .visible-check above */
+    accent-color: var(--border-control); /* fix round: same muted token as .visible-check above */
     cursor: pointer;
   }
 

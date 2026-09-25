@@ -165,6 +165,19 @@ export function resolveTheme(theme: Theme, prefersDark: boolean | null): Resolve
   return prefersDark === false ? "paper" : "navy";
 }
 
+/**
+ * Layers pane R3-W1 fix round (Ben: "dim Selection if there is none to display, otherwise its
+ * presence can cause confusion"). `Sel.sel` already unifies every kind of selection this app has
+ * ("cell:<id>" | "zone:<unit>:<key>" | "place:<n>", this file's own header) into one optional
+ * string — a picked/drawn/uploaded place and a clicked cell/zone all write it, and nothing else
+ * does — so "is there anything for the Selection (`data-places`) stack row to draw" is exactly
+ * "is it set". A pure predicate (not a component-local check) so both lenses' `rowState` and this
+ * file's own test agree on the one definition.
+ */
+export function isPlacesSelectionEmpty(sel: string | undefined): boolean {
+  return !sel;
+}
+
 /** every field's context-INDEPENDENT default (see `defaultLens`/`defaultOut` for the two that are
  * not constants). Used both to seed a fresh `Sel` and as the "is this a default?" comparison for
  * every other field when formatting. */

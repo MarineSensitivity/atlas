@@ -10,10 +10,11 @@
   // The overlay control writes through a plain callback (never `selStore.set()`): ephemeral chrome
   // (parity doc §6.2 leaves it unchecked by default on every load, so there is nothing for a shared
   // link to reproduce). Fix round (orchestrator, 2026-09-25): "still a Switch -- make it a
-  // checkbox row like the stack rows (same class, same accent)" -- a plain native checkbox,
-  // `accent-color: var(--fill-accent)`, the same visual rule `lib/ui/LayersPanel.svelte`'s own
-  // `.visible-check` uses (that exact scoped class cannot be imported across components, so this
-  // is a byte-for-byte visual match, not a shared stylesheet rule).
+  // checkbox row like the stack rows (same class, same accent)" -- a plain native checkbox, the
+  // same visual rule `lib/ui/LayersPanel.svelte`'s own `.visible-check` uses (that exact scoped
+  // class cannot be imported across components, so this is a byte-for-byte visual match, not a
+  // shared stylesheet rule). Round 2 (Ben): the shared accent moved gold -> `--border-control`
+  // ("a more muted non-yellow checkbox") -- see `.outside-pra-check` below for the current rule.
   import { tick } from "svelte";
   import Popover from "../../lib/ui/Popover.svelte";
   import Icon from "../../lib/ui/Icon.svelte";
@@ -181,9 +182,11 @@
   }
 
   /* Fix round (orchestrator, 2026-09-25): "make it a checkbox row like the stack rows (same
-     class, same accent)" -- same 20x20 native checkbox, `accent-color: var(--fill-accent)`, as
-     `lib/ui/LayersPanel.svelte`'s own `.visible-check` (that scoped class cannot cross a
-     component boundary, so this duplicates its exact rule rather than importing it). */
+     class, same accent)" -- same 20x20 native checkbox as `lib/ui/LayersPanel.svelte`'s own
+     `.visible-check` (that scoped class cannot cross a component boundary, so this duplicates its
+     exact rule rather than importing it). Round 2 (Ben, 2026-09-25): "use a more muted non-yellow
+     checkbox" -- `accent-color` moved from `--fill-accent` (gold) to `--border-control` (the same
+     "steel" token `.visible-check` also moved to), kept in lockstep with that rule again. */
   .checkbox-row {
     display: flex;
     align-items: center;
@@ -196,7 +199,7 @@
     width: 20px;
     height: 20px;
     min-width: 20px;
-    accent-color: var(--fill-accent);
+    accent-color: var(--border-control);
     cursor: pointer;
   }
 
