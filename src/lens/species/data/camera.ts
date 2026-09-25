@@ -182,11 +182,22 @@ export function intersectBbox(a: Bbox, b: Bbox): Bbox | null {
  * model whose intersection comes back empty (the dateline-shift search in {@link intersectBbox}
  * found no real overlap) ALSO keeps the whole-range fit — narrowing to nothing would be worse than
  * not narrowing at all.
+ *
+ * EXPORTED (D1 fix, Opus 5.5 eyes-on review round 2, 2026-09-25): originally private, called only
+ * from `cameraFor()`'s own `input`/`merged` bundle-bbox steps. v7 publishes NO bbox on ANY asset
+ * for ANY taxon (`cameraFor()` falls all the way through to `kind: "center"` for every v7
+ * species), so `state.svelte.ts#refineCameraFromCogBounds` -- the COG-bounds LAST resort that then
+ * runs for literally every v7 species, including the leatherback, the Species lens' own DEFAULT
+ * landing species -- built its own plain `BoundsCamera` by hand and never ran the wide-range check
+ * at all. Exporting this function lets that caller apply the IDENTICAL rule instead of a second,
+ * divergent copy. `source` widened from the two bundle-chain values to every non-`"study-area"`
+ * `CameraSource` so a COG-bounds-refined camera can honestly report `source: "cog-bounds"` rather
+ * than being mislabelled `"merged"`.
  */
-function wideRangeAware(
+export function wideRangeAware(
   bbox: Bbox,
   padding: number,
-  source: "input" | "merged",
+  source: Exclude<CameraSource, "study-area">,
   studyArea: StudyAreaView | null | undefined,
 ): BoundsCamera {
   const span = bbox[2] - bbox[0];

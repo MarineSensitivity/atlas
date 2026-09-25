@@ -96,7 +96,6 @@
   import {
     desktopPanelPadding,
     phonePadding,
-    phonePaddingFromMeasured,
     phoneLiveChromePadding,
   } from "../lib/map/chromePadding";
   import { createAnalytics } from "../lib/analytics/analytics";
@@ -652,10 +651,16 @@
   // `sel.lyr`) is the SAME fallback `state.svelte.ts#lyr` applies -- an unset/unknown `?lyr=` still
   // resolves to the release's own composite default, matching what the raster ACTUALLY paints.
   const downloadLyr = $derived(effectiveLyr(sel.lyr, boot));
+  // Fix round (Opus 5.5 eyes-on review, D3): this used to read `layerByKey(...)?.label` directly
+  // -- `boot.layers[].label` is the layer's LONG description (~190 chars for `primprod`), not a
+  // title. `phoneLegend.title` (below) is the SAME short label the Layer select and the legend
+  // chip already show (`mapInputs.ts`'s own `title`, `metricKeyLabel()`/the manifest's short
+  // `metricLabels` preferred over the long `layer.label`) -- reused here, never re-derived, so the
+  // download title can never drift from what the app is already displaying.
   const downloadTitle = $derived(
     sel.lens === "species"
       ? (speciesLens.card?.sci ?? "Species")
-      : (layerByKey(boot, downloadLyr)?.label ?? downloadLyr ?? "Score"),
+      : (phoneLegend?.title ?? downloadLyr ?? "Score"),
   );
   const downloadLegendStops = $derived(
     phoneLegend && "stops" in phoneLegend ? phoneLegend.stops : [],
@@ -688,7 +693,6 @@
       : downloadLyr,
   );
   const downloadPlaces = $derived(placesFromHash(sel.pl));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   // `typeof DownloadMenu` (not `Component<any>`, unlike the other lazy chunks below) -- this is the
   // ONE lazy chunk in this file `bind:this` calls a method on (`downloadMenuRef?.openPhoneModal()`);
   // `Component<any>`'s implicit empty Exports would make `bind:this` yield a shape lacking
@@ -728,6 +732,17 @@
     if (desc === null) return null;
     return desc === (phoneLegend?.title ?? null) ? null : desc;
   });
+
+  // R3-W2 fix round (Opus 5.5 eyes-on review, D3): the Download menu's footer, optional second
+  // line -- reuses `phoneLegendDescription` verbatim (declared just above; it is ALREADY deduped
+  // against `phoneLegend.title` there -- `null` when the description would just repeat the title,
+  // the release publishes none, or the lens is species). Never a second, independent read of
+  // `layer?.label` here -- one place decides "is this description worth showing at all". Declared
+  // AFTER `phoneLegendDescription` on purpose: `npm run check` (svelte-aware, unlike plain `tsc`)
+  // flags a `const` referenced before its OWN declaration even when the read only happens inside a
+  // closure Svelte invokes later (a `$derived` callback) -- the runtime would have been fine, but
+  // the static check is not, so source order here matters.
+  const downloadDescription = $derived(sel.lens === "scores" ? phoneLegendDescription : null);
 
   // G-25 fix: `Sel.out`'s ONE effect on the map, applied to whichever `zones` array (the shell's
   // own outline-only `zoneUnits`, or the scores lens' richer `scoresLens.mapExtra.zones`) is about
@@ -1038,16 +1053,32 @@
   // P9: uses the SAME `phoneDefaultCamera` bbox fit `initialStudyArea` does above (never the old
   // boost-the-desktop-centroid math -- see that function's own comment for why it was replaced) --
   // just with the sheet's real measured height instead of the pre-mount estimate.
+  //
+  // D5 fix (Opus 5.5 eyes-on review round 2, 2026-09-25): this refit used the SHEET's own measured
+  // height but never the floating legend chip's -- at the default "half" detent the ramp legend
+  // chip (always showing for the default Scores view, `phoneLegend` below) sat on top of the
+  // northern Gulf of Mexico Program Areas, and the sheet's own top edge cut the Florida Keys.
+  // `currentChromePadding()` already computes the SAME `chipShowing` boolean for every LATER
+  // (post-load) re-fit (V1 fix, above) -- this is the one remaining caller still calling
+  // `phonePaddingFromMeasured` bare. Gated additionally on `scoresLens` (the default lens) having
+  // loaded: `phoneLegend` reads `scoresLens?.mapExtra.legend`, and `scoresLens` itself is a
+  // DYNAMIC IMPORT (this file's own "0.10.21 fix 1" comment) -- firing before it resolves would
+  // silently compute `chipShowing: false` and reproduce the exact defect this fixes.
   let refitOnceForMeasuredSheet = false;
   $effect(() => {
     if (refitOnceForMeasuredSheet) return;
     if (!isPhone || !mapHandle || !boot) return;
     if (sheetGeom.height <= 0) return; // Sheet.svelte has not reported a real measurement yet
+    if (sel.lens === "scores" && !scoresLens) return; // the legend chip's own source not loaded yet
     if (sel.map || sel.area !== DEFAULT_SEL.area) return; // not the default padded first view
     refitOnceForMeasuredSheet = true;
     const area = studyAreaFromBoot(boot, sel.area);
     const viewport: Viewport = { width: window.innerWidth, height: window.innerHeight };
-    const fit = phoneDefaultCamera(viewport, phonePaddingFromMeasured(sheetGeom.height));
+    const chipShowing = !!phoneLegend && legendChipMode(sheetGeom.detent) === "floating";
+    const fit = phoneDefaultCamera(
+      viewport,
+      phoneLiveChromePadding(sheetGeom.height, sheetGeom.detent, window.innerHeight, chipShowing),
+    );
     mapHandle.flyTo({ ...area, lon: fit.center[0], lat: fit.center[1], zoom: fit.zoom });
   });
 
@@ -1623,6 +1654,7 @@
       {mapHandle}
       {boot}
       title={downloadTitle}
+      description={downloadDescription}
       unit={downloadUnit}
       metricOrMdlKey={downloadMetricOrMdlKey}
       cogUrl={downloadCogUrl}

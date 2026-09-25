@@ -104,6 +104,13 @@ e2e/feedback.spec.ts`).
   anchor point on the fallback camera path).
 - `docs/status.md`'s Decisions table (R1–R6) now shows the correct landed version and "shipped"
   instead of a stale "building"/scheduling note for work that has been live since round 2.
+- **Fixed (D3, Download menu): the map-view export's title/filename used the layer's LONG
+  description** (~190 characters for `primprod`), not the short label the Layer select and legend
+  chip already show — the download title/filename now match what is on screen; the long
+  description can still appear as an optional, smaller second footer line when it fits. **The
+  footer's "share URL" was relative and carried `theme=`** — it is now the same absolute URL
+  Share copies, with `theme` dropped. **Nit:** the Download tooltip no longer draws over its own
+  open menu.
 
 # atlas 0.10.71
 
@@ -132,6 +139,24 @@ palette (R3-A1, R3-A2, R3-A3).
   `--cat-mammal`/`--cat-turtle` were near-identical in both themes, and Coral/Mammal collapsed
   under a protanopia simulation despite passing on normal-vision CIE76 ΔE alone. Every category
   stays ≥4.5:1 text / ≥3:1 non-text (`npm run contrast`) and distinct from `--cat-primprod`.
+
+**Fix round (Opus 5.5 eyes-on review of merged main, 2026-09-25):**
+
+- **Fixed (D1): the "Zoom to" toggle never appeared on v7**, including the leatherback (the
+  Species lens' own default landing species) — v7 publishes no bbox on any asset for any taxon, so
+  the camera took the COG-bounds last-resort path (`state.svelte.ts#refineCameraFromCogBounds`),
+  which built its own camera by hand and never ran the wide-range check at all. That path now
+  calls the SAME `wideRangeAware()` rule the bundle-bbox chain already used (exported for this),
+  with a `source: "cog-bounds"` it can now honestly report.
+- **Fixed (D5): the phone default view's legend chip covered the Gulf of Mexico/Florida** at the
+  default "half" sheet detent. The measured-sheet refit's own padding never counted the floating
+  legend chip's height (already used by every LATER species/zone re-fit) — it does now, gated on
+  the chip's own data source (`scoresLens`, a dynamic import) having loaded first.
+- **Fixed (D4): paper-theme Mammal broke its hue family** — a near-black brown (`#372506`) against
+  navy's bright gold, where every other category keeps its hue across themes. `#82773d` is the
+  lightest in-family amber that still clears a ≥15 CVD-ΔE floor against both Coral and Turtle
+  under protanopia/deuteranopia simulation (measured: the naively "lighter/safer"-looking
+  `#7a5200`–`#8a5e00` range is actually the WORST part of the curve for this).
 
 # atlas 0.10.70
 

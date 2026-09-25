@@ -1,0 +1,40 @@
+diff --git a/src/lens/species/state.svelte.ts b/src/lens/species/state.svelte.ts
+index bd94a4e..3fae503 100644
+--- a/src/lens/species/state.svelte.ts
++++ b/src/lens/species/state.svelte.ts
+@@ -269,21 +269,20 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
+     const frame = minimalFrame(bbox);
+     if (bboxSpansGlobe(frame, GLOBE_SPAN_DEG)) return;
+     if (cameraKeyOf(selStore.sel).sp !== key.sp) return; // the species itself changed meanwhile
+-    // D1 fix (Opus 5.5 eyes-on review round 2, 2026-09-25): this is v7's OWN path -- every v7
+-    // taxon (including the leatherback, the lens' default landing species) publishes no bbox
+-    // anywhere, so `cameraFor()`'s own wide-range step (`wideRangeAware`, called from ITS
+-    // `input`/`merged` branches) never ran for any of them. Running the SAME rule here, on the
+-    // COG's own real extent, is what makes the leatherback's whole-Pacific span narrow to its US
+-    // portion and the "Zoom to" toggle appear on v7 at all -- `recordWideRangeCamera` (not just
+-    // `applyCamera`) is what the toggle's own `wideRange` getter reads.
+-    const cam = wideRangeAware(
+-      frame,
+-      DEFAULT_CAMERA_PADDING,
+-      "cog-bounds",
+-      studyAreaView(deps.boot(), FULL_STUDY_AREA),
+-    );
+-    applyCamera(cam);
+-    recordWideRangeCamera(cam);
++    // SEEDED FAULT (tests/faults/species-cogbounds-widerange-skipped.patch): the COG-bounds last
++    // resort never runs the wide-range check -- v7's leatherback (and every other v7 species,
++    // since NONE publish a bbox anywhere) goes back to framing its whole Pacific-spanning extent,
++    // with no "Zoom to" toggle. Must turn e2e/species.camera.spec.ts's "v7's OWN COG-bounds path"
++    // test red.
++    applyCamera({
++      kind: "bounds",
++      bounds: [
++        [frame[0], frame[1]],
++        [frame[2], frame[3]],
++      ],
++      padding: DEFAULT_CAMERA_PADDING,
++      source: "cog-bounds",
++    });
+   }
+ 
+   async function bootstrap(ver: string): Promise<void> {

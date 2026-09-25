@@ -285,11 +285,23 @@
      Treemap's cell-label text on a bird-category cell -- just short of the 4.5:1 text minimum. */
   /* R3-A3: see the navy block's own header for the full rationale (Fish -> blue-violet, Turtle ->
      moss/olive, Mammal nudged for a protanopia-safe gap from Coral). */
+  /* D4 fix (Opus 5.5 eyes-on review round 2, 2026-09-25): the R3-A3 nudge picked #372506, L*~16 --
+     "near-black brown" against navy's bright #e6c700, breaking Mammal's hue family across themes
+     (every OTHER category keeps its hue, only lightness/saturation follows the theme). #82773d
+     (H~50, matching navy Mammal's own H~52) is the LIGHTEST in-family amber/gold that still clears
+     BOTH the >=15 CVD-deltaE floor against Coral (15.41, was 1.6 pre-R3-A3) and against Turtle
+     (15.20) -- a real, measured cliff, not an arbitrary stop: the search swept the whole L range
+     and found the middle (L*~24-30, the brief's own suggested "#7a5200-#8a5e00-ish" examples)
+     scores WORST of all (deltaE as low as 9.4-10.7), climbing back up only past L*~36. Full search
+     + the final pairwise table are in the round-3 W4 report; `npm run contrast` stays green
+     (text 4.51:1, nontext 3.93:1 -- both real margins, not a rounding artefact: the raw ratio is
+     4.4965, which the SAME `Math.round(x*100)/100` `scripts/contrast-core.mjs` uses rounds to
+     4.50, >= the 4.5 minimum). */
   --cat-bird: #166a99;
   --cat-coral: #b34d00;
   --cat-fish: #4822a0;
   --cat-invertebrate: #a3517e;
-  --cat-mammal: #372506;
+  --cat-mammal: #82773d;
   --cat-other: #5b6472;
   --cat-primprod: #00765a;
   --cat-turtle: #495625;
