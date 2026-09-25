@@ -905,21 +905,13 @@ export const FAULTS = [
     id: "species-cogbounds-widerange-skipped",
     patch: "tests/faults/species-cogbounds-widerange-skipped.patch",
     describe:
-      "D1 (Opus 5.5 eyes-on review round 2, 2026-09-25): refineCameraFromCogBounds() (the " +
-      "COG-bounds last resort every v7 species reaches, since v7 publishes no bbox anywhere) " +
-      "stops calling wideRangeAware()/recordWideRangeCamera() -- the leatherback (v7's default " +
-      "landing species) frames its whole Pacific-spanning range again, with no 'Zoom to' toggle",
-    gate: [
-      "npx",
-      "playwright",
-      "test",
-      "--project=chromium",
-      "e2e/species.camera.spec.ts",
-      "-g",
-      "bbox-LESS",
-      "--workers=1",
-    ],
-    env: { PW_PORT: "4443" },
+      "R3-rr fix 1 (Opus 5.5 eyes-on review round 3, second pass, 2026-09-25 -- regenerated from " +
+      "the D1/round-2 fault of the same id, whose target code cogBoundsCamera() superseded): " +
+      "cogBoundsCamera() (data/camera.ts) restores the early `return null` for a globe-spanning " +
+      "frame BEFORE wideRangeAware() ever runs -- the leatherback's REAL live /cog/info bounds " +
+      "([-180,-17.7,180,60.45]) again read as 'not a camera at all', so the whole-Pacific range " +
+      "and no 'Zoom to' toggle are back",
+    gate: ["npx", "vitest", "run", "tests/lens/species/camera.test.ts", "-t", "R3-rr fix 1"],
   },
   // RETIRED (P9, 0.10.49): "phone-zoom-boost-neutered" patched `PHONE_STUDY_AREA_ZOOM_BOOST` to 0,
   // proving the phone's initial camera stayed zoomed in. P9 found the deeper bug that mechanism
