@@ -59,6 +59,11 @@ import { encodePlace, type Place } from "../geo/placeCodec";
 import { formatCount, formatScore0, isoInstant, slugify, utcStamp } from "./format";
 import { formatSel } from "../state/codec";
 import { mapScore, rampDomain } from "./ramp";
+// W4 fix: the single-place swatch colour (below) is DERIVATION, same as everything else this file
+// computes -- both functions are pure/DOM-free (raster/ramps.ts's own header), so the model can
+// resolve it here rather than handing reportMap.ts/Report.svelte a bare score to recolour a second
+// way.
+import { colorForValue, paletteStopsFromBoot } from "../raster/ramps";
 import { speciesCounts, type SpeciesCounts } from "./er";
 import { sortSpeciesRows, topSpecies, SPECIES_CSV_COLUMNS, type TopSpeciesRow } from "./species";
 import { buildProvenance, type Provenance, type SqlRun } from "./provenance";
@@ -206,6 +211,14 @@ export interface ReportMap {
   summary: string;
   /** the static method narrative (fix round 2, item 1 -- spec §2.4, verbatim). */
   narrative: string;
+  /** W4 fix (design call noted twice by reviewers, then Ben's phone report): the ONE place, when
+   * this report has exactly one, so the caller can draw a single swatch + value instead of a
+   * two-ended gradient legend. A lone place's `domain` is still `[score-0.5, score+0.5]`
+   * (`rampDomain`'s own tie-break, kept so `colorForValue` still lands on a real mid-ramp colour --
+   * see reportMap.ts), but a "ramp 33 to 34" legend/caption for ONE value states a precision no
+   * data supports and has no "highest"/"lowest" to contrast. `null` for 0 or >=2 places, or a lone
+   * place whose score has not landed yet. */
+  single: { name: string; score: number; color: string } | null;
 }
 
 export interface ReportFlower {
@@ -475,6 +488,14 @@ function describeMap(places: readonly ReportMapPlace[], domain: [number, number]
   if (scored.length === 0 || domain === null) {
     return `Map: ${places.length} place${places.length === 1 ? "" : "s"}, none with a mean score.`;
   }
+  // W4 fix (design call noted twice by reviewers, then Ben's phone report): a lone place has no
+  // "highest"/"lowest" to contrast against, and `rampDomain`'s ±0.5 tie-break (kept below so the
+  // FILL still lands on a real mid-ramp colour, see `ReportMap.single`) would otherwise read here
+  // as a fabricated "ramp 33 to 34" -- a precision no single value supports. State its own score.
+  if (places.length === 1) {
+    const p = scored[0];
+    return `Map: 1 place colored by mean score; ${p.name} scored ${formatScore0(p.score as number)}.`;
+  }
   const sorted = [...scored].sort((a, b) => (b.score as number) - (a.score as number));
   const hi = sorted[0];
   const lo = sorted[sorted.length - 1];
@@ -636,12 +657,31 @@ export function buildReport(input: BuildReportInput): ReportModel {
     score: mapScore(overalls[i]),
   }));
   const domain = rampDomain(mapPlaces.map((p) => p.score));
+  // W4 fix: the ONE place's resolved swatch colour, for the caller to draw instead of a two-ended
+  // gradient legend that implies a range a single value never had (see `ReportMap.single`'s own
+  // doc). Same palette name and same `colorForValue()` call `zoneKeyColors`/`scoreColorExpression`
+  // use (reportMap.ts) -- `colorForValue` on the ±0.5-widened `domain` always lands on the exact
+  // MIDDLE stop for a lone value, so this is not a second color rule, just resolving it here too.
+  const single =
+    mapPlaces.length === 1 && domain !== null && mapPlaces[0].score !== null
+      ? (() => {
+          const stops = paletteStopsFromBoot(boot as { palettes?: unknown }, "spectral_r");
+          if (!stops) return null;
+          const score = mapPlaces[0].score as number;
+          return {
+            name: mapPlaces[0].name,
+            score,
+            color: colorForValue(stops, score, domain[0], domain[1]),
+          };
+        })()
+      : null;
   const map: ReportMap = {
     places: mapPlaces,
     domain,
     legendTitle: "Mean score",
     summary: describeMap(mapPlaces, domain),
     narrative: MAP_NARRATIVE,
+    single,
   };
 
   // this report's own component columns (the SAME list the Table of Scores has -- componentColumns()

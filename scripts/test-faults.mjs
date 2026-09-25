@@ -1683,6 +1683,45 @@ const FAULTS = [
       "published citation runs 'UnportedLicense' together again in the report's Sources list",
     gate: ["npx", "vitest", "run", "tests/release/cite.test.ts"],
   },
+  {
+    id: "report-map-color-stale-mount",
+    patch: "tests/faults/report-map-color-stale-mount.patch",
+    describe:
+      "Report.svelte's map-mount effect drops the `mapDataReady` gate (stubs.length === 0 || " +
+      "progressDone >= stubs.length) and reverts to firing the instant `model` turns non-null -- " +
+      "every place's score is still null at that point, so the map's one-shot colour build reads " +
+      "REPORT_NODATA_COLOR for every place and never repaints once the real scores land",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.map.zonecolor.spec.ts",
+      "-g",
+      "two Program Areas",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4541" },
+  },
+  {
+    id: "report-map-single-place-degenerate-ramp",
+    patch: "tests/faults/report-map-single-place-degenerate-ramp.patch",
+    describe:
+      "model.ts's describeMap() drops its one-place branch -- a lone scored place goes back to " +
+      "the generic 'ramp X to Y (red = high); highest NAME V, lowest NAME V' caption, the same " +
+      "value stated twice around a fabricated ±0.5-wide range",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.map.zonecolor.spec.ts",
+      "-g",
+      "one place",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4541" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
