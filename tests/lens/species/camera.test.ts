@@ -3,14 +3,17 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CAMERA_PADDING,
+  WIDE_RANGE_SPAN_DEG,
   anyInputBbox,
   cameraFor,
   centerLon,
   cogUrlForBoundsFallback,
   inputBbox,
+  intersectBbox,
   lonSpanOf,
   minimalFrame,
   refitNeeded,
+  studyAreaBboxFallback,
   studyAreaView,
   type BoundsCamera,
 } from "../../../src/lens/species/data/camera";
@@ -329,5 +332,150 @@ describe("refitNeeded", () => {
     expect(
       refitNeeded({ sp: "a", in: "ax", rep: "native" }, { sp: "a", in: "ax", rep: "model" }),
     ).toBe(false);
+  });
+});
+
+// R3-A1 (round-3 plan, Ben 2026-09-25): wide-range models (the SWOT leatherback — nesting near
+// Oceania, foraging to Alaska) frame their IN-US portion by default. Three things to prove: the
+// THRESHOLD (a span at/under WIDE_RANGE_SPAN_DEG is untouched), the INTERSECTION (dateline-aware,
+// on both real inputs AND on the derived study-area fallback), and the FALLBACK when the
+// intersection comes back empty (keep the whole-range fit — narrowing to nothing is worse than not
+// narrowing).
+describe("R3-A1: intersectBbox — dateline-aware bbox intersection", () => {
+  it("overlapping boxes in the SAME frame intersect normally (no shift needed)", () => {
+    expect(intersectBbox([0, 0, 10, 10], [5, 5, 15, 15])).toEqual([5, 5, 10, 10]);
+  });
+
+  it("disjoint boxes in the same frame: no intersection", () => {
+    expect(intersectBbox([0, 0, 10, 10], [20, 0, 30, 10])).toBeNull();
+  });
+
+  it("dateline-aware: a model written 160..220 (continuous) and a study area written -170..-140 (the SAME ground, a different frame) still intersect", () => {
+    // -170..-140 shifted +360 is 190..220 — overlaps 160..220 at 190..220.
+    const intersection = intersectBbox([160, 10, 220, 50], [-170, 20, -140, 40]);
+    expect(intersection).toEqual([190, 20, 220, 40]);
+  });
+
+  it("picks whichever shift gives the WIDEST overlap, not just the first that matches", () => {
+    // b as-is overlaps a in [50,60] (10 deg); shifted +360, b (370..380) does not overlap a at all;
+    // shifted -360, b (-350..-340) does not either — so the un-shifted 10-deg overlap must win.
+    const a: Bbox = [0, 0, 60, 10];
+    const b: Bbox = [50, 0, 70, 10];
+    expect(intersectBbox(a, b)).toEqual([50, 0, 60, 10]);
+  });
+
+  it("a real, wide FULL-study-area-shaped box (spanning past -180) intersects a Pacific-crossing model", () => {
+    // studyAreaBboxFallback(FULL) below is the exact box this exercises end-to-end; this fixture
+    // pins the raw math independent of that derivation.
+    const usLike: Bbox = [-201.99, -9.65, -0.61, 75];
+    const wideModel: Bbox = [130, 10, 260, 65]; // ~130 deg, 130E across the Pacific to 100W
+    const intersection = intersectBbox(wideModel, usLike);
+    expect(intersection).not.toBeNull();
+    // narrows the WEST edge (drops the Oceania-ish portion outside the study-area box) but keeps
+    // the model's own east edge and latitude band.
+    expect(intersection![0]).toBeGreaterThan(wideModel[0]);
+    expect(intersection![2]).toBe(wideModel[2]);
+  });
+});
+
+describe("R3-A1: studyAreaBboxFallback", () => {
+  it("prefers a real published bbox on the study-area row when present", () => {
+    const withBbox = { ...FULL, bbox: [-170, 10, -60, 60] as Bbox };
+    expect(studyAreaBboxFallback(withBbox)).toEqual([-170, 10, -60, 60]);
+  });
+
+  it("derives from the SAME camera the desktop default view renders when no bbox is published (today's real data — see fixtures/*/study-areas.json)", () => {
+    const bbox = studyAreaBboxFallback(FULL);
+    // wide (the desktop default view at this zoom shows most of the globe — camera.ts's own
+    // header), centred near the FULL preset's own longitude, and continuous (west may cross -180
+    // rather than wrap).
+    expect(bbox[2] - bbox[0]).toBeGreaterThan(150);
+    expect(bbox[0]).toBeLessThan(-180);
+  });
+});
+
+describe("R3-A1: the threshold and the fallback chain, through cameraFor", () => {
+  // a synthetic wide taxon: CARDS.globe()'s own shape (has a real `am` input to override) with a
+  // merged bbox we control precisely, so the threshold boundary is exact rather than incidental.
+  function wideCard(mergedBbox: Bbox) {
+    const base = CARDS.globe();
+    return { ...base, merged: { ...base.merged!, bbox: mergedBbox } };
+  }
+
+  it("a span AT the threshold is untouched (strictly GREATER THAN, not >=)", () => {
+    const atThreshold = wideCard([100, 10, 100 + WIDE_RANGE_SPAN_DEG, 50]);
+    const cam = bounds(cameraFor(atThreshold, MERGED_IN, { studyArea: FULL }));
+    expect(cam.bounds).toEqual([
+      [100, 10],
+      [100 + WIDE_RANGE_SPAN_DEG, 50],
+    ]);
+    expect(cam.wholeRangeBounds).toBeUndefined();
+  });
+
+  it("a span just OVER the threshold, with a real overlap, is narrowed to the US intersection", () => {
+    const wide = wideCard([130, 10, 260, 65]); // ~130 deg, matches the intersectBbox fixture above
+    const cam = bounds(cameraFor(wide, MERGED_IN, { studyArea: FULL }));
+    expect(cam.source).toBe("merged");
+    expect(cam.wholeRangeBounds).toEqual([
+      [130, 10],
+      [260, 65],
+    ]);
+    // the narrowed bounds are a real subset of the whole range, not equal to it.
+    expect(cam.bounds).not.toEqual(cam.wholeRangeBounds);
+    expect(cam.bounds[0][0]).toBeGreaterThan(130);
+    // and the centre genuinely lands INSIDE the US intersection, not merely inside the whole range.
+    const usBbox = studyAreaBboxFallback(FULL);
+    const cx = centerLon(cam);
+    expect(cx).toBeGreaterThanOrEqual(Math.max(130, usBbox[0]));
+  });
+
+  it("a wide span whose intersection comes back EMPTY keeps the whole-range fit (narrowing to nothing is worse than not narrowing)", () => {
+    // entirely inside the ~0.6..158 deg gap the FULL study-area box's own longitude does NOT cover
+    // (see the studyAreaBboxFallback test above) — span 140, over the threshold, but no overlap.
+    const noOverlap = wideCard([10, -10, 150, 10]);
+    expect(intersectBbox([10, -10, 150, 10], studyAreaBboxFallback(FULL))).toBeNull();
+    const cam = bounds(cameraFor(noOverlap, MERGED_IN, { studyArea: FULL }));
+    expect(cam.bounds).toEqual([
+      [10, -10],
+      [150, 10],
+    ]);
+    expect(cam.wholeRangeBounds).toBeUndefined();
+  });
+
+  it("a wide span with NO study area supplied is also left whole (nothing to intersect against)", () => {
+    const wide = wideCard([130, 10, 260, 65]);
+    const cam = bounds(cameraFor(wide, MERGED_IN, {}));
+    expect(cam.bounds).toEqual([
+      [130, 10],
+      [260, 65],
+    ]);
+    expect(cam.wholeRangeBounds).toBeUndefined();
+  });
+
+  it("applies the SAME narrowing to an INPUT's own extent, not just the merged surface", () => {
+    const base = CARDS.dateline();
+    const wideInput = {
+      ...base,
+      inputs: base.inputs.map((i) =>
+        i.dsKey === "am"
+          ? { ...i, assets: i.assets.map((a) => ({ ...a, bbox: [130, 10, 260, 65] as Bbox })) }
+          : i,
+      ),
+    };
+    const cam = bounds(cameraFor(wideInput, "am", { studyArea: FULL }));
+    expect(cam.source).toBe("input");
+    expect(cam.wholeRangeBounds).toEqual([
+      [130, 10],
+      [260, 65],
+    ]);
+  });
+
+  it("a COMPACT model (under the threshold) is completely unaffected by this feature", () => {
+    // the existing dateline fixture's `am` input (35 deg span) — same assertion the pre-existing
+    // fit-target tests already make, re-asserted here to pin "compact models keep the whole-range
+    // fit" as this feature's own regression case.
+    const cam = bounds(cameraFor(CARDS.dateline(), "am", { studyArea: FULL }));
+    expect(lonSpanOf(cam)).toBeLessThan(WIDE_RANGE_SPAN_DEG);
+    expect(cam.wholeRangeBounds).toBeUndefined();
   });
 });

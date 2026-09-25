@@ -165,6 +165,50 @@ export function boundsToCameraView(
 }
 
 /**
+ * R3-A1 (round-3 plan, Ben 2026-09-25): the reference desktop viewport the study-area presets'
+ * own zoom was tuned for -- `scripts/verify.mjs#runState`'s own comment ("docs/map.md's default
+ * study-area zoom is chosen for a 1280x800 aspect"), the same number `scripts/verify.mjs`'s and
+ * `scripts/eyes-shots.mjs`'s `desktop` viewport already use. The ONE place this literal is allowed
+ * to live -- every caller of {@link cameraViewToBounds} for "the study area's own extent" must use
+ * this SAME constant or two computations of "the study area" would silently disagree.
+ */
+export const STUDY_AREA_REFERENCE_VIEWPORT: Viewport = { width: 1280, height: 800 };
+
+/**
+ * The inverse of {@link boundsToCameraView}: the bbox a plain (unpadded) Mercator camera at
+ * `view` would show across `viewport`. Exists because `boot.study_areas` publishes a CAMERA
+ * (center + zoom), never an extent (`docs/map.md`/this module's own "no fitBounds" header) -- a
+ * caller that genuinely needs "the study area as a box" (R3-A1's wide-range species framing,
+ * `src/lens/species/data/camera.ts#studyAreaBboxFallback`) has no bbox to read and must derive one
+ * from the SAME camera the desktop default view already renders, rather than invent a number.
+ *
+ * Plain Mercator, not the globe projection MapLibre renders at low zoom (`PHONE_STUDY_AREA_ZOOM_
+ * BOOST`'s own header) -- at the low zoom a study-area preset uses this is already an
+ * OVER-estimate of what a real (spherical) render shows, which is the safe direction for an
+ * intersection test to err (a too-wide "study area" box narrows a wide model less aggressively,
+ * never wrongly excludes real US range).
+ */
+export function cameraViewToBounds(
+  view: { lon: number; lat: number; zoom: number },
+  viewport: Viewport,
+): CameraBoundsInput {
+  const worldPx = MERCATOR_TILE_SIZE * 2 ** view.zoom;
+  const cx = lngToMercatorX(view.lon);
+  const cy = latToMercatorY(view.lat);
+  const halfWx = viewport.width / 2 / worldPx;
+  const halfWy = viewport.height / 2 / worldPx;
+  const west = mercatorXToLng(cx - halfWx);
+  const east = mercatorXToLng(cx + halfWx);
+  // north has the SMALLER mercator y (y grows southward, boundsToCameraView's own convention)
+  const north = mercatorYToLat(cy - halfWy);
+  const south = mercatorYToLat(cy + halfWy);
+  return [
+    [west, south],
+    [east, north],
+  ];
+}
+
+/**
  * P2 round 2 (orchestrator, real-v7-build eyes-on, 2026-09-24 -- supersedes round 1's
  * `MAX_STUDY_AREA_SHIFT_PX` cap, which fixed the SYNTHETIC hermetic fixture's "empty sky" pixel
  * count but not the real defect): capping the SHIFT was the wrong lever. Measured directly against

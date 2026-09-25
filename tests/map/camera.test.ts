@@ -5,8 +5,10 @@ import {
   INITIAL_AREA_CAMERA_STATE,
   NO_PADDING,
   PHONE_DEFAULT_BOUNDS,
+  STUDY_AREA_REFERENCE_VIEWPORT,
   boundsToCameraView,
   cameraEqual,
+  cameraViewToBounds,
   createCameraWriter,
   paddedStudyAreaCenter,
   phoneDefaultCamera,
@@ -253,6 +255,38 @@ describe("boundsToCameraView", () => {
       });
       expect(at300.center[0]).toBeGreaterThan(at200.center[0]);
     });
+  });
+});
+
+// R3-A1: the inverse of boundsToCameraView -- "what bbox does this camera show". Used to derive a
+// fallback "study area as a box" for the species lens' wide-range framing (data/camera.ts's own
+// STUDY_AREA_REFERENCE_VIEWPORT-tagged tests), since boot.study_areas publishes a camera, not an
+// extent.
+describe("cameraViewToBounds", () => {
+  it("round-trips through boundsToCameraView at the SAME viewport (no padding)", () => {
+    const view = { lon: -101.304, lat: 46.9, zoom: 2.16 };
+    const bounds = cameraViewToBounds(view, STUDY_AREA_REFERENCE_VIEWPORT);
+    const back = boundsToCameraView(bounds, STUDY_AREA_REFERENCE_VIEWPORT);
+    expect(back.center[0]).toBeCloseTo(view.lon, 6);
+    expect(back.center[1]).toBeCloseTo(view.lat, 6);
+    expect(back.zoom).toBeCloseTo(view.zoom, 6);
+  });
+
+  it("a higher zoom yields a NARROWER bbox for the same center/viewport", () => {
+    const lo = cameraViewToBounds({ lon: 0, lat: 0, zoom: 2 }, STUDY_AREA_REFERENCE_VIEWPORT);
+    const hi = cameraViewToBounds({ lon: 0, lat: 0, zoom: 4 }, STUDY_AREA_REFERENCE_VIEWPORT);
+    expect(hi[1][0] - hi[0][0]).toBeLessThan(lo[1][0] - lo[0][0]);
+  });
+
+  it("the west edge may go below -180 (a continuous, never re-wrapped frame)", () => {
+    // the FULL study area's own preset, at the reference viewport, is wide enough at zoom 2.16
+    // that its west edge crosses the antimeridian -- this is the exact case
+    // studyAreaBboxFallback (species lens) must hand onward without wrapping it back into range.
+    const bounds = cameraViewToBounds(
+      { lon: -101.304, lat: 46.9, zoom: 2.16 },
+      STUDY_AREA_REFERENCE_VIEWPORT,
+    );
+    expect(bounds[0][0]).toBeLessThan(-180);
   });
 });
 
