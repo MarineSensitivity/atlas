@@ -852,4 +852,38 @@ test.describe("P round deliverable 1: the Layers panel's spatial-unit toggle (sc
         `accent-pressed segment (${pressedBg}) -- it should be a quiet/neutral color instead`,
     ).not.toBe(pressedBg);
   });
+
+  // P3 fix (Opus eyes-on review, 2026-09-24, desktop-04): the panel's own `display: flex;
+  // flex-direction: column` body stretches `.seg`'s outer box to the panel's full width
+  // (`align-items: stretch`, column-flex's default), but the two segments themselves kept their
+  // own content width (no `flex-grow`) -- measured live, ~283 of the pill's own 1245px filled,
+  // the rest a dead, unclickable band. RED-FIRST: fails on the pre-fix tree, where the "Program
+  // areas" segment's own right edge sits nowhere near the group's.
+  test("the two segments fill the pill's own width -- no dead space past the last segment", async ({
+    page,
+  }) => {
+    await gotoLayersScores(page, "");
+    const group = page.getByRole("group", { name: "Spatial units" });
+    const groupBox = (await group.boundingBox())!;
+    const cellBox = (await group
+      .getByRole("button", { name: "Raster cells (0.05°)" })
+      .boundingBox())!;
+    const paBox = (await group.getByRole("button", { name: "Program areas" }).boundingBox())!;
+
+    // within 2px of the pill's own left edge -- `.seg`'s own 1px border sits between the group's
+    // outer boundingBox and the first button's, so an exact match is never quite right.
+    expect(
+      cellBox.x,
+      `the first segment (x=${cellBox.x}) does not start at the pill's own left edge (x=${groupBox.x})`,
+    ).toBeGreaterThanOrEqual(groupBox.x - 0.5);
+    expect(
+      cellBox.x,
+      `the first segment (x=${cellBox.x}) does not start at the pill's own left edge (x=${groupBox.x})`,
+    ).toBeLessThanOrEqual(groupBox.x + 2);
+    expect(
+      paBox.x + paBox.width,
+      `the last segment's own right edge (${paBox.x + paBox.width}) falls well short of the ` +
+        `pill's own right edge (${groupBox.x + groupBox.width}) -- dead space in the pill`,
+    ).toBeGreaterThanOrEqual(groupBox.x + groupBox.width - 1);
+  });
 });

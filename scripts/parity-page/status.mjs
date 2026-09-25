@@ -427,7 +427,13 @@ export const STATUS = {
     match: "Columns in order: cat, taxon, scientific",
     status: "partial",
     evidence: [
-      { file: "tests/lens/scores/species.test.ts", name: "er_score: 0dp percent" },
+      {
+        file: "tests/lens/scores/species.test.ts",
+        // P3/W3 fix (2026-09-24): renamed with `formatPercent0` -> `formatErScore` -- the column
+        // now shows the release's own plain 1-100 number, never a percent (see this file's own
+        // "S-16" `match` line above, updated to match).
+        name: "er_score: the release's own 1-100 scale, restored from this query's internal 0-1 fraction",
+      },
       { file: "tests/lens/scores/species.test.ts", name: "avg_suit/pct_cat: 2dp percent" },
       { file: "tests/lens/scores/species.test.ts", name: "area_km2: 4 significant figures" },
       {

@@ -169,23 +169,30 @@ interface RawManifestMetricRescaleRow {
 /**
  * P round, "Flower plot should be bigger and needs a reference outer circle... based on the
  * maximum component score for given version" (Ben, live-review 2026-09-24). Coordinator follow-up
- * (2026-09-25): the FIRST version of this function read `boot.layers[].by_subregion.FULL.rescale`,
- * which no real release publishes for a `category: "component"` row (only the composite carries
- * `by_subregion` today) — it was structurally unable to ever return a real number. The release
- * MANIFEST's `metrics[]` (the SAME array `metricLabelsFromManifest` above reads) is the real source:
- * one row per `metric_key`×`subregion_key`, each carrying its own `rescale_min`/`rescale_max` —
- * verified live against v7's own `manifest.json` (2026-09-25): every `*_ecoregion_rescaled` row at
- * `subregion_key: "FULL"` — `extrisk_{bird,coral,fish,invertebrate,mammal,other,turtle}_ecoregion_rescaled`
- * and `primprod_ecoregion_rescaled`, exactly the 8 the flower draws — carries `rescale_max: 100`
- * (ecoregion-rescaling normalizes each component to reach 100 somewhere in the study area, even
- * though the release's OVERALL composite maxes out lower — v7's own composite row,
+ * (2026-09-25): the FIRST version of this function read `boot.layers[].by_subregion.FULL.rescale`.
+ * P3 fix (Opus eyes-on review, 2026-09-24) correction: an earlier draft of this comment claimed
+ * "no real release publishes [`by_subregion`] for a `category: "component"` row (only the
+ * composite carries `by_subregion` today)" — checked directly against the real, live v7
+ * `app/boot.json` (2026-09-24) and that is FALSE: every one of the 8 `*_ecoregion_rescaled`
+ * component rows (`extrisk_{bird,coral,fish,invertebrate,mammal,other,turtle}_ecoregion_rescaled`,
+ * `primprod_ecoregion_rescaled`) publishes `by_subregion.FULL.rescale: [0, 100]`, giving the SAME
+ * max, 100, `flowerMaxComponentScore` below already reads off the manifest. The release MANIFEST's
+ * `metrics[]` (the SAME array `metricLabelsFromManifest` above reads) is used here regardless —
+ * not because `by_subregion` is missing, but as the ONE general, versioned contract (one row per
+ * `metric_key`×`subregion_key`, each carrying its own `rescale_min`/`rescale_max`) rather than a
+ * second reader of the raster-tiling side's own COG metadata: one row per
+ * `metric_key`×`subregion_key` — verified live against v7's own `manifest.json` (2026-09-25): every
+ * `*_ecoregion_rescaled` row at `subregion_key: "FULL"` — exactly the 8 the flower draws — carries
+ * `rescale_max: 100` (ecoregion-rescaling normalizes each component to reach 100 somewhere in the
+ * study area, even though the release's OVERALL composite maxes out lower — v7's own composite row,
  * `score_extriskspcat_primprod_ecoregionrescaled_equalweights`, carries `rescale_max: 93`, the same
- * "0-93" the map's own score legend shows). The filter (`_ecoregion_rescaled$` suffix, `FULL`
- * subregion, `componentLabel(...) !== "all"`) mirrors `flower.ts#fromMetrics`'s OWN "which metrics
- * are the flower's components" rule exactly, so the two can never disagree about what counts. `null`
- * only when the manifest publishes no such row at all (has not loaded yet, or a pre-metrics
- * release) — `Flower.svelte` falls back to 100 and says so in that case, rather than pretending a
- * number exists.
+ * "0-93" the map's own score legend shows, and the SAME 93 `by_subregion.FULL.rescale` gives on
+ * that row too). The filter (`_ecoregion_rescaled$` suffix, `FULL` subregion,
+ * `componentLabel(...) !== "all"`) mirrors `flower.ts#fromMetrics`'s OWN "which metrics are the
+ * flower's components" rule exactly, so the two can never disagree about what counts. `null` only
+ * when the manifest publishes no such row at all (has not loaded yet, or a pre-metrics release) —
+ * `Flower.svelte` falls back to 100 and says so in that case, rather than pretending a number
+ * exists.
  */
 export function flowerMaxComponentScore(manifest: unknown): number | null {
   const rows = (manifest as { metrics?: unknown } | null | undefined)?.metrics;

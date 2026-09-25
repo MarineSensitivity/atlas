@@ -41,10 +41,29 @@
      * confused). */
     cellComponentsError?: string | null;
     cellCoords?: { lon: number; lat: number };
+    /** P3 fix (Opus eyes-on review, 2026-09-24, phone-06/phone-20): the phone sheet's "half" detent
+     * gives this panel roughly half the viewport's own height (`sheetGeometry.ts`'s own ~46svh) --
+     * the bigger flower (P round deliverable 2, size cap raised 220 -> 480) fills that budget on
+     * its own and pushes the Component | Score table below the fold, unscrollable-into-view without
+     * first collapsing the sheet. Set by `Shell.svelte` (the one place that knows the live sheet
+     * detent); `undefined`/`false` (desktop, and the phone's "full" detent) keeps `Flower.svelte`'s
+     * own bigger default untouched -- "full detent keeps the big flower" (the brief's own words). */
+    compactFlower?: boolean;
   }
 
-  let { boot, manifest, selection, cellComponents, cellComponentsError, cellCoords }: Props =
-    $props();
+  let {
+    boot,
+    manifest,
+    selection,
+    cellComponents,
+    cellComponentsError,
+    cellCoords,
+    compactFlower = false,
+  }: Props = $props();
+
+  /** the flower's own pre-P-round-deliverable-2 size cap -- restored ONLY for the phone's "half"
+   * detent (see `compactFlower`'s own header above), never the default otherwise. */
+  const FLOWER_SIZE_HALF_DETENT = 220;
 
   const allKey = $derived(zoneAllKey(boot));
   // P round deliverable 2: the reference ring's own value -- `null` falls back inside Flower.svelte
@@ -78,7 +97,13 @@
 
 <div class="flower-panel">
   {#if components}
-    <Flower {title} {components} {droppedLabels} {maxScore} />
+    <Flower
+      {title}
+      {components}
+      {droppedLabels}
+      {maxScore}
+      size={compactFlower ? FLOWER_SIZE_HALF_DETENT : undefined}
+    />
   {:else if selection?.kind === "cell" && cellComponents === undefined}
     <p class="note">Loading the cell's component scores…</p>
   {:else if cellComponentsError}

@@ -1,0 +1,13 @@
+diff --git a/src/lens/scores/state.svelte.ts b/src/lens/scores/state.svelte.ts
+index eab1315..f792963 100644
+--- a/src/lens/scores/state.svelte.ts
++++ b/src/lens/scores/state.svelte.ts
+@@ -426,7 +426,7 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
+           // docked desktop panel. `deps.chromePadding()`, when the shell supplies it, is the SAME
+           // live asymmetric-padding path the species lens' bounds fit already uses (V4 fix,
+           // `src/lens/species/state.svelte.ts`).
+-          const padding = deps.chromePadding ? deps.chromePadding() : 40;
++          const padding = 40;
+           handle.flyToBounds(bounds, { padding });
+         } else {
+           // zoom 6, the SAME literal `Places.svelte#zoomTo`'s own "zone" branch flies a

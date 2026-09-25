@@ -19,7 +19,8 @@ export interface Citation {
   dsKey: string;
   /** `dataset.name_display`, else the key itself. */
   label: string;
-  /** `dataset.citation` -- the full reference string, verbatim, or `null` when unpublished. */
+  /** `dataset.citation` -- the full reference string, verbatim except `fixKnownCitationTypos`'s
+   * one named exception (below), or `null` when unpublished. */
   citation: string | null;
   /** `dataset.link_info` -- the dataset's own page, or `null`. */
   href: string | null;
@@ -35,6 +36,22 @@ interface RawDataset {
 
 function str(v: unknown): string | null {
   return typeof v === "string" && v.trim().length > 0 ? v : null;
+}
+
+/** P3 fix (Opus eyes-on review, 2026-09-24): one narrow, NAMED exception to `citation`'s own
+ * "verbatim" contract (this module's `Citation.citation` doc, above) -- the AquaMaps R package's
+ * own upstream CITATION text runs two words together with no space
+ * ("Creative Commons Attribution-NonCommercial 3.0 UnportedLicense, please see ..."), verified
+ * against the real v7-v9 `datasets.json` `am_0.05` row. That text is release metadata this repo
+ * does not generate (it comes from `workflows`/`msens`'s own dataset registry, out of this fix's
+ * reach) -- correcting it here is display-only and never touches the published field itself. */
+function fixKnownCitationTypos(v: string): string {
+  return v.replace(/\bUnportedLicense\b/g, "Unported License");
+}
+
+function citationStr(v: unknown): string | null {
+  const s = str(v);
+  return s === null ? null : fixKnownCitationTypos(s);
 }
 
 /**
@@ -56,7 +73,7 @@ export function citations(boot: unknown): Citation[] {
       c: {
         dsKey,
         label: str(raw.name_display) ?? dsKey,
-        citation: str(raw.citation),
+        citation: citationStr(raw.citation),
         href: str(raw.link_info),
       },
       order:

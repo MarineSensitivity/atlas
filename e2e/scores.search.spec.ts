@@ -277,3 +277,233 @@ test.describe("Q1: Scores-lens top-bar search (phone, 390x844)", () => {
     expect(listBox.y + listBox.height).toBeLessThanOrEqual(dialogBox.y + dialogBox.height + 0.5);
   });
 });
+
+// P3 fix (Opus 5.5 eyes-on review, 2026-09-24, phone-19/20/21 + desktop-19): `selectZone`'s bounds
+// fit (state.svelte.ts, the SAME "Enter flies the camera" mechanism the W1 tests above cover) used
+// a flat 40px `padding` on every edge, blind to the phone sheet or the desktop docked panel actually
+// covering the map -- a search pick of GAA landed with the area (and its full-name popup) mostly
+// BEHIND that chrome: phone, a sliver at the sheet's edge, the free area itself showing a wrong
+// stretch of the country; desktop, roughly a third of the area under the docked panel.
+// `deps.chromePadding()` (state.svelte.ts's new `ScoresLensDeps` field, wired in `Shell.svelte`) now
+// threads the SAME live `currentChromePadding()` getter the species lens' own bounds fit already
+// uses (V1/V4 fixes, `e2e/species.camera.spec.ts`) into `selectZone`'s `flyToBounds`.
+//
+// GAA (its real name "GOA Program Area A" -- `programAreaNames.ts`'s own table, resolved through
+// `paLabel`'s fallback exactly as ALA is above) is the SAME zone Ben's live report named; its
+// fixture polygon (e2e/fixtures/scores/zones20.geojson) spans lon [-158,-156] lat [26,28] -- a
+// fresh box, distinct from ALA's, so this exercises its own fit rather than reusing one already
+// proven to land somewhere reasonable.
+test.describe("P3 fix: a search-picked Program Area's bounds fit pads for the shell chrome", () => {
+  const GAA_BBOX: [number, number, number, number] = [-158, 26, -156, 28];
+
+  interface FreeAreaSample {
+    x: number;
+    y: number;
+    inside: boolean;
+  }
+  interface FreeAreaResult {
+    insideFraction: number;
+    total: number;
+    inside: number;
+    sample: FreeAreaSample[];
+  }
+
+  /** samples a 5x5 grid across `bbox` with the map's OWN `project()` and reports what fraction land
+   * inside the FREE area -- container-relative, excluding whichever chrome element is actually on
+   * screen right now: the phone sheet (`.sheet`) below, or the desktop docked panel
+   * (`#panel-region .panel-surface`) to the side. Mirrors `e2e/species.camera.spec.ts`'s own V4
+   * `freeAreaCoverage` helper (the identical class of bug, the species lens' own bounds fit),
+   * generalized to whichever chrome the CURRENT viewport actually shows rather than assuming one,
+   * so ONE helper covers both the phone and desktop tests below. */
+  async function freeAreaCoverage(
+    page: Page,
+    bbox: [number, number, number, number],
+  ): Promise<FreeAreaResult> {
+    return page.evaluate((bboxArg) => {
+      const [xmin, ymin, xmax, ymax] = bboxArg;
+      const w = window as unknown as {
+        __atlasMap: {
+          handle: {
+            map: {
+              project(lngLat: [number, number]): { x: number; y: number };
+              getContainer(): HTMLElement;
+            };
+          };
+        };
+      };
+      const map = w.__atlasMap.handle.map;
+      const containerRect = map.getContainer().getBoundingClientRect();
+      const sheetEl = document.querySelector(".sheet");
+      const sheetTop = sheetEl ? sheetEl.getBoundingClientRect().top - containerRect.top : null;
+      const panelEl = document.querySelector("#panel-region .panel-surface");
+      const panelLeft = panelEl ? panelEl.getBoundingClientRect().left - containerRect.left : null;
+
+      const fracs = [0, 0.25, 0.5, 0.75, 1];
+      const lons = fracs.map((f) => xmin + f * (xmax - xmin));
+      const lats = fracs.map((f) => ymin + f * (ymax - ymin));
+      const sample: { x: number; y: number; inside: boolean }[] = [];
+      for (const lon of lons) {
+        for (const lat of lats) {
+          const p = map.project([lon, lat]);
+          let inside =
+            p.x >= 0 && p.x <= containerRect.width && p.y >= 0 && p.y <= containerRect.height;
+          if (inside && sheetTop !== null) inside = p.y < sheetTop;
+          if (inside && panelLeft !== null) inside = p.x < panelLeft;
+          sample.push({ x: p.x, y: p.y, inside });
+        }
+      }
+      const inside = sample.filter((s) => s.inside).length;
+      return { insideFraction: inside / sample.length, total: sample.length, inside, sample };
+    }, bbox);
+  }
+
+  /** `gotoScoresSearch`'s own routing, PLUS an explicit low-zoom `?map=` starting camera centred
+   * on the zones20 fixture's own (geographically arbitrary, Hawaii-area) grid -- MapLibre only
+   * loads tiles intersecting the CURRENT viewport at the CURRENT zoom, and `zoneBoundsFromMap`
+   * (state.svelte.ts) only ever reads ALREADY-LOADED tiles (never a throw, "the caller degrades ...
+   * exactly as before this fix" -- that function's own header). The phone's own default camera
+   * (`phoneDefaultCamera`, Shell.svelte) frames a real, narrow Gulf-of-Mexico region nowhere near
+   * this fixture's grid, so GAA's tile is never loaded and `bounds` comes back `null` on every
+   * phone run -- measured live (DEBUG instrumentation, this fix's own dev log): `hasHandle: true,
+   * bounds: null` -- NOT a regression this fix introduced (desktop's own default camera happens to
+   * sit at a low enough zoom that the world-covering tile already includes this fixture's grid,
+   * which is why the SAME flow passes there). A real user's map is never guaranteed to already be
+   * zoomed out this far either, but that is `zoneBoundsFromMap`'s own documented fallback
+   * (`zoneCenterFromBoot`, then an announce-only no-op) -- out of THIS fix's scope; seeding a
+   * starting camera here is the harness working around the fixture's placement, not the product. */
+  async function gotoScoresSearchNearFixture(page: Page): Promise<void> {
+    await blockWasm(page);
+    await routeBucket(page, "v9", bootWithAleutianArc());
+    await routeSession(page, { preview: true, ver: "v9" });
+    await routeSealFixture(page);
+    await routeZones20(page);
+    await routeBasemapStyle(page);
+    await routeTitilerTiles(page);
+    await routeGlyphs(page);
+    await page.goto("/?proj=mercator&map=-157,27,2");
+    await waitForHydration(page);
+  }
+
+  /** searches "GAA", selects it (Enter on desktop, a result-row click on the phone's search dialog
+   * -- the SAME two selection mechanisms the Q1 describes above already exercise) and waits for the
+   * URL to carry the selection, so both tests below start from an identical, proven-selected state. */
+  async function searchAndSelectGAA(page: Page, phone: boolean): Promise<void> {
+    await gotoScoresSearchNearFixture(page);
+    await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
+    // GAA's own tile must be genuinely queryable BEFORE the search pick runs -- `zoneBoundsFromMap`
+    // (state.svelte.ts) reads `querySourceFeatures` synchronously and never retries, so a pick that
+    // races a still-loading tile falls straight through to the (fixture-less) label_pt/announce
+    // fallback, same as `gotoScoresSearchNearFixture`'s own header explains. A local cast (not the
+    // shared ambient `Window.__atlasMap` other e2e files declare) for two methods that ambient
+    // shape does not carry, rather than widening it (and every OTHER file's byte-for-byte-matching
+    // copy) just for this one query.
+    await page.waitForFunction(
+      () => {
+        const map = (
+          window as unknown as {
+            __atlasMap?: {
+              handle: {
+                map: {
+                  getSource(id: string): unknown;
+                  isSourceLoaded(id: string): boolean;
+                  querySourceFeatures(
+                    id: string,
+                    opts: { sourceLayer: string; filter: unknown },
+                  ): unknown[];
+                };
+              };
+            };
+          }
+        ).__atlasMap?.handle.map;
+        if (!map || !map.getSource("programarea_src") || !map.isSourceLoaded("programarea_src")) {
+          return false;
+        }
+        return (
+          map.querySourceFeatures("programarea_src", {
+            sourceLayer: "programarea",
+            filter: ["==", ["get", "programarea_key"], "GAA"],
+          }).length > 0
+        );
+      },
+      undefined,
+      { timeout: 15_000 },
+    );
+
+    let scope = page.locator("body");
+    if (phone) {
+      await page.getByRole("button", { name: "Search species and places" }).click();
+      const dialog = page.getByRole("dialog", { name: "Search" });
+      await expect(dialog).toBeVisible();
+      scope = dialog;
+    }
+    const input = scope.getByRole("combobox", { name: "Search Program Areas or coordinates" });
+    await expect(input).toBeVisible({ timeout: 10_000 });
+    await input.fill("GAA");
+    const option = scope.getByRole("option", { name: "GOA Program Area A (GAA)" });
+    await expect(option).toBeVisible();
+    if (phone) {
+      await option.click();
+    } else {
+      await input.press("Enter");
+    }
+    await expect.poll(() => urlSel(page)).toBe("zone:programarea:GAA");
+  }
+
+  test.describe("desktop (1280x800)", () => {
+    test.use({ viewport: { width: 1280, height: 800 } });
+
+    test("GAA's fitted area lands mostly left of the docked panel, and its popup is visible there too", async ({
+      page,
+    }) => {
+      await searchAndSelectGAA(page, false);
+
+      // brief's own acceptance bar: >= 80% of a 5x5 grid over GAA's bbox lands in the free area
+      // (here, left of the docked panel -- desktop-19's own defect). Wrapped in `expect.poll` so
+      // this also waits out whatever remains of the `flyTo` animation: a mid-flight frame will not
+      // yet clear the 80% bar for a box this size, but the settled fit does.
+      await expect
+        .poll(async () => (await freeAreaCoverage(page, GAA_BBOX)).insideFraction, {
+          message: "GAA's own bbox grid did not settle into the area left of the docked panel",
+          timeout: 15_000,
+        })
+        .toBeGreaterThanOrEqual(0.8);
+
+      const popup = page.locator(".atlas-popup");
+      await expect(popup).toBeVisible({ timeout: 10_000 });
+      const popupBox = (await popup.boundingBox())!;
+      const panelBox = (await page.locator("#panel-region .panel-surface").boundingBox())!;
+      expect(
+        popupBox.x + popupBox.width,
+        `popup right edge x=${popupBox.x + popupBox.width} reaches into the docked panel ` +
+          `starting at x=${panelBox.x}`,
+      ).toBeLessThanOrEqual(panelBox.x + 0.5);
+    });
+  });
+
+  test.describe("phone (390x844, half detent)", () => {
+    test.use({ viewport: { width: 390, height: 844 } });
+
+    test("GAA's fitted area lands mostly above the sheet, and its popup is visible there too", async ({
+      page,
+    }) => {
+      await searchAndSelectGAA(page, true);
+
+      await expect
+        .poll(async () => (await freeAreaCoverage(page, GAA_BBOX)).insideFraction, {
+          message: "GAA's own bbox grid did not settle into the area above the sheet",
+          timeout: 15_000,
+        })
+        .toBeGreaterThanOrEqual(0.8);
+
+      const popup = page.locator(".atlas-popup");
+      await expect(popup).toBeVisible({ timeout: 10_000 });
+      const popupBox = (await popup.boundingBox())!;
+      const sheetBox = (await page.locator(".sheet").boundingBox())!;
+      expect(
+        popupBox.y + popupBox.height,
+        `popup bottom edge y=${popupBox.y + popupBox.height} reaches into the sheet starting ` +
+          `at y=${sheetBox.y}`,
+      ).toBeLessThanOrEqual(sheetBox.y + 0.5);
+    });
+  });
+});

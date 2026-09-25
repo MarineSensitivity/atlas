@@ -48,6 +48,18 @@
   }
 
   .seg button {
+    /* P3 fix (Opus eyes-on review, 2026-09-24, desktop-04/phone-03): a caller whose OWN layout
+       stretches `.seg` to the full width of its row (the Layers "Raster cells | Program areas"
+       toggle and the Table "Species | Zones | Composition" switch, both direct children of a
+       `display: flex; flex-direction: column` panel body -- column-flex's default
+       `align-items: stretch` widens `.seg`'s outer box even though `.seg` itself is
+       `inline-flex`) used to leave the segments at their own content width, `flex-grow` never
+       set -- measured live: ~283 of 1245px filled on desktop, ~60% on the phone, most of the
+       "pill" a dead, unclickable band. `flex: 1 1 0%` makes every segment share that width
+       equally. The top-bar Scores|Species switch is UNCHANGED by this: its own wrapping `<div>`
+       sits in a row-flex top bar (cross axis = height, not width), so `.seg` there was never
+       stretched in the first place and stays exactly as compact as before. */
+    flex: 1 1 0%;
     height: 30px;
     padding: 0 var(--space-4);
     border: 0;
@@ -55,6 +67,8 @@
     color: var(--text-secondary);
     font: inherit;
     font-size: var(--text-sm);
+    text-align: center;
+    white-space: nowrap;
     cursor: pointer;
   }
 

@@ -443,6 +443,14 @@ describe("sources", () => {
   it("links to this release's docs", () => {
     expect(build().sources.docsHref).toBe("https://marinesensitivity.org/docs/v9/");
   });
+
+  // P3 fix (Opus eyes-on review, 2026-09-24): "modelled" -> "modeled" -- this app's own copy is
+  // US spelling throughout; this line was the one holdout.
+  it("US spelling: 'modeled', never 'modelled'", () => {
+    const text = build().sources.text.join(" ");
+    expect(text).toContain("weighted by modeled habitat suitability");
+    expect(text).not.toContain("modelled");
+  });
 });
 
 describe("provenance -- what replaces session_info()", () => {

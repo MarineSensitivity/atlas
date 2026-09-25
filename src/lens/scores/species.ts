@@ -85,9 +85,19 @@ function isNum(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
 }
 
-/** `er_score`: 0 dp percent (a 0-1 fraction, e.g. 0.5 -> "50%"). */
-export function formatPercent0(v: unknown): string {
-  return isNum(v) ? `${Math.round(v * 100)}%` : "";
+/** `er_score`: this query's own internal 0-1 fraction (`sql/species_for_cells.sql`'s own header --
+ * `t.er_score / 100.0`, mirroring `avg_suit`'s 0-1 scale for the `suit_er` weighting arithmetic
+ * `sql/species_shares.sql` does downstream) restored to the release's published RAW 1-100 scale for
+ * display, as a bare number -- never a percent. P3 fix (Opus eyes-on review, 2026-09-24,
+ * desktop-10): "1%"/"10%" on screen read as a tiny, uninformative fraction of something; the
+ * release's own glossary text (`apps/scores/app.R`: "extinction risk score (1-100%): derived from
+ * the max of extinction risk codes ... IUCN:LC|DD=1 ... MMPA (20) ... MBTA (10)") states this as a
+ * plain 1-100 NUMBER. The reference R Shiny app's own table (`apps/scores/app.R`'s
+ * `formatPercentage(c("er_score"), 0)`) renders the SAME internal 0-1 fraction as a percent too --
+ * this is a deliberate departure from that inherited convention, not a parity miss (Ben's own
+ * direction, this fix's brief). */
+export function formatErScore(v: unknown): string {
+  return isNum(v) ? `${Math.round(v * 100)}` : "";
 }
 
 /** `avg_suit`/`pct_cat`: 2 dp percent. */

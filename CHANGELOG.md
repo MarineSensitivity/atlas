@@ -1,3 +1,28 @@
+# atlas 0.10.65
+
+P round, W3 (Opus 5.5 eyes-on review of 0.10.64, 2026-09-24): a Scores search zoom, the flower
+plot's hub number and half-detent size, segmented-control widths, and three small copy/format fixes.
+
+- **Fixed (BLOCKER): searching for a Program Area zoomed the camera to a spot the shell's own
+  chrome then covered** — a flat 40px padding on every edge ignored the phone sheet or the desktop
+  docked panel actually sitting over the map, so the found area (and its popup) landed mostly
+  behind it. The camera now pads for whatever chrome is on screen right now, the same live padding
+  the species-model camera already uses.
+- **Fixed: the flower plot's hub number showed two white glyph-foot stubs poking out under the
+  hover/tap label** — new with the bigger flower. The hub number is now hidden while a petal's own
+  label is showing, rather than drawn underneath it.
+- **Fixed: every segmented control (the Layers panel's "Raster cells | Program Areas" toggle, the
+  Table tool's "Species | Zones | Composition" switch, the Feedback dialog's kind picker) filled
+  only part of its own pill**, leaving a dead, unclickable band to one side. The segments now share
+  the pill's full width.
+- **Fixed: on the phone, the bigger flower plot could push the Component | Score table below the
+  fold at the sheet's "Half" height** — the flower is now capped at a smaller size at Half height so
+  the table's first rows stay in view; "Full" height still shows the bigger flower.
+- **Fixed: the species table's "ER score" column showed a percent ("1%", "10%")** — it now shows
+  the release's own plain 1–100 number.
+- **Report copy: "modelled" → "modeled"**, and the AquaMaps citation's "Unported License" now
+  reads with its own space, not run together.
+
 # atlas 0.10.64
 
 P round, W2 (Ben, live-review of the LIVE 0.10.62 app, 2026-09-24): the Layers panel's spatial-unit
