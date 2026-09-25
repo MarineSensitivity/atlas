@@ -158,12 +158,16 @@ for (const unitMode of [
     await gotoPlacesOverGaa(page);
     if (unitMode === "Program areas selected") {
       // the assessment tried BOTH spatial-unit modes and pick failed in both -- this drives the
-      // scores lens' own "Spatial units" select so the SAME scenario is covered here. The Places
-      // tool click above already opened the panel; switch back to Layers only long enough to
-      // change the select, matching how a real reviewer would (Spatial units lives on the scores
-      // lens' own Layers tool, not the Places tool).
+      // Layers panel's own "Raster cells | Program Areas" toggle (P round deliverable 1: promoted
+      // from a `<Select>` to a `Segmented` control at the top of the panel) so the SAME scenario is
+      // covered here. The Places tool click above already opened the panel; switch back to Layers
+      // only long enough to press the toggle, matching how a real reviewer would (the toggle lives
+      // on the scores lens' own Layers tool, not the Places tool).
       await page.locator("#rail-region button[aria-label='Layers']").click();
-      await page.getByLabel("Spatial units").selectOption("programarea");
+      await page
+        .getByRole("group", { name: "Spatial units" })
+        .getByRole("button", { name: "Program areas" })
+        .click();
       await page.locator("#rail-region button[aria-label='Places']").click();
     }
 

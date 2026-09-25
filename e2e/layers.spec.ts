@@ -802,3 +802,54 @@ test.describe("ecoregion boundaries (orchestrator audit item 2): the manifest-pu
     ).toBe(false);
   });
 });
+
+// P round deliverable 1 (Ben, live-review of 0.10.62, 2026-09-24): "emphasize Raster Cells vs
+// Program Areas as a toggle similar to Scores vs Species at top, but this only applies to Scores
+// (so grayed out for Species)" + "the toggles add too much yellow emphasis across whole panel...
+// use a quiet on/off style". The Species half (disabled + reason) is
+// `e2e/species.smoke.spec.ts`'s own P-round describe block.
+test.describe("P round deliverable 1: the Layers panel's spatial-unit toggle (scores lens)", () => {
+  test("switching Raster cells -> Program areas writes unit= and moves the pressed segment (the seeded fault: it stops writing the unit)", async ({
+    page,
+  }) => {
+    const errors = collectConsoleErrors(page);
+    await gotoLayersScores(page, "");
+    const group = page.getByRole("group", { name: "Spatial units" });
+    const cellBtn = group.getByRole("button", { name: "Raster cells (0.05°)" });
+    const paBtn = group.getByRole("button", { name: "Program areas" });
+    await expect(cellBtn).toHaveAttribute("aria-pressed", "true");
+    await expect(paBtn).toHaveAttribute("aria-pressed", "false");
+    expect(page.url()).not.toContain("unit=");
+
+    await paBtn.click();
+
+    await expect.poll(() => page.url(), { timeout: 10_000 }).toContain("unit=programarea");
+    await expect(paBtn).toHaveAttribute("aria-pressed", "true");
+    await expect(cellBtn).toHaveAttribute("aria-pressed", "false");
+    expect(errors).toEqual([]);
+  });
+
+  // Ben: "the toggles add too much yellow emphasis across whole panel" -- every one of the 8 stack
+  // rows starts `visible: true`, so a real accent color here would mean 8 simultaneous gold
+  // switches. The stack's own ON switches must read as a DIFFERENT (quiet, neutral) color than a
+  // genuinely selected/active control -- proven by comparing two REAL computed colors, never a
+  // hardcoded hex that would just re-encode one theme's accident.
+  test("the layer stack's ON switches read a QUIET color, distinct from the toggle's own accent-pressed segment", async ({
+    page,
+  }) => {
+    await gotoLayersScores(page, "");
+    const pressedBg = await page
+      .getByRole("group", { name: "Spatial units" })
+      .getByRole("button", { name: "Raster cells (0.05°)" })
+      .evaluate((el) => getComputedStyle(el).backgroundColor);
+    const dataSwitchTrackBg = await page
+      .getByRole("switch", { name: "Data visible on the map" })
+      .locator(".switch-track")
+      .evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(
+      dataSwitchTrackBg,
+      `the Data row's ON switch (${dataSwitchTrackBg}) reads the SAME color as the toggle's own ` +
+        `accent-pressed segment (${pressedBg}) -- it should be a quiet/neutral color instead`,
+    ).not.toBe(pressedBg);
+  });
+});

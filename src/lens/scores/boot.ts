@@ -156,6 +156,26 @@ export function fullSubregion(
 }
 
 /**
+ * P round, "Flower plot should be bigger and needs a reference outer circle... based on the
+ * maximum component score for given version" (Ben, live-review 2026-09-24): the greatest published
+ * `rescale[1]` among this release's own `category === "component"` layers (`CATEGORY_LABEL.component`
+ * = "Rescaled by ecoregion" — exactly the rows the flower draws one petal per), i.e. a real ceiling
+ * THIS release published, never a guessed/hardcoded one. `null` when none of them publish a
+ * `by_subregion.FULL.rescale` — true of every real release TODAY (`e2e/scores-hermetic.ts`'s own
+ * header: v9's real boot.json publishes `by_subregion` only on the COMPOSITE row) — `Flower.svelte`
+ * falls back to 100 in that case and says so in the ring's own label, rather than pretending a
+ * number exists. Forward-compatible: the moment a release publishes a per-component rescale, this
+ * picks it up with no code change.
+ */
+export function flowerMaxComponentScore(boot: unknown): number | null {
+  const maxima = layerRows(boot)
+    .filter((r) => r.category === "component")
+    .map((r) => fullSubregion(r)?.rescale?.[1])
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  return maxima.length > 0 ? Math.max(...maxima) : null;
+}
+
+/**
  * `zone_all_key` (parity doc §2.4): the zone meaning "everything this release scored" — first of
  * `FULL`, `USA` present among the release's `subregion` zone keys, else the first available key,
  * else the literal fallback `"USA"`.

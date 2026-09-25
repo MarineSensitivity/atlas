@@ -11,7 +11,7 @@
     zoneFlowerComponents,
     type DedupResult,
   } from "./flower";
-  import { zoneAllKey, zoneRows } from "./boot";
+  import { flowerMaxComponentScore, zoneAllKey, zoneRows } from "./boot";
   import type { ScoresSelection } from "./selection";
   // V4 fix (owner phone report, 2026-09-24, docs fact-check item 3): `zoneName` below used to
   // return the bundle's bare `name` (== the key on every real release -- zoneStats.ts's own
@@ -41,6 +41,9 @@
   let { boot, selection, cellComponents, cellComponentsError, cellCoords }: Props = $props();
 
   const allKey = $derived(zoneAllKey(boot));
+  // P round deliverable 2: the reference ring's own value -- `null` falls back inside Flower.svelte
+  // (every real release TODAY, see that function's own header).
+  const maxScore = $derived(flowerMaxComponentScore(boot));
 
   const title = $derived(
     selection?.kind === "cell" && cellCoords
@@ -69,7 +72,7 @@
 
 <div class="flower-panel">
   {#if components}
-    <Flower {title} {components} {droppedLabels} />
+    <Flower {title} {components} {droppedLabels} {maxScore} />
   {:else if selection?.kind === "cell" && cellComponents === undefined}
     <p class="note">Loading the cell's component scores…</p>
   {:else if cellComponentsError}
