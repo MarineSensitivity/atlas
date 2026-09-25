@@ -29,15 +29,18 @@
   import type { MapHandle } from "../lib/map/map";
   import type { Place } from "../lib/geo/placeCodec";
   import { placesToGeoJson, downloadGeoJson, zonePolygonSourceFromMap } from "../places/download";
-  import { buildDownloadItems, type DownloadItemKind } from "../lib/download/items";
+  import {
+    buildDownloadItems,
+    type DownloadItemKind,
+    type DownloadLens,
+  } from "../lib/download/items";
   import { mapFigureName, cogFileName, placesFileName } from "../lib/download/filename";
   import { compositeMapFigure, canvasToPngBlob } from "../lib/download/mapCapture";
   import { buildMapSvgFromMap } from "../lib/download/mapSvgExport";
   import { downloadCog } from "../lib/download/cogDownload";
   import { saveBlob } from "../lib/download/saveBlob";
+  import { legendValueFormatter } from "../lib/download/legendFormat";
   import type { LegendStop } from "../lib/raster/ramps";
-
-  export type DownloadLens = "scores" | "species";
 
   interface Props {
     lens: DownloadLens;
@@ -83,7 +86,7 @@
     cogUrl,
     cogDisabledReason,
     legendStops = [],
-    formatValue,
+    formatValue = legendValueFormatter(lens),
     places,
     track,
     align = "right",

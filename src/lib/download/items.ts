@@ -4,6 +4,9 @@
 // -- this module decides only WHICH items exist and whether each is enabled, never how to execute
 // one (a canvas/fetch call has no business being "pure").
 import type { IconName } from "../ui/icon-paths";
+import type { DownloadLens } from "./filename";
+
+export type { DownloadLens };
 
 export type DownloadItemKind = "map-png" | "map-svg" | "cog-tif" | "places-geojson";
 
