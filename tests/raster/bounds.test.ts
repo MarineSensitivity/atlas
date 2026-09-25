@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CANDIDATE_LONS,
+  PROBE_CONCURRENCY,
   createTitilerBoundsSource,
   narrowLongitude,
   titilerInfoUrl,
@@ -120,6 +121,64 @@ describe("narrowLongitude", () => {
     // change the outcome, so stopping early is no longer correct.
     expect(probed).toHaveLength(CANDIDATE_LONS.length);
     expect(bbox).toEqual([-150 - 20, 53, -150 + 20, 74]);
+  });
+
+  // R3-rr fix 1, round 5 (orchestrator eyes-on: the toggle took 11-14s live because these probes
+  // ran one at a time): named after the bug -- proves BOTH halves of the fix, concurrency AND
+  // determinism, with a single fixture a purely-sequential OR a fully-unbounded implementation
+  // would each fail differently.
+  it("BUG: probes concurrently (bounded), never sequentially, and never unbounded", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const started: number[] = [];
+    await narrowLongitude(
+      async (url) => {
+        const m = /\/cog\/point\/(-?\d+(?:\.\d+)?),/.exec(url);
+        const lon = m ? Number(m[1]) : NaN;
+        started.push(lon);
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        // yield a tick so overlapping in-flight requests actually overlap in this fixture, the
+        // same reason a real network round-trip overlaps others in a real bounded-concurrency run.
+        await new Promise((r) => setTimeout(r, 1));
+        inFlight--;
+        return { values: [null] };
+      },
+      config,
+      COG_URL,
+      [-180, 0, 180, 20],
+    );
+    // more than one in flight at once (genuinely concurrent, not sequential)...
+    expect(maxInFlight).toBeGreaterThan(1);
+    // ...but never more than the bound (never unbounded / "hammering titiler").
+    expect(maxInFlight).toBeLessThanOrEqual(PROBE_CONCURRENCY);
+    // every candidate still probed exactly once.
+    expect(started).toHaveLength(CANDIDATE_LONS.length);
+  });
+
+  it("BUG: the resulting hits come back in CANDIDATE_LONS's own fixed order, independent of which /cog/point response actually arrives first", async () => {
+    // the hits are the FIRST and LAST candidates in CANDIDATE_LONS's own list -- and the fixture
+    // deliberately makes the LAST one resolve first (a smaller artificial delay), the opposite of
+    // probe order, to prove the result does not depend on completion timing.
+    const first = CANDIDATE_LONS[0];
+    const last = CANDIDATE_LONS[CANDIDATE_LONS.length - 1];
+    const bbox = await narrowLongitude(
+      async (url) => {
+        const m = /\/cog\/point\/(-?\d+(?:\.\d+)?),/.exec(url);
+        const lon = m ? Number(m[1]) : NaN;
+        const hit = lon === first || lon === last;
+        // the LAST candidate answers almost immediately; the FIRST one is deliberately slower --
+        // opposite of CANDIDATE_LONS's own order.
+        await new Promise((r) => setTimeout(r, lon === first ? 5 : 0));
+        return { values: [hit ? 100 : null] };
+      },
+      config,
+      COG_URL,
+      [-180, 0, 180, 20],
+    );
+    // the exact same result a purely sequential (CANDIDATE_LONS-order) probe of the identical two
+    // hits would produce: hitLonArc([-177, 145]) = [145, 183] (38 deg via the dateline), padded.
+    expect(bbox).toEqual([145 - 20, 0, 183 + 20, 20]);
   });
 
   // R3-rr fix 1, round 2 (Opus 5.5 eyes-on review round 3, second pass, 2026-09-25): the real,
