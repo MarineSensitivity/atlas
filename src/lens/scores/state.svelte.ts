@@ -56,7 +56,13 @@ import {
 } from "./selection";
 import { scoresMapInputs, type ScoresMapInputs, type ScoresMapState } from "./mapInputs";
 import type { ManifestOverlayRow } from "./raster";
-import { layerByKey, metricLabelsFromManifest, primaryUnitType, zoneRows } from "./boot";
+import {
+  layerByKey,
+  metricLabelsFromManifest,
+  primaryUnitType,
+  zoneBboxFromBoot,
+  zoneRows,
+} from "./boot";
 import { fetchCellValue } from "./cellClick";
 import { getAnalysisSources } from "./engine";
 import {
@@ -150,7 +156,9 @@ export interface ScoresLens {
  * its true extent even though no published release carries `label_pt` (`zoneCenterFromBoot`'s own
  * header). `querySourceFeatures` reads already-loaded tiles only -- `null` (never a throw) when the
  * unit is unpublished or its covering tile has not loaded, so the caller degrades to the label_pt
- * centroid and then to an announcement, exactly as before this fix. */
+ * centroid and then to an announcement, exactly as before this fix. R3-B14/C3: `selectZone` tries
+ * `zoneBboxFromBoot` (`./boot.ts`, a PUBLISHED bbox, needs no map handle or loaded tile) first --
+ * this stays the fallback for a release that does not publish one, which is every release today. */
 function zoneBoundsFromMap(
   handle: MapHandle,
   boot: unknown,
@@ -415,10 +423,19 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       // owner review item 1 (live 0.10.62, "entering a Program Area should zoom to it, like it
       // already zooms to lon,lat"): `zoneCenterFromBoot` needs `label_pt`, which no published
       // release carries (docs/parity.html's own known gap), so this always fell through to the
-      // announce-only branch below in production. `zoneBoundsFromMap` (above) is the real fix --
-      // the zone's OWN polygon, queried live off the map — tried first; `zoneCenterFromBoot` stays
-      // as the fallback for the day a release does publish `label_pt`.
-      const bounds = handle ? zoneBoundsFromMap(handle, boot, unit, key) : null;
+      // announce-only branch below in production. `zoneBoundsFromMap` (below) is the real fix --
+      // the zone's OWN polygon, queried live off the map — tried second; `zoneCenterFromBoot`
+      // stays as the last-resort fallback for the day a release does publish `label_pt`.
+      //
+      // R3-B14/C3: a PUBLISHED `boot.zones[unit][*].bbox` (`zoneBboxFromBoot`) is tried FIRST,
+      // ahead of `zoneBoundsFromMap` -- it needs no map handle and no already-loaded tile, so a
+      // Program-Area search pick zooms correctly even far outside the current view (the gap
+      // V1/owner review item 1's own header names: "a zone far outside the current view can fall
+      // back to the announce-only path"). No published release carries `bbox` yet (msens will,
+      // R3-C3), so `zoneBoundsFromMap` stays the effective path until then.
+      const bounds =
+        zoneBboxFromBoot(boot, unit, key) ??
+        (handle ? zoneBoundsFromMap(handle, boot, unit, key) : null);
       const center = bounds
         ? { lon: (bounds[0][0] + bounds[1][0]) / 2, lat: (bounds[0][1] + bounds[1][1]) / 2 }
         : zoneCenterFromBoot(boot, unit, [key]);

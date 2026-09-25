@@ -11,6 +11,7 @@ import {
   primaryUnitType,
   unitOptions,
   zoneAllKey,
+  zoneBboxFromBoot,
   zoneRows,
 } from "../../../src/lens/scores/boot";
 import { BOOT_V1_PLANAREA, BOOT_V7 } from "./fixtures";
@@ -314,5 +315,76 @@ describe("flowerMaxComponentScore", () => {
         metrics: [metricRow("score_extriskspcat_primprod_ecoregionrescaled_equalweights", 93)],
       }),
     ).toBeNull();
+  });
+});
+
+// R3-B14/C3: `boot.zones[unit][*].bbox` — the published `[west, south, east, north]` a Program-Area
+// search pick can fly to WITHOUT a loaded map tile. `zoneRows` parses it, `zoneBboxFromBoot`
+// resolves it for one zone and re-expresses it into the antimeridian-safe `CameraBoundsInput` shape
+// (`east` may exceed 180, never re-wrapped) — the shape `state.svelte.ts#selectZone` flies to.
+describe("zoneRows: bbox parsing", () => {
+  it("a valid bbox parses through onto the row", () => {
+    const boot = {
+      zones: { programarea: [{ key: "GAA", name: "Gulf of America", bbox: [-98, 18, -80, 31] }] },
+    };
+    expect(zoneRows(boot, "programarea")[0]?.bbox).toEqual([-98, 18, -80, 31]);
+  });
+
+  it.each([
+    ["wrong length", [1, 2, 3]],
+    ["a non-numeric element", [1, 2, 3, "4"]],
+    ["a non-finite element", [1, 2, 3, Infinity]],
+    ["west out of range", [-190, 18, -80, 31]],
+    ["east out of range", [-98, 18, 190, 31]],
+    ["south out of range", [-98, -95, -80, 31]],
+    ["north out of range", [-98, 18, -80, 95]],
+    ["south > north", [-98, 31, -80, 18]],
+    ["not an array", "not-an-array"],
+  ])("an invalid bbox (%s) is dropped, not thrown: %j", (_label, bad) => {
+    const boot = { zones: { programarea: [{ key: "GAA", name: "x", bbox: bad }] } };
+    expect(zoneRows(boot, "programarea")[0]?.bbox).toBeUndefined();
+  });
+
+  it("no bbox key at all -- undefined, never a default [0,0,0,0]", () => {
+    expect(zoneRows(BOOT_V7, "programarea")[0]?.bbox).toBeUndefined();
+  });
+});
+
+describe("zoneBboxFromBoot", () => {
+  it("a published bbox resolves to CameraBoundsInput ([[w,s],[e,n]])", () => {
+    const boot = {
+      zones: { programarea: [{ key: "GAA", name: "Gulf of America", bbox: [-98, 18, -80, 31] }] },
+    };
+    expect(zoneBboxFromBoot(boot, "programarea", "GAA")).toEqual([
+      [-98, 18],
+      [-80, 31],
+    ]);
+  });
+
+  it("a dateline-crossing zone (west > east) re-expresses east past 180, never wrapped", () => {
+    // the Aleutian Arc, spanning the antimeridian: west 172E, east 172W -- published west > east.
+    const boot = {
+      zones: { subregion: [{ key: "ALA", name: "Aleutian Arc", bbox: [172, 51, -172, 55] }] },
+    };
+    expect(zoneBboxFromBoot(boot, "subregion", "ALA")).toEqual([
+      [172, 51],
+      [188, 55], // -172 + 360
+    ]);
+  });
+
+  it("no bbox published for this release (the shape every real release publishes today): null", () => {
+    expect(zoneBboxFromBoot(BOOT_V7, "programarea", "GAA")).toBeNull();
+  });
+
+  it("an unknown key: null, never a throw", () => {
+    const boot = {
+      zones: { programarea: [{ key: "GAA", name: "x", bbox: [-98, 18, -80, 31] }] },
+    };
+    expect(zoneBboxFromBoot(boot, "programarea", "NOPE")).toBeNull();
+  });
+
+  it("no boot loaded yet: null", () => {
+    expect(zoneBboxFromBoot(null, "programarea", "GAA")).toBeNull();
+    expect(zoneBboxFromBoot({}, "programarea", "GAA")).toBeNull();
   });
 });
