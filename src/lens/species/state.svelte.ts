@@ -582,14 +582,12 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
           deps.chromePadding ? deps.chromePadding() : { top: 0, right: 0, bottom: 0, left: 0 },
         );
         const view = boundsToCameraView(wideRangeCamera.wholeRangeBounds, viewport, { padding });
-        deps
-          .mapHandle()
-          ?.flyTo({
-            key: "whole-range",
-            lon: view.center[0],
-            lat: view.center[1],
-            zoom: view.zoom,
-          });
+        deps.mapHandle()?.flyTo({
+          key: "whole-range",
+          lon: view.center[0],
+          lat: view.center[1],
+          zoom: view.zoom,
+        });
       } else {
         applyCamera({
           kind: "bounds",
