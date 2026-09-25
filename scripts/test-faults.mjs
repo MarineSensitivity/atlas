@@ -1969,6 +1969,17 @@ export const FAULTS = [
       "reopens docked bottom instead of reproducing the arrangement the viewer actually saw",
     gate: ["npx", "vitest", "run", "tests/shell/uiState.test.ts"],
   },
+  // R3-W8 item 4: the `ui=` token grew a 7th field (`tab`, version bumped 1 -> 2) for the Layers
+  // pane's own two tabs -- same class of bug as `ui-token-dock-dropped` above, one field over.
+  {
+    id: "ui-token-tab-dropped",
+    patch: "tests/faults/ui-token-tab-dropped.patch",
+    describe:
+      "uiState.ts's formatUi() hardcodes the tab field to 'layers' instead of encoding the live " +
+      "Layers-pane tab -- a Share link built from the info tab (Flower plot / Species info) " +
+      "silently reopens on the Layers tab instead of reproducing what was showing",
+    gate: ["npx", "vitest", "run", "tests/shell/uiState.test.ts"],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

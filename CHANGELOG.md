@@ -19,6 +19,21 @@ UI arrangement).
   camera. A fit is also skipped when the viewer has panned since the last pick (`sel.map`'s own
   "only ever a real user gesture" guarantee, `map.ts`'s header). The preference is URL state
   (`zl=0` when off, absent when on, `Sel.zl`) so a shared link reproduces it.
+- **The Layers pane is now a two-tab panel; the Flower plot moved into it; the rail drops to four
+  tools** (Ben, 2026-09-25: "differentiating the extra information about the species in another
+  tabset from the interactive control of the layers in its own default tab... drop the Flower plot
+  from the toolbar"). `LibLayersPanel`'s new `infoTab` prop renders a `Segmented` tab switch above
+  the panel body: "Layers" (unchanged) and a lens-named second tab — "Flower plot" in the Scores
+  lens (today's `FlowerPanel.svelte`, unchanged behaviour) and "Species info" in the Species lens
+  (`SpeciesCardView`'s descriptive content only — the model-input picker and zoom-to-layer checkbox
+  stay on the "Layers" tab). The tool rail drops from five tools to four (`Layers · Places · Table ·
+Report`, `src/shell/tools.ts`'s `TOOL_ORDER`/`buildRailItems()` — no lens argument or
+  inactive/inactiveReason concept left, since every remaining tool is active in both lenses). The
+  active tab is carried in the `ui=` Share token (bumped to version 2, a 7th `tab` field,
+  `src/shell/uiState.ts`); an old version-1 token naming the retired "flower" tool code opens the
+  Layers pane on the info tab instead (`parseUiV1`, unit-tested). On the phone, the sheet's title
+  tracks whichever tab is showing. Seeded fault: `ui-token-tab-dropped` (`formatUi()` hardcodes the
+  tab field instead of encoding the live tab).
 
 # atlas 0.10.77
 

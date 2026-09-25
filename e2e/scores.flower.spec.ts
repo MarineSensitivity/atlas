@@ -27,7 +27,12 @@ import { BUCKET, safeRoute, waitForHydration } from "./hermetic";
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 800 } });
 
+// R3-W8 item 4 (Ben, 2026-09-25): the Flower plot is no longer its own rail tool -- it moved into
+// the Layers pane as that pane's second tab (`src/lib/ui/LayersPanel.svelte`'s `infoTab`, labelled
+// "Flower plot" for the Scores lens). Opening it is now "Layers" (the rail tool) then "Flower
+// plot" (the tab) -- the second click is a no-op if that tab is already showing.
 async function openFlower(page: Page) {
+  await page.getByRole("button", { name: "Layers", exact: true }).click();
   await page.getByRole("button", { name: "Flower plot" }).click();
   const flower = page.locator(".flower-title");
   await expect(flower).toBeVisible({ timeout: 10_000 });

@@ -92,9 +92,10 @@ test.describe("R3-W8 item 3: Share reproduces the UI arrangement", () => {
       await gotoSpecies(page2, `${url.pathname}${url.search}${url.hash}`);
 
       await expect(page2.locator("#panel-region")).toHaveAttribute("data-dock", "bottom");
-      await expect(
-        page2.getByRole("button", { name: "Outlines", exact: true }),
-      ).toHaveAttribute("aria-expanded", "true");
+      await expect(page2.getByRole("button", { name: "Outlines", exact: true })).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      );
       await expect(page2.locator('[data-testid="zoom-to-layer-toggle"]')).not.toBeChecked();
       await expect(page2.locator('[data-testid="layer-pill"][data-key="rng_fws"]')).toHaveClass(
         /active/,

@@ -45,6 +45,11 @@
      * across lenses). */
     expandedRow?: LayerGroupId | null;
     onExpandedRowChange?: (id: LayerGroupId | null) => void;
+    /** R3-W8 item 4: forwarded straight through to `LibLayersPanel`'s own controlled two-tab pair
+     * ("layers" | "info" -- this lens' "info" tab is "Species info", see `infoTab` below). Shell
+     * owns the value (one Layers pane, shared across lenses). */
+    tab?: "layers" | "info";
+    onTabChange?: (tab: "layers" | "info") => void;
   }
 
   // `boot` stays a declared prop (Shell.svelte always passes it, and a lens prop this narrow is
@@ -60,6 +65,8 @@
     mapHandle,
     expandedRow,
     onExpandedRowChange,
+    tab,
+    onTabChange,
   }: Props = $props();
 
   // Orchestrator hand-off (Opus UI review of main, 2026-09-25): "in the Species lens HIDE the
@@ -103,6 +110,27 @@
   }
 </script>
 
+{#snippet speciesInfoContent()}
+  <!-- R3-W8 item 4: "Species info" tab -- everything that is INFORMATION rather than a control
+       (the species card's descriptive content: names, listing, categories, inputs table…). The
+       controls themselves (the model-input picker, zoom-to-layer checkbox, title/zoom actions)
+       stay on the "Layers" tab below -- only `SpeciesCardView` moved here. Declared BEFORE
+       `<LibLayersPanel>` (not as its child) so the `infoTab` prop value can reference it directly
+       -- a snippet is a plain block-scoped binding, not hoisted. -->
+  <div class="species-info" data-testid="species-info-tab">
+    {#if lens.cardError}
+      <p class="error" role="alert">{speciesCardErrorText(lens.cardError.kind, lens.ver)}</p>
+    {:else if lens.info}
+      <SpeciesCardView
+        info={lens.info}
+        asset={lens.mapInputs.asset}
+        onSelect={(key) => lens.selectLayer(key)}
+      />
+    {:else if lens.loading}
+      <p>Loading…</p>
+    {/if}
+  </div>
+{/snippet}
 <LibLayersPanel
   stack={layerStack}
   onChange={onLayerStackChange}
@@ -111,6 +139,9 @@
   {rowState}
   {expandedRow}
   {onExpandedRowChange}
+  infoTab={{ label: "Species info", content: speciesInfoContent }}
+  {tab}
+  {onTabChange}
 >
   {#snippet speciesField()}
     <!-- R3-W8 item 1 (Ben, 2026-09-25): "promote the main data selection up" — the layer bar
@@ -154,13 +185,6 @@
         {#if lens.mapInputs.notice}
           <p class="notice" role="status">{lens.mapInputs.notice}</p>
         {/if}
-        {#if lens.info}
-          <SpeciesCardView
-            info={lens.info}
-            asset={lens.mapInputs.asset}
-            onSelect={(key) => lens.selectLayer(key)}
-          />
-        {/if}
       {:else if lens.loading}
         <p>Loading…</p>
       {/if}
@@ -169,7 +193,8 @@
 </LibLayersPanel>
 
 <style>
-  .species-panel {
+  .species-panel,
+  .species-info {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);

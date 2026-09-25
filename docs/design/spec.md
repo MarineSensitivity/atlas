@@ -102,19 +102,21 @@ status text.
 Everything below is a requirement for the component build, not a suggestion;
 `tests/mockup-shell.test.ts` asserts the ones a mockup can prove.
 
-### 5.1 The tool rail is FIVE controls, the same five, in the same order, on every viewport
+### 5.1 The tool rail is FOUR controls, the same four, in the same order, on every viewport and lens
 
-`Layers · Places · Flower · Table · Report` (Ben, 2026-09-21). Desktop: a floating honeycomb column
-on the left. Phone: the identical five as a bottom bar. 44 px targets everywhere, no words on the
-control itself (the tooltip carries them), roving `tabindex` inside the group.
+`Layers · Places · Table · Report` (Ben, 2026-09-21; **R3-W8 item 4, 2026-09-25**: "drop the Flower
+plot from the toolbar (which only applies to the Scores lens)" — the flower plot moved INTO the
+Layers pane as its own second tab, §5.1a below, so the rail no longer carries a Scores-only control
+at all). Desktop: a floating honeycomb column on the left. Phone: the identical four as a bottom
+bar. 44 px targets everywhere, no words on the control itself (the tooltip carries them), roving
+`tabindex` inside the group.
 
-| control    | opens                                                                                                                                                          | icon                      |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| **Layers** | the LAYERS panel: score layer (or species surface), palette, zone outlines, bathymetry, OBIS occurrences, other related layers. It is **not** the flower plot. | `mdiLayers`               |
-| **Places** | select · draw · upload                                                                                                                                         | `mdiMapMarker`            |
-| **Flower** | the flower plot of component scores for the current place                                                                                                      | **bespoke `flower`** (§6) |
-| **Table**  | the data table (species or zones, per lens)                                                                                                                    | `mdiTable`                |
-| **Report** | the report builder                                                                                                                                             | `mdiFileDocumentOutline`  |
+| control    | opens                                                                                                                                                                               | icon                     |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| **Layers** | the LAYERS panel: score layer (or species surface), palette, zone outlines, bathymetry, OBIS occurrences, other related layers, PLUS a second tab of read-only information (§5.1a). | `mdiLayers`              |
+| **Places** | select · draw · upload                                                                                                                                                              | `mdiMapMarker`           |
+| **Table**  | the data table (species or zones, per lens)                                                                                                                                         | `mdiTable`               |
+| **Report** | the report builder                                                                                                                                                                  | `mdiFileDocumentOutline` |
 
 Two controls that used to be in the rail are **gone**:
 
@@ -124,19 +126,26 @@ Two controls that used to be in the rail are **gone**:
   field are how a species is chosen, and the species card is what the Species lens' panel shows. In
   the Scores lens a species is reached from the species table's row link, which switches the lens.
 
-### 5.2 An inactive control fades in place; it is never removed
+### 5.1a The Layers pane is a two-tab panel: interactive controls, then read-only information
 
-The Flower has no meaning in the Species lens. It **stays in its third position** and becomes
-visibly inactive (removal is "jerky" — Ben, 2026-09-21):
+R3-W8 item 4 (Ben, 2026-09-25): "differentiating the extra information about the species in another
+tabset from the interactive control of the layers in its own default tab." The Layers pane (opened
+by the rail's **Layers** control, either lens) shows a `Segmented` tab switch at its top, styled
+like the Table tool's own Species|Zones|Composition sub-tab:
 
-- the glyph transitions to `--icon-inactive` over `--motif`-free `var(--motion-panel)` (200 ms,
-  `--ease-out`); under `prefers-reduced-motion` the token is `0ms`, so it simply is grey;
-- `aria-disabled="true"` — **not** the `disabled` attribute, so it stays focusable and can explain
-  itself; no `tabindex="-1"`;
-- its tooltip and accessible description say why: **"Flower plot — Scores only"**;
-- activation is a no-op that re-announces the tooltip text in the live region;
-- `--icon-inactive` is ≥ 3:1 against both `--fill-control` and `--surface-panel-basis` (gated), so an
-  inactive control is still identifiable — "greyed out" never means "invisible".
+- **"Layers"** (default): every interactive control exactly as §5.1 already describes it (unit
+  toggle, Layer picker / the species Model-input picker, the stack rows, Sphere, Reset).
+- The second tab is **information only**, never a control, and its label names what it shows: the
+  Scores lens calls it **"Flower plot"** (today's `FlowerPanel.svelte` — title/subject line, the
+  flower, the component table); the Species lens calls it **"Species info"** (the species card's
+  descriptive content — names, listing, categories, the inputs table — `SpeciesCardView.svelte`).
+
+Tapping a scored cell while the "Layers" tab is showing does not switch tabs — the popup already
+shows the value; the info tab is where a viewer goes to see the breakdown. If the info tab is
+already open, a new tap updates it in place. On the phone, the sheet's own title tracks whichever
+tab is active ("Layers" vs. the info tab's own label). The active tab is carried in the `ui=` share
+token (§9's `tool`/`dock`/`size`/`detent`/`expandedRow`/`tab` fields) so a shared link reopens on
+the same tab.
 
 ### 5.3 Panel header controls: collapse · half · full, upper right
 
@@ -435,8 +444,10 @@ Settled — the component build takes these as given:
 2. Motif tint Gold on dark / Steel on light (§7) — no objection.
 3. Category hues keep their hue and change lightness per theme (§8) — no objection.
 4. The rail is five controls on every viewport; Help is top-bar only; there is no fish/species rail
-   button (§5.1).
+   button (§5.1). **Superseded by R3-W8 item 4 (2026-09-25): the rail is now four controls — the
+   Flower plot moved into the Layers pane's own second tab (§5.1a).**
 5. The Flower control fades in place in the Species lens rather than being removed (§5.2).
+   **Superseded by R3-W8 item 4: moot now the Flower control is not a rail item at all — see §5.1a.**
 6. Panels and the sheet carry collapse · half · full in the upper right (§5.3).
 7. The flower plot has its own bespoke glyph; Layers opens the layers control (§6).
 8. Protection chips always show both statutes, "not applicable" where one does not apply (§5.5).

@@ -18,7 +18,7 @@
   import { buildRailItems, TOOL_BODY, TOOL_LABEL, type ToolName } from "./tools";
   // R3-W8 item 3: the `ui=` token's parse/format core — see that module's own header for what it
   // carries and why it is a separate token from Sel's own query keys.
-  import { formatUi, parseUi, type UiExpandedRow } from "./uiState";
+  import { formatUi, parseUi, type UiExpandedRow, type UiTab } from "./uiState";
   import type { LayerGroupId } from "../lib/map/layerStack";
   // R5: the wave-in-hexagon mark replaces the old two-file "wave in a circle" pair
   // (mst-mark.svg/mst-mark-dark.svg, kept vendored only for history -- Report.svelte moved to
@@ -213,14 +213,27 @@
     return () => mql.removeEventListener("change", onChange);
   });
 
-  // --- the tool rail: FIVE controls, the same five, in the same order, on every viewport -------
-  // (spec.md §5.1; data + order live in ./tools.ts, unit-tested there). The Flower control fades
-  // in place -- never removed -- in the Species lens (spec.md §5.2): "activeTool" is chrome (which
-  // panel is open), not URL view state.
+  // --- the tool rail: FOUR controls, the same four, in the same order, on every viewport and
+  // every lens (R3-W8 item 4: "drop the Flower plot from the toolbar" -- it moved into the Layers
+  // pane as that pane's own second tab, below). "activeTool" is chrome (which panel is open), not
+  // URL view state.
   // R3-W8 item 3: restored from a shared link's `ui=` token when present (`initialUi`, above) —
   // "layers" (unchanged) otherwise.
   let activeTool = $state<ToolName>(initialUi?.tool ?? "layers");
-  const railItems = $derived(buildRailItems(sel.lens === "species"));
+  const railItems = $derived(buildRailItems());
+
+  // R3-W8 item 4: which of the Layers pane's own two tabs is showing ("layers" | "info" -- the
+  // Scores lens' Flower plot / the Species lens' Species info). Lifted here (not left as
+  // `LibLayersPanel`'s own internal state) for the same reason `expandedRow` is: Share reads it
+  // (`shareUrl()`, below) and a `ui=` link restores it before first interaction.
+  let activeTab = $state<UiTab>(initialUi?.tab ?? "layers");
+  // the phone sheet / desktop panel title: normally the active tool's label, but while the Layers
+  // pane's "info" tab is showing, the tab names itself instead ("Flower plot" for Scores, "Species
+  // info" for Species) -- item 4: "the sheet's title shows the active tab's name."
+  const infoTabLabel = $derived(sel.lens === "species" ? "Species info" : "Flower plot");
+  const panelTitle = $derived(
+    activeTool === "layers" && activeTab === "info" ? infoTabLabel : TOOL_LABEL[activeTool],
+  );
 
   // R3-W8 item 3: the Layers pane's own expanded row (`LibLayersPanel`'s controlled-row-expansion
   // pair) — lifted here (rather than left as that component's own internal state) so Share can read
@@ -344,6 +357,7 @@
         size: panelGeom.size,
         detent: sheetGeom.detent,
         expandedRow: toUiExpandedRow(expandedRow),
+        tab: activeTab,
       }),
     );
     return url.toString();
@@ -2035,6 +2049,8 @@
             {mapHandle}
             {expandedRow}
             onExpandedRowChange={(id: LayerGroupId | null) => (expandedRow = id)}
+            tab={activeTab}
+            onTabChange={(t: UiTab) => (activeTab = t)}
           />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
@@ -2072,6 +2088,8 @@
             compactFlower={isPhone && sheetGeom.detent === "half"}
             {expandedRow}
             onExpandedRowChange={(id: LayerGroupId | null) => (expandedRow = id)}
+            tab={activeTab}
+            onTabChange={(t: UiTab) => (activeTab = t)}
           />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
@@ -2083,7 +2101,7 @@
     {#if isPhone}
       <Sheet
         id="shell"
-        title={TOOL_LABEL[activeTool]}
+        title={panelTitle}
         ongeometry={(g) => (sheetGeom = g)}
         headerExtra={phoneLegend && legendChipMode(sheetGeom.detent) === "inline"
           ? legendChipContent
@@ -2095,7 +2113,7 @@
     {:else}
       <Panel
         id="shell"
-        title={TOOL_LABEL[activeTool]}
+        title={panelTitle}
         bind:this={panelRef}
         ongeometry={(g) => (panelGeom = g)}
         initialGeometryOverride={initialUi ? { dock: initialUi.dock, size: initialUi.size } : null}

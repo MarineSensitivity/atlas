@@ -80,6 +80,17 @@ async function tool(page, name) {
   await page.getByRole("button", { name, exact: true }).first().click({ timeout: 20_000 });
   await page.waitForTimeout(3000);
 }
+// R3-W8 item 4: the Flower plot is no longer its own rail tool -- it moved into the Layers pane as
+// that pane's own second tab (`src/lib/ui/LayersPanel.svelte`'s `infoTab`, labelled "Flower plot"
+// for the Scores lens). Opening it is now "Layers" (the rail tool) then "Flower plot" (the tab).
+async function openFlowerTab(page) {
+  await tool(page, "Layers");
+  await page
+    .getByRole("button", { name: "Flower plot", exact: true })
+    .first()
+    .click({ timeout: 20_000 });
+  await page.waitForTimeout(1000);
+}
 async function sheet(page, name) {
   // phone: "Full height"; desktop (R1 panel): "Full screen"
   for (const n of [name, name === "Full height" ? "Full screen" : name]) {
@@ -306,7 +317,7 @@ const STATES = [
       // clean-looking log hiding four untested states the way it did before this fix.
       const hit = await tapScoredCell(p, vp);
       const missed = hit ? "" : "-MISSED";
-      await tool(p, "Flower plot");
+      await openFlowerTab(p);
       await shot(p, vp, `06-flower-half${missed}`);
       // third pass (a): petals are `path.petal` (Flower.svelte), never a bare `svg path` -- and a
       // real petal can be a zero-score DEGENERATE path (`d=""`, flowerGeometry.ts) with no area to
@@ -460,7 +471,7 @@ const STATES = [
         await collapseSheet(p);
         await shot(p, vp, `19b-programarea-popup-collapsed${missed}`);
       }
-      await tool(p, "Flower plot");
+      await openFlowerTab(p);
       await shot(p, vp, `20-programarea-flower${missed}`);
       await tool(p, "Table");
       await waitForSpeciesLoaded(p);
