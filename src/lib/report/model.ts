@@ -590,7 +590,9 @@ const SOURCES_TEXT = [
     "extinction-risk-weighted species-category surfaces plus primary productivity. Each is the " +
     "coverage-weighted mean over the cells of the area, with cells that carry no value counted as " +
     "zero inside the study area and land and foreign waters excluded entirely.",
-  "Species rows are every distribution model whose range overlaps the area, weighted by modelled " +
+  // P3 fix (Opus eyes-on review, 2026-09-24): "modelled" -> "modeled" -- this app's own copy is
+  // US spelling throughout (CLAUDE.md/docs convention), this line was the one holdout.
+  "Species rows are every distribution model whose range overlaps the area, weighted by modeled " +
     "habitat suitability, the governing extinction-risk score and the overlapping area.",
 ];
 

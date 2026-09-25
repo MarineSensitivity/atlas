@@ -1,0 +1,13 @@
+diff --git a/src/lib/release/cite.ts b/src/lib/release/cite.ts
+index 0000000..0000000 100644
+--- a/src/lib/release/cite.ts
++++ b/src/lib/release/cite.ts
+@@ -46,7 +46,7 @@
+  * does not generate (it comes from `workflows`/`msens`'s own dataset registry, out of this fix's
+  * reach) -- correcting it here is display-only and never touches the published field itself. */
+ function fixKnownCitationTypos(v: string): string {
+-  return v.replace(/\bUnportedLicense\b/g, "Unported License");
++  return v;
+ }
+ 
+ function citationStr(v: unknown): string | null {

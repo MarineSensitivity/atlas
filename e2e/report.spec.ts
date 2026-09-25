@@ -714,7 +714,7 @@ test.describe("page.pdf() (chromium): labels, table headers, watermark, map imag
     // tail: a line-break-proof assertion must not also become a shorter one.
     expect(flat).toContain(
       "Species rows are every distribution model whose range overlaps the area, weighted by " +
-        "modelled habitat suitability, the governing extinction-risk score and the overlapping " +
+        "modeled habitat suitability, the governing extinction-risk score and the overlapping " +
         "area.",
     );
   });

@@ -85,7 +85,11 @@ function isNum(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
 }
 
-/** `er_score`: 0 dp percent (a 0-1 fraction, e.g. 0.5 -> "50%"). */
+/** `er_score`: 0 dp percent (a 0-1 fraction, e.g. 0.5 -> "50%"). P3/W3 coordinator reversal
+ * (2026-09-24): a same-round fix briefly rendered this as the release's own plain 1-100 number
+ * (`formatErScore`) -- reverted to keep parity with the reference R Shiny app
+ * (`apps/scores/app.R`'s `formatPercentage(c("er_score"), 0)`, the SAME internal 0-1 fraction
+ * this query computes, `sql/species_for_cells.sql`'s own `t.er_score / 100.0`). */
 export function formatPercent0(v: unknown): string {
   return isNum(v) ? `${Math.round(v * 100)}%` : "";
 }

@@ -57,6 +57,9 @@
      * and the map can never disagree about what the current stack is. */
     layerStack: readonly LayerStackEntry[];
     onLayerStackChange: (next: readonly LayerStackEntry[]) => void;
+    /** P3 fix (Opus eyes-on review, 2026-09-24): passed straight through to `FlowerPanel`'s own
+     * prop of the same name -- see that component's header for why. */
+    compactFlower?: boolean;
   }
 
   let {
@@ -71,6 +74,7 @@
     lens,
     layerStack,
     onLayerStackChange,
+    compactFlower = false,
   }: Props = $props();
 
   const unit = $derived(lens.unit);
@@ -198,6 +202,7 @@
     cellComponents={cellFlowerRows}
     cellComponentsError={cellFlowerError}
     {cellCoords}
+    {compactFlower}
   />
 {:else if activeTool === "table"}
   <TablePanel {sel} {selStore} {boot} {manifest} {ver} {unit} {lyr} {selection} />

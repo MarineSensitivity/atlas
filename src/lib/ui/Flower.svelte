@@ -276,9 +276,20 @@
           </path>
         {/each}
         <circle cx="100" cy="100" r={geometry.innerRadius} class="hub" />
-        <text x="100" y="100" text-anchor="middle" dy="0.35em" class="hub-text">
-          {roundedCenter !== null ? roundedCenter : "—"}
-        </text>
+        <!-- P3 fix (Opus eyes-on review, 2026-09-24, phone-07/desktop-07, new with the bigger
+             flower): the hub number's own glyph feet used to poke out below the `.petal-label`
+             HTML overlay (below) as two white stubs -- the SVG number and the HTML chip are drawn
+             in different layout systems (viewBox units vs. percentage-centered CSS), so the chip's
+             content-sized box was never guaranteed to fully cover the wider glyph footprint the
+             bigger flower's larger hub renders. The composite mean is already stated in this SVG
+             group's own `aria-label` above AND, while a petal label is showing, in that same
+             chip's text -- so the simplest fix is to never draw both at once, rather than try to
+             out-guess the chip's box against every possible number's glyph metrics. -->
+        {#if !shownPetal}
+          <text x="100" y="100" text-anchor="middle" dy="0.35em" class="hub-text">
+            {roundedCenter !== null ? roundedCenter : "—"}
+          </text>
+        {/if}
       </svg>
 
       <!-- the ring's own small "contour label" (Ben: "stated with a small label (also gray, like a

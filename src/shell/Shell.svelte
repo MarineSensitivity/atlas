@@ -1237,6 +1237,11 @@
             // after this call site runs.
             ver: () => earlyVersion,
             mapHandle: () => mapHandle,
+            // P3 fix (Opus eyes-on review, 2026-09-24): `selectZone`'s bounds fit (search pick)
+            // used a flat 40px padding, blind to the sheet/docked panel actually covering the map
+            // — the SAME `currentChromePadding()` getter `createSpeciesLens` above already wires
+            // for its own bounds fit (V1/V4 fixes).
+            chromePadding: () => currentChromePadding(),
           });
         })
         .catch(() => announceChunkFailure("the scores map layer"));
@@ -1754,6 +1759,7 @@
             lens={scoresLens}
             {layerStack}
             {onLayerStackChange}
+            compactFlower={isPhone && sheetGeom.detent === "half"}
           />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
