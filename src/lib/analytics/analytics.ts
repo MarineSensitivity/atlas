@@ -111,6 +111,15 @@ export interface Analytics {
    * including a later automatic hit gtag.js might fire on its own — falls back to a stale or live
    * value. A no-op for a `navigator.webdriver` session, same as `track()`. */
   updateLocation(loc: LocationLike): void;
+  /** R3-B15 (Opus eyes-on review, 2026-09-25): `preview` is only known once `resolveSession()`
+   * (`src/lib/release/session.ts`) settles, which is ASYNC — `createAnalytics()`'s own `opts.preview`
+   * is necessarily a guess (`Shell.svelte`/`Report.svelte` both construct with `preview: false`,
+   * before the session fetch has even started) that must be corrected once the real answer is in,
+   * or `content_group` reads `"atlas"` on the review host for the rest of the session. Updates
+   * `content_group`/`page_title` (`pageLocation.ts#buildPageTitle`) for every event from this call
+   * on, and refreshes gtag's own persistent per-hit `content_group` the same way `updateLocation()`
+   * refreshes `page_location`. A no-op for a `navigator.webdriver` session, same as `track()`. */
+  updatePreview(preview: boolean): void;
   /** flushes the queued Sheet-log rows immediately (normally called on the batch/interval/visibility
    * triggers below); a no-op when the queue is empty or `logUrl` is unset. */
   flush(): void;
@@ -201,7 +210,9 @@ function defaultUserAgent(): string {
 export function createAnalytics(opts: AnalyticsOptions): Analytics {
   const webdriver = (opts.isWebdriver ?? defaultIsWebdriver)();
   const measurementId = opts.measurementId ?? GA_MEASUREMENT_ID;
-  const contentGroup = opts.preview ? "atlas-preview" : "atlas";
+  // R3-B15: mutable — `updatePreview()` below corrects both once the real, async session answer
+  // is in (see that method's own doc on `Analytics`).
+  let contentGroup = opts.preview ? "atlas-preview" : "atlas";
   const logUrl = opts.logUrl ?? "";
   const transport = opts.transport ?? (logUrl ? createBrowserTransport() : noopTransport());
   const now = opts.now ?? Date.now;
@@ -221,7 +232,9 @@ export function createAnalytics(opts: AnalyticsOptions): Analytics {
   // call and every Sheet row reads the SANITIZED strings derived from this, never the live location
   // itself (see the module header and pageLocation.ts).
   let currentLocation: LocationLike = (opts.location ?? defaultLocation)();
-  const pageTitle = buildPageTitle(opts.preview);
+  // R3-B15: mutable — see `contentGroup` above; `updatePreview()` keeps the two in lockstep
+  // (`buildPageTitle()` is a pure function of `preview` alone, same as the constructor's own call).
+  let pageTitle = buildPageTitle(opts.preview);
   function pageLocationStr(): string {
     return buildPageLocation(currentLocation);
   }
@@ -292,6 +305,18 @@ export function createAnalytics(opts: AnalyticsOptions): Analytics {
     }
   }
 
+  // R3-B15: see `Analytics.updatePreview`'s own doc.
+  function updatePreview(preview: boolean): void {
+    contentGroup = preview ? "atlas-preview" : "atlas";
+    pageTitle = buildPageTitle(preview);
+    if (webdriver) return;
+    try {
+      gtag("set", { content_group: contentGroup, page_title: pageTitle });
+    } catch {
+      /* GA must never break the app */
+    }
+  }
+
   function track<E extends EventName>(event: E, params: EventParamsMap[E]): void {
     if (webdriver) return;
     if (!EVENT_NAMES.includes(event)) return; // defensive: an unknown name from untyped call sites
@@ -343,5 +368,5 @@ export function createAnalytics(opts: AnalyticsOptions): Analytics {
     removeVisibility?.();
   }
 
-  return { track, updateLocation, flush, destroy };
+  return { track, updateLocation, updatePreview, flush, destroy };
 }

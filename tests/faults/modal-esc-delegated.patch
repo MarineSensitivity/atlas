@@ -1,8 +1,8 @@
 diff --git a/src/lib/ui/Modal.svelte b/src/lib/ui/Modal.svelte
-index 5327221..eb42e94 100644
+index 3958e07..f4000c3 100644
 --- a/src/lib/ui/Modal.svelte
 +++ b/src/lib/ui/Modal.svelte
-@@ -83,12 +83,16 @@
+@@ -94,12 +94,17 @@
  
    onMount(() => {
      const el = dialogEl;
@@ -11,9 +11,10 @@ index 5327221..eb42e94 100644
    });
  </script>
  
--<dialog bind:this={dialogEl} aria-labelledby={titleId} onclose={() => onclose?.()}>
+-<dialog bind:this={dialogEl} tabindex="-1" aria-labelledby={titleId} onclose={() => onclose?.()}>
 +<dialog
 +  bind:this={dialogEl}
++  tabindex="-1"
 +  aria-labelledby={titleId}
 +  onclose={() => onclose?.()}
 +  onkeydown={handleKeydown}

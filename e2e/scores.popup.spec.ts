@@ -143,6 +143,31 @@ test.describe("scores lens — click popup (fix round 3, real engine)", () => {
     expect(text).not.toContain(`lon ${CELL_1.lon.toFixed(2)},`);
   });
 
+  // R3-B3 (Opus eyes-on review, 2026-09-25, phone-06-flower-half): the popup used to print the
+  // raw CLICK point, while the panel (FlowerPanel.svelte's own "Cell ID: … (x:, y:)" title) always
+  // printed the cell CENTRE for the SAME cell -- the two disagreed by whatever the click missed the
+  // centre by ("lon -90.550, lat 28.601" in the popup vs. "-90.575, 28.625" in the panel). Clicking
+  // a point inside the cell but off its centre must still read the centre, both places, since the
+  // cell is the unit being described, not the pixel the pointer happened to land on.
+  test("popup coordinates are the CELL CENTRE, not the raw click point, for an off-centre click", async ({
+    page,
+  }) => {
+    await gotoScores(page);
+    // still safely inside cell 1's 0.05deg box (half-width 0.025) so it resolves to the SAME cell.
+    const offClick = { lng: CELL_1.lon + 0.01, lat: CELL_1.lat - 0.01 };
+    await fireMapClick(page, offClick);
+
+    await expect(page.locator(".atlas-popup")).toBeVisible({ timeout: 15_000 });
+    await expect.poll(() => popupText(page), { timeout: 15_000 }).toContain("Overall score: 50");
+    const text = await popupText(page);
+    expect(text).toContain("Cell 1");
+    expect(text).toContain(`lon ${CELL_1.lon.toFixed(3)}`);
+    expect(text).toContain(`lat ${CELL_1.lat.toFixed(3)}`);
+    // the exact fault this must never regress to: the click point's own coordinates.
+    expect(text).not.toContain(`lon ${offClick.lng.toFixed(3)}`);
+    expect(text).not.toContain(`lat ${offClick.lat.toFixed(3)}`);
+  });
+
   // fix list #12 (SC 4.1.3): the popup used to be a plain MapLibre div, never announced -- a
   // screen-reader user who somehow triggered a map click got no result at all. Fix: `showPopup`
   // (ScoresLens.svelte) also calls the shared `announce()`, with the SAME content as the popup's

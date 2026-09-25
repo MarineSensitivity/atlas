@@ -310,32 +310,44 @@
     </div>
 
     {#if showTable}
-      <table class="flower-table" id={tableId}>
-        <caption class="sr-only">Component scores for {title}</caption>
-        <thead>
-          <tr>
-            <th scope="col"><span class="sr-only">Color</span></th>
-            <th scope="col">Component</th>
-            <th scope="col">Score</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each safe.keptComponents as c (c.key)}
+      <!-- R3-B10 (Opus eyes-on review, 2026-09-25, desktop-06-flower-half): with a big flower
+           (P round, up to 480px) stacked above a full 8-component table in a docked side panel,
+           the "Mean" row -- the LAST row -- landed right at (and half under) the panel's own
+           bottom edge, reachable only by scrolling the whole panel body, which gave no visible
+           scroll affordance in that screenshot. A bounded, its OWN `overflow-y: auto` region
+           (same pattern as `SpeciesTable.svelte`'s `.scroll-region`) keeps the table's total
+           height predictable regardless of how tall the panel/flower happen to be, and its own
+           border + scrollbar make "there is more below" visible on sight rather than only on
+           scroll. -->
+      <div class="flower-table-scroll">
+        <table class="flower-table" id={tableId}>
+          <caption class="sr-only">Component scores for {title}</caption>
+          <thead>
             <tr>
-              <td class="swatch-cell">
-                <span class="swatch" style={`background: var(${categoryFor(c.key).color})`}></span>
-              </td>
-              <td>{categoryFor(c.key).label}</td>
-              <td class="num">{c.score === null ? "No data" : formatScore(c.score)}</td>
+              <th scope="col"><span class="sr-only">Color</span></th>
+              <th scope="col">Component</th>
+              <th scope="col">Score</th>
             </tr>
-          {/each}
-          <tr class="mean-row">
-            <td class="swatch-cell"></td>
-            <th scope="row">Mean</th>
-            <td class="num">{roundedCenter !== null ? roundedCenter : "No data"}</td>
-          </tr>
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each safe.keptComponents as c (c.key)}
+              <tr>
+                <td class="swatch-cell">
+                  <span class="swatch" style={`background: var(${categoryFor(c.key).color})`}
+                  ></span>
+                </td>
+                <td>{categoryFor(c.key).label}</td>
+                <td class="num">{c.score === null ? "No data" : formatScore(c.score)}</td>
+              </tr>
+            {/each}
+            <tr class="mean-row">
+              <td class="swatch-cell"></td>
+              <th scope="row">Mean</th>
+              <td class="num">{roundedCenter !== null ? roundedCenter : "No data"}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     {/if}
   </div>
 
@@ -499,6 +511,18 @@
     font-family: var(--font-display);
     font-size: 28px;
     font-weight: 700;
+  }
+
+  /* R3-B10: bounds the table's own height so it never depends on how much of the panel's total
+     height the flower ABOVE it already used -- the last row (Mean) is then always reachable by
+     scrolling this small, visibly-bordered box, not the whole panel. 260px comfortably fits the
+     header plus ~6 rows at this font-size before it starts scrolling. */
+  .flower-table-scroll {
+    width: 100%;
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-control);
   }
 
   .flower-table {

@@ -1271,6 +1271,11 @@
     border-radius: var(--radius-control);
     background: none;
     color: var(--text-primary);
+    /* R3-B6 (Opus eyes-on review, 2026-09-25): a plain `<button>` carries the browser's own
+       default font, not this panel's -- every other control here (`.add-picked`, `.cap-note`,
+       the chip links) already sets `var(--text-sm)` explicitly, so Share/Download places/Report
+       were the one row reading visibly larger than everything around them. */
+    font-size: var(--text-sm);
     cursor: pointer;
   }
 

@@ -1810,6 +1810,27 @@ export const FAULTS = [
     ],
     env: { PW_PORT: "4451" },
   },
+  // --- round 3, W3 (app nits with a known fix) ----------------------------------------------------
+  {
+    id: "popup-cellcentre-click-point",
+    patch: "tests/faults/popup-cellcentre-click-point.patch",
+    describe:
+      "state.svelte.ts's showCellPopup() goes back to printing the raw click point (lngLat) " +
+      "instead of the cell centre (cellRing()) -- the SAME cell then reads two different " +
+      "coordinate pairs depending on whether you look at the popup or the flower panel's own title",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.popup.spec.ts",
+      "-g",
+      "CELL CENTRE",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4437" },
+    duckdbExt: true,
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

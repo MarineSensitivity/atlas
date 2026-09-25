@@ -22,6 +22,13 @@
   font-family: var(--font-body);
   font-size: var(--text-md);
   line-height: var(--leading-normal);
+  /* R3-B3: a cell popup's own text ("Cell 3350704 · lon -90.575, lat 28.625 · score: 44") wrapped
+     its LAST word onto its own line — the string needed ~300px on one line at this font-size, past
+     the map/popup.ts `createPopup()` default `maxWidth` at the time (260px, now 320px — see that
+     function's own comment for the measurement). This floor is the OTHER half of the fix: without
+     it, a SHORTER string (a short label, a single-digit cell id) auto-sizes narrower than it needs
+     to and can still strand a trailing word the same way. */
+  min-width: 220px;
 }
 
 /* the tip is a 10px CSS border-triangle (no content box for `backdrop-filter` to blur), so it

@@ -336,6 +336,16 @@ export async function buildReportMapStyle(opts: BuildReportMapStyleOptions): Pro
   const theme = opts.theme ?? "paper";
   await loadBasemapStyle(theme);
   const base = composeStyle({ theme, projection: "mercator", zones: [] });
+  // R3-B11 (Opus eyes-on review, 2026-09-25, desktop-13b-report-map): CARTO's own place-name
+  // labels ("LOUISIANA", drawn at a fixed map point but rendered as TEXT that extends well beyond
+  // it) sat right at this map's fitted-bounds edge and got clipped by the capture frame -- a flat
+  // padding number can chase that for one label's height and still lose to a longer one
+  // ("UNITED STATES"), and this map is FOR the report's own places, not CARTO's basemap toponyms
+  // (the report already draws its own `place-labels` layer, below). Dropping every CARTO `symbol`
+  // layer (the vector GL style's text labels; `composeStyle({zones:[]})` contributes no symbol
+  // layers of its own here) removes the clipping failure mode entirely rather than padding around
+  // it -- fills/lines/water/roads are all untouched, so the basemap still reads as a real map.
+  const baseLayers = base.layers.filter((l) => l.type !== "symbol");
   const color =
     opts.domain && opts.paletteStops
       ? scoreColorExpression(opts.paletteStops, opts.domain)
@@ -355,7 +365,7 @@ export async function buildReportMapStyle(opts: BuildReportMapStyleOptions): Pro
       "place-labels": { type: "geojson", data: labelsFeatureCollection(opts.places) },
     },
     layers: [
-      ...base.layers,
+      ...baseLayers,
       ...zoneLayers,
       {
         id: "places-fill",

@@ -35,9 +35,14 @@ describe("citations: AquaMaps 'UnportedLicense' spacing fix", () => {
     expect(c.citation).not.toContain("UnportedLicense");
   });
 
-  it("leaves the rest of the citation verbatim -- one named exception, not a general rewrite", () => {
+  it("leaves the rest of the citation verbatim -- named exceptions, not a general rewrite", () => {
     const [c] = citations(bootWith(RAW_AQUAMAPS_CITATION));
-    expect(c.citation).toBe(RAW_AQUAMAPS_CITATION.replace("UnportedLicense", "Unported License"));
+    expect(c.citation).toBe(
+      RAW_AQUAMAPS_CITATION.replace("UnportedLicense", "Unported License").replace(
+        "as provided in this R package",
+        "as provided in the msens R package",
+      ),
+    );
   });
 
   it("a citation that never had the typo is untouched", () => {
@@ -49,5 +54,30 @@ describe("citations: AquaMaps 'UnportedLicense' spacing fix", () => {
   it("citedDatasets carries the same fixed text through to the Sources list", () => {
     const [c] = citedDatasets(bootWith(RAW_AQUAMAPS_CITATION));
     expect(c.citation).toContain("Unported License,");
+  });
+});
+
+// R3-B8 (Opus eyes-on review, 2026-09-25, desktop-15-report-scrolled2): "as provided in this R
+// package" has no antecedent for "this" once the AquaMaps package's own CITATION text is copied
+// verbatim into a report that never mentions any R package elsewhere -- names the package
+// (`msens`) the text is actually quoting from. DISPLAY-TIME ONLY, same convention as the
+// "UnportedLicense" fix above: retire once msens's own `datasets.json` source text is corrected
+// and every bundle republished with it (R3-C4, a separate workflows task).
+describe("citations: AquaMaps 'this R package' -> 'the msens R package'", () => {
+  it("names the package the upstream text is quoting from", () => {
+    const [c] = citations(bootWith(RAW_AQUAMAPS_CITATION));
+    expect(c.citation).toContain("as provided in the msens R package");
+    expect(c.citation).not.toContain("as provided in this R package");
+  });
+
+  it("a citation with no such phrase is untouched", () => {
+    const clean = "IUCN Red List of Threatened Species. Version 2025-2.";
+    const [c] = citations(bootWith(clean));
+    expect(c.citation).toBe(clean);
+  });
+
+  it("citedDatasets carries the same fixed text through to the Sources list", () => {
+    const [c] = citedDatasets(bootWith(RAW_AQUAMAPS_CITATION));
+    expect(c.citation).toContain("as provided in the msens R package");
   });
 });
