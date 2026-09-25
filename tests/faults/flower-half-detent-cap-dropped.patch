@@ -1,8 +1,8 @@
 diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
-index fe6f587..4caa3eb 100644
+index 26dbaf7..cb0b973 100644
 --- a/src/shell/Shell.svelte
 +++ b/src/shell/Shell.svelte
-@@ -2069,7 +2069,7 @@
+@@ -2085,7 +2085,7 @@
              lens={scoresLens}
              {layerStack}
              {onLayerStackChange}
@@ -10,4 +10,4 @@ index fe6f587..4caa3eb 100644
 +            compactFlower={false}
              {expandedRow}
              onExpandedRowChange={(id: LayerGroupId | null) => (expandedRow = id)}
-           />
+             tab={activeTab}

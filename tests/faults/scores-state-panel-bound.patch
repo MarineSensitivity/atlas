@@ -1,5 +1,5 @@
 diff --git a/src/lens/scores/ScoresLens.svelte b/src/lens/scores/ScoresLens.svelte
-index 70dcc3d..e4de621 100644
+index 8e05383..2fd4742 100644
 --- a/src/lens/scores/ScoresLens.svelte
 +++ b/src/lens/scores/ScoresLens.svelte
 @@ -66,6 +66,10 @@
@@ -13,10 +13,10 @@ index 70dcc3d..e4de621 100644
      /** P3 fix (Opus eyes-on review, 2026-09-24): passed straight through to `FlowerPanel`'s own
       * prop of the same name -- see that component's header for why. */
      compactFlower?: boolean;
-@@ -90,12 +94,20 @@
-     compactFlower = false,
-     expandedRow,
+@@ -97,12 +101,20 @@
      onExpandedRowChange,
+     tab,
+     onTabChange,
 +    mapExtra = $bindable(null),
    }: Props = $props();
  
@@ -35,10 +35,10 @@ index 70dcc3d..e4de621 100644
    // `unitToggle` prop) -- replaces the old "Spatial units" `<Select>` that used to live in
    // `ScoresLayersPanel` (`./LayersPanel.svelte`, still rendered below for the Data row's OTHER
 diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
-index fe6f587..f61ca60 100644
+index 26dbaf7..b0cb568 100644
 --- a/src/shell/Shell.svelte
 +++ b/src/shell/Shell.svelte
-@@ -646,12 +646,19 @@
+@@ -660,12 +660,19 @@
    // every read of it below is null-safe and falls back to "the shell's own base view", same as
    // the old `{}` default did.
    let scoresLens = $state<ScoresLensState | null>(null);
@@ -59,7 +59,7 @@ index fe6f587..f61ca60 100644
    );
  
    // UI-1 (round 3): `<Toast>`'s own phone bottom-offset PROP -- see its mount point (below) for why
-@@ -777,7 +784,7 @@
+@@ -791,7 +798,7 @@
    // never mounted on a species view in the first place.
    const zonesForStyle = $derived<ZoneUnitSpec[]>(
      zoneUnitsWithOutline(
@@ -68,7 +68,7 @@ index fe6f587..f61ca60 100644
        sel.out,
      ),
    );
-@@ -1186,11 +1193,11 @@
+@@ -1200,11 +1207,11 @@
      projection: sel.proj,
      zones: ecoregionUnit ? [...zonesForStyle, ecoregionUnit] : zonesForStyle,
      raster:
@@ -83,7 +83,7 @@ index fe6f587..f61ca60 100644
      layerStack,
    });
  
-@@ -2069,6 +2076,7 @@
+@@ -2085,6 +2092,7 @@
              lens={scoresLens}
              {layerStack}
              {onLayerStackChange}
@@ -91,7 +91,7 @@ index fe6f587..f61ca60 100644
              compactFlower={isPhone && sheetGeom.detent === "half"}
              {expandedRow}
              onExpandedRowChange={(id: LayerGroupId | null) => (expandedRow = id)}
-@@ -2137,7 +2145,7 @@
+@@ -2155,7 +2163,7 @@
    {:else if sel.lens === "scores" && ScoresLegendComp}
      {@const Comp = ScoresLegendComp}
      <div class="lens-legend-region">

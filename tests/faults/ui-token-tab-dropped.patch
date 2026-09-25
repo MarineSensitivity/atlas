@@ -1,0 +1,13 @@
+diff --git a/src/shell/uiState.ts b/src/shell/uiState.ts
+index 48ee5c5..ae9bdaf 100644
+--- a/src/shell/uiState.ts
++++ b/src/shell/uiState.ts
+@@ -112,7 +112,7 @@ export function formatUi(ui: UiState): string {
+     size,
+     DETENT_CODE[ui.detent],
+     row,
+-    TAB_CODE[ui.tab],
++    TAB_CODE.layers,
+   ].join(".");
+ }
+ 
