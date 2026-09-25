@@ -9,10 +9,18 @@
      * merely `aria-disabled`) also removes it from the Tab order, matching the row's other
      * disabled controls (the opacity slider already had `disabled`, the move buttons below). */
     disabled?: boolean;
+    /** P round deliverable 1 (Ben, live-review 2026-09-24): "the toggles add too much yellow
+     * emphasis across whole panel" -- the Layers panel's stack list has 8 rows, all `visible: true`
+     * by default, so every one of them lit up `--fill-accent` simultaneously. `"quiet"` swaps the
+     * ON state to a neutral fill (the SAME `--fill-track` used for OFF elsewhere) reserving accent
+     * for a real selected/active state (the new Raster cells | Program Areas toggle, the top bar's
+     * lens switch) -- never a plain "is this switched on" that happens 8 times on one screen.
+     * Default `"accent"`: every other caller (Sphere, Cells outside Program Areas) is unchanged. */
+    variant?: "accent" | "quiet";
     onchange?: (checked: boolean) => void;
   }
 
-  let { label, checked, disabled = false, onchange }: Props = $props();
+  let { label, checked, disabled = false, variant = "accent", onchange }: Props = $props();
 </script>
 
 <button
@@ -22,6 +30,7 @@
   aria-label={label}
   class="switch"
   class:switch--on={checked}
+  class:switch--quiet={variant === "quiet"}
   {disabled}
   onclick={() => onchange?.(!checked)}
 >
@@ -88,6 +97,19 @@
   .switch--on .switch-thumb {
     transform: translateX(18px);
     background: var(--text-on-accent);
+  }
+
+  /* P round deliverable 1: "quiet" ON reuses `--border-control` (already this component's own OFF
+     track BORDER, tokens.css) rather than `--fill-accent` -- distinct enough from the plain OFF
+     `--fill-track` fill to read as "on" in both themes, without every row glowing the same accent
+     gold as a real selected/active control (the new Raster cells | Program Areas toggle). */
+  .switch--quiet.switch--on .switch-track {
+    background: var(--border-control);
+    border-color: var(--border-control);
+  }
+
+  .switch--quiet.switch--on .switch-thumb {
+    background: var(--text-primary);
   }
 
   /* SC 1.4.1/1.4.11: forced-colors mode strips the track/thumb backgrounds to nothing distinct,

@@ -32,12 +32,24 @@
   // READER-ONLY text alternative the table's own `<caption>`/`<th>` headers no longer need
   // duplicated visibly (a `<table>` with real headers already satisfies "every chart has a table
   // equivalent" on its own -- the sentence stays only for SC 1.1.1's separate "text summary").
+  //
+  // P round deliverable 2 (Ben, live-review of 0.10.62, 2026-09-24): "Flower plot should be bigger
+  // and needs a reference outer circle (low contrast gray given theme), but that should be based on
+  // the maximum component score for given version and stated with a small label". Two changes: (1)
+  // the SVG now GROWS to fill its container up to the `size` prop's cap (raised from 220 to 480) --
+  // it used to carry `width`/`height` HTML attributes pinning it to a literal px value regardless of
+  // how much panel space existed (measured stuck at ~105-130px on a 1280px stage). (2) a dashed
+  // reference ring at `maxScore`'s radius (`lens/scores/boot.ts#flowerMaxComponentScore`, or the
+  // fallback 100 when the release publishes none), with its own small grey "contour" label
+  // (`computeFlowerReferenceRing`/`flowerReferenceRingLabel`, flowerGeometry.ts).
   import { categoryFor } from "./categories";
   import { announce } from "./announcer";
   import { formatScore } from "../format";
   import {
     computeFlowerGeometrySafe,
+    computeFlowerReferenceRing,
     describeFlowerSummary,
+    flowerReferenceRingLabel,
     flowerViewBox,
     petalCentroid,
     petalLabelText,
@@ -55,9 +67,19 @@
      * component detects itself, so the one real data quirk is not silently invisible to an
      * assistive-tech user just because the de-dup happened upstream. */
     droppedLabels?: string[];
-    /** CSS px; the SVG viewBox is fixed (flowerViewBox()), so this only scales the drawing.
-     * spec.md §10: the phone flower shrinks to 150. */
+    /** CSS px CAP; the SVG viewBox is fixed (flowerViewBox()) but the drawing itself now GROWS to
+     * fill its container up to this cap (P round, Ben's live review 2026-09-24: "Flower plot should
+     * be bigger... use the panel's free area" — measured stuck at ~105-130px on a 1280px stage
+     * regardless of how much room the panel actually had). Default 480 -- a generous ceiling for the
+     * scores-lens Flower panel (Panel.svelte's own docked width tops out at 720px); a caller with a
+     * tighter box (ResultsPanel.svelte's card, the gallery's demo tiles) still passes a smaller cap
+     * explicitly, unchanged from before. */
     size?: number;
+    /** the release's own MAXIMUM published component score (`lens/scores/boot.ts#flowerMaxComponentScore`)
+     * -- draws the reference ring at this radius (`null`/`undefined`, or omitted entirely, falls back
+     * to `FLOWER_MAX_FALLBACK` and the label says so). Ben: "needs a reference outer circle... based
+     * on the maximum component score for given version... stated with a small label". */
+    maxScore?: number | null;
     /** Q3 fix round 1 (coordinator finding): "one table" -- a caller that already renders its OWN
      * component table beside this flower (`src/places/ResultsPanel.svelte`, whose DataTable also
      * carries coverage/mean-where-present columns this component's own table does not) sets this
@@ -70,7 +92,14 @@
     showTable?: boolean;
   }
 
-  let { title, components, droppedLabels = [], size = 220, showTable = true }: Props = $props();
+  let {
+    title,
+    components,
+    droppedLabels = [],
+    size = 480,
+    maxScore = null,
+    showTable = true,
+  }: Props = $props();
 
   const uid = nextUid();
   const summaryId = `${uid}-summary`;
@@ -86,6 +115,18 @@
   const roundedCenter = $derived(
     geometry.centerValue !== null ? Math.round(geometry.centerValue) : null,
   );
+
+  // P round deliverable 2: the reference ring -- `maxScore` (`boot.ts#flowerMaxComponentScore`)
+  // when the caller has one, else `computeFlowerReferenceRing`'s own fallback. Uses the SAME
+  // `innerRadius` `geometry` drew its petals with, so the two can never independently drift.
+  const ring = $derived(
+    computeFlowerReferenceRing(maxScore, { innerRadius: geometry.innerRadius }),
+  );
+  const ringLabel = $derived(flowerReferenceRingLabel(ring));
+  // the label's own on-screen position: a small inset from the ring's TOPMOST point (never past
+  // the ring itself, never past the viewBox edge) so it never clips regardless of how large `ring`
+  // is -- a contour label sitting just inside its own line.
+  const ringLabelTopPct = $derived((100 - Math.min(ring.radius + 6, 96)) / 2);
 
   // announce every duplicate-component drop -- the caller's (`droppedLabels`) and any this
   // component caught itself (`safe.droppedKeys`) -- exactly ONCE per distinct set (not on every
@@ -157,7 +198,7 @@
   }
 </script>
 
-<figure class="flower" aria-describedby={summaryId}>
+<figure class="flower" style={`--flower-size: ${size}px`} aria-describedby={summaryId}>
   <figcaption class="flower-title">{title}</figcaption>
 
   <div class="flower-body">
@@ -165,10 +206,8 @@
       <svg
         class="flower-svg"
         viewBox={flowerViewBox()}
-        width={size}
-        height={size}
         role="group"
-        aria-label={`Composite mean ${roundedCenter !== null ? roundedCenter : "no data"}`}
+        aria-label={`Composite mean ${roundedCenter !== null ? roundedCenter : "no data"}, reference ${ringLabel}`}
       >
         <!-- role="group" (never "img") on the SVG above: an "img" role makes its whole subtree
              presentational, which is exactly what swallowed each petal's own name (axe
@@ -179,6 +218,21 @@
              exposed in the accessibility tree; the tap/hover/focus behavior added in fix round 3
              only ever reveals the SAME name+score this aria-label already carries, so role="img"
              (rather than a widget role) still describes what assistive tech is told. -->
+
+        <!-- P round deliverable 2: the reference ring, drawn BEFORE the petals so a petal that
+             reaches it (score === maxScore) paints cleanly over the dashed line rather than the
+             line drawing a visible seam across the topmost petal. Decorative (aria-hidden): the
+             SAME value is already stated in the group's own aria-label above and in the visible
+             `.ring-label` beside it -- never a THIRD, competing source of this number. -->
+        <circle
+          cx="100"
+          cy="100"
+          r={ring.radius}
+          class="reference-ring"
+          data-testid="flower-reference-ring"
+          data-ring-value={ring.value}
+          aria-hidden="true"
+        />
         {#each geometry.petals as p (p.key)}
           <!-- data-cx/data-cy below: this petal's own on-screen (viewBox) centroid (petalCentroid --
                flowerGeometry.ts), so e2e/scores.flower.spec.ts can probe the exact pixel a petal's
@@ -226,6 +280,16 @@
           {roundedCenter !== null ? roundedCenter : "—"}
         </text>
       </svg>
+
+      <!-- the ring's own small "contour label" (Ben: "stated with a small label (also gray, like a
+           topographic contour label)") -- an HTML overlay, not SVG <text>, so its contrast is
+           against this component's own OPAQUE surface token regardless of which petal happens to
+           sit behind the ring at this angle (an SVG <text> here would sit over whatever colored
+           petal reaches this high, an untestable/uncheckable contrast pair). Purely visual: the
+           SAME value is already in the SVG group's own aria-label above. -->
+      <div class="ring-label" style={`top: ${ringLabelTopPct}%`} aria-hidden="true">
+        {ringLabel}
+      </div>
 
       {#if shownPetal}
         <!-- purely visual (the SAME text already reaches assistive tech via the petal's own
@@ -284,7 +348,13 @@
        start once the panel is wider than that cap. */
     width: 100%;
     margin: 0 auto;
-    max-width: 320px;
+    /* P round (Ben, live review 2026-09-24): "Flower plot should be bigger... use the panel's free
+       area" -- was a flat 320px regardless of the `size` prop (measured stuck at ~105-130px on a
+       1280px stage), so a caller asking for a bigger flower (the panel's own default, 480 below)
+       had no effect once this figure's own cap kicked in first. Now tracks `size` directly (the
+       SAME custom property `.flower-svg`'s own max-width reads), so the figure (title + chart +
+       table) grows together rather than the chart alone hitting an invisible ceiling. */
+    max-width: var(--flower-size, 320px);
   }
 
   .flower-title {
@@ -305,14 +375,58 @@
 
   .flower-chart {
     position: relative;
-    /* shrink-wraps the <svg>'s own rendered box so `.petal-label`'s 50%/50% below lines up with
-       the hub regardless of the `size` prop. */
-    display: inline-flex;
+    /* P round: `width: 100%` (a `.flower-body` flex child, `align-items: center` -- a cross-axis
+       item shrinks to its CONTENT's width by default, never stretches) so `.flower-svg` below has
+       a real, non-circular width to compute its own `width: 100%` against, rather than the two
+       trying to size off each other. `.petal-label`/`.ring-label`'s 50%/50% below still line up
+       with the hub/ring: both track THIS box, which now exactly matches the svg's own rendered
+       size (both are `width: 100%` of the same chain), whatever `--flower-size` resolves to. */
+    display: block;
+    width: 100%;
   }
 
   .flower-svg {
-    max-width: 100%;
+    /* P round: no more `width`/`height` attributes on the element (those pinned the rendered size
+       to a literal px value no matter how much room the panel had -- the actual bug behind "stays
+       ~105-130px on a 1280px stage"). Fills its container up to `--flower-size` (the `size` prop,
+       default 480) and shrinks below that on a narrow phone sheet -- `aspect-ratio` keeps it square
+       with no explicit width/height attribute to derive that from (the viewBox is always square). */
+    display: block;
+    width: 100%;
+    max-width: var(--flower-size, 220px);
+    aspect-ratio: 1 / 1;
     height: auto;
+  }
+
+  /* the reference ring (P round deliverable 2): a dashed, LOW-CONTRAST line -- decoration, not
+     data a viewer reads off directly (the value is in `.ring-label` beside it and the group's own
+     aria-label) -- so `--border-control` (already the "quiet outline" token, e.g. the flower
+     table's own row borders use `--divider`, its sibling) rather than a `--cat-*`/`--focus-ring`
+     color that would read as a selected/active state. */
+  .reference-ring {
+    fill: none;
+    stroke: var(--border-control);
+    stroke-width: 1;
+    stroke-dasharray: 4 3;
+    opacity: 0.6;
+  }
+
+  /* the ring's own small label -- "like a topographic contour label" (Ben): quiet grey text on an
+     OPAQUE chip (never bare over the chart, where a colored petal could sit behind it at this
+     angle and make its contrast unpredictable/untestable). `--text-secondary`/`--surface-raised`
+     is the SAME already-checked pair `.note`/`.petal-label` use elsewhere in this file. */
+  .ring-label {
+    position: absolute;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 1px var(--space-1);
+    border-radius: var(--radius-control);
+    background: var(--surface-raised);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    line-height: 1.2;
+    white-space: nowrap;
+    pointer-events: none;
   }
 
   /* full opacity: scripts/contrast.mjs measures each --cat-* token AS COMMITTED in tokens.css --

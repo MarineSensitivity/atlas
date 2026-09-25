@@ -1,3 +1,25 @@
+# atlas 0.10.64
+
+P round, W2 (Ben, live-review of the LIVE 0.10.62 app, 2026-09-24): the Layers panel's spatial-unit
+control and the Scores-lens flower plot.
+
+- **The Layers panel's primary control is now ONE segmented toggle, "Raster cells | Program
+  Areas", at the top of the panel** — styled like the top bar's own Scores|Species switch. It
+  replaces the "Spatial units" dropdown that used to sit buried inside the Data row's own body (two
+  controls setting the same thing would just have been confusing). In the Species lens it renders
+  disabled, with a short reason ("Species surfaces are rasters only.") — species has no spatial-unit
+  choice to make. Switching units still writes `?unit=` the same way it always did.
+- **Fixed: the layer stack's 8 visibility switches all glowed the SAME accent gold at once** — every
+  row starts visible by default, so the panel read as a wash of yellow with no real emphasis left
+  for anything genuinely selected. The stack's own switches now use a quiet, neutral "on" color;
+  accent is reserved for the new toggle above.
+- **The flower plot is bigger** and now grows to fill the panel's own free area (it used to be
+  pinned to a small fixed pixel size no matter how much room the panel had).
+- **The flower plot has a reference ring** — a low-contrast dashed circle at the release's own
+  published maximum component score, with a small grey "contour" label naming that value (falls
+  back to 100, and says so, on a release that publishes no such maximum — true of every release
+  today).
+
 # atlas 0.10.62
 
 Round 2, V7: fix for CI run 36070452831 (three-engine job, 97/1119 failed on chromium, webkit AND

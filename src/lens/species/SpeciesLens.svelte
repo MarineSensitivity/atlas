@@ -15,20 +15,36 @@
   import SpeciesTitle from "./SpeciesTitle.svelte";
   import LayerBarView from "./LayerBarView.svelte";
   import SpeciesCardView from "./SpeciesCardView.svelte";
-  import LibLayersPanel from "../../lib/ui/LayersPanel.svelte";
+  import LibLayersPanel, { type LayersUnitToggle } from "../../lib/ui/LayersPanel.svelte";
   import type { LayerStackEntry, Representation } from "../../lib/state/types";
+  // P round deliverable 1 (Ben, live-review 2026-09-24): "emphasize Raster Cells vs Program Areas
+  // as a toggle similar to Scores vs Species at top, but this only applies to Scores (so grayed out
+  // for Species)". `unitOptions` is a PURE boot reader (no scores-lens state) -- reused here rather
+  // than duplicated so the disabled toggle's own option labels can never drift from what the scores
+  // lens shows for the same release.
+  import { unitOptions } from "../scores/boot";
 
   interface Props {
     lens: SpeciesLens;
     rep: Representation;
     layerStack: readonly LayerStackEntry[];
     onLayerStackChange: (next: readonly LayerStackEntry[]) => void;
+    boot: unknown;
   }
 
-  let { lens, rep, layerStack, onLayerStackChange }: Props = $props();
+  let { lens, rep, layerStack, onLayerStackChange, boot }: Props = $props();
+
+  // species surfaces are rasters only -- there is no zone-fill CHOICE to make in this lens (unlike
+  // the scores lens' zone choropleth), so the toggle renders disabled with a short reason rather
+  // than a working control that would do nothing.
+  const unitToggle = $derived<LayersUnitToggle>({
+    options: unitOptions(boot),
+    value: "cell",
+    disabledReason: "Species surfaces are rasters only.",
+  });
 </script>
 
-<LibLayersPanel stack={layerStack} onChange={onLayerStackChange}>
+<LibLayersPanel stack={layerStack} onChange={onLayerStackChange} {unitToggle}>
   {#snippet dataControls()}
     <div class="species-panel" data-testid="species-panel">
       {#if lens.cardError}

@@ -21,7 +21,9 @@
 // Invertebrate, Other and Primary producer (all <= 24) failed it, `document.elementFromPoint` at
 // their own centroid returning the hub `<circle class="hub">`, not their own `<path>`.
 import { expect, test, type Page } from "@playwright/test";
-import { gotoScoresMap } from "./scores-hermetic";
+import { gotoScoresMap, bootFor, routeZones20 } from "./scores-hermetic";
+import { routeBucket, routeSealFixture, routeSession, waitForHydration } from "./hermetic";
+import { blockWasm, routeBasemapStyle, routeGlyphs, routeTitilerTiles } from "./map-hermetic";
 
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 800 } });
@@ -349,5 +351,130 @@ test.describe("fix round 3: the values under the plot are a table, not a prose p
     await expect(page.locator(".flower-title")).toBeVisible();
     await expect(page.locator(".summary")).toHaveClass(/\bsr-only\b/);
     await expect(table.locator("caption")).toHaveClass(/\bsr-only\b/);
+  });
+});
+
+// P round deliverable 2 (Ben, live-review of 0.10.62, 2026-09-24): "Flower plot should be bigger
+// and needs a reference outer circle ... based on the maximum component score for given version
+// ... stated with a small label", plus "use the panel's free area". The pure geometry (ring
+// radius/value/label) is unit-tested in tests/ui/flowerGeometry.test.ts and
+// tests/lens/scores/boot.test.ts; this proves the REAL rendered SVG/DOM.
+test.describe("P round deliverable 2: the flower's reference ring", () => {
+  test("v7's real fixture publishes no component rescale today: the ring falls back to 100 and says so", async ({
+    page,
+  }) => {
+    await gotoScoresMap(page, "v7");
+    await openFlower(page);
+
+    const ring = page.locator("[data-testid='flower-reference-ring']");
+    await expect(ring).toBeAttached();
+    await expect(ring).toHaveAttribute("data-ring-value", "100");
+    await expect(page.locator(".ring-label")).toHaveText(
+      "max 100 (no published maximum for this release)",
+    );
+  });
+
+  /** `bootFor('v7')` (scores-hermetic.ts) publishes only the COMPOSITE layer's `by_subregion` --
+   * adds one `category: "component"` row with a real rescale, the same "extend with one more
+   * layer" pattern `e2e/layers.spec.ts`'s own `bootWithPrimprod` uses, so v7's shared fixture
+   * itself never changes for every OTHER spec in this file. */
+  function bootWithComponentMax(maxScore: number) {
+    const boot = bootFor("v7") as { layers: unknown[] };
+    return {
+      ...boot,
+      layers: [
+        ...boot.layers,
+        {
+          metric_key: "extrisk_bird_ecoregion_rescaled",
+          category: "component",
+          order: 2,
+          by_subregion: { FULL: { rescale: [0, maxScore] } },
+        },
+      ],
+    };
+  }
+
+  async function gotoScoresFlowerWithMax(page: Page, maxScore: number) {
+    await blockWasm(page);
+    await routeBucket(page, "v7", bootWithComponentMax(maxScore));
+    await routeSession(page, { preview: true, ver: "v7" });
+    await routeSealFixture(page);
+    await routeZones20(page);
+    await routeBasemapStyle(page);
+    await routeTitilerTiles(page);
+    await routeGlyphs(page);
+    await page.goto("/?proj=mercator");
+    await waitForHydration(page);
+    await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
+  }
+
+  test("a release that DOES publish a component rescale (93): the ring moves off the fallback, no petal draws past it -- the seeded fault: pinned at 100 regardless", async ({
+    page,
+  }) => {
+    await gotoScoresFlowerWithMax(page, 93);
+    await openFlower(page);
+
+    const ring = page.locator("[data-testid='flower-reference-ring']");
+    await expect(ring).toHaveAttribute("data-ring-value", "93");
+    await expect(page.locator(".ring-label")).toHaveText("max 93");
+
+    const ringRadius = await ring.evaluate((el) => Number(el.getAttribute("r")));
+    expect(
+      ringRadius,
+      "a real 93 max must draw the ring strictly inside the 100-unit outer edge",
+    ).toBeLessThan(100);
+
+    // "petals must not exceed the ring": v7's real flower_default.FULL (FLOWER_DEFAULT_V7_FULL,
+    // this file's own header) tops out at Bird 45.67 -- every petal's own outer radius must sit at
+    // or inside the ring's.
+    const petalRadii = await page.locator(".flower-svg .petal").evaluateAll((els) =>
+      els.map((el) => {
+        const d = el.getAttribute("d") ?? "";
+        // the annular sector's OUTER arc radius is sectorPath's own `radius` argument, encoded as
+        // the "A rx ry ..." command's rx -- parsed here rather than re-deriving it from the
+        // component score, so this is a proof against the real rendered path, not a second copy
+        // of the same math the fault would ALSO get wrong.
+        const m = /A\s*([\d.]+)/.exec(d);
+        return m ? Number(m[1]) : NaN;
+      }),
+    );
+    for (const r of petalRadii) expect(r).toBeLessThanOrEqual(ringRadius + 0.01); // float tolerance
+  });
+});
+
+// P round deliverable 2: "Flower plot should be bigger... use the panel's free area" -- was stuck
+// at ~105-130px on a 1280px stage regardless of how much panel room existed (a `width`/`height`
+// HTML attribute pinning the rendered size to a literal px value); now grows with its container.
+test.describe("P round deliverable 2: the flower grows to fill its panel (desktop, 1280x800)", () => {
+  test("renders well past the OLD fixed 220px default", async ({ page }) => {
+    await gotoScoresMap(page, "v7");
+    await openFlower(page);
+    const svgBox = await page.locator(".flower-svg").boundingBox();
+    expect(svgBox, ".flower-svg has no bounding box").not.toBeNull();
+    expect(
+      svgBox!.width,
+      `flower rendered at ${svgBox!.width}px -- expected it to grow well past the reported ` +
+        `"~105-130px on a 1280px stage"`,
+    ).toBeGreaterThan(260);
+  });
+});
+
+test.describe("P round deliverable 2: the flower grows to fill its panel (phone, 390x844)", () => {
+  test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+
+  test("at both Half and Full sheet height, the flower is well past the reported ~105-130px", async ({
+    page,
+  }) => {
+    await gotoScoresMap(page, "v7");
+    await openFlower(page);
+    for (const detentLabel of ["Half height", "Full height"]) {
+      await page.getByRole("button", { name: detentLabel }).click();
+      const svgBox = await page.locator(".flower-svg").boundingBox();
+      expect(svgBox, `detent "${detentLabel}": .flower-svg has no bounding box`).not.toBeNull();
+      expect(
+        svgBox!.width,
+        `detent "${detentLabel}": flower rendered at ${svgBox!.width}px`,
+      ).toBeGreaterThan(200);
+    }
   });
 });
