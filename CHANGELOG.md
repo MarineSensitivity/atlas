@@ -1,3 +1,17 @@
+# atlas 0.10.74
+
+Round 3, W3b (accessibility fix, CI run 36158947685). The gallery's axe gate flagged
+`scrollable-region-focusable` on the Flower plot's component table (all 6 theme × width combos).
+
+- **Fixed: the Flower plot's component score table was not reachable by keyboard** — its own
+  independent scroll box (`.flower-table-scroll`, added R3-B10 so the "Mean" row stays reachable
+  when the flower above it is tall) had no `tabindex`, so a keyboard-only user could never scroll
+  it, only a mouse/touch one. It is now a `tabindex="0"` `role="region"`, named via
+  `aria-labelledby` to the table's own `<caption>` (never a second, independently-worded label),
+  with a visible `:focus-visible` ring using the same token/shape `Sheet.svelte`'s `.sheet-body`
+  and `Panel.svelte`'s `.panel-surface` already use (`outline: 2px solid var(--focus-ring);
+outline-offset: -2px;`).
+
 # atlas 0.10.73
 
 Round 3, W6 (consistency slice A: shell + shared UI). Two live-site bugs (a second Program-Area

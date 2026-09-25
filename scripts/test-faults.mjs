@@ -695,6 +695,28 @@ export const FAULTS = [
     env: { PW_PORT: "4373" },
   },
   {
+    // R3-W3b (CI run 36158947685, "e2e (gallery)" job): axe `scrollable-region-focusable` on
+    // `.flower-table-scroll` -- the table's own scroll box (R3-B10) had no way to reach it by
+    // keyboard. This patch reverts the fix's `tabindex="0"`/`role="region"`/`aria-labelledby`.
+    id: "flower-scroll-focusable",
+    patch: "tests/faults/flower-scroll-focusable.patch",
+    describe:
+      'Flower.svelte\'s `.flower-table-scroll` loses its `tabindex="0"`/`role="region"`/' +
+      "`aria-labelledby` -- the scroll region becomes keyboard-unreachable again (axe " +
+      "scrollable-region-focusable)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.flower.spec.ts",
+      "-g",
+      "the scroll container is a named, tabbable region",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4573" },
+  },
+  {
     id: "legend-chip-modal-blank",
     patch: "tests/faults/legend-chip-modal-blank.patch",
     describe:

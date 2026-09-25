@@ -104,6 +104,7 @@
   const uid = nextUid();
   const summaryId = `${uid}-summary`;
   const tableId = `${uid}-table`;
+  const tableCaptionId = `${uid}-table-caption`;
 
   // `computeFlowerGeometrySafe` never throws: a same-category collision in `components` (a caller
   // that did not already de-duplicate its own data -- a belt-and-braces fallback; the real v8/v9
@@ -318,10 +319,22 @@
            (same pattern as `SpeciesTable.svelte`'s `.scroll-region`) keeps the table's total
            height predictable regardless of how tall the panel/flower happen to be, and its own
            border + scrollbar make "there is more below" visible on sight rather than only on
-           scroll. -->
-      <div class="flower-table-scroll">
+           scroll.
+
+           R3-W3b (CI run 36158947685, axe scrollable-region-focusable): this box scrolls
+           independently of the panel (max-height + overflow-y above) but had no way to reach it
+           by keyboard -- a mouse/touch user could scroll it, a keyboard-only user could not. Named
+           via aria-labelledby to the table's own <caption> (below) rather than a fresh aria-label,
+           so the region's accessible name and the table's own name can never drift apart. The
+           visible focus ring is the SAME token/shape every other keyboard-focusable scroll region
+           in this app uses (`Sheet.svelte`'s `.sheet-body`, `Panel.svelte`'s `.panel-surface`):
+           `outline: 2px solid var(--focus-ring); outline-offset: -2px;`. svelte-check's own a11y
+           rule does not know the role="region" + aria-labelledby exception, hence the ignore
+           below (same as Sheet.svelte's .sheet-body). -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div class="flower-table-scroll" tabindex="0" role="region" aria-labelledby={tableCaptionId}>
         <table class="flower-table" id={tableId}>
-          <caption class="sr-only">Component scores for {title}</caption>
+          <caption class="sr-only" id={tableCaptionId}>Component scores for {title}</caption>
           <thead>
             <tr>
               <th scope="col"><span class="sr-only">Color</span></th>
@@ -523,6 +536,13 @@
     overflow-y: auto;
     border: 1px solid var(--border-control);
     border-radius: var(--radius-control);
+  }
+
+  /* R3-W3b: same focus-ring token/shape as Sheet.svelte's .sheet-body and Panel.svelte's
+     .panel-surface -- the app's one established pattern for a keyboard-focusable scroll region. */
+  .flower-table-scroll:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
   }
 
   .flower-table {
