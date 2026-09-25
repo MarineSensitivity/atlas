@@ -11,14 +11,27 @@ import {
 } from "../../src/shell/tour";
 
 function fakeActions(currentLens: "scores" | "species" = "scores"): TourActions & {
-  calls: { setLens: string[]; selectTool: string[]; snapshot: number; restore: number };
+  calls: {
+    setLens: string[];
+    selectTool: string[];
+    selectReportTab: string[];
+    snapshot: number;
+    restore: number;
+  };
 } {
-  const calls = { setLens: [] as string[], selectTool: [] as string[], snapshot: 0, restore: 0 };
+  const calls = {
+    setLens: [] as string[],
+    selectTool: [] as string[],
+    selectReportTab: [] as string[],
+    snapshot: 0,
+    restore: 0,
+  };
   return {
     calls,
     getLens: () => currentLens,
     setLens: (l) => calls.setLens.push(l),
     selectTool: (t) => calls.selectTool.push(t),
+    selectReportTab: (t) => calls.selectReportTab.push(t),
     snapshot: () => calls.snapshot++,
     restore: () => calls.restore++,
   };
@@ -56,19 +69,33 @@ describe("SCORES_TOUR_STEPS: 8 steps, docs/usability.md §5", () => {
     }
   });
 
-  it("the layers/table/places/report steps each open exactly their own rail tool via selectTool()", () => {
+  it("the layers/table/report steps each open exactly their own rail tool via selectTool()", () => {
     // owner review item 3 (live 0.10.62): "report" moved from the removed desktop topbar button
     // to the rail's own Report tool (tour.ts's own header) -- it now needs the SAME before() hook
     // its rail siblings already had, not the "always mounted" exemption above.
     for (const [id, tool] of [
       ["layers", "layers"],
       ["table", "table"],
+    ] as const) {
+      const a = fakeActions();
+      SCORES_TOUR_STEPS.find((s) => s.id === id)?.before?.(a);
+      expect(a.calls.selectTool).toEqual([tool]);
+      expect(a.calls.setLens).toEqual([]);
+    }
+  });
+
+  // R3-W8 item 5: "Places folds into the Report tool as its first tab" -- the "places" step opens
+  // the Report tool AND switches its own tab to "places" (the pane's default, but the tour must
+  // not assume a PRIOR step left it there); the "report" step does the same for "report".
+  it("the places/report steps both open the Report rail tool, and switch to their own tab", () => {
+    for (const [id, reportTab] of [
       ["places", "places"],
       ["report", "report"],
     ] as const) {
       const a = fakeActions();
       SCORES_TOUR_STEPS.find((s) => s.id === id)?.before?.(a);
-      expect(a.calls.selectTool).toEqual([tool]);
+      expect(a.calls.selectTool).toEqual(["report"]);
+      expect(a.calls.selectReportTab).toEqual([reportTab]);
       expect(a.calls.setLens).toEqual([]);
     }
   });

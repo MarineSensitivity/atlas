@@ -1,0 +1,15 @@
+diff --git a/src/shell/uiState.ts b/src/shell/uiState.ts
+index c89bea9..162a72b 100644
+--- a/src/shell/uiState.ts
++++ b/src/shell/uiState.ts
+@@ -80,7 +80,9 @@ export function formatUi(ui: UiState): string {
+   return [
+     UI_TOKEN_VERSION,
+     TOOL_CODE[ui.tool],
+-    DOCK_CODE[ui.dock],
++    // SEEDED FAULT (tests/faults/ui-token-dock-dropped.patch): hardcodes "bottom" instead of
++    // encoding the live dock -- a Share link built while docked left/right reopens docked bottom.
++    DOCK_CODE.bottom,
+     size,
+     DETENT_CODE[ui.detent],
+     row,

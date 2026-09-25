@@ -451,6 +451,23 @@ export function refitNeeded(prev: CameraKey | null | undefined, next: CameraKey)
   return prev.sp !== next.sp;
 }
 
+/**
+ * R3-W8 item 2: should picking a different INPUT (or representation) re-frame the camera? The
+ * species card's "Zoom to layer on change" checkbox is this rule's on/off switch, applied by the
+ * caller (`state.svelte.ts`) — this function only answers "did the layer itself change", never
+ * reads the preference or the pan guard (both live outside the plain data layer by this module's
+ * own "network-free / DOM-free" contract).
+ *
+ * A species change is NOT an input change (it is handled by {@link refitNeeded}'s own, unconditional
+ * fit) — `prev.sp !== next.sp` returns `false` here so the two rules never both fire for the same
+ * transition.
+ */
+export function refitOnInputChange(prev: CameraKey | null | undefined, next: CameraKey): boolean {
+  if (!prev) return false;
+  if (prev.sp !== next.sp) return false;
+  return prev.in !== next.in || prev.rep !== next.rep;
+}
+
 /** the longitude span of a bounds camera, in degrees — the gate's measurement (`< 200` for every
  * model, including the 6,273 v9 extents written wrapped). */
 export function lonSpanOf(camera: BoundsCamera): number {

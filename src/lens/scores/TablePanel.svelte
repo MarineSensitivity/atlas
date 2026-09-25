@@ -17,6 +17,7 @@
   import {
     csvFilename,
     modelSelPatch,
+    placesSubjectHeader,
     speciesFilenameStem,
     speciesHeader,
     speciesTableEmptyText,
@@ -29,8 +30,9 @@
   import type { CompositionRow } from "./composition";
   // atlas-7 step 4: "Report on selected" builds the SAME `z.<set>.<keys>` token the Places panel's
   // own zone places use (places/model.ts) -- never a second zone-place encoding.
-  import { hashFromPlaces, zoneSetForUnit } from "../../places/model";
+  import { hashFromPlaces, placesFromHash, zoneSetForUnit } from "../../places/model";
   import { paLabel } from "../../places/zoneStats";
+  import { reportSubjects } from "../../lib/state/subjects";
 
   // `Composition.svelte` is loaded via a DYNAMIC `import()`, never a static one, even though it
   // contains no forbidden-marker text itself: it is what dynamically imports `Treemap.svelte`, and
@@ -64,9 +66,24 @@
      * `FlowerPanel` already receives), so this panel's header can print "Species in Cell {id} ·
      * {lat}° N, {lon}° W" through the shared `formatSubject()` rather than the id alone. */
     cellCoords?: { lon: number; lat: number };
+    /** R3-W8 item 5 fix round: switches the rail to the Report tool's Places tab -- the empty-state
+     * hand-off ("Select places under Report → Places") shown when nothing is selected AND no place
+     * has been explicitly added (`reportSubjects()`'s own "last-clicked, selection: null" case). */
+    onOpenPlaces?: () => void;
   }
 
-  let { sel, selStore, boot, manifest, ver, unit, lyr, selection, cellCoords }: Props = $props();
+  let {
+    sel,
+    selStore,
+    boot,
+    manifest,
+    ver,
+    unit,
+    lyr,
+    selection,
+    cellCoords,
+    onOpenPlaces,
+  }: Props = $props();
 
   let subTab = $state<"species" | "zones" | "composition">("species");
   let glossaryOpen = $state(false);
@@ -92,15 +109,31 @@
       ? paLabel(currentZone.key, currentZone.name, selection.unit)
       : undefined,
   );
+  // R3-W8 item 5: "the Table's subject line uses the same rule and says so" -- `reportSubjects()`
+  // (src/lib/state/subjects.ts) is the ONE rule that decides whether a non-empty EXPLICIT Places
+  // list (`sel.pl`) or the Last-clicked slot (`sel.sel`, this panel's own `selection` prop already
+  // IS that slot, parsed once upstream in ScoresLens.svelte) governs. While no place has been
+  // explicitly added, this is a no-op (`subject.kind` is always "last-clicked" and the header text
+  // is byte-identical to before this item) -- the species/zones DATA this panel queries still comes
+  // from `selection`/`unit`/`lyr` alone (aggregating species across an explicit multi-place list is
+  // a larger feature left to a later round; see this item's own report for the scoping note).
+  const places = $derived(placesFromHash(sel.pl));
+  const subject = $derived(reportSubjects(sel, places));
+  // R3-W8 item 5 fix round: "when there is no selection, add a line 'Select places under
+  // Report → Places'... next to the existing all-US-waters aggregate" -- true only when NEITHER a
+  // click nor an explicit place governs (`reportSubjects()`'s own "nothing at all" shape).
+  const noSelectionAtAll = $derived(subject.kind === "last-clicked" && subject.selection === null);
   const header = $derived(
-    speciesHeader({
-      selection,
-      zoneName: currentZoneLabel,
-      unit: selection?.kind === "zone" ? selection.unit : unit,
-      unitLabel: unitLabel ?? null,
-      zoneAllKey: allKey,
-      cellCoords,
-    }),
+    subject.kind === "places"
+      ? placesSubjectHeader(subject.items.length)
+      : speciesHeader({
+          selection,
+          zoneName: currentZoneLabel,
+          unit: selection?.kind === "zone" ? selection.unit : unit,
+          unitLabel: unitLabel ?? null,
+          zoneAllKey: allKey,
+          cellCoords,
+        }),
   );
   const filenameStem = $derived(
     speciesFilenameStem({
@@ -251,6 +284,17 @@
     </button>
   </div>
 
+  {#if noSelectionAtAll}
+    <!-- R3-W8 item 5 fix round (Ben, verbatim): "when there is no selection, add a line... next to
+         the existing all-US-waters aggregate and don't replace that aggregate." -->
+    <p class="note select-places-hint" data-testid="select-places-hint">
+      Select places under Report → Places
+      <button type="button" class="select-places-link" onclick={() => onOpenPlaces?.()}>
+        Open Report → Places
+      </button>
+    </p>
+  {/if}
+
   <Segmented
     ariaLabel="Table view"
     value={subTab}
@@ -348,5 +392,28 @@
      never the same colour as a routine empty state (FlowerPanel.svelte's own identical rule). */
   .note--error {
     color: var(--text-danger);
+  }
+
+  .select-places-hint {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .select-places-link {
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--text-link);
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+    text-decoration: underline;
+  }
+
+  .select-places-link:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
   }
 </style>

@@ -81,6 +81,12 @@ function parseFlag(v: string | null): boolean {
   return v === "1";
 }
 
+/** `zl`: default true (zoom-to-layer on); only `"0"` (exactly) turns it off — same "unknown values
+ * fall back to the default" rule as `us`. */
+function parseZoomToLayer(v: string | null): boolean {
+  return v !== "0";
+}
+
 const SEL_TOKEN_RE = /^(cell:[^:,]+|zone:[^:,]+:[^:,]+|place:\d+)$/;
 
 function parseSelToken(v: string | null): string | undefined {
@@ -155,6 +161,7 @@ function parseSelUnsafe(loc: UrlLike, alias: AliasLookup): Sel {
     layers: parseLayerStack(params.get("layers")) ?? undefined,
     theme: parseEnum(aliasTheme(params.get("theme")), THEMES, DEFAULT_SEL.theme),
     tour: parseEnum(params.get("tour"), ["on", "off"] as const, DEFAULT_SEL.tour),
+    zl: parseZoomToLayer(params.get("zl")),
     pl: cleanString(hashParams.get("pl")),
     t: cleanString(hashParams.get("t")),
   };
@@ -207,6 +214,7 @@ export function formatSel(sel: Sel): { search: string; hash: string } {
   if (layersToken !== null) params.set("layers", layersToken);
   if (sel.theme !== DEFAULT_SEL.theme) params.set("theme", sel.theme);
   if (sel.tour !== DEFAULT_SEL.tour) params.set("tour", sel.tour);
+  if (sel.zl === false) params.set("zl", "0");
 
   const hashParams = new URLSearchParams();
   if (sel.pl) hashParams.set("pl", sel.pl);

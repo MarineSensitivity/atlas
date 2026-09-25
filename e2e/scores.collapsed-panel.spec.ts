@@ -131,10 +131,11 @@ test.describe("review M1: a scores click works with no panel mounted at all", ()
     page,
   }) => {
     await gotoScoresMap(page, "v7");
-    // switch to Places -- ScoresLens.svelte (the scores panel body) never mounts while this tool
-    // is active, the SAME "no panel body" condition the collapsed case above reproduces a
-    // different way (M1's review text: "or the Places tool open").
-    await page.getByRole("button", { name: "Places" }).click();
+    // switch to Places (R3-W8 item 5: folded into the Report pane as its own default tab) --
+    // ScoresLens.svelte (the scores panel body) never mounts while the Report tool is active, the
+    // SAME "no panel body" condition the collapsed case above reproduces a different way (M1's
+    // review text: "or the Places tool open").
+    await page.getByRole("button", { name: "Report" }).click();
     await expect(page.locator("#panel-region")).toContainText(/Turn on pick mode|places/i, {
       timeout: 10_000,
     });

@@ -149,6 +149,15 @@
     /** R3 deliverable 3 — see {@link LayersLayerField}. Omitted by the species lens (no metric
      * layer choice there). */
     layerField?: LayersLayerField;
+    /** R3-W8 item 1 (Ben, 2026-09-25: "promote the main data selection up"): the species lens' own
+     * equivalent of `layerField` — its "Model input" picker (the layer-bar pills + representation
+     * toggle, `LayerBarView.svelte`), moved out of the Data row's body to this same panel-level
+     * slot. A snippet, not a typed field-value shape like `layerField`, because the species picker
+     * is not a single `<select>` — it is a whole existing component the species lens already owns.
+     * Mutually exclusive with `layerField` in practice (never both true at once — scores passes
+     * one, species the other) but each renders independently so neither lens has to know the other
+     * exists. */
+    speciesField?: Snippet;
     /** R3 deliverable 6 — see {@link LayersOutlineChoice}. Omitted while a lens has not resolved
      * `sel`/`boot` yet; the "Outlines" row then still expands but shows no radio body,
      * matching `dataControls`' own "nothing to render yet" convention. */
@@ -159,6 +168,26 @@
      * a lens that has nothing empty-able to report (there is none today besides Selection) simply
      * does not pass this prop at all. */
     rowState?: Partial<Record<LayerGroupId, LayersRowState>>;
+    /** R3-W8 item 3: controlled row-expansion, so Shell.svelte can restore the "Data"/"Outlines"
+     * expander from a shared `ui=` link and read it back to build one. `undefined` (every existing
+     * caller/test) keeps this component's own internal state — only Shell wires this pair, and
+     * only one `LayersPanel` is ever mounted at a time (see `DATA_ROW_BODY_ID`'s own header), so a
+     * single Shell-level value is enough regardless of which lens is active. */
+    expandedRow?: LayerGroupId | null;
+    onExpandedRowChange?: (id: LayerGroupId | null) => void;
+    /** R3-W8 item 4 (Ben, 2026-09-25): "differentiating the extra information about the species in
+     * another tabset from the interactive control of the layers in its own default tab." When
+     * given, this panel renders TWO tabs — "Layers" (everything below, unchanged) and this one
+     * (the Scores lens' Flower plot / the Species lens' Species info, `label` naming which).
+     * Omitted (every existing caller/test besides the two lenses, e.g. the gallery) keeps this
+     * panel single-tab, exactly as before this item. */
+    infoTab?: { label: string; content: Snippet };
+    /** controlled, same convention as `expandedRow`/`onExpandedRowChange` — Shell.svelte lifts
+     * this so a shared `ui=` link can restore it (item 3's `tab` field) and Share can read it back.
+     * `undefined` falls back to this component's own internal state. Ignored while `infoTab` is
+     * omitted (nothing to switch to). */
+    tab?: "layers" | "info";
+    onTabChange?: (tab: "layers" | "info") => void;
   }
 
   let {
@@ -167,10 +196,25 @@
     dataControls,
     unitToggle,
     layerField,
+    speciesField,
     outline,
     projection,
     rowState,
+    expandedRow,
+    onExpandedRowChange,
+    infoTab,
+    tab,
+    onTabChange,
   }: Props = $props();
+
+  let internalTab = $state<"layers" | "info">("layers");
+  const activeTab = $derived(tab !== undefined ? tab : internalTab);
+
+  function selectTab(next: string) {
+    const value = next === "info" ? "info" : "layers";
+    if (onTabChange) onTabChange(value);
+    else internalTab = value;
+  }
 
   function onUnitToggleChange(value: string) {
     // `unitToggle` itself is optional (a lens that has not resolved `boot` yet, or -- species --
@@ -205,10 +249,15 @@
       .reverse(),
   );
 
-  let expandedId = $state<LayerGroupId | null>(DATA_ROW_ID);
+  let internalExpandedId = $state<LayerGroupId | null>(DATA_ROW_ID);
+  // R3-W8 item 3: `expandedRow === undefined` (no caller controlling it) falls back to this
+  // component's own internal state, exactly as before this prop pair existed.
+  const expandedId = $derived(expandedRow !== undefined ? expandedRow : internalExpandedId);
 
   function toggleExpanded(id: LayerGroupId) {
-    expandedId = expandedId === id ? null : id;
+    const next = expandedId === id ? null : id;
+    if (onExpandedRowChange) onExpandedRowChange(next);
+    else internalExpandedId = next;
   }
 
   function setVisible(id: LayerGroupId, visible: boolean) {
@@ -271,160 +320,188 @@
 </script>
 
 <div class="layers-stack" bind:this={panelEl}>
-  {#if unitToggle}
-    <!-- P round deliverable 1: the panel's own primary control, ABOVE the stack list -- styled
-         like the top bar's Scores|Species `Segmented` (same component, reused, not re-styled).
-         R3: `fit` (content-sized, left-aligned) instead of the P-round row-stretch. -->
-    <div class="unit-toggle" data-control="layers-unit-toggle">
+  {#if infoTab}
+    <!-- R3-W8 item 4: the panel's own two tabs -- "Layers" (everything below) and the lens'
+         supplied info tab (Flower plot / Species info). Same look as the Table tool's own
+         Species|Zones|Composition Segmented sub-tab. -->
+    <div class="panel-tabs" data-control="layers-panel-tabs">
       <Segmented
-        options={unitToggle.options}
-        value={unitToggle.value}
-        ariaLabel="Spatial units"
-        onchange={onUnitToggleChange}
-        fit
+        options={[
+          { value: "layers", label: "Layers" },
+          { value: "info", label: infoTab.label },
+        ]}
+        value={activeTab}
+        ariaLabel="Layers pane section"
+        onchange={selectTab}
       />
     </div>
   {/if}
 
-  {#if layerField}
-    <div class="fields-row">
-      <label class="field field-layer">
-        <span class="field-label">{layerField.label}</span>
-        <Select
-          label={layerField.label}
-          value={layerField.value}
-          groups={layerField.groups}
-          onchange={layerField.onChange}
+  {#if infoTab && activeTab === "info"}
+    {@render infoTab.content()}
+  {:else}
+    {#if unitToggle}
+      <!-- P round deliverable 1: the panel's own primary control, ABOVE the stack list -- styled
+         like the top bar's Scores|Species `Segmented` (same component, reused, not re-styled).
+         R3: `fit` (content-sized, left-aligned) instead of the P-round row-stretch. -->
+      <div class="unit-toggle" data-control="layers-unit-toggle">
+        <Segmented
+          options={unitToggle.options}
+          value={unitToggle.value}
+          ariaLabel="Spatial units"
+          onchange={onUnitToggleChange}
+          fit
         />
-      </label>
-    </div>
-    {#if layerField?.description}
-      <p class="note" data-testid="layer-description">{layerField.description}</p>
+      </div>
     {/if}
-  {/if}
 
-  <!-- fix list #10 (SC 1.3.1, e2e/keyboard-walk.spec.ts): a plain `div` (never a landmark) so this
+    {#if layerField}
+      <div class="fields-row">
+        <label class="field field-layer">
+          <span class="field-label">{layerField.label}</span>
+          <Select
+            label={layerField.label}
+            value={layerField.value}
+            groups={layerField.groups}
+            onchange={layerField.onChange}
+          />
+        </label>
+      </div>
+      {#if layerField?.description}
+        <p class="note" data-testid="layer-description">{layerField.description}</p>
+      {/if}
+    {/if}
+
+    {#if speciesField}
+      <!-- R3-W8 item 1: the species lens' promoted "Model input" picker — same panel position as
+         `layerField` above (scores' own equivalent), never both at once. -->
+      <div class="species-field-row" data-testid="species-field-row">
+        {@render speciesField()}
+      </div>
+    {/if}
+
+    <!-- fix list #10 (SC 1.3.1, e2e/keyboard-walk.spec.ts): a plain `div` (never a landmark) so this
        never becomes a SECOND `region` nested inside Panel.svelte's own "Layers" region — the same
        fix the pre-R3 non-interactive bullet list carried, kept here now that this IS "what's on the
        map" (interactive, not a summary of it). -->
-  <div class="layers-control">
-    <h3>Layers on the map</h3>
-  </div>
-  <ul class="stack-list">
-    {#each rows as entry (entry.id)}
-      {@const enabled = LAYER_GROUP_ENABLED[entry.id]}
-      {@const label = LAYER_GROUP_LABEL[entry.id]}
-      {@const isExpandable = EXPANDABLE_ROW_IDS.includes(entry.id)}
-      {@const bodyId = entry.id === DATA_ROW_ID ? DATA_ROW_BODY_ID : ZONES_ROW_BODY_ID}
-      {@const rState = rowState?.[entry.id]}
-      {@const rowEmpty = rState?.empty ?? false}
-      {@const hintId = `${entry.id}-empty-hint`}
-      <li
-        class="stack-row"
-        class:stack-row--disabled={!enabled}
-        class:stack-row--dim={rowEmpty}
-        data-row-id={entry.id}
-      >
-        <div class="row-head">
-          <input
-            type="checkbox"
-            class="visible-check"
-            checked={entry.visible}
-            disabled={!enabled}
-            aria-label={`${label} visible on the map`}
-            aria-describedby={rowEmpty ? hintId : undefined}
-            onchange={(e) => setVisible(entry.id, e.currentTarget.checked)}
-          />
+    <div class="layers-control">
+      <h3>Layers on the map</h3>
+    </div>
+    <ul class="stack-list">
+      {#each rows as entry (entry.id)}
+        {@const enabled = LAYER_GROUP_ENABLED[entry.id]}
+        {@const label = LAYER_GROUP_LABEL[entry.id]}
+        {@const isExpandable = EXPANDABLE_ROW_IDS.includes(entry.id)}
+        {@const bodyId = entry.id === DATA_ROW_ID ? DATA_ROW_BODY_ID : ZONES_ROW_BODY_ID}
+        {@const rState = rowState?.[entry.id]}
+        {@const rowEmpty = rState?.empty ?? false}
+        {@const hintId = `${entry.id}-empty-hint`}
+        <li
+          class="stack-row"
+          class:stack-row--disabled={!enabled}
+          class:stack-row--dim={rowEmpty}
+          data-row-id={entry.id}
+        >
+          <div class="row-head">
+            <input
+              type="checkbox"
+              class="visible-check"
+              checked={entry.visible}
+              disabled={!enabled}
+              aria-label={`${label} visible on the map`}
+              aria-describedby={rowEmpty ? hintId : undefined}
+              onchange={(e) => setVisible(entry.id, e.currentTarget.checked)}
+            />
 
-          {#if isExpandable}
-            <button
-              type="button"
-              class="row-name row-name--button"
-              aria-expanded={expandedId === entry.id}
-              aria-controls={bodyId}
-              onclick={() => toggleExpanded(entry.id)}
-            >
-              <!-- fix round (Ben): the expander glyph must not read as the same family as the
+            {#if isExpandable}
+              <button
+                type="button"
+                class="row-name row-name--button"
+                aria-expanded={expandedId === entry.id}
+                aria-controls={bodyId}
+                onclick={() => toggleExpanded(entry.id)}
+              >
+                <!-- fix round (Ben): the expander glyph must not read as the same family as the
                    ▲▼ reorder buttons at the row's other end -- a sideways caret that rotates open,
                    never a chevronUp/chevronDown swap (see Accordion.svelte's identical
                    rotate-one-icon convention, which this now matches instead of duplicating). -->
-              <Icon
-                name="chevronRight"
-                size={16}
-                class={`row-caret ${expandedId === entry.id ? "row-caret--open" : ""}`}
-              />
-              {label}
-            </button>
-          {:else}
-            <span class="row-name">
-              {label}
-              {#if !enabled}<span class="hint">— coming soon</span>{/if}
-            </span>
-          {/if}
-
-          {#if rowEmpty && rState?.hint}
-            <span class="hint" id={hintId}>{rState.hint}</span>
-          {/if}
-
-          <Popover label={`${label} opacity`} triggerClass="opacity-btn" align="right">
-            {#snippet trigger()}
-              <Icon name="opacity" size={13} />
-              <span class="opacity-pct">{Math.round(entry.opacity * 100)}%</span>
-            {/snippet}
-            <div class="opacity-popover-body">
-              <label class="opacity-range-label">
-                <span>{label} opacity</span>
-                <input
-                  type="range"
-                  min="0.1"
-                  max="1"
-                  step="0.05"
-                  value={entry.opacity}
-                  disabled={!enabled}
-                  aria-valuetext={`${Math.round(entry.opacity * 100)}%`}
-                  oninput={(e) => setOpacity(entry.id, Number(e.currentTarget.value))}
+                <Icon
+                  name="chevronRight"
+                  size={16}
+                  class={`row-caret ${expandedId === entry.id ? "row-caret--open" : ""}`}
                 />
-              </label>
-              <p class="opacity-value">{Math.round(entry.opacity * 100)}%</p>
-            </div>
-          </Popover>
+                {label}
+              </button>
+            {:else}
+              <span class="row-name">
+                {label}
+                {#if !enabled}<span class="hint">— coming soon</span>{/if}
+              </span>
+            {/if}
 
-          <span class="move-buttons">
-            <button
-              type="button"
-              class="move-btn"
-              aria-label={`Move ${label} up (toward the top of the map)`}
-              data-tooltip="Move up (draw above)"
-              disabled={!enabled ||
-                !canMoveLayerStackEntryVisible(stack, entry.id, "up", LAYER_GROUP_IN_PANEL)}
-              data-move-id={entry.id}
-              data-move-dir="up"
-              onclick={() => move(entry.id, label, "up")}
-            >
-              <Icon name="arrowUp" size={14} />
-            </button>
-            <button
-              type="button"
-              class="move-btn"
-              aria-label={`Move ${label} down (toward the bottom of the map)`}
-              data-tooltip="Move down (draw below)"
-              disabled={!enabled ||
-                !canMoveLayerStackEntryVisible(stack, entry.id, "down", LAYER_GROUP_IN_PANEL)}
-              data-move-id={entry.id}
-              data-move-dir="down"
-              onclick={() => move(entry.id, label, "down")}
-            >
-              <Icon name="arrowDown" size={14} />
-            </button>
-          </span>
-        </div>
+            {#if rowEmpty && rState?.hint}
+              <span class="hint" id={hintId}>{rState.hint}</span>
+            {/if}
 
-        {#if entry.id === DATA_ROW_ID && expandedId === DATA_ROW_ID && dataControls}
-          <div class="row-body" id={DATA_ROW_BODY_ID}>
-            {@render dataControls()}
+            <Popover label={`${label} opacity`} triggerClass="opacity-btn" align="right">
+              {#snippet trigger()}
+                <Icon name="opacity" size={13} />
+                <span class="opacity-pct">{Math.round(entry.opacity * 100)}%</span>
+              {/snippet}
+              <div class="opacity-popover-body">
+                <label class="opacity-range-label">
+                  <span>{label} opacity</span>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="1"
+                    step="0.05"
+                    value={entry.opacity}
+                    disabled={!enabled}
+                    aria-valuetext={`${Math.round(entry.opacity * 100)}%`}
+                    oninput={(e) => setOpacity(entry.id, Number(e.currentTarget.value))}
+                  />
+                </label>
+                <p class="opacity-value">{Math.round(entry.opacity * 100)}%</p>
+              </div>
+            </Popover>
+
+            <span class="move-buttons">
+              <button
+                type="button"
+                class="move-btn"
+                aria-label={`Move ${label} up (toward the top of the map)`}
+                data-tooltip="Move up (draw above)"
+                disabled={!enabled ||
+                  !canMoveLayerStackEntryVisible(stack, entry.id, "up", LAYER_GROUP_IN_PANEL)}
+                data-move-id={entry.id}
+                data-move-dir="up"
+                onclick={() => move(entry.id, label, "up")}
+              >
+                <Icon name="arrowUp" size={14} />
+              </button>
+              <button
+                type="button"
+                class="move-btn"
+                aria-label={`Move ${label} down (toward the bottom of the map)`}
+                data-tooltip="Move down (draw below)"
+                disabled={!enabled ||
+                  !canMoveLayerStackEntryVisible(stack, entry.id, "down", LAYER_GROUP_IN_PANEL)}
+                data-move-id={entry.id}
+                data-move-dir="down"
+                onclick={() => move(entry.id, label, "down")}
+              >
+                <Icon name="arrowDown" size={14} />
+              </button>
+            </span>
           </div>
-        {:else if entry.id === ZONES_ROW_ID && expandedId === ZONES_ROW_ID && outline}
-          <!-- Fix round (Opus 5.5 eyes-on review, D7): this used to be a RADIO group, which claims
+
+          {#if entry.id === DATA_ROW_ID && expandedId === DATA_ROW_ID && dataControls}
+            <div class="row-body" id={DATA_ROW_BODY_ID}>
+              {@render dataControls()}
+            </div>
+          {:else if entry.id === ZONES_ROW_ID && expandedId === ZONES_ROW_ID && outline}
+            <!-- Fix round (Opus 5.5 eyes-on review, D7): this used to be a RADIO group, which claims
                a real exclusive choice between two outlines -- it was not. Read (not guessed) from
                `Shell.svelte`/`boot.ts`: `Sel.out` only ever gates ONE selectable unit's outline
                (`zoneUnitsWithOutline()`; `boot.units[]` NEVER publishes an "ecoregion" selectable
@@ -435,59 +512,60 @@
                on/off) and one fact with nothing to switch (Ecoregions is always drawn) -- two
                independent checkboxes say that honestly; a radio group does not. "none" is still
                reached the same way as before (the row's own visible checkbox above). -->
-          <div class="row-body" id={ZONES_ROW_BODY_ID}>
-            <div class="outline-choice" role="group" aria-label="Outlines">
-              <label class="outline-option">
-                <input
-                  type="checkbox"
-                  checked={outline.value === "programarea"}
-                  disabled={!entry.visible}
-                  onchange={(e) =>
-                    outline?.onChange(e.currentTarget.checked ? "programarea" : "none")}
-                />
-                <span class="outline-option-text">
-                  <span class="outline-option-label">Program Areas</span>
-                  <span class="outline-option-note"
-                    >BOEM's 2026 planning units the scores are reported for.</span
-                  >
-                </span>
-              </label>
-              <label class="outline-option outline-option--fixed">
-                <input type="checkbox" checked disabled />
-                <span class="outline-option-text">
-                  <span class="outline-option-label">Ecoregions</span>
-                  <span class="outline-option-note"
-                    >Always shown — the regions each score rescales within (0–100).</span
-                  >
-                </span>
-              </label>
+            <div class="row-body" id={ZONES_ROW_BODY_ID}>
+              <div class="outline-choice" role="group" aria-label="Outlines">
+                <label class="outline-option">
+                  <input
+                    type="checkbox"
+                    checked={outline.value === "programarea"}
+                    disabled={!entry.visible}
+                    onchange={(e) =>
+                      outline?.onChange(e.currentTarget.checked ? "programarea" : "none")}
+                  />
+                  <span class="outline-option-text">
+                    <span class="outline-option-label">Program Areas</span>
+                    <span class="outline-option-note"
+                      >BOEM's 2026 planning units the scores are reported for.</span
+                    >
+                  </span>
+                </label>
+                <label class="outline-option outline-option--fixed">
+                  <input type="checkbox" checked disabled />
+                  <span class="outline-option-text">
+                    <span class="outline-option-label">Ecoregions</span>
+                    <span class="outline-option-note"
+                      >Always shown — the regions each score rescales within (0–100).</span
+                    >
+                  </span>
+                </label>
+              </div>
             </div>
-          </div>
-        {/if}
-      </li>
-    {/each}
-  </ul>
+          {/if}
+        </li>
+      {/each}
+    </ul>
 
-  {#if projection}
-    <!-- R3 deliverable 7: Sphere moved to the bottom of the panel (both lenses share ONE
+    {#if projection}
+      <!-- R3 deliverable 7: Sphere moved to the bottom of the panel (both lenses share ONE
          projection) -- a plain checkbox row, same shape as every stack row's own visible check. -->
-    <div class="sphere-row">
-      <label class="sphere-check">
-        <input
-          type="checkbox"
-          checked={projection.checked}
-          onchange={(e) => projection?.onChange(e.currentTarget.checked)}
-        />
-        <span>Sphere (globe projection)</span>
-      </label>
+      <div class="sphere-row">
+        <label class="sphere-check">
+          <input
+            type="checkbox"
+            checked={projection.checked}
+            onchange={(e) => projection?.onChange(e.currentTarget.checked)}
+          />
+          <span>Sphere (globe projection)</span>
+        </label>
+      </div>
+    {/if}
+
+    <div class="stack-footer">
+      <button type="button" class="reset-btn" disabled={isDefaultLayerStack(stack)} onclick={reset}>
+        Reset layers
+      </button>
     </div>
   {/if}
-
-  <div class="stack-footer">
-    <button type="button" class="reset-btn" disabled={isDefaultLayerStack(stack)} onclick={reset}>
-      Reset layers
-    </button>
-  </div>
 </div>
 
 <style>
@@ -506,6 +584,14 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+  }
+
+  /* R3-W8 item 4: the panel's own "Layers"/info tab switch -- sits above everything else,
+     including the unit toggle, so it reads as the pane's own top-level navigation, not a control
+     inside the Layers tab. */
+  .panel-tabs {
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--divider);
   }
 
   .unit-toggle {
@@ -539,6 +625,14 @@
     margin: 0;
     font-size: var(--text-xs);
     color: var(--text-secondary);
+  }
+
+  /* R3-W8 item 1: the species picker's own row — a vertical stack (label, pills, representation,
+     the zoom-to-layer checkbox), unlike `.fields-row`'s wrapping horizontal layout, and bottom-
+     bordered the same way `.unit-toggle` is (this sits directly below it, at the top of the pane). */
+  .species-field-row {
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--divider);
   }
 
   /* phone, "half" detent (Deliverable 3's own requirement: "the toggle, Layer, Zoom to region and

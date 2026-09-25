@@ -69,6 +69,19 @@
     /** P3 fix (Opus eyes-on review, 2026-09-24): passed straight through to `FlowerPanel`'s own
      * prop of the same name -- see that component's header for why. */
     compactFlower?: boolean;
+    /** R3-W8 item 3: forwarded straight through to `LibLayersPanel`'s own controlled-row-expansion
+     * pair — see SpeciesLens.svelte's identical prop for the full header. */
+    expandedRow?: LayerGroupId | null;
+    onExpandedRowChange?: (id: LayerGroupId | null) => void;
+    /** R3-W8 item 4: forwarded straight through to `LibLayersPanel`'s own controlled two-tab pair
+     * ("layers" | "info" -- this lens' "info" tab is "Flower plot", see `infoTab` below). Shell
+     * owns the value (one Layers pane, shared across lenses). */
+    tab?: "layers" | "info";
+    onTabChange?: (tab: "layers" | "info") => void;
+    /** R3-W8 item 5 fix round: forwarded straight through to `TablePanel`'s own prop of the same
+     * name -- switches the rail to the Report tool's Places tab (the empty-state hand-off, "Select
+     * places under Report → Places"). */
+    onOpenPlaces?: () => void;
   }
 
   let {
@@ -84,6 +97,11 @@
     layerStack,
     onLayerStackChange,
     compactFlower = false,
+    expandedRow,
+    onExpandedRowChange,
+    tab,
+    onTabChange,
+    onOpenPlaces,
   }: Props = $props();
 
   const unit = $derived(lens.unit);
@@ -273,6 +291,21 @@
 </script>
 
 {#if activeTool === "layers"}
+  {#snippet flowerContent()}
+    <!-- R3-W8 item 4: "drop the Flower plot from the toolbar" -- the SAME FlowerPanel, same props,
+         same behaviour, moved from its own rail tool into the Layers pane's second tab. Declared
+         BEFORE `<LibLayersPanel>` below (not as its child) so the `infoTab` prop value can
+         reference it directly -- a snippet is a plain block-scoped binding, not hoisted. -->
+    <FlowerPanel
+      {boot}
+      {manifest}
+      {selection}
+      cellComponents={cellFlowerRows}
+      cellComponentsError={cellFlowerError}
+      {cellCoords}
+      {compactFlower}
+    />
+  {/snippet}
   <LibLayersPanel
     stack={layerStack}
     onChange={onLayerStackChange}
@@ -281,6 +314,11 @@
     {outline}
     {projection}
     {rowState}
+    {expandedRow}
+    {onExpandedRowChange}
+    infoTab={{ label: "Flower plot", content: flowerContent }}
+    {tab}
+    {onTabChange}
   >
     {#snippet dataControls()}
       <ScoresLayersPanel
@@ -294,18 +332,19 @@
       />
     {/snippet}
   </LibLayersPanel>
-{:else if activeTool === "flower"}
-  <FlowerPanel
+{:else if activeTool === "table"}
+  <TablePanel
+    {sel}
+    {selStore}
     {boot}
     {manifest}
+    {ver}
+    {unit}
+    {lyr}
     {selection}
-    cellComponents={cellFlowerRows}
-    cellComponentsError={cellFlowerError}
     {cellCoords}
-    {compactFlower}
+    {onOpenPlaces}
   />
-{:else if activeTool === "table"}
-  <TablePanel {sel} {selStore} {boot} {manifest} {ver} {unit} {lyr} {selection} {cellCoords} />
 {:else}
   <p>{fallbackBody}</p>
 {/if}

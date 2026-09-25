@@ -1958,6 +1958,49 @@ export const FAULTS = [
       "carries -- installs suffix-less files the gallery spec never reads",
     gate: ["npx", "vitest", "run", "tests/scripts/galleryBaselinesFromCi.test.ts"],
   },
+  // --- round 3, W8 (species Layers pane: promote data selection, zoom-to-layer, Share reproduces
+  // the UI arrangement) --------------------------------------------------------------------------
+  {
+    id: "ui-token-dock-dropped",
+    patch: "tests/faults/ui-token-dock-dropped.patch",
+    describe:
+      "uiState.ts's formatUi() hardcodes the dock field to 'bottom' instead of encoding the " +
+      "live panel dock it was handed -- a Share link built while docked left/right silently " +
+      "reopens docked bottom instead of reproducing the arrangement the viewer actually saw",
+    gate: ["npx", "vitest", "run", "tests/shell/uiState.test.ts"],
+  },
+  // R3-W8 item 4: the `ui=` token grew a 7th field (`tab`, version bumped 1 -> 2) for the Layers
+  // pane's own two tabs -- same class of bug as `ui-token-dock-dropped` above, one field over.
+  {
+    id: "ui-token-tab-dropped",
+    patch: "tests/faults/ui-token-tab-dropped.patch",
+    describe:
+      "uiState.ts's formatUi() hardcodes the tab field to 'layers' instead of encoding the live " +
+      "Layers-pane tab -- a Share link built from the info tab (Flower plot / Species info) " +
+      "silently reopens on the Layers tab instead of reproducing what was showing",
+    gate: ["npx", "vitest", "run", "tests/shell/uiState.test.ts"],
+  },
+  // R3-W8 item 5 (Ben, verbatim: "some care should be given to not wiping out existing selections
+  // that have been explicitly added to Places"): a map click must never touch `sel.pl` -- only
+  // `reportSubjects()`'s own callers (never that pure function) can violate this, so the fault is
+  // seeded at the one real call site, `state.svelte.ts#handleMapClick`'s cell branch.
+  {
+    id: "places-list-wiped-by-click",
+    patch: "tests/faults/places-list-wiped-by-click.patch",
+    describe:
+      "state.svelte.ts's handleMapClick cell branch clears `pl` (the explicit Places list) " +
+      "alongside `sel` on every click -- a place added to Places is silently removed the next " +
+      "time the viewer clicks a scored cell",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/places.last-clicked.spec.ts",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4496" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

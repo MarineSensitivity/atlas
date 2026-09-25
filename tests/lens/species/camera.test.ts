@@ -15,6 +15,7 @@ import {
   lonSpanOf,
   minimalFrame,
   refitNeeded,
+  refitOnInputChange,
   studyAreaBboxFallback,
   studyAreaView,
   type BoundsCamera,
@@ -333,6 +334,39 @@ describe("refitNeeded", () => {
   it("is FALSE on a representation switch", () => {
     expect(
       refitNeeded({ sp: "a", in: "ax", rep: "native" }, { sp: "a", in: "ax", rep: "model" }),
+    ).toBe(false);
+  });
+});
+
+// R3-W8 item 2: "picking an input (or Merged) refits the camera to THAT surface's extent" — the
+// preference/pan-guard checks live in state.svelte.ts (network/DOM-adjacent); this is only the
+// pure "did the layer itself change" predicate.
+describe("refitOnInputChange (R3-W8 item 2)", () => {
+  it("is false on the first render (null prev) — the species-change fit owns that case", () => {
+    expect(refitOnInputChange(null, { sp: "a", in: MERGED_IN })).toBe(false);
+  });
+
+  it("is false when the species itself changed — refitNeeded owns that transition instead", () => {
+    expect(refitOnInputChange({ sp: "a", in: MERGED_IN }, { sp: "b", in: "ax" })).toBe(false);
+  });
+
+  it("is true on an input switch within the SAME species", () => {
+    expect(refitOnInputChange({ sp: "a", in: MERGED_IN }, { sp: "a", in: "ax" })).toBe(true);
+    expect(refitOnInputChange({ sp: "a", in: "ax" }, { sp: "a", in: "bl" })).toBe(true);
+  });
+
+  it("is true on a representation switch within the same species+input", () => {
+    expect(
+      refitOnInputChange({ sp: "a", in: "ax", rep: "native" }, { sp: "a", in: "ax", rep: "model" }),
+    ).toBe(true);
+  });
+
+  it("is false when nothing changed (same sp/in/rep)", () => {
+    expect(
+      refitOnInputChange(
+        { sp: "a", in: "ax", rep: "native" },
+        { sp: "a", in: "ax", rep: "native" },
+      ),
     ).toBe(false);
   });
 });

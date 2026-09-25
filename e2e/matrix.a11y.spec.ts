@@ -128,7 +128,10 @@ test.describe("axe: zero serious/critical with each rail tool open (and the zone
       .click();
   }
 
-  for (const label of ["Layers", "Places", "Flower plot", "Table", "Report"]) {
+  // R3-W8 item 4/5: the rail is now three tools -- the Flower plot moved into the Layers pane's
+  // own second tab, and Places into the Report pane's own first tab (a11y for both is covered by
+  // opening "Layers"/"Report" above; there is no separate rail control to axe-check any more).
+  for (const label of ["Layers", "Table", "Report"]) {
     test(`rail tool: ${label}`, async ({ page, baseURL }) => {
       await openRailTool(page, baseURL!, label);
       const bad = await seriousOrCritical(page);

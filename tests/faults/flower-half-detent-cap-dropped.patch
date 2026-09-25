@@ -1,13 +1,13 @@
 diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
-index 0000000..0000000 100644
+index 26dbaf7..cb0b973 100644
 --- a/src/shell/Shell.svelte
 +++ b/src/shell/Shell.svelte
-@@ -1759,7 +1759,7 @@
+@@ -2085,7 +2085,7 @@
              lens={scoresLens}
              {layerStack}
              {onLayerStackChange}
 -            compactFlower={isPhone && sheetGeom.detent === "half"}
 +            compactFlower={false}
-           />
-         {:else}
-           <p>{TOOL_BODY[activeTool]}</p>
+             {expandedRow}
+             onExpandedRowChange={(id: LayerGroupId | null) => (expandedRow = id)}
+             tab={activeTab}

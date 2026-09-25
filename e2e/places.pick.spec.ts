@@ -83,7 +83,11 @@ async function gotoPlacesOverGaa(page: Page) {
   await waitForHydration(page);
   await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
   await page.waitForSelector("#rail-region .rail", { state: "attached" });
-  await page.locator("#rail-region button[aria-label='Places']").click();
+  // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- open the
+  // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
+  // even if a PRIOR step on this page already switched to the Report tab).
+  await page.locator("#rail-region button[aria-label='Report']").click();
+  await page.getByRole("button", { name: "Places", exact: true }).click();
 }
 
 /** the viewport-absolute pixel `GAA_CENTER` projects to -- `map.project()` is canvas-relative, so
@@ -168,7 +172,11 @@ for (const unitMode of [
         .getByRole("group", { name: "Spatial units" })
         .getByRole("button", { name: "Program areas" })
         .click();
-      await page.locator("#rail-region button[aria-label='Places']").click();
+      // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- open the
+      // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
+      // even if a PRIOR step on this page already switched to the Report tab).
+      await page.locator("#rail-region button[aria-label='Report']").click();
+      await page.getByRole("button", { name: "Places", exact: true }).click();
     }
 
     const addButton = page.getByRole("button", { name: /^Add to places/ });

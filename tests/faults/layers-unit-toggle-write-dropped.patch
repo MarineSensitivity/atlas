@@ -1,9 +1,9 @@
 diff --git a/src/lib/ui/LayersPanel.svelte b/src/lib/ui/LayersPanel.svelte
-index 2dbcae7..c76ce4a 100644
+index 2ab8342..f8ada0c 100644
 --- a/src/lib/ui/LayersPanel.svelte
 +++ b/src/lib/ui/LayersPanel.svelte
-@@ -160,10 +160,8 @@
-   }: Props = $props();
+@@ -217,10 +217,8 @@
+   }
  
    function onUnitToggleChange(value: string) {
 -    // `unitToggle` itself is optional (a lens that has not resolved `boot` yet, or -- species --

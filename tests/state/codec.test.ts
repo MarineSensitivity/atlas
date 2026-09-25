@@ -280,6 +280,26 @@ describe("us: default true (US-only); only us=0 turns it off", () => {
   });
 });
 
+describe("zl: default true (zoom-to-layer on); only zl=0 turns it off (R3-W8 item 2)", () => {
+  it("defaults to true with no key", () => {
+    expect(parseSel(EMPTY).zl).toBe(true);
+  });
+
+  it("zl=0 parses to false", () => {
+    expect(parseSel({ search: "?zl=0", hash: "" }).zl).toBe(false);
+  });
+
+  it("any other value (including zl=1) falls back to the default true", () => {
+    expect(parseSel({ search: "?zl=1", hash: "" }).zl).toBe(true);
+    expect(parseSel({ search: "?zl=bogus", hash: "" }).zl).toBe(true);
+  });
+
+  it("formatSel writes zl=0 only when false, and never writes zl=1", () => {
+    expect(formatSel({ ...DEFAULT_SEL, zl: false }).search).toBe("?zl=0");
+    expect(formatSel({ ...DEFAULT_SEL, zl: true }).search).toBe("");
+  });
+});
+
 describe("obis: default false (off); only obis=1 turns it on", () => {
   it("defaults to false", () => {
     expect(parseSel(EMPTY).obis).toBe(false);

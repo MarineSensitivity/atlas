@@ -131,8 +131,11 @@ describe("scripts/eyes-shots.mjs: the V5 fixes stay in place (fourth pass)", () 
     expect(src).toContain("Gulf of America");
     // shoots BOTH the flower and the table for the selected Program Area, on both viewports (no
     // `if (vp !== "phone") return` guard the way the phone-only "legend"/"more" states have).
+    // R3-W8 item 4: the Flower plot moved into the Layers pane's own second tab, so opening it is
+    // `openFlowerTab()` (Layers, then the "Flower plot" tab) rather than a bare `tool(p, "Flower
+    // plot")` rail click.
     const paState = src.slice(src.indexOf('id: "programarea"'));
-    expect(paState).toContain("Flower plot");
+    expect(paState).toContain("openFlowerTab");
     expect(paState).toContain("Table");
     expect(paState).not.toMatch(/if \(vp !== "phone"\) return;/);
   });

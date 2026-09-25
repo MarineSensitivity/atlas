@@ -102,19 +102,21 @@ status text.
 Everything below is a requirement for the component build, not a suggestion;
 `tests/mockup-shell.test.ts` asserts the ones a mockup can prove.
 
-### 5.1 The tool rail is FIVE controls, the same five, in the same order, on every viewport
+### 5.1 The tool rail is THREE controls, the same three, in the same order, on every viewport and lens
 
-`Layers · Places · Flower · Table · Report` (Ben, 2026-09-21). Desktop: a floating honeycomb column
-on the left. Phone: the identical five as a bottom bar. 44 px targets everywhere, no words on the
-control itself (the tooltip carries them), roving `tabindex` inside the group.
+`Layers · Table · Report` (Ben, 2026-09-21; **R3-W8 item 4, 2026-09-25**: "drop the Flower plot from
+the toolbar" — the flower plot moved INTO the Layers pane as its own second tab, §5.1a below;
+**R3-W8 item 5, 2026-09-25**: "Places folds into the Report tool as its first tab" — Places moved
+INTO the Report pane as its own first tab, §5.1b below — so the rail no longer carries either a
+Scores-only control or a second "pick where" control alongside Report). Desktop: a floating
+honeycomb column on the left. Phone: the identical three as a bottom bar. 44 px targets everywhere,
+no words on the control itself (the tooltip carries them), roving `tabindex` inside the group.
 
-| control    | opens                                                                                                                                                          | icon                      |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| **Layers** | the LAYERS panel: score layer (or species surface), palette, zone outlines, bathymetry, OBIS occurrences, other related layers. It is **not** the flower plot. | `mdiLayers`               |
-| **Places** | select · draw · upload                                                                                                                                         | `mdiMapMarker`            |
-| **Flower** | the flower plot of component scores for the current place                                                                                                      | **bespoke `flower`** (§6) |
-| **Table**  | the data table (species or zones, per lens)                                                                                                                    | `mdiTable`                |
-| **Report** | the report builder                                                                                                                                             | `mdiFileDocumentOutline`  |
+| control    | opens                                                                                                                                                                               | icon                     |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| **Layers** | the LAYERS panel: score layer (or species surface), palette, zone outlines, bathymetry, OBIS occurrences, other related layers, PLUS a second tab of read-only information (§5.1a). | `mdiLayers`              |
+| **Table**  | the data table (species or zones, per lens)                                                                                                                                         | `mdiTable`               |
+| **Report** | select · draw · upload (its own first tab, §5.1b) · the report builder (its second tab)                                                                                             | `mdiFileDocumentOutline` |
 
 Two controls that used to be in the rail are **gone**:
 
@@ -124,19 +126,88 @@ Two controls that used to be in the rail are **gone**:
   field are how a species is chosen, and the species card is what the Species lens' panel shows. In
   the Scores lens a species is reached from the species table's row link, which switches the lens.
 
-### 5.2 An inactive control fades in place; it is never removed
+### 5.1a The Layers pane is a two-tab panel: interactive controls, then read-only information
 
-The Flower has no meaning in the Species lens. It **stays in its third position** and becomes
-visibly inactive (removal is "jerky" — Ben, 2026-09-21):
+R3-W8 item 4 (Ben, 2026-09-25): "differentiating the extra information about the species in another
+tabset from the interactive control of the layers in its own default tab." The Layers pane (opened
+by the rail's **Layers** control, either lens) shows a `Segmented` tab switch at its top, styled
+like the Table tool's own Species|Zones|Composition sub-tab:
 
-- the glyph transitions to `--icon-inactive` over `--motif`-free `var(--motion-panel)` (200 ms,
-  `--ease-out`); under `prefers-reduced-motion` the token is `0ms`, so it simply is grey;
-- `aria-disabled="true"` — **not** the `disabled` attribute, so it stays focusable and can explain
-  itself; no `tabindex="-1"`;
-- its tooltip and accessible description say why: **"Flower plot — Scores only"**;
-- activation is a no-op that re-announces the tooltip text in the live region;
-- `--icon-inactive` is ≥ 3:1 against both `--fill-control` and `--surface-panel-basis` (gated), so an
-  inactive control is still identifiable — "greyed out" never means "invisible".
+- **"Layers"** (default): every interactive control exactly as §5.1 already describes it (unit
+  toggle, Layer picker / the species Model-input picker, the stack rows, Sphere, Reset).
+- The second tab is **information only**, never a control, and its label names what it shows: the
+  Scores lens calls it **"Flower plot"** (today's `FlowerPanel.svelte` — title/subject line, the
+  flower, the component table); the Species lens calls it **"Species info"** (the species card's
+  descriptive content — names, listing, categories, the inputs table — `SpeciesCardView.svelte`).
+
+Tapping a scored cell while the "Layers" tab is showing does not switch tabs — the popup already
+shows the value; the info tab is where a viewer goes to see the breakdown. If the info tab is
+already open, a new tap updates it in place. On the phone, the sheet's own title tracks whichever
+tab is active ("Layers" vs. the info tab's own label). The active tab is carried in the `ui=` share
+token (§9's `tool`/`dock`/`size`/`detent`/`expandedRow`/`tab`/`reportTab` fields) so a shared link
+reopens on the same tab.
+
+### 5.1b The Report pane is a two-tab panel: Places (default), then the report builder
+
+R3-W8 item 5 (Ben, 2026-09-25, proposed by him and not objected to): "Places folds into the Report
+tool as its first tab." The Report pane (opened by the rail's **Report** control, either lens) shows
+the same `Segmented` tab switch shape as the Layers pane (§5.1a):
+
+- **"Places"** (default): today's Places content, unchanged behaviour — pick a Program Area, draw,
+  enter coordinates, upload a file; the per-place results list; Share and Download places. Its own
+  **"Last clicked"** row sits at the top (item 5's selection model, below).
+- **"Report"**: today's report builder — options, generate, exports. Opening it from the "Places"
+  tab's own "Open the report builder" link switches this tab in place (`ReportPane.svelte`'s
+  `onOpenPlaces`/tab-switch pair — same mechanics `LayersPanel.svelte`'s `infoTab` prop uses).
+
+The pane title reads **"Report · Places"** while the Places tab is active (discoverability: Places
+used to have its own rail button/tooltip), and the tour's own "Places" step anchors this tab switch
+rather than a rail button that no longer exists. The active tab is carried in the `ui=` share
+token's `reportTab` field (§5.1a's own list, above).
+
+**Selection model** (Ben, 2026-09-25, verbatim): "still allow clickable selection (highlighted in
+pink as now) of either Cell or Program Area depending on Scores layer chosen, such that the last
+clicked element defaults to the current Report Place and therefore also the one applied to the Table
+tool... some care should be given to not wiping out existing selections that have been explicitly
+added to Places, but then a most recently selected slot that can be updated with subsequent
+selection." One pure rule, `reportSubjects(sel, places)` (`src/lib/state/subjects.ts`, unit-tested):
+a non-empty explicit Places list (`sel.pl`) always wins over the map-click "Last clicked" slot
+(`sel.sel`) — a fresh click only ever replaces the slot itself, never the explicit list (the two are
+independent URL fields, written by entirely separate code paths; `tests/faults/places-list-wiped-by-click.patch`
+is the seeded regression for a caller that violates this). The Table's own subject line reads the
+SAME rule: an explicit list reads "Species for N places" (`placesSubjectHeader()`, `species.ts`);
+the Last-clicked case keeps its existing, more specific wording ("Species in Cell 3350704 ·
+28.625° N, 90.575° W" / "Species in <Program Area>" / "Species in All US waters",
+`speciesHeader()`) rather than a generic "Species for the last clicked cell" — a deliberate scoping
+call (this round) to avoid rewording an already-well-tested string; a future round may fold the two
+phrasings together. The species/zone DATA the Table queries still comes from the single
+`selection`/`unit`/`lyr` triple, unchanged by this item — aggregating species across an explicit
+multi-place list is a larger feature left to a later round.
+
+**Fix round (Ben, verbatim — this part of the selection model could not be deferred):**
+
+- The Places tab's own **"Last clicked"** row sits at its top, hidden when `sel.sel` is empty:
+  `"Last clicked: {subject}"` (the SAME `formatSubject()`/`paLabel()` line every other panel already
+  uses, `lens/scores/lastClicked.ts#lastClickedLabel`), with an **"Add to places"** button beside it
+  that appends the current selection to the explicit list through the SAME generic `addPlace()`
+  mutation `addZonePlace()`/a drawn place already bottoms out in (`lastClickedPlace.ts`) — a clicked
+  Program Area becomes a `ZonePlace`; a clicked cell becomes a `GeomPlace` over the cell's own square
+  (`places/cellSquares.ts#cellSquare`). Writes ONLY `pl`, never `sel` — the row keeps showing the
+  SAME subject afterward, matching "a most recently selected slot that can be updated with
+  subsequent selection." `lastClickedPlace.ts` (the mutation, which pulls in the place codec's
+  heavier encode/decode/simplify pipeline) is reached only through a dynamic `import()`, never
+  statically, so a session that never presses the button never pays for it.
+- The Report tab shows one sentence, driven by `reportSubjects()`
+  (`subjects.ts#reportSubjectSentence()`): "Reporting on the last clicked place — add it to Places
+  to keep it, or add more places below." when `kind` is `"last-clicked"`, "Reporting on N places."
+  when `kind` is `"places"`.
+- The Table's own header now adds **"Select places under Report → Places"** (with a button that
+  opens that tab, `onOpenPlaces`) next to the existing all-US-waters aggregate when NEITHER a click
+  nor an explicit place governs (`reportSubjects()`'s own "nothing at all" shape) — the aggregate
+  itself is never replaced.
+
+`e2e/places.last-clicked.spec.ts` proves clicking a cell then "Add to places" leaves `#pl=` with
+exactly one entry and the row still shows afterward.
 
 ### 5.3 Panel header controls: collapse · half · full, upper right
 
@@ -435,8 +506,10 @@ Settled — the component build takes these as given:
 2. Motif tint Gold on dark / Steel on light (§7) — no objection.
 3. Category hues keep their hue and change lightness per theme (§8) — no objection.
 4. The rail is five controls on every viewport; Help is top-bar only; there is no fish/species rail
-   button (§5.1).
+   button (§5.1). **Superseded by R3-W8 item 4 (2026-09-25): the rail is now four controls — the
+   Flower plot moved into the Layers pane's own second tab (§5.1a).**
 5. The Flower control fades in place in the Species lens rather than being removed (§5.2).
+   **Superseded by R3-W8 item 4: moot now the Flower control is not a rail item at all — see §5.1a.**
 6. Panels and the sheet carry collapse · half · full in the upper right (§5.3).
 7. The flower plot has its own bespoke glyph; Layers opens the layers control (§6).
 8. Protection chips always show both statutes, "not applicable" where one does not apply (§5.5).

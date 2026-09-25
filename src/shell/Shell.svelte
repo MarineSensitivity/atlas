@@ -16,6 +16,10 @@
   import { onMount, tick, type Component } from "svelte";
   import "./shell.css";
   import { buildRailItems, TOOL_BODY, TOOL_LABEL, type ToolName } from "./tools";
+  // R3-W8 item 3: the `ui=` token's parse/format core — see that module's own header for what it
+  // carries and why it is a separate token from Sel's own query keys.
+  import { formatUi, parseUi, type UiExpandedRow, type UiReportTab, type UiTab } from "./uiState";
+  import type { LayerGroupId } from "../lib/map/layerStack";
   // R5: the wave-in-hexagon mark replaces the old two-file "wave in a circle" pair
   // (mst-mark.svg/mst-mark-dark.svg, kept vendored only for history -- Report.svelte moved to
   // this same component too) -- inline, so ONE definition serves both themes through
@@ -26,6 +30,7 @@
   import Panel from "../lib/ui/Panel.svelte";
   import Sheet from "../lib/ui/Sheet.svelte";
   import Segmented from "../lib/ui/Segmented.svelte";
+  import ReportPane from "./ReportPane.svelte";
   import VersionBadge from "../lib/ui/VersionBadge.svelte";
   import Announcer from "../lib/ui/Announcer.svelte";
   import Toast from "../lib/ui/Toast.svelte";
@@ -128,7 +133,19 @@
   import { createPlacesMapStore } from "../places/placesMap.svelte";
   // R3-W2: the Download menu -- `places/model.ts#placesFromHash` (never a second parser of `sel.pl`)
   // gives it the current places list for "Selected places · GeoJSON"'s enabled/disabled state.
-  import { placesFromHash } from "../places/model";
+  // R3-W8 item 5 fix round: the SAME decode also feeds `reportSubjects()` below (`addPlace` is the
+  // generic mutation `addZonePlace`/a drawn place both bottom out in -- see `lastClicked.ts`'s own
+  // header for why "Add to places" reuses it rather than a bespoke cell-place path).
+  import { addPlace, hashFromPlaces, placesFromHash } from "../places/model";
+  import { reportSubjects } from "../lib/state/subjects";
+  // `lastClicked.ts`/`lastClickedPlace.ts` are BOTH reached only through a dynamic `import()`
+  // (`lastClickedLabelFn`, below, and `onAddLastClicked()`'s own `import()`) -- `lastClicked.ts`
+  // looks cheap on its own, but its transitive imports (`places/zoneStats.ts#paLabel` pulls in
+  // `lib/analysis/queries.ts` and `lib/zones/programAreaNames.ts`; `lens/scores/boot.ts#zoneRows`
+  // pulls in `lib/map/layers/zones.ts`) pushed the 450 KB static-critical-path budget over by a
+  // few KB when statically imported -- none of it is needed before the Report tool's own panel
+  // body ever renders. Type-only import (erased at build time) for the function's own shape.
+  import type { lastClickedLabel as LastClickedLabelFn } from "../lens/scores/lastClicked";
   // type-only (erased at build time) -- DownloadMenu.svelte's RUNTIME module is loaded dynamically
   // (see `openDownload()`, below, and that file's own "LAZY" header note): its map-capture/SVG/
   // COG-fetch logic pushed the static "before first interaction" budget to 449.9/450.0 KB gzip
@@ -145,6 +162,17 @@
 
   const selStore = createSelStore(location);
   const sel = selStore.sel;
+
+  // R3-W8 item 3: a shared link's `ui=` token (Share's own writer, `onShare` below) — parsed ONCE,
+  // synchronously, from the page's initial query string, so every chrome piece it restores
+  // (`activeTool`, `expandedRow` below; `panelGeom`/`sheetGeom`'s own initial overrides, passed to
+  // `<Panel>`/`<Sheet>` further down) gets its restored value from the very first render this
+  // component makes — never a later `$effect` that would repaint after a visible default flash.
+  // `ui=` is NEVER read again after this (no `$effect` watches `location.search` for it) and is
+  // never written by `history.replaceState` (`selStore`/`formatSel` do not know it exists) — U1's
+  // rule ("layout is chrome, never the URL") holds for every ORDINARY interaction exactly as
+  // before; only Share's own one-shot link build touches this token at all.
+  const initialUi = parseUi(new URLSearchParams(location.search).get("ui"));
 
   // V3: created once, up front -- trigger (a) (boot) fires from the `early.version` onMount below,
   // trigger (b) (a real tile failure) from the map's own onMount, trigger (c) from the banner's
@@ -198,12 +226,54 @@
     return () => mql.removeEventListener("change", onChange);
   });
 
-  // --- the tool rail: FIVE controls, the same five, in the same order, on every viewport -------
-  // (spec.md §5.1; data + order live in ./tools.ts, unit-tested there). The Flower control fades
-  // in place -- never removed -- in the Species lens (spec.md §5.2): "activeTool" is chrome (which
-  // panel is open), not URL view state.
-  let activeTool = $state<ToolName>("layers");
-  const railItems = $derived(buildRailItems(sel.lens === "species"));
+  // --- the tool rail: FOUR controls, the same four, in the same order, on every viewport and
+  // every lens (R3-W8 item 4: "drop the Flower plot from the toolbar" -- it moved into the Layers
+  // pane as that pane's own second tab, below). "activeTool" is chrome (which panel is open), not
+  // URL view state.
+  // R3-W8 item 3: restored from a shared link's `ui=` token when present (`initialUi`, above) —
+  // "layers" (unchanged) otherwise.
+  let activeTool = $state<ToolName>(initialUi?.tool ?? "layers");
+  const railItems = $derived(buildRailItems());
+
+  // R3-W8 item 4: which of the Layers pane's own two tabs is showing ("layers" | "info" -- the
+  // Scores lens' Flower plot / the Species lens' Species info). Lifted here (not left as
+  // `LibLayersPanel`'s own internal state) for the same reason `expandedRow` is: Share reads it
+  // (`shareUrl()`, below) and a `ui=` link restores it before first interaction.
+  let activeTab = $state<UiTab>(initialUi?.tab ?? "layers");
+
+  // R3-W8 item 5: which of the Report pane's own two tabs is showing ("places" | "report" --
+  // Places is the default, folded in from its own former rail tool). Same "chrome, restorable
+  // from a link, Share reads it back" treatment as `activeTab` above.
+  let activeReportTab = $state<UiReportTab>(initialUi?.reportTab ?? "places");
+
+  // the phone sheet / desktop panel title: normally the active tool's label, but while the Layers
+  // pane's "info" tab is showing, the tab names itself instead ("Flower plot" for Scores, "Species
+  // info" for Species) -- item 4: "the sheet's title shows the active tab's name." Item 5: while
+  // the Report pane's own "Places" tab is showing, the title reads "Report · Places" (Ben:
+  // discoverability mitigation for a tool that used to have its own rail button).
+  const infoTabLabel = $derived(sel.lens === "species" ? "Species info" : "Flower plot");
+  const panelTitle = $derived(
+    activeTool === "layers" && activeTab === "info"
+      ? infoTabLabel
+      : activeTool === "report" && activeReportTab === "places"
+        ? "Report · Places"
+        : TOOL_LABEL[activeTool],
+  );
+
+  // R3-W8 item 5 fix round: "The Table: when there is no selection, add a line... with a button
+  // that opens that tab" -- the SAME tab-open the Report tool's own "Draw, enter coordinates or
+  // upload a file" hand-off (`ReportTool.svelte`'s `onOpenPlaces`) already uses.
+  function openReportPlaces() {
+    selectTool("report");
+    activeReportTab = "places";
+  }
+
+  // R3-W8 item 3: the Layers pane's own expanded row (`LibLayersPanel`'s controlled-row-expansion
+  // pair) — lifted here (rather than left as that component's own internal state) so Share can read
+  // it and a `ui=` link can restore it, matching `activeTool`'s own "chrome, restorable from a
+  // link, never ordinary URL state" treatment. "data-raster" (the Data row) is the same default
+  // `LayersPanel.svelte`'s own internal state used before this existed.
+  let expandedRow = $state<LayerGroupId | null>(initialUi?.expandedRow ?? "data-raster");
 
   // fix list #5 (SC 2.4.3), WEBKIT ONLY: activating a rail tool that CHANGES the open tool drops
   // `document.activeElement` to `<body>` roughly 100ms later, once the newly-chosen tool's lazy
@@ -292,9 +362,44 @@
     selStore.set({ lens, out: defaultOut(lens) });
   }
 
+  // R3-W8 item 3 (Ben, 2026-09-25): "when clicking Share, the link should include all the same UI
+  // elements in their arrangement, eg on Layers pane." Everything ELSE Ben's example names (the
+  // species input, its representation, the zoom-to-layer preference) is already ordinary `Sel`
+  // query state by the time Share is clicked — `location.href` already carries it, same as
+  // `unit`/`lyr`/`pal` for the scores lens. This appends ONLY the chrome `ui=` covers (see
+  // `uiState.ts`'s own header): built fresh, here, from the shell's own live state — never written
+  // by `selStore`/`history.replaceState`, so an ordinary drag/dock/tab change never touches the URL
+  // (U1's rule, unchanged).
+  // `expandedRow` (the shared Layers-pane row expander) is typed as the WIDER `LayerGroupId | null`
+  // (it is also handed straight to `LibLayersPanel`'s `onExpandedRowChange`, which reports any
+  // group id) even though only "data-raster"/"data-zones" are ever actually expandable rows
+  // (`LayersPanel.svelte`'s own `EXPANDABLE_ROW_IDS`) — `uiState.ts`'s `UiExpandedRow` is the
+  // narrower two-value shape the `ui=` token actually encodes, so this narrows explicitly rather
+  // than widening the token's own type to match.
+  function toUiExpandedRow(id: LayerGroupId | null): UiExpandedRow {
+    return id === "data-raster" || id === "data-zones" ? id : null;
+  }
+
+  function shareUrl(): string {
+    const url = new URL(location.href);
+    url.searchParams.set(
+      "ui",
+      formatUi({
+        tool: activeTool,
+        dock: panelGeom.dock,
+        size: panelGeom.size,
+        detent: sheetGeom.detent,
+        expandedRow: toUiExpandedRow(expandedRow),
+        tab: activeTab,
+        reportTab: activeReportTab,
+      }),
+    );
+    return url.toString();
+  }
+
   async function onShare() {
     try {
-      await navigator.clipboard.writeText(location.href);
+      await navigator.clipboard.writeText(shareUrl());
       notify("Link copied to your clipboard.");
     } catch {
       notify("Couldn't copy the link automatically — copy it from the address bar.", {
@@ -387,18 +492,24 @@
   let tourActive = $state(false);
 
   function buildTourActions(): TourActions {
-    let tourSnapshot: { lens: Lens; activeTool: ToolName } | null = null;
+    let tourSnapshot: {
+      lens: Lens;
+      activeTool: ToolName;
+      activeReportTab: UiReportTab;
+    } | null = null;
     return {
       getLens: () => sel.lens,
       setLens: (lens) => onLensChange(lens),
       selectTool: (name) => selectTool(name),
+      selectReportTab: (tab) => (activeReportTab = tab),
       snapshot: () => {
-        tourSnapshot = { lens: sel.lens, activeTool };
+        tourSnapshot = { lens: sel.lens, activeTool, activeReportTab };
       },
       restore: () => {
         if (!tourSnapshot) return;
         if (sel.lens !== tourSnapshot.lens) onLensChange(tourSnapshot.lens);
         activeTool = tourSnapshot.activeTool;
+        activeReportTab = tourSnapshot.activeReportTab;
         tourSnapshot = null;
       },
     };
@@ -589,6 +700,56 @@
   // every read of it below is null-safe and falls back to "the shell's own base view", same as
   // the old `{}` default did.
   let scoresLens = $state<ScoresLensState | null>(null);
+
+  // R3-W8 item 5 fix round (Ben, verbatim): the ONE `reportSubjects()` result the Places tab's own
+  // "Last clicked" row, the Report tab's own sentence, and the Table's subject line all read --
+  // `reportPlaces` is a fresh `placesFromHash(sel.pl)` decode (the same pattern ScoresLens.svelte/
+  // SpeciesLens.svelte/TablePanel.svelte already each call independently, never a shared cache
+  // that could silently go stale against a later `sel.pl` write).
+  const reportPlaces = $derived(placesFromHash(sel.pl));
+  const reportSubject = $derived(reportSubjects(sel, reportPlaces));
+  // the Last-clicked slot is a SCORES-lens concept only (a clicked cell/Program Area) -- the
+  // Species lens' own map click sets a different kind of selection entirely (which species surface
+  // is shown), never `sel.sel`'s cell:/zone: shape, so this reads `null` (row hidden) there.
+  const lastClickedSelection = $derived(
+    sel.lens === "scores" ? (scoresLens?.selection ?? null) : null,
+  );
+  // lazy lens/panel chunks (same convention as ScoresLensComp/VersionPickerModalComp below): loads
+  // unconditionally, right after mount (nothing here is gated on `sel.lens`/`activeTool`, so there
+  // is no single "first opens the Report tool" moment to gate on either) -- `null` until it
+  // resolves, which the row already treats as "hide" (see `lastClickedRowLabel`'s own fallback).
+  let lastClickedLabelFn = $state<typeof LastClickedLabelFn | null>(null);
+  $effect(() => {
+    if (!lastClickedLabelFn) {
+      import("../lens/scores/lastClicked").then(
+        (mod) => (lastClickedLabelFn = mod.lastClickedLabel),
+      );
+    }
+  });
+  const lastClickedRowLabel = $derived(
+    lastClickedLabelFn ? lastClickedLabelFn(lastClickedSelection, boot) : null,
+  );
+
+  async function onAddLastClicked() {
+    const selection = lastClickedSelection;
+    if (!selection) return;
+    const { placeFromLastClicked } = await import("../lens/scores/lastClickedPlace");
+    const place = placeFromLastClicked(selection, boot);
+    if (!place) return;
+    // R3-W8 item 5 fix round: appends through the SAME generic `addPlace()` mutation
+    // `addZonePlace()`/a drawn or typed place already bottoms out in (`places/model.ts`) -- never
+    // a second, bespoke "add" path. Writes ONLY `pl`, deliberately never touching `sel` (unlike
+    // Places.svelte's own `writePlaces()`, which also selects the newly-added place): the
+    // Last-clicked row must keep showing the SAME subject afterward, per item 5's own selection
+    // model ("a most recently selected slot that can be updated with subsequent selection").
+    const result = addPlace(reportPlaces, place);
+    if (!result.ok) {
+      notify(result.reason ?? "Couldn't add that to places.", { tone: "error" });
+      return;
+    }
+    selStore.set({ pl: hashFromPlaces(result.places) || undefined });
+    notify("Added to places.");
+  }
 
   // P1 fix: hoisted out of the template (it used to be a `{@const}` inline where the legend chip
   // rendered) so BOTH the floating placement and the "full" detent's inline-in-sheet placement can
@@ -1268,7 +1429,8 @@
   // SpeciesLensPanel/Picker/Legend/NotFoundModal, Places, VersionPickerModal, WelcomeModal) --
   // 450.4 KB gzip static, 0.4 KB over budget, and a species-only deep link downloaded the ENTIRE
   // scores lens it never renders. Each becomes its own dynamic `import()` chunk, chosen by
-  // `sel.lens` (Places by `activeTool === "places"` instead -- it mounts on either lens). This is
+  // `sel.lens` (Places by `activeTool === "report"` instead, R3-W8 item 5 -- it mounts on either
+  // lens, as the Report pane's own default tab). This is
   // the SAME dynamic-component pattern `TablePanel.svelte`/`Composition.svelte` already use for
   // `Composition.svelte`/`Treemap.svelte` (a `Component<any>` held in `$state`, resolved by a
   // `$effect`, rendered via `{@const Comp = ...}` -- `Component`'s real generic Props type is not
@@ -1445,8 +1607,11 @@
     }
   });
 
+  // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- loaded whenever
+  // the Report tool opens, on EITHER tab, so the default "Places" tab never shows a blank flash
+  // while its chunk is still in flight the first time a viewer opens Report at all.
   $effect(() => {
-    if (activeTool === "places" && !PlacesComp) {
+    if (activeTool === "report" && !PlacesComp) {
       import("../places/Places.svelte")
         .then((mod) => (PlacesComp = mod.default))
         .catch(() => announceChunkFailure("the Places panel"));
@@ -1931,31 +2096,50 @@
     data-maximized={isPhone ? undefined : panelGeom.maximized}
     style={isPhone ? undefined : `--panel-size: ${panelGeom.size}px`}
   >
-    <!-- the ONE panel body: places owns its tool on either lens; otherwise the active lens
-         decides what the tool's panel shows (the scores lens takes every tool and falls back to
-         the tool's own text; the species lens takes "layers" only). -->
+    <!-- the ONE panel body: report (which now includes Places as its default tab, item 5) owns its
+         tool on either lens; otherwise the active lens decides what the tool's panel shows (the
+         scores lens takes every tool and falls back to the tool's own text; the species lens takes
+         "layers" only). -->
     {#snippet panelBody()}
-      {#if activeTool === "places"}
-        {#if PlacesComp}
-          {@const Comp = PlacesComp}
-          <!-- P round deliverable 2 follow-up: `manifest` threads down to ResultsPanel.svelte's own
-               Flower (the SAME flowerMaxComponentScore(manifest) the scores lens' Flower tool uses),
-               so a custom place's/zone's flower ring is never a second, disagreeing source. -->
-          <Comp {sel} {selStore} {boot} {manifest} {mapHandle} {zoneUnits} mapStore={placesMap} />
-        {:else}
-          <p>{TOOL_BODY[activeTool]}</p>
-        {/if}
-      {:else if activeTool === "report"}
-        <!-- U6 (round 2): intercepted here, BEFORE the lens branches below, so "Report" is the
-             SAME chooser+recent-reports panel on either lens -- ScoresLens.svelte's own fallback
-             (`fallbackBody`) never renders for this tool any more (its own header already says
-             "places" and "report" belong to other phases). -->
-        {#if ReportToolComp}
-          {@const Comp = ReportToolComp}
-          <Comp {sel} {boot} ver={earlyVersion} onOpenPlaces={() => selectTool("places")} />
-        {:else}
-          <p>{TOOL_BODY[activeTool]}</p>
-        {/if}
+      {#if activeTool === "report"}
+        <!-- R3-W8 item 5: "Places folds into the Report tool as its first tab." "Places" (today's
+             Places.svelte, unchanged behaviour) is the DEFAULT tab; "Report" is today's
+             ReportTool.svelte. U6 (round 2)'s own note still applies: intercepted here, BEFORE the
+             lens branches below, so this is the SAME panel on either lens. -->
+        {#snippet placesContent()}
+          {#if PlacesComp}
+            {@const Comp = PlacesComp}
+            <!-- P round deliverable 2 follow-up: `manifest` threads down to ResultsPanel.svelte's
+                 own Flower (the SAME flowerMaxComponentScore(manifest) the scores lens' Flower tab
+                 uses), so a custom place's/zone's flower ring is never a second, disagreeing
+                 source. -->
+            <Comp {sel} {selStore} {boot} {manifest} {mapHandle} {zoneUnits} mapStore={placesMap} />
+          {:else}
+            <p>Select, draw and upload tools arrive in a later phase.</p>
+          {/if}
+        {/snippet}
+        {#snippet reportContent()}
+          {#if ReportToolComp}
+            {@const Comp = ReportToolComp}
+            <Comp
+              {sel}
+              {boot}
+              ver={earlyVersion}
+              onOpenPlaces={() => (activeReportTab = "places")}
+            />
+          {:else}
+            <p>The report builder arrives in a later phase.</p>
+          {/if}
+        {/snippet}
+        <ReportPane
+          {activeReportTab}
+          onActiveReportTabChange={(t) => (activeReportTab = t)}
+          places={placesContent}
+          report={reportContent}
+          subject={reportSubject}
+          lastClickedLabel={lastClickedRowLabel}
+          {onAddLastClicked}
+        />
       {:else if sel.lens === "species" && activeTool === "layers"}
         {#if SpeciesLensPanelComp}
           {@const Comp = SpeciesLensPanelComp}
@@ -1976,6 +2160,10 @@
             {sel}
             {selStore}
             {mapHandle}
+            {expandedRow}
+            onExpandedRowChange={(id: LayerGroupId | null) => (expandedRow = id)}
+            tab={activeTab}
+            onTabChange={(t: UiTab) => (activeTab = t)}
           />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
@@ -2011,6 +2199,11 @@
             {layerStack}
             {onLayerStackChange}
             compactFlower={isPhone && sheetGeom.detent === "half"}
+            {expandedRow}
+            onExpandedRowChange={(id: LayerGroupId | null) => (expandedRow = id)}
+            tab={activeTab}
+            onTabChange={(t: UiTab) => (activeTab = t)}
+            onOpenPlaces={openReportPlaces}
           />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
@@ -2022,20 +2215,22 @@
     {#if isPhone}
       <Sheet
         id="shell"
-        title={TOOL_LABEL[activeTool]}
+        title={panelTitle}
         ongeometry={(g) => (sheetGeom = g)}
         headerExtra={phoneLegend && legendChipMode(sheetGeom.detent) === "inline"
           ? legendChipContent
           : undefined}
+        initialDetentOverride={initialUi?.detent ?? null}
       >
         {@render panelBody()}
       </Sheet>
     {:else}
       <Panel
         id="shell"
-        title={TOOL_LABEL[activeTool]}
+        title={panelTitle}
         bind:this={panelRef}
         ongeometry={(g) => (panelGeom = g)}
+        initialGeometryOverride={initialUi ? { dock: initialUi.dock, size: initialUi.size } : null}
       >
         {@render panelBody()}
       </Panel>

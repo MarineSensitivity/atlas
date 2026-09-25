@@ -29,9 +29,12 @@
      * sheet's REAL top edge instead of a fixed offset that used to land on the header controls at
      * "peek" and the last table row at "half" (Ben's phone report, 2026-09-24). */
     ongeometry?: (geometry: SheetGeometry) => void;
+    /** R3-W8 item 3: same restoration Panel.svelte's `initialGeometryOverride` provides, for the
+     * phone's own detent. Applied once, on mount, on top of the loaded (or default) detent. */
+    initialDetentOverride?: SheetDetent | null;
   }
 
-  let { id, title, children, headerExtra, ongeometry }: Props = $props();
+  let { id, title, children, headerExtra, ongeometry, initialDetentOverride }: Props = $props();
 
   const bodyId = $derived(`sheet-body-${id}`);
   const titleId = $derived(`sheet-title-${id}`);
@@ -55,7 +58,7 @@
   }
 
   onMount(() => {
-    detent = loadSheetDetent(storage(), id);
+    detent = initialDetentOverride ?? loadSheetDetent(storage(), id);
     // Esc-inside-the-sheet-collapses-it is a keyboard shortcut for the whole sheet, wired
     // imperatively for the same reason Panel.svelte's identical handler is (a template
     // `onkeydown` on this non-interactive element trips svelte-check's a11y rule).

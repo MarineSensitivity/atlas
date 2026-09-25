@@ -1,3 +1,74 @@
+# atlas 0.10.78
+
+Round 3, W8 (species Layers pane: promote the data selection, zoom-to-layer, Share reproduces the
+UI arrangement).
+
+- **Promoted the species "Model input" picker to the top of the Layers pane** (Ben, live-review
+  2026-09-25: "promote the main data selection up"). The layer bar (Merged + each input pill, the
+  Delivered/As-ingested representation toggle) moved out of the Data row's collapsible body to a
+  new panel-level slot (`LibLayersPanel`'s `speciesField` snippet — the species lens' own
+  equivalent of the scores lens' promoted `layerField`), directly under the unit-toggle divider, so
+  it is visible without expanding anything. The Data row's body now holds only the species TITLE
+  and the descriptive card (`SpeciesCardView`).
+- **Added: "Zoom to layer on change"** (Ben: "I just chose FWS Range from default leatherback
+  turtle layer, but see nothing on map because out of view, so would be good to default to zoom to
+  selected layer and have a tickbox to stop doing that"). Picking an input (or Merged) now refits
+  the camera to that surface's own extent through the same fit chain the species title's zoom
+  already used (`data/camera.ts#refitOnInputChange`, `cameraFor`) — a checkbox directly under the
+  input picker, checked by default, turns it off so a viewer can flip between inputs at a fixed
+  camera. A fit is also skipped when the viewer has panned since the last pick (`sel.map`'s own
+  "only ever a real user gesture" guarantee, `map.ts`'s header). The preference is URL state
+  (`zl=0` when off, absent when on, `Sel.zl`) so a shared link reproduces it.
+- **The Layers pane is now a two-tab panel; the Flower plot moved into it; the rail drops to four
+  tools** (Ben, 2026-09-25: "differentiating the extra information about the species in another
+  tabset from the interactive control of the layers in its own default tab... drop the Flower plot
+  from the toolbar"). `LibLayersPanel`'s new `infoTab` prop renders a `Segmented` tab switch above
+  the panel body: "Layers" (unchanged) and a lens-named second tab — "Flower plot" in the Scores
+  lens (today's `FlowerPanel.svelte`, unchanged behaviour) and "Species info" in the Species lens
+  (`SpeciesCardView`'s descriptive content only — the model-input picker and zoom-to-layer checkbox
+  stay on the "Layers" tab). The tool rail drops from five tools to four (`Layers · Places · Table ·
+Report`, `src/shell/tools.ts`'s `TOOL_ORDER`/`buildRailItems()` — no lens argument or
+  inactive/inactiveReason concept left, since every remaining tool is active in both lenses). The
+  active tab is carried in the `ui=` Share token (bumped to version 2, a 7th `tab` field,
+  `src/shell/uiState.ts`); an old version-1 token naming the retired "flower" tool code opens the
+  Layers pane on the info tab instead (`parseUiV1`, unit-tested). On the phone, the sheet's title
+  tracks whichever tab is showing. Seeded fault: `ui-token-tab-dropped` (`formatUi()` hardcodes the
+  tab field instead of encoding the live tab).
+- **Places folds into the Report pane as its own (default) first tab; the rail drops to three
+  tools** (Ben, 2026-09-25, proposed by him and not objected to). The rail is now
+  `Layers · Table · Report` (`src/shell/tools.ts`). A new `ReportPane.svelte` gives the Report tool
+  the same two-tab shape item 4 gave Layers: "Places" (today's `Places.svelte`, unchanged behaviour,
+  default) and "Report" (today's `ReportTool.svelte`); the pane title reads "Report · Places" while
+  the Places tab is active. The `ui=` Share token bumps to version 3 (an 8th `reportTab` field);
+  version-1/version-2 tokens naming the retired "places" tool code open Report on its Places tab
+  (`parseUiV1`/`parseUiV2`, unit-tested). The tour's "Places" step now anchors the pane's own tab
+  switch instead of a rail button that no longer exists.
+- **Added the selection model Ben asked for**: "the last clicked element defaults to the current
+  Report Place... care should be given to not wiping out existing selections that have been
+  explicitly added to Places." `reportSubjects(sel, places)` (new, `src/lib/state/subjects.ts`,
+  8 unit tests) is the one pure rule: a non-empty explicit Places list always wins over the
+  map-click "Last clicked" slot; a click only ever replaces the slot, never the explicit list (the
+  two are independent URL fields — `sel.sel` vs. `sel.pl` — written by separate code paths, proven
+  end-to-end by the new `e2e/places.last-clicked.spec.ts` and its seeded fault
+  `places-list-wiped-by-click`). The species table's own subject line now reads "Species for N
+  places" when an explicit list governs (`placesSubjectHeader()`, `species.ts`) — the Last-clicked
+  case keeps its existing, more specific wording.
+- **Fix round: the "Last clicked" row, the Report tab's own sentence, and the Table's
+  discoverability hint** (Ben, verbatim — the part of the selection model that could not be
+  deferred). The Places tab now shows a "Last clicked: {subject}" row at its top (hidden when
+  nothing has been clicked) with an "Add to places" button that appends it to the explicit list
+  through the SAME generic `addPlace()` mutation a drawn/typed place already uses — a clicked
+  Program Area becomes the same `ZonePlace` `addZonePlace()` builds; a clicked cell becomes a
+  `GeomPlace` over the cell's own square (`lens/scores/lastClicked.ts`/`lastClickedPlace.ts`, the
+  mutation kept as its own dynamically-imported module so the place codec's heavier encode/decode
+  pipeline never enters the static bundle). The Report tab shows one sentence driven by
+  `reportSubjects()`: "Reporting on the last clicked place — add it to Places to keep it, or add
+  more places below." or "Reporting on N places." The Table's own header now adds "Select places
+  under Report → Places" next to the all-US-waters aggregate (never replacing it) when nothing at
+  all is selected, with a button that opens that tab. `e2e/places.last-clicked.spec.ts` extended:
+  clicking a cell then "Add to places" leaves `#pl=` with exactly one entry, and the row keeps
+  showing afterward.
+
 # atlas 0.10.77
 
 Round 3, W7 (consistency + copy, 2026-09-25): Ben's two asks — one colour-coded value popup with a

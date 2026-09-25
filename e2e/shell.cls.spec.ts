@@ -65,24 +65,17 @@ const KEYS: KeySpec[] = [
     skeleton: "#rail-region .sk-railitem:nth-child(1)",
     hydrated: '#rail-region button[aria-label="Layers"]',
   },
-  {
-    key: "rail-places",
-    skeleton: "#rail-region .sk-railitem:nth-child(2)",
-    hydrated: '#rail-region button[aria-label="Places"]',
-  },
-  {
-    key: "rail-flower",
-    skeleton: "#rail-region .sk-railitem:nth-child(3)",
-    hydrated: '#rail-region button[aria-label="Flower plot"]',
-  },
+  // R3-W8 item 4: the Flower plot moved into the Layers pane's own second tab. Item 5: Places
+  // folded into the Report pane as its own first tab. The rail is now THREE items (Layers, Table,
+  // Report) and the skeleton carries only three pills (index.html).
   {
     key: "rail-table",
-    skeleton: "#rail-region .sk-railitem:nth-child(4)",
+    skeleton: "#rail-region .sk-railitem:nth-child(2)",
     hydrated: '#rail-region button[aria-label="Table"]',
   },
   {
     key: "rail-report",
-    skeleton: "#rail-region .sk-railitem:nth-child(5)",
+    skeleton: "#rail-region .sk-railitem:nth-child(3)",
     hydrated: '#rail-region button[aria-label="Report"]',
   },
   { key: "panel-frame", skeleton: "#panel-region > *", hydrated: "#panel-region > *" },

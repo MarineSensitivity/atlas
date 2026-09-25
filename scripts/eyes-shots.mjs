@@ -80,6 +80,17 @@ async function tool(page, name) {
   await page.getByRole("button", { name, exact: true }).first().click({ timeout: 20_000 });
   await page.waitForTimeout(3000);
 }
+// R3-W8 item 4: the Flower plot is no longer its own rail tool -- it moved into the Layers pane as
+// that pane's own second tab (`src/lib/ui/LayersPanel.svelte`'s `infoTab`, labelled "Flower plot"
+// for the Scores lens). Opening it is now "Layers" (the rail tool) then "Flower plot" (the tab).
+async function openFlowerTab(page) {
+  await tool(page, "Layers");
+  await page
+    .getByRole("button", { name: "Flower plot", exact: true })
+    .first()
+    .click({ timeout: 20_000 });
+  await page.waitForTimeout(1000);
+}
 async function sheet(page, name) {
   // phone: "Full height"; desktop (R1 panel): "Full screen"
   for (const n of [name, name === "Full height" ? "Full screen" : name]) {
@@ -306,7 +317,7 @@ const STATES = [
       // clean-looking log hiding four untested states the way it did before this fix.
       const hit = await tapScoredCell(p, vp);
       const missed = hit ? "" : "-MISSED";
-      await tool(p, "Flower plot");
+      await openFlowerTab(p);
       await shot(p, vp, `06-flower-half${missed}`);
       // third pass (a): petals are `path.petal` (Flower.svelte), never a bare `svg path` -- and a
       // real petal can be a zero-score DEGENERATE path (`d=""`, flowerGeometry.ts) with no area to
@@ -355,10 +366,14 @@ const STATES = [
     },
   },
   {
+    // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- opening it is
+    // "Report" (the rail tool) then, defensively, the "Places" tab (in case a prior state on this
+    // page left it on "Report").
     id: "places",
     run: async (p, vp) => {
       await go(p, "?ver=v7&theme=dark");
       await explore(p);
+      await tool(p, "Report");
       await tool(p, "Places");
       await shot(p, vp, "11-places");
       await sheet(p, "Full height");
@@ -375,7 +390,13 @@ const STATES = [
         .waitForEvent("page", { timeout: 15_000 })
         .catch(() => null);
       await tool(p, "Report");
-      // the rail opens the chooser sheet; "Open report" is what opens report.html in a new tab
+      // R3-W8 item 5: the Report pane opens on its Places tab; "Open report" lives on the Report tab
+      await p
+        .locator('[data-tour="report-tabs"]')
+        .getByText("Report", { exact: true })
+        .click({ timeout: 10_000 })
+        .catch(() => log("WARN report: Report tab not found"));
+      // the Report tab holds the chooser; "Open report" is what opens report.html in a new tab
       const open = p.getByRole("button", { name: /open report/i }).first();
       if (await open.count()) await open.click({ timeout: 10_000 }).catch(() => {});
       await sheet(p, "Full height");
@@ -460,7 +481,7 @@ const STATES = [
         await collapseSheet(p);
         await shot(p, vp, `19b-programarea-popup-collapsed${missed}`);
       }
-      await tool(p, "Flower plot");
+      await openFlowerTab(p);
       await shot(p, vp, `20-programarea-flower${missed}`);
       await tool(p, "Table");
       await waitForSpeciesLoaded(p);

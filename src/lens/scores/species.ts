@@ -54,6 +54,16 @@ export function speciesHeader(ctx: SpeciesContext): string {
   return "Species in All US waters";
 }
 
+/** R3-W8 item 5: "the Table's subject line uses the same rule and says so" -- when a non-empty
+ * EXPLICIT Places list governs (`reportSubjects()`, `src/lib/state/subjects.ts`), the species
+ * table's own header names the LIST, not a single cell/zone ("Species for 2 places" rather than
+ * whichever place happens to be last clicked). Pulled out as its own pure function (CLAUDE.md:
+ * "keep core logic in an exported function... callable from a test") rather than an inline
+ * template string in `TablePanel.svelte`. */
+export function placesSubjectHeader(placeCount: number): string {
+  return `Species for ${placeCount} place${placeCount === 1 ? "" : "s"}`;
+}
+
 /**
  * The CSV/download filename STEM (parity doc §7.3). The zone stem's "lowercased name with first
  * space -> '-'" rule is reproduced literally (only the FIRST space, not every space — pinned by

@@ -111,6 +111,7 @@ function randomSel(rng: Rng): Sel {
     hide: rng.bool(0.4) ? Array.from({ length: rng.int(1, 4) }, () => rng.safeToken(2, 8)) : [],
     theme: rng.pick(THEMES),
     tour: rng.pick(["on", "off"] as const),
+    zl: rng.bool(0.8), // skew toward the default (true), same as `us` above
     pl: rng.maybe(() => `g1.${rng.token(1, 6)}.${rng.token(4, 40)}`, 0.4),
     t: rng.maybe(() => rng.token(3, 30), 0.3),
   };

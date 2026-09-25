@@ -343,11 +343,7 @@ test.describe("keyboard", () => {
     await rail.locator("button[aria-label='Layers']").focus();
 
     await page.keyboard.press("ArrowDown");
-    await expect(page.locator(":focus")).toHaveAttribute("aria-label", "Places");
-    await page.keyboard.press("ArrowDown");
-    await expect(page.locator(":focus")).toHaveAttribute("aria-label", "Flower plot");
-    await page.keyboard.press("ArrowUp");
-    await expect(page.locator(":focus")).toHaveAttribute("aria-label", "Places");
+    await expect(page.locator(":focus")).toHaveAttribute("aria-label", "Table");
     await page.keyboard.press("ArrowUp");
     await expect(page.locator(":focus")).toHaveAttribute("aria-label", "Layers");
     // wrap backward past the first item to the last ("Report")
@@ -355,27 +351,11 @@ test.describe("keyboard", () => {
     await expect(page.locator(":focus")).toHaveAttribute("aria-label", "Report");
   });
 
-  test("the Flower tool is aria-disabled but reachable in the Species lens, and announces why", async ({
-    page,
-  }) => {
-    await gotoShell(page, "navy", "/?lens=species");
-    const rail = page.locator("#rail-region [role='toolbar']");
-    const flower = rail.locator("button[aria-label='Flower plot']");
-    await expect(flower).toHaveAttribute("aria-disabled", "true");
-    await expect(flower).not.toHaveAttribute("disabled", "");
-    await rail.locator("button[aria-label='Layers']").focus();
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("ArrowDown");
-    await expect(flower).toBeFocused();
-    await expect(flower).toHaveAttribute("tabindex", "0");
-
-    await page.keyboard.press("Enter");
-    // U1c fix round (CI run 35956406448/107495562810): `[role="status"]` alone now matches TWO
-    // regions after the map-loading live region landed -- the shared Announcer (this assertion's
-    // target) and Shell.svelte's dedicated `[data-testid="map-loading-status"]`. Scope to the
-    // shared region's own stable class, same as the "exactly one live region" test just above.
-    await expect(page.locator(".announcer")).toContainText("Flower plot — Scores only");
-  });
+  // R3-W8 item 4: "the Flower has no meaning in the Species lens... becomes visibly inactive" is
+  // MOOT now the Flower plot is not a rail tool at all (it moved into the Layers pane's own second
+  // tab, which every rail tool -- including Layers -- is equally reachable in both lenses). No
+  // rail control is ever inactive any more, so this test (and the aria-disabled/inactive-fade rule
+  // it proved) is retired rather than retargeted -- spec.md §5.1a/§14 item 5.
 
   test("Esc collapses the panel and moves focus to its pill; expanding returns focus to control 1", async ({
     page,
@@ -459,7 +439,9 @@ test.describe("keyboard", () => {
     await page.locator('[data-control="theme"]').click();
     await page.locator('[data-control="help"]').click();
     const rail = page.locator("#rail-region [role='toolbar']");
-    for (const label of ["Layers", "Places", "Flower plot", "Table", "Report"]) {
+    // R3-W8 item 4/5: the rail is now three tools -- the Flower plot moved into the Layers pane's
+    // own second tab, and Places moved into the Report pane's own first tab.
+    for (const label of ["Layers", "Table", "Report"]) {
       await rail.locator(`button[aria-label="${label}"]`).click();
     }
     const panel = page.locator("#panel-region");
