@@ -1,0 +1,13 @@
+diff --git a/src/lens/scores/state.svelte.ts b/src/lens/scores/state.svelte.ts
+index 25b6405..78a570e 100644
+--- a/src/lens/scores/state.svelte.ts
++++ b/src/lens/scores/state.svelte.ts
+@@ -292,7 +292,7 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
+     // UI showed it. `center` (the caller's `cellRing()` result, the SAME helper the panel's
+     // `mapSelection` already runs through) is now the ONE source for what a cell's coordinates
+     // are; `lngLat` is kept only for the popup's own map ANCHOR (where it points on screen).
+-    const input = { cellId, lon: center.lon, lat: center.lat, layerLabel: label, value };
++    const input = { cellId, lon: lngLat.lng, lat: lngLat.lat, layerLabel: label, value };
+     // D3(a) round 2 (orchestrator, 2026-09-24 -- fixes a regression the FIRST D3 fix introduced):
+     // `handleMapClick` below now writes `sel` EAGERLY, synchronously, on click -- exactly the
+     // pre-D3 behaviour -- so the URL/selection updates at once regardless of how long (or whether
