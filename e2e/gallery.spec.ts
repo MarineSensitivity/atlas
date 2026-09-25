@@ -414,6 +414,40 @@ test.describe("atlas-3 step 2b: the data components (Flower, DataTable, Treemap)
     );
     expect(rows).toEqual(petalLabels);
   });
+
+  // W5 fix (Opus 5.5 eyes-on review 5, 2026-09-25, phone-06/07): "the capped phone flower narrows
+  // its header column... 'Cell ID: ... (x: ..., y: ...)' wraps onto two lines and starts at x 220
+  // instead of the sheet's gutter." Root cause: `.flower`'s own `max-width: var(--flower-size)`
+  // used to cap the WHOLE figure (title + chart + table) at the flower's small compact size (170,
+  // `FlowerPanel.svelte`'s `FLOWER_SIZE_HALF_DETENT`) -- the fix moves that cap to `.flower-body`
+  // alone, so `.flower-title` spans the figure's own full, uncapped width. RED-FIRST: on the
+  // pre-fix tree, `#flower-compact-cell-title .flower-title`'s own bounding box is <= 170px wide
+  // (bytes wrapped inside the SAME narrow column the chart/table are capped at) -- this asserts it
+  // is instead comfortably wider than that cap, proving the header is no longer sharing the
+  // flower's own compact column.
+  test("Flower: a compact (170px) flower's title spans the figure's full width, not the chart's own capped column", async ({
+    page,
+  }) => {
+    await gotoGallery(page, "navy");
+    const flower = page.locator("#flower-compact-cell-title");
+    await expect(flower.locator(".flower-title")).toBeVisible();
+    const titleBox = (await flower.locator(".flower-title").boundingBox())!;
+    const svgBox = (await flower.locator(".flower-svg").boundingBox())!;
+    // the compact flower's own chart is capped at 170px (`size={170}` on this fixture) -- the
+    // title, once fixed, is the figure's own (much wider, unconstrained) box, not that cap.
+    expect(
+      titleBox.width,
+      `title box only ${titleBox.width}px wide -- still capped to (or near) the flower's own ` +
+        `170px compact size instead of the figure's full width`,
+    ).toBeGreaterThan(svgBox.width + 40);
+    // and it starts flush at the figure's own left edge (the row's gutter), not indented to sit
+    // over a horizontally-centred narrow column the way a still-capped figure would be.
+    const figureBox = (await flower.boundingBox())!;
+    expect(
+      Math.abs(titleBox.x - figureBox.x),
+      `title left edge x=${titleBox.x} is not flush with the figure's own left edge x=${figureBox.x}`,
+    ).toBeLessThanOrEqual(2);
+  });
 });
 
 // atlas-3 step 4 fix round 1: 13 defects an Opus manual accessibility walk found that axe's

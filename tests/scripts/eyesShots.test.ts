@@ -146,3 +146,56 @@ describe("scripts/eyes-shots.mjs: the V5 fixes stay in place (fourth pass)", () 
     );
   });
 });
+
+// W5 fix (Opus 5.5 eyes-on review 5, 2026-09-25): "the report map figure is never in frame (not at
+// all on the phone, only the top 190px on desktop)... add a shot that scrolls the map figure into
+// view." A pure SOURCE-SCAN gate, same reasoning as the V2/V5 blocks above -- the harness drives a
+// real browser against a real build, out of scope for vitest.
+describe("scripts/eyes-shots.mjs: the W5 fix stays in place (fifth pass)", () => {
+  it("the 'report' state scrolls the map figure into view with a real scrollIntoView call", () => {
+    const start = src.indexOf('id: "report"');
+    expect(start, "the report state is not defined").toBeGreaterThanOrEqual(0);
+    const end = src.indexOf('id: "more"');
+    const reportState = src.slice(start, end);
+    expect(reportState).toContain('figure[aria-describedby="map-summary"]');
+    expect(reportState).toMatch(/scrollIntoView\(\{\s*block:\s*"center"/);
+  });
+
+  it("shoots the map figure AFTER 13-report-top but BEFORE the blind scroll to 14-report-scrolled", () => {
+    const start = src.indexOf('id: "report"');
+    const end = src.indexOf('id: "more"');
+    const reportState = src.slice(start, end);
+    const iTop = reportState.indexOf('"13-report-top"');
+    const iMap = reportState.indexOf('"13b-report-map"');
+    const iScrolled = reportState.indexOf('"14-report-scrolled"');
+    expect(iTop, "13-report-top shot not found").toBeGreaterThanOrEqual(0);
+    expect(iMap, "13b-report-map shot not found").toBeGreaterThanOrEqual(0);
+    expect(iScrolled, "14-report-scrolled shot not found").toBeGreaterThanOrEqual(0);
+    expect(iTop).toBeLessThan(iMap);
+    expect(iMap).toBeLessThan(iScrolled);
+  });
+
+  it("runs on BOTH viewports -- no phone-only/desktop-only guard inside the report state", () => {
+    const start = src.indexOf('id: "report"');
+    const end = src.indexOf('id: "more"');
+    const reportState = src.slice(start, end);
+    expect(reportState).not.toMatch(/if \(vp !== "phone"\) return;/);
+    expect(reportState).not.toMatch(/if \(vp !== "desktop"\) return;/);
+  });
+
+  it("WARNs (never throws) when the map figure selector finds nothing", () => {
+    const start = src.indexOf('id: "report"');
+    const end = src.indexOf('id: "more"');
+    const reportState = src.slice(start, end);
+    expect(reportState).toMatch(/log\(\s*`WARN report-map:/);
+  });
+
+  it("keeps the documented CLI contract (ATLAS_URL, OUT, ONLY) unchanged", () => {
+    expect(src).toContain("process.env.ATLAS_URL");
+    expect(src).toContain("process.env.OUT");
+    expect(src).toContain("process.env.ONLY");
+    expect(src).toMatch(
+      /ATLAS_URL=http:\/\/localhost:\d+ OUT=\.tmp\/eyes \[ONLY=map,layers\] node scripts\/eyes-shots\.mjs/,
+    );
+  });
+});

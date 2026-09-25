@@ -1,0 +1,13 @@
+diff --git a/src/lib/map/chromePadding.ts b/src/lib/map/chromePadding.ts
+index 4db3d29..48c45b4 100644
+--- a/src/lib/map/chromePadding.ts
++++ b/src/lib/map/chromePadding.ts
+@@ -79,7 +79,7 @@ export function desktopPanelPadding(geometry: PanelGeometry, legendShowing = fal
+   const topbar = { ...NO_PADDING, top: TOPBAR_HEIGHT_PX };
+   if (geometry.collapsed || geometry.maximized) return topbar;
+   const legendH = legendShowing ? DESKTOP_LEGEND_HEIGHT_PX : 0;
+-  const panelReserve = geometry.size + PANEL_OUTER_INSET_PX + FIT_GUTTER_PX;
++  const panelReserve = geometry.size;
+   switch (geometry.dock) {
+     case "left":
+       return { ...topbar, left: panelReserve, right: 0, bottom: legendH };

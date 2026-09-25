@@ -1722,6 +1722,56 @@ const FAULTS = [
     ],
     env: { PW_PORT: "4541" },
   },
+  // --- P round W5 (Opus 5.5 eyes-on review 5 of 0.10.66) ------------------------------------------
+  {
+    id: "desktop-panel-inset-gutter-dropped",
+    patch: "tests/faults/desktop-panel-inset-gutter-dropped.patch",
+    describe:
+      "chromePadding.ts's desktopPanelPadding() reverts panelReserve to the bare geometry.size -- " +
+      "the docked panel's own outer CSS inset (--space-3) and the fit's breathing gutter both drop " +
+      "out, so the reserve no longer clears the panel's real DOM footprint (desktop-19). A plain " +
+      "vitest gate (exact, deterministic) rather than the e2e pixel-margin check: GAA's own bbox " +
+      "still lands with enough natural slack under either reserve in the hermetic fixture's " +
+      "geometry for a fuzzy 5x5-grid/margin check to stay green either way, but the exact returned " +
+      "`right` value cannot -- see tests/map/chromePadding.test.ts's own 'W5 regression' case.",
+    gate: [
+      "npx",
+      "vitest",
+      "run",
+      "tests/map/chromePadding.test.ts",
+      "-t",
+      "W5 regression: the right reserve clears the panel's real outer edge",
+    ],
+  },
+  {
+    id: "phone-fit-gutter-dropped",
+    patch: "tests/faults/phone-fit-gutter-dropped.patch",
+    describe:
+      "chromePadding.ts's phonePaddingFromMeasured() drops its left/right FIT_GUTTER_PX -- the " +
+      "LIVE phone zone/species-model fit has no side gutter again, so a fitted outline can land " +
+      "flush against the viewport's own edge (phone-19: GAA's east outline touching x 779 of 780). " +
+      "A plain vitest gate (exact, deterministic): like the desktop entry above, GAA's own bbox in " +
+      "the hermetic e2e fixture happens to clear 16px either way (a narrower/differently-placed " +
+      "bbox would not), so the exact returned left/right values are the reliable catch.",
+    gate: ["npx", "vitest", "run", "tests/map/chromePadding.test.ts", "-t", "a side gutter"],
+  },
+  {
+    id: "eyes-shots-report-map-scroll-dropped",
+    patch: "tests/faults/eyes-shots-report-map-scroll-dropped.patch",
+    describe:
+      "eyes-shots.mjs's 'report' state loses its map-figure scroll step entirely (back to the two " +
+      "blind mouse.wheel(0,1400) scrolls alone) -- the report's map figure (legend + caption) is " +
+      "never framed in any shot again, on either viewport, a SOURCE-SCAN gate (the harness drives a " +
+      "real browser against a real build, out of scope for vitest)",
+    gate: [
+      "npx",
+      "vitest",
+      "run",
+      "tests/scripts/eyesShots.test.ts",
+      "-t",
+      "scrolls the map figure into view with a real scrollIntoView call",
+    ],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

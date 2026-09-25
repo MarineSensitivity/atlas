@@ -10,6 +10,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { waitForHydration, routeBucket, routeSealFixture, routeSession } from "./hermetic";
 import { blockWasm, routeBasemapStyle, routeGlyphs, routeTitilerTiles } from "./map-hermetic";
 import { FLOWER_ZONE_METRICS_GAA, bootFor, routeZones20 } from "./scores-hermetic";
+import { FIT_GUTTER_PX } from "../src/lib/map/chromePadding";
 
 test.describe.configure({ mode: "serial" });
 
@@ -306,6 +307,11 @@ test.describe("P3 fix: a search-picked Program Area's bounds fit pads for the sh
     total: number;
     inside: number;
     sample: FreeAreaSample[];
+    /** the sample's own min/max projected x -- for an explicit pixel-margin assertion (W5 fix),
+     * distinct from `insideFraction` (which already folds the gutter into "inside"). */
+    minX: number;
+    maxX: number;
+    containerWidth: number;
   }
 
   /** samples a 5x5 grid across `bbox` with the map's OWN `project()` and reports what fraction land
@@ -314,47 +320,77 @@ test.describe("P3 fix: a search-picked Program Area's bounds fit pads for the sh
    * (`#panel-region .panel-surface`) to the side. Mirrors `e2e/species.camera.spec.ts`'s own V4
    * `freeAreaCoverage` helper (the identical class of bug, the species lens' own bounds fit),
    * generalized to whichever chrome the CURRENT viewport actually shows rather than assuming one,
-   * so ONE helper covers both the phone and desktop tests below. */
+   * so ONE helper covers both the phone and desktop tests below.
+   *
+   * W5 fix (Opus 5.5 eyes-on review 5, 2026-09-25, desktop-19/phone-19): "inside" now ALSO
+   * subtracts `gutterPx` from whichever edge is actually chrome -- the docked panel's edge on
+   * desktop (its own outer inset was already the desktop-19 defect; this test used to compare
+   * against the panel's bare measured edge, which passed even with the fit landing flush against
+   * it) and BOTH side edges of the viewport on phone (phone-19: no side gutter existed at all). */
   async function freeAreaCoverage(
     page: Page,
     bbox: [number, number, number, number],
+    gutterPx: number = FIT_GUTTER_PX,
   ): Promise<FreeAreaResult> {
-    return page.evaluate((bboxArg) => {
-      const [xmin, ymin, xmax, ymax] = bboxArg;
-      const w = window as unknown as {
-        __atlasMap: {
-          handle: {
-            map: {
-              project(lngLat: [number, number]): { x: number; y: number };
-              getContainer(): HTMLElement;
+    return page.evaluate(
+      ({ bboxArg, gutterArg }) => {
+        const [xmin, ymin, xmax, ymax] = bboxArg;
+        const w = window as unknown as {
+          __atlasMap: {
+            handle: {
+              map: {
+                project(lngLat: [number, number]): { x: number; y: number };
+                getContainer(): HTMLElement;
+              };
             };
           };
         };
-      };
-      const map = w.__atlasMap.handle.map;
-      const containerRect = map.getContainer().getBoundingClientRect();
-      const sheetEl = document.querySelector(".sheet");
-      const sheetTop = sheetEl ? sheetEl.getBoundingClientRect().top - containerRect.top : null;
-      const panelEl = document.querySelector("#panel-region .panel-surface");
-      const panelLeft = panelEl ? panelEl.getBoundingClientRect().left - containerRect.left : null;
+        const map = w.__atlasMap.handle.map;
+        const containerRect = map.getContainer().getBoundingClientRect();
+        const sheetEl = document.querySelector(".sheet");
+        const sheetTop = sheetEl ? sheetEl.getBoundingClientRect().top - containerRect.top : null;
+        const panelEl = document.querySelector("#panel-region .panel-surface");
+        const panelLeft = panelEl
+          ? panelEl.getBoundingClientRect().left - containerRect.left
+          : null;
 
-      const fracs = [0, 0.25, 0.5, 0.75, 1];
-      const lons = fracs.map((f) => xmin + f * (xmax - xmin));
-      const lats = fracs.map((f) => ymin + f * (ymax - ymin));
-      const sample: { x: number; y: number; inside: boolean }[] = [];
-      for (const lon of lons) {
-        for (const lat of lats) {
-          const p = map.project([lon, lat]);
-          let inside =
-            p.x >= 0 && p.x <= containerRect.width && p.y >= 0 && p.y <= containerRect.height;
-          if (inside && sheetTop !== null) inside = p.y < sheetTop;
-          if (inside && panelLeft !== null) inside = p.x < panelLeft;
-          sample.push({ x: p.x, y: p.y, inside });
+        const fracs = [0, 0.25, 0.5, 0.75, 1];
+        const lons = fracs.map((f) => xmin + f * (xmax - xmin));
+        const lats = fracs.map((f) => ymin + f * (ymax - ymin));
+        const sample: { x: number; y: number; inside: boolean }[] = [];
+        for (const lon of lons) {
+          for (const lat of lats) {
+            const p = map.project([lon, lat]);
+            let inside = p.y >= 0 && p.y <= containerRect.height;
+            if (sheetTop !== null) {
+              // phone: no docked panel exists (`panelLeft` is always null here) -- the chrome is
+              // the sheet below (unchanged) plus a side gutter on BOTH viewport edges (W5 fix).
+              inside =
+                inside &&
+                p.x >= gutterArg &&
+                p.x <= containerRect.width - gutterArg &&
+                p.y < sheetTop;
+            } else {
+              inside = inside && p.x >= 0 && p.x <= containerRect.width;
+              if (panelLeft !== null) inside = inside && p.x < panelLeft - gutterArg;
+            }
+            sample.push({ x: p.x, y: p.y, inside });
+          }
         }
-      }
-      const inside = sample.filter((s) => s.inside).length;
-      return { insideFraction: inside / sample.length, total: sample.length, inside, sample };
-    }, bbox);
+        const inside = sample.filter((s) => s.inside).length;
+        const xs = sample.map((s) => s.x);
+        return {
+          insideFraction: inside / sample.length,
+          total: sample.length,
+          inside,
+          sample,
+          minX: Math.min(...xs),
+          maxX: Math.max(...xs),
+          containerWidth: containerRect.width,
+        };
+      },
+      { bboxArg: bbox, gutterArg: gutterPx },
+    );
   }
 
   /** `gotoScoresSearch`'s own routing, PLUS an explicit low-zoom `?map=` starting camera centred
@@ -457,16 +493,19 @@ test.describe("P3 fix: a search-picked Program Area's bounds fit pads for the sh
     }) => {
       await searchAndSelectGAA(page, false);
 
-      // brief's own acceptance bar: >= 80% of a 5x5 grid over GAA's bbox lands in the free area
-      // (here, left of the docked panel -- desktop-19's own defect). Wrapped in `expect.poll` so
-      // this also waits out whatever remains of the `flyTo` animation: a mid-flight frame will not
-      // yet clear the 80% bar for a box this size, but the settled fit does.
+      // W5 fix (Opus 5.5 eyes-on review 5, 2026-09-25, desktop-19): the review's own acceptance
+      // bar is 100%, not the old 80% -- "100% of a 5x5 grid over GAA's bbox projects left of the
+      // panel's outer edge minus the gutter". The old 80% bar could pass with the review's own
+      // ~12px east-lobe overlap (up to one full grid column landing under the panel edge).
+      // Wrapped in `expect.poll` so this also waits out whatever remains of the `flyTo` animation.
       await expect
         .poll(async () => (await freeAreaCoverage(page, GAA_BBOX)).insideFraction, {
-          message: "GAA's own bbox grid did not settle into the area left of the docked panel",
+          message:
+            "GAA's own bbox grid did not settle FULLY into the area left of the docked panel's " +
+            "outer edge (minus the gutter)",
           timeout: 15_000,
         })
-        .toBeGreaterThanOrEqual(0.8);
+        .toBe(1);
 
       const popup = page.locator(".atlas-popup");
       await expect(popup).toBeVisible({ timeout: 10_000 });
@@ -493,7 +532,7 @@ test.describe("P3 fix: a search-picked Program Area's bounds fit pads for the sh
           message: "GAA's own bbox grid did not settle into the area above the sheet",
           timeout: 15_000,
         })
-        .toBeGreaterThanOrEqual(0.8);
+        .toBe(1);
 
       const popup = page.locator(".atlas-popup");
       await expect(popup).toBeVisible({ timeout: 10_000 });
@@ -504,6 +543,31 @@ test.describe("P3 fix: a search-picked Program Area's bounds fit pads for the sh
         `popup bottom edge y=${popupBox.y + popupBox.height} reaches into the sheet starting ` +
           `at y=${sheetBox.y}`,
       ).toBeLessThanOrEqual(sheetBox.y + 0.5);
+    });
+
+    // W5 fix (Opus 5.5 eyes-on review 5, 2026-09-25, phone-19/20/21): "the phone zone fit has no
+    // side gutter... GAA spans x 6-779 of 780, and its east outline touches the right edge." The
+    // review's own acceptance bar: the projected bbox stays >= 16px from BOTH side edges -- an
+    // explicit pixel-margin check, independent of `freeAreaCoverage`'s own (stricter, 20px)
+    // `FIT_GUTTER_PX` "inside" definition above, so this proves the review's literal bar directly.
+    test("GAA's fitted area keeps at least a 16px gutter from both side edges of the viewport", async ({
+      page,
+    }) => {
+      await searchAndSelectGAA(page, true);
+
+      const MIN_MARGIN_PX = 16;
+      await expect
+        .poll(
+          async () => {
+            const r = await freeAreaCoverage(page, GAA_BBOX, 0); // gutter=0: raw projected extent
+            return Math.min(r.minX, r.containerWidth - r.maxX);
+          },
+          {
+            message: "GAA's projected bbox did not settle with >= 16px clear on both side edges",
+            timeout: 15_000,
+          },
+        )
+        .toBeGreaterThanOrEqual(MIN_MARGIN_PX);
     });
   });
 });

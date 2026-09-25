@@ -359,13 +359,14 @@
        start once the panel is wider than that cap. */
     width: 100%;
     margin: 0 auto;
-    /* P round (Ben, live review 2026-09-24): "Flower plot should be bigger... use the panel's free
-       area" -- was a flat 320px regardless of the `size` prop (measured stuck at ~105-130px on a
-       1280px stage), so a caller asking for a bigger flower (the panel's own default, 480 below)
-       had no effect once this figure's own cap kicked in first. Now tracks `size` directly (the
-       SAME custom property `.flower-svg`'s own max-width reads), so the figure (title + chart +
-       table) grows together rather than the chart alone hitting an invisible ceiling. */
-    max-width: var(--flower-size, 320px);
+    /* W5 fix (Opus 5.5 eyes-on review 5, 2026-09-25, phone-06/07): the size cap used to live HERE,
+       on the whole figure (title + chart + table) -- at the phone half detent's compact cap
+       (`FlowerPanel.svelte`'s `FLOWER_SIZE_HALF_DETENT`, 170px) that squeezed the `.flower-title`
+       figcaption into the SAME 170px column as the chart, wrapping "Cell ID: ... (x: ..., y: ...)"
+       onto two lines and starting it well right of the sheet's own gutter (the whole figure, cap
+       included, is centred by the `margin: 0 auto` above). The cap now lives on `.flower-body`
+       alone (below) -- the header spans this figure's own full width (unconstrained here), and
+       only the chart+table stay capped and centred beneath it. */
   }
 
   .flower-title {
@@ -382,6 +383,15 @@
        full-width wrapper -- exactly the "empty space on the right" the owner saw. */
     align-items: center;
     gap: var(--space-2);
+    /* W5 fix: the size cap moved here from `.flower` above (see that rule's own comment) -- same
+       `width: 100%; margin: 0 auto;` pairing that centers a capped flex item in a column flex
+       parent (`.flower`'s own header comment explains why `margin: auto` alone is not enough
+       without a definite `width` to centre against). Tracks `size` directly (the SAME custom
+       property `.flower-svg`'s own max-width reads), so the chart+table grow together, independent
+       of the title's own now-uncapped width. */
+    width: 100%;
+    margin: 0 auto;
+    max-width: var(--flower-size, 320px);
   }
 
   .flower-chart {

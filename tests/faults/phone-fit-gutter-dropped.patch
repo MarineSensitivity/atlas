@@ -1,0 +1,13 @@
+diff --git a/src/lib/map/chromePadding.ts b/src/lib/map/chromePadding.ts
+index 4db3d29..bebe3fe 100644
+--- a/src/lib/map/chromePadding.ts
++++ b/src/lib/map/chromePadding.ts
+@@ -132,8 +132,6 @@ export function phonePaddingFromMeasured(sheetHeightPx: number): ChromePadding {
+   return {
+     ...NO_PADDING,
+     top: TOPBAR_HEIGHT_PX,
+-    left: FIT_GUTTER_PX,
+-    right: FIT_GUTTER_PX,
+     bottom: sheetHeightPx + PHONE_RAIL_ROW_PX,
+   };
+ }
