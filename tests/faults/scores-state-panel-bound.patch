@@ -35,7 +35,7 @@ index 90495bb..84a2c2f 100644
    // `unitToggle` prop) -- replaces the old "Spatial units" `<Select>` that used to live in
    // `ScoresLayersPanel` (`./LayersPanel.svelte`, still rendered below for the Data row's OTHER
 diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
-index d584c57..5597eef 100644
+index d584c57..1b6dc19 100644
 --- a/src/shell/Shell.svelte
 +++ b/src/shell/Shell.svelte
 @@ -570,12 +570,17 @@
@@ -81,7 +81,15 @@ index d584c57..5597eef 100644
      layerStack,
    });
  
-@@ -1823,7 +1828,7 @@
+@@ -1759,6 +1764,7 @@
+             lens={scoresLens}
+             {layerStack}
+             {onLayerStackChange}
++            bind:mapExtra={scoresPanelMapExtra}
+             compactFlower={isPhone && sheetGeom.detent === "half"}
+           />
+         {:else}
+@@ -1823,7 +1829,7 @@
    {:else if sel.lens === "scores" && ScoresLegendComp}
      {@const Comp = ScoresLegendComp}
      <div class="lens-legend-region">
