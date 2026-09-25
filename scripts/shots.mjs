@@ -298,9 +298,17 @@ export const STATES = [
       search: "?ver=v7&theme=dark",
       after: async (page) => {
         await atlasTool(page, "Table");
-        // the panel's own "Full height" control, so the table shows the rows a reviewer wants to
-        // compare against the Shiny app's full-tab table (the panel WIDTH is fixed by design)
-        await page.getByRole("button", { name: "Full height", exact: true }).first().click();
+        // the panel's own "Full screen" control, so the table shows the rows a reviewer wants to
+        // compare against the Shiny app's full-tab table (the panel WIDTH is fixed by design).
+        // housekeeping fix (2026-09-25): this read "Full height" -- the PHONE Sheet's own label
+        // (Sheet.svelte) -- but this harness runs a single 1280x800 DESKTOP viewport, where the
+        // maximize control is Panel.svelte's "Full screen" (see its aria-label, line ~366); U1's
+        // R1 panel rework split the two, and this script was never updated. A fresh page.click()
+        // (default 60s action timeout, `page.setDefaultTimeout(WAIT_TIMEOUT)` above) waits on a
+        // locator matching zero elements and times out rather than failing fast, so this silently
+        // turned every one of these three states (species/composition/zones tables) into a FAILED
+        // pair on the parity page instead of a stale-selector error.
+        await page.getByRole("button", { name: "Full screen", exact: true }).first().click();
         // the species table is the one panel that needs the engine (DuckDB-WASM + Parquet), so
         // wait for a real ROW rather than a fixed sleep over a spinner
         await page.waitForSelector("table tbody tr", { timeout: 60_000 });
@@ -330,9 +338,17 @@ export const STATES = [
       search: "?ver=v7&theme=dark",
       after: async (page) => {
         await atlasTool(page, "Table");
-        // the panel's own "Full height" control, so the table shows the rows a reviewer wants to
-        // compare against the Shiny app's full-tab table (the panel WIDTH is fixed by design)
-        await page.getByRole("button", { name: "Full height", exact: true }).first().click();
+        // the panel's own "Full screen" control, so the table shows the rows a reviewer wants to
+        // compare against the Shiny app's full-tab table (the panel WIDTH is fixed by design).
+        // housekeeping fix (2026-09-25): this read "Full height" -- the PHONE Sheet's own label
+        // (Sheet.svelte) -- but this harness runs a single 1280x800 DESKTOP viewport, where the
+        // maximize control is Panel.svelte's "Full screen" (see its aria-label, line ~366); U1's
+        // R1 panel rework split the two, and this script was never updated. A fresh page.click()
+        // (default 60s action timeout, `page.setDefaultTimeout(WAIT_TIMEOUT)` above) waits on a
+        // locator matching zero elements and times out rather than failing fast, so this silently
+        // turned every one of these three states (species/composition/zones tables) into a FAILED
+        // pair on the parity page instead of a stale-selector error.
+        await page.getByRole("button", { name: "Full screen", exact: true }).first().click();
         await page.getByRole("button", { name: "Composition" }).first().click({ timeout: 20_000 });
         // the treemap is a lazy chunk over an engine query: wait for a drawn cell, not a timer
         await page.waitForSelector(".table-panel svg rect, .table-panel canvas", {
@@ -353,9 +369,17 @@ export const STATES = [
       search: "?ver=v7&unit=programarea&theme=dark",
       after: async (page) => {
         await atlasTool(page, "Table");
-        // the panel's own "Full height" control, so the table shows the rows a reviewer wants to
-        // compare against the Shiny app's full-tab table (the panel WIDTH is fixed by design)
-        await page.getByRole("button", { name: "Full height", exact: true }).first().click();
+        // the panel's own "Full screen" control, so the table shows the rows a reviewer wants to
+        // compare against the Shiny app's full-tab table (the panel WIDTH is fixed by design).
+        // housekeeping fix (2026-09-25): this read "Full height" -- the PHONE Sheet's own label
+        // (Sheet.svelte) -- but this harness runs a single 1280x800 DESKTOP viewport, where the
+        // maximize control is Panel.svelte's "Full screen" (see its aria-label, line ~366); U1's
+        // R1 panel rework split the two, and this script was never updated. A fresh page.click()
+        // (default 60s action timeout, `page.setDefaultTimeout(WAIT_TIMEOUT)` above) waits on a
+        // locator matching zero elements and times out rather than failing fast, so this silently
+        // turned every one of these three states (species/composition/zones tables) into a FAILED
+        // pair on the parity page instead of a stale-selector error.
+        await page.getByRole("button", { name: "Full screen", exact: true }).first().click();
         await page.getByRole("button", { name: "Zones" }).first().click({ timeout: 20_000 });
         // Tier 0 only (boot.zones): rows appear without the engine, so this wait is short
         await page.waitForSelector("table tbody tr", { timeout: 30_000 });
