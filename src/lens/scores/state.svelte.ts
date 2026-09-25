@@ -41,6 +41,7 @@
 import type { Popup } from "maplibre-gl";
 import type { SelStore } from "../../lib/state/sel.svelte";
 import type { MapHandle } from "../../lib/map/map";
+import type { ChromePadding } from "../../lib/map/camera";
 import { mapClick, type QueryableMap } from "../../lib/map/interaction";
 import { createPopup } from "../../lib/map/popup";
 import { announce } from "../../lib/ui/announcer";
@@ -85,6 +86,13 @@ export interface ScoresLensDeps {
    * engine-backed value fetch needs it (mirrors `src/lens/species/state.svelte.ts`'s `ver` dep). */
   ver: () => string | null;
   mapHandle: () => MapHandle | undefined;
+  /** P3 fix (Opus eyes-on review, 2026-09-24, phone-19/20/21 + desktop-19): the shell's CURRENT
+   * chrome geometry (docked panel on desktop; sheet detent + legend chip on the phone) — mirrors
+   * `src/lens/species/state.svelte.ts`'s own `chromePadding` dep (V4's fix for the SAME class of
+   * bug in the species lens). A getter, not a snapshot, so `selectZone`'s bounds fit pads for
+   * whatever is covering the map RIGHT NOW. Optional: a caller that supplies none (a test, the
+   * gallery) keeps the old flat 40px padding via `selectZone`'s own fallback below. */
+  chromePadding?: () => ChromePadding;
 }
 
 export interface ScoresLens {
@@ -416,7 +424,14 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
         : zoneCenterFromBoot(boot, unit, [key]);
       if (handle && center) {
         if (bounds) {
-          handle.flyToBounds(bounds, { padding: 40 });
+          // P3 fix (Opus eyes-on review, 2026-09-24): a flat 40px padding ignored the sheet/panel
+          // actually covering the map — a Program Area search pick landed under the phone sheet
+          // (GAA a sliver at its edge, popup on the map showing Arkansas) or a third under the
+          // docked desktop panel. `deps.chromePadding()`, when the shell supplies it, is the SAME
+          // live asymmetric-padding path the species lens' bounds fit already uses (V4 fix,
+          // `src/lens/species/state.svelte.ts`).
+          const padding = deps.chromePadding ? deps.chromePadding() : 40;
+          handle.flyToBounds(bounds, { padding });
         } else {
           // zoom 6, the SAME literal `Places.svelte#zoomTo`'s own "zone" branch flies a
           // Program-Area place to — "zoomed out just enough to see a Program Area's own extent".

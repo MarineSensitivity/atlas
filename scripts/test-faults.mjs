@@ -1589,6 +1589,100 @@ const FAULTS = [
       "back to bare categoryFor(c.key) -- any unrecognized-but-real category is 'No data' again",
     gate: ["npx", "vitest", "run", "tests/lens/scores/flower.test.ts"],
   },
+  {
+    id: "scores-zone-flat-padding-restored",
+    patch: "tests/faults/scores-zone-flat-padding-restored.patch",
+    describe:
+      "selectZone() (state.svelte.ts, W3 item 1: a Scores search pick of a Program Area landed " +
+      "under the phone sheet / desktop docked panel) stops reading deps.chromePadding() -- the " +
+      "bounds fit reverts to a flat 40px padding on every edge, blind to the chrome covering the map",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.search.spec.ts",
+      "-g",
+      "GAA's fitted area lands mostly",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4531" },
+  },
+  {
+    id: "flower-hub-text-not-hidden",
+    patch: "tests/faults/flower-hub-text-not-hidden.patch",
+    describe:
+      "Flower.svelte (W3 item 2: the hub number's own glyph feet poked out below the petal-label " +
+      "chip as two white stubs) draws `.hub-text` unconditionally again, instead of hiding it while " +
+      "`shownPetal` covers it",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.flower.spec.ts",
+      "-g",
+      "hovering a petal hides the hub number",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4532" },
+  },
+  {
+    id: "segmented-flex-fill-dropped",
+    patch: "tests/faults/segmented-flex-fill-dropped.patch",
+    describe:
+      "Segmented.svelte's `.seg button` (W3 item 3: the segments filled only part of the pill, " +
+      "~283 of 1245px on desktop) drops `flex: 1 1 0%` -- a caller whose own layout stretches " +
+      "`.seg` (the Layers unit toggle, the Table Species|Zones|Composition switch) leaves dead " +
+      "space past the last segment again",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/layers.spec.ts",
+      "-g",
+      "the two segments fill the pill's own width",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4533" },
+  },
+  {
+    id: "flower-half-detent-cap-dropped",
+    patch: "tests/faults/flower-half-detent-cap-dropped.patch",
+    describe:
+      "Shell.svelte (W3 item 4: the bigger flower pushed the Component | Score table below the " +
+      "fold at the phone's half detent) passes `compactFlower={false}` unconditionally instead of " +
+      'the live `isPhone && sheetGeom.detent === "half"` -- the flower is never capped at half ' +
+      "detent again",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.flower.spec.ts",
+      "-g",
+      "Half height caps the flower",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4534" },
+  },
+  {
+    id: "modeled-spelling-reverted",
+    patch: "tests/faults/modeled-spelling-reverted.patch",
+    describe:
+      "model.ts's SOURCES_TEXT (W3 item 6) reverts 'modeled' back to the UK spelling 'modelled', " +
+      "the one holdout in this app's otherwise-US-spelling report copy",
+    gate: ["npx", "vitest", "run", "tests/lib/report/model.test.ts", "-t", "US spelling"],
+  },
+  {
+    id: "aquamaps-citation-spacing-not-fixed",
+    patch: "tests/faults/aquamaps-citation-spacing-not-fixed.patch",
+    describe:
+      "fixKnownCitationTypos() (cite.ts, W3 item 6) becomes a no-op -- the AquaMaps dataset's own " +
+      "published citation runs 'UnportedLicense' together again in the report's Sources list",
+    gate: ["npx", "vitest", "run", "tests/release/cite.test.ts"],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

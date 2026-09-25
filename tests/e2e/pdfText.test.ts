@@ -4,14 +4,14 @@ import { describe, expect, it } from "vitest";
 import { normalizePdfText } from "../../e2e/pdfText";
 
 const SENTENCE =
-  "Species rows are every distribution model whose range overlaps the area, weighted by modelled " +
+  "Species rows are every distribution model whose range overlaps the area, weighted by modeled " +
   "habitat suitability, the governing extinction-risk score and the overlapping area.";
 
 describe("normalizePdfText", () => {
   it("joins a sentence broken across rendered lines (the linux-vs-macos wrap, run 35819393922)", () => {
     const wrapped =
       "Species rows are every distribution model whose range overlaps the area, weighted\n" +
-      "by modelled habitat suitability, the governing extinction-risk score and the\n" +
+      "by modeled habitat suitability, the governing extinction-risk score and the\n" +
       "overlapping area.";
     expect(normalizePdfText(wrapped)).toContain(SENTENCE);
   });
@@ -33,14 +33,14 @@ describe("normalizePdfText", () => {
   it("does NOT match when a word was DROPPED (the overprint this gate exists for)", () => {
     const dropped =
       "Species rows are every distribution model whose range overlaps the area, weighted by\n" +
-      "modelled habitat suitability, the governing extinction-risk score and the area.";
+      "modeled habitat suitability, the governing extinction-risk score and the area.";
     expect(normalizePdfText(dropped)).not.toContain(SENTENCE);
   });
 
   it("does NOT match when two lines were OVERPRINTED into each other", () => {
     const overprinted =
       "Species rows are every distribution model whose range overlaps the area, weighted by\n" +
-      "modelled habitat suitability, the governing extinction-risk score andpage 3 of 5 the " +
+      "modeled habitat suitability, the governing extinction-risk score andpage 3 of 5 the " +
       "overlapping area.";
     expect(normalizePdfText(overprinted)).not.toContain(SENTENCE);
   });
