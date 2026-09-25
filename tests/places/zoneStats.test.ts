@@ -11,6 +11,7 @@ import {
   zoneNCellsFor,
   zoneStatFromBoot,
   zoneStatsFor,
+  zoneBboxesByKeyFromFeatures,
   ZONE_CELLS_UNAVAILABLE_REASON,
 } from "../../src/places/zoneStats";
 import { PROGRAM_AREA_NAMES } from "../../src/lib/zones/programAreaNames";
@@ -409,6 +410,88 @@ describe("zoneBboxFromFeatures", () => {
     expect(
       zoneBboxFromFeatures([{ geometry: { type: "Point", coordinates: [-170, 20] } }]),
     ).toBeNull();
+  });
+});
+
+// W6 fix (Ben's live-site report, 2026-09-25): "a second Program-Area search pick does not zoom" --
+// `zoneBoundsFromMap` used to query FILTERED to one key, which only ever answers from tiles loaded
+// for the CURRENT viewport; after the first pick's own flyToBounds zoomed in tight, a second zone's
+// tile was never requested and the query came back empty forever after. This groups an UNFILTERED
+// query's features by key in one pass, so a caller can cache every zone visible in the same batch.
+describe("zoneBboxesByKeyFromFeatures", () => {
+  const gaa = {
+    properties: { programarea_key: "GAA" },
+    geometry: {
+      type: "Polygon",
+      coordinates: [
+        [
+          [-158, 26],
+          [-156, 26],
+          [-156, 28],
+          [-158, 28],
+          [-158, 26],
+        ],
+      ],
+    },
+  };
+  const ala = {
+    properties: { programarea_key: "ALA" },
+    geometry: {
+      type: "Polygon",
+      coordinates: [
+        [
+          [-170, 20],
+          [-168, 20],
+          [-168, 22],
+          [-170, 22],
+          [-170, 20],
+        ],
+      ],
+    },
+  };
+
+  it("groups an unfiltered feature list into one bbox per key", () => {
+    const byKey = zoneBboxesByKeyFromFeatures([gaa, ala], "programarea_key");
+    expect(byKey.get("GAA")).toEqual([
+      [-158, 26],
+      [-156, 28],
+    ]);
+    expect(byKey.get("ALA")).toEqual([
+      [-170, 20],
+      [-168, 22],
+    ]);
+    expect(byKey.size).toBe(2);
+  });
+
+  it("unions multiple features that share the same key", () => {
+    const gaaWestLobe = {
+      properties: { programarea_key: "GAA" },
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [-160, 25],
+            [-159, 25],
+            [-159, 26],
+            [-160, 26],
+            [-160, 25],
+          ],
+        ],
+      },
+    };
+    const byKey = zoneBboxesByKeyFromFeatures([gaa, gaaWestLobe], "programarea_key");
+    expect(byKey.get("GAA")).toEqual([
+      [-160, 25],
+      [-156, 28],
+    ]);
+  });
+
+  it("a feature with no key property, or an empty feature list, is dropped rather than throwing", () => {
+    expect(
+      zoneBboxesByKeyFromFeatures([{ properties: {}, geometry: gaa.geometry }], "programarea_key")
+        .size,
+    ).toBe(0);
+    expect(zoneBboxesByKeyFromFeatures([], "programarea_key").size).toBe(0);
   });
 });
 

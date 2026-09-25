@@ -12,6 +12,11 @@
 //  - a typed "lon, lat" coordinate pair, jumped to and resolved into a cell selection.
 import { paLabel, resolvedZoneName } from "../../places/zoneStats";
 import { primaryUnitType, zoneRows } from "./boot";
+// W6 (Ben, 2026-09-25): "Regions move into the Search bar" -- the Layers pane's own "Zoom to
+// region" select read the SAME `studyAreasFromBoot(boot)` rows this module now searches too; the
+// select is removed (`LayersPanel.svelte`/`ScoresLens.svelte`), so this is its one remaining
+// reader.
+import { studyAreasFromBoot } from "../../lib/map/interaction";
 
 export interface ZoneSearchMatch {
   kind: "zone";
@@ -23,6 +28,16 @@ export interface ZoneSearchMatch {
   label: string;
 }
 
+/** W6: a whole-study-area camera preset (`boot.study_areas`, `lib/map/interaction.ts`'s own
+ * `StudyArea` row) -- "picking a region does exactly what the Layers pane's 'Zoom to region' select
+ * did" (D7: the study area is a CAMERA, never a data filter -- `boot.ts#fullSubregion`'s own header
+ * -- so this is a pure zoom, the raster/legend never change). */
+export interface RegionSearchMatch {
+  kind: "region";
+  key: string;
+  label: string;
+}
+
 export interface CoordSearchMatch {
   kind: "coord";
   lon: number;
@@ -30,9 +45,10 @@ export interface CoordSearchMatch {
   label: string;
 }
 
-export type ScoresSearchMatch = ZoneSearchMatch | CoordSearchMatch;
+export type ScoresSearchMatch = ZoneSearchMatch | RegionSearchMatch | CoordSearchMatch;
 
 export const MAX_RESULTS = 8;
+export const MAX_REGION_RESULTS = 6;
 
 /** the zone unit TYPES this search matches against, in listing order: the release's own SELECTABLE
  * unit (Program Areas -- `primaryUnitType`) first, then `subregion`/`ecoregion` when the release
@@ -66,15 +82,25 @@ function matchRank(query: string, key: string, name: string | undefined): number
   return null;
 }
 
-/**
- * Every zone (across `searchableZoneUnits`) whose key or name matches `query`, ranked and capped —
- * a `query` that folds to the empty string (blank/whitespace) matches nothing, never "everything".
- */
-export function matchZones(boot: unknown, query: string, limit = MAX_RESULTS): ZoneSearchMatch[] {
-  const q = fold(query);
-  if (!q) return [];
-  const ranked: Array<{ m: ZoneSearchMatch; rank: number; order: number }> = [];
-  let order = 0;
+interface Ranked<T> {
+  m: T;
+  rank: number;
+  order: number;
+}
+
+/** every zone (across `searchableZoneUnits`) whose key or name matches `q` (already `fold`ed,
+ * never blank), as UNSORTED, UNCAPPED `{m, rank, order}` triples -- `matchZones` and `scoresSearch`
+ * (below) both build on this ONE ranking pass so an exact zone match and an exact region match can
+ * be compared and merged by rank, not just concatenated group-after-group (see `scoresSearch`'s own
+ * header for the bug two separate, unmerged budgets caused: "ALA" typed as a zone's exact KEY match
+ * still lost to "Alaska" the REGION's mere name-prefix match, because every region was pushed ahead
+ * of every zone regardless of which one actually matched better). `orderStart` offsets `order` so a
+ * caller merging this with `rankRegions` can make ties prefer whichever list starts at 0 -- the
+ * "Regions group visually ahead of Program Areas" rule (W6) becomes a TIE-break only, never an
+ * override of a genuinely better match in the other list. */
+function rankZones(boot: unknown, q: string, orderStart = 0): Ranked<ZoneSearchMatch>[] {
+  const ranked: Ranked<ZoneSearchMatch>[] = [];
+  let order = orderStart;
   for (const unit of searchableZoneUnits(boot)) {
     for (const z of zoneRows(boot, unit)) {
       // V6 fix (owner-reported, 2026-09-24): rank against the SAME resolved name the option label
@@ -91,8 +117,81 @@ export function matchZones(boot: unknown, query: string, limit = MAX_RESULTS): Z
       });
     }
   }
+  return ranked;
+}
+
+/** the region-side twin of `rankZones` -- see its header. */
+function rankRegions(boot: unknown, q: string, orderStart = 0): Ranked<RegionSearchMatch>[] {
+  const ranked: Ranked<RegionSearchMatch>[] = [];
+  let order = orderStart;
+  for (const a of studyAreasFromBoot(boot)) {
+    const rank = matchRank(q, a.key, a.label);
+    if (rank === null) continue;
+    ranked.push({
+      m: { kind: "region", key: a.key, label: a.label ?? a.key },
+      rank,
+      order: order++,
+    });
+  }
+  return ranked;
+}
+
+/**
+ * Every zone (across `searchableZoneUnits`) whose key or name matches `query`, ranked and capped —
+ * a `query` that folds to the empty string (blank/whitespace) matches nothing, never "everything".
+ */
+export function matchZones(boot: unknown, query: string, limit = MAX_RESULTS): ZoneSearchMatch[] {
+  const q = fold(query);
+  if (!q) return [];
+  const ranked = rankZones(boot, q);
   ranked.sort((a, b) => a.rank - b.rank || a.order - b.order);
   return ranked.slice(0, limit).map((r) => r.m);
+}
+
+/**
+ * Every study-area REGION whose key or label matches `query`, ranked the same way `matchZones`
+ * ranks a zone (exact key, then key prefix/substring, then label prefix/substring). A blank `query`
+ * matches nothing -- same "blank matches nothing, never everything" rule `matchZones` follows;
+ * `defaultRegions` below is the separate "nothing typed yet" listing.
+ */
+export function matchRegions(
+  boot: unknown,
+  query: string,
+  limit = MAX_REGION_RESULTS,
+): RegionSearchMatch[] {
+  const q = fold(query);
+  if (!q) return [];
+  const ranked = rankRegions(boot, q);
+  ranked.sort((a, b) => a.rank - b.rank || a.order - b.order);
+  return ranked.slice(0, limit).map((r) => r.m);
+}
+
+/** every published region, in `boot.study_areas`' own order -- the "Regions" group's DEFAULT
+ * listing (nothing typed yet, item "Regions move into the Search bar": "Clicking into the Search
+ * box should open the dropdown... before any typing"). Capped, never ranked (there is no query to
+ * rank against). */
+export function defaultRegions(boot: unknown, limit = MAX_REGION_RESULTS): RegionSearchMatch[] {
+  return studyAreasFromBoot(boot)
+    .slice(0, limit)
+    .map((a) => ({ kind: "region" as const, key: a.key, label: a.label ?? a.key }));
+}
+
+/** every published zone of the release's one SELECTABLE unit (`primaryUnitType`), sorted by its
+ * own resolved label -- the "Program Areas" group's DEFAULT listing (nothing typed yet), same
+ * alphabetical-by-name convention `places/zoneStats.ts#allZoneStats` uses for the Places panel's
+ * own "Add a Program Area" chooser. `[]` for a release with no selectable unit at all. */
+export function defaultZones(boot: unknown, limit = MAX_RESULTS): ZoneSearchMatch[] {
+  const unit = primaryUnitType(boot);
+  if (!unit) return [];
+  return zoneRows(boot, unit)
+    .map((z) => ({
+      kind: "zone" as const,
+      unit,
+      key: z.key,
+      label: paLabel(z.key, z.name, unit),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .slice(0, limit);
 }
 
 // --- coordinates ---------------------------------------------------------------------------------
@@ -169,7 +268,8 @@ export function formatCoordLabel(r: CoordParseResult): string {
 
 /**
  * The combined, capped result list the search field renders: a parsed coordinate (at most one)
- * first, then zone matches filling whatever room is left.
+ * first, then REGION matches (W6: "Regions move into the Search bar"), then zone matches filling
+ * whatever room is left.
  */
 export function scoresSearch(
   boot: unknown,
@@ -181,6 +281,32 @@ export function scoresSearch(
   if (coord)
     out.push({ kind: "coord", lon: coord.lon, lat: coord.lat, label: formatCoordLabel(coord) });
   const remaining = limit - out.length;
-  if (remaining > 0) out.push(...matchZones(boot, query, remaining));
+  if (remaining > 0) {
+    const q = fold(query);
+    if (q) {
+      // W6 fix (found while testing "Regions move into the Search bar"): regions and zones are
+      // ranked TOGETHER here, by match quality, and only THEN merged -- not "every region ahead of
+      // every zone" (that first draft let "Alaska" the region's mere name-PREFIX match to "ala"
+      // outrank the "ALA" zone's own EXACT key match, so typing a Program Area's own acronym could
+      // silently select the wrong kind of thing). `rankRegions` starts its `order` at 0 and
+      // `rankZones` starts after every region, so a TIE in rank still prefers a region (the
+      // "Regions group first" rule survives, but only as a tie-break, never an override).
+      const regionRanks = rankRegions(boot, q);
+      const zoneRanks = rankZones(boot, q, regionRanks.length);
+      const merged = [...regionRanks, ...zoneRanks].sort(
+        (a, b) => a.rank - b.rank || a.order - b.order,
+      );
+      out.push(...merged.slice(0, remaining).map((r) => r.m));
+    }
+  }
   return out;
+}
+
+/**
+ * The BLANK-query dropdown ("open on focus... before any typing"): Regions, then Program Areas --
+ * no coordinate hint match (there is nothing typed to parse). `ScoresSearch.svelte` renders a
+ * separate static hint line for the coordinate syntax below this list; it is not itself a result.
+ */
+export function scoresSearchDefault(boot: unknown): ScoresSearchMatch[] {
+  return [...defaultRegions(boot), ...defaultZones(boot)];
 }

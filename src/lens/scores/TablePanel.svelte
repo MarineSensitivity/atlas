@@ -228,10 +228,13 @@
 <div class="table-panel">
   <div class="header-row">
     <h3 class="header-text">{unavailable ? `${header} — unavailable` : header}</h3>
+    <!-- UI-11 (round 3): `data-tooltip` equal to `aria-label` -- these icon-only buttons had no
+         tooltip before this round. -->
     <button
       type="button"
       class="icon-btn"
       aria-label="Column glossary"
+      data-tooltip="Column glossary"
       onclick={() => (glossaryOpen = true)}
     >
       <Icon name="info" size={16} />
@@ -240,6 +243,7 @@
       type="button"
       class="icon-btn"
       aria-label="Download CSV"
+      data-tooltip="Download CSV"
       disabled={!speciesRows}
       onclick={onExportCsv}
     >

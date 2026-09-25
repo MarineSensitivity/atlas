@@ -69,6 +69,43 @@
     wasOpen = open;
   });
 
+  // Fix round (Opus 5.5 eyes-on review, D6): "on the phone, the palette popover runs under the
+  // bottom nav" -- the popover always opened DOWNWARD with no bound on its own height. The first
+  // pass here measured against `window.innerHeight`, which is WRONG for the phone sheet: the
+  // fixed bottom tab rail (`.rail-region`) is not part of document flow, so it eats no height
+  // `window.innerHeight` ever reports -- a popover that "fits the viewport" by that measure still
+  // renders UNDER the rail, which paints over it (a later, higher-z-index sibling), the exact
+  // "Magma hidden" symptom. `.sheet` (phone) and `.panel-body` (desktop) are BOTH already sized to
+  // stop short of their own reserved chrome (`--size-rail-row` on the sheet; the panel's own
+  // scroll/dock bounds) -- the real available space is THAT container's own edge, not the raw
+  // viewport. Measured at OPEN time (not reactively tracked -- the trigger's own position does
+  // not change while a popover is open in any caller today): flip to open UPWARD when there is
+  // more room above the trigger than below, and cap the popover's own height to whatever room is
+  // actually available in whichever direction it opens, with `overflow-y: auto` as the CSS-level
+  // floor regardless (so a caller neither ancestor class matches -- the gallery demos -- still
+  // falls back to the viewport and never renders content unreachably off-screen).
+  let openUpward = $state(false);
+  let maxHeightPx = $state<number | undefined>(undefined);
+  const POPOVER_EDGE_MARGIN = 8;
+
+  $effect(() => {
+    if (!open || !triggerEl || !popoverEl) return;
+    const triggerRect = triggerEl.getBoundingClientRect();
+    const boundary = triggerEl.closest(".sheet, .panel-body");
+    const boundaryRect = boundary?.getBoundingClientRect();
+    const top = boundaryRect?.top ?? 0;
+    const bottom = boundaryRect?.bottom ?? window.innerHeight;
+    const spaceBelow = bottom - triggerRect.bottom - POPOVER_EDGE_MARGIN;
+    const spaceAbove = triggerRect.top - top - POPOVER_EDGE_MARGIN;
+    // the natural (uncapped) content height -- read BEFORE this effect's own max-height takes
+    // effect on this render, so a re-open after a viewport resize re-measures the real content,
+    // never a stale cap from the previous open.
+    const naturalHeight = popoverEl.scrollHeight;
+    const up = naturalHeight > spaceBelow && spaceAbove > spaceBelow;
+    openUpward = up;
+    maxHeightPx = Math.max(80, up ? spaceAbove : spaceBelow);
+  });
+
   function handleDocumentPointerdown(event: PointerEvent) {
     if (!open) return;
     const target = event.target as Node;
@@ -128,9 +165,11 @@
     class="popover"
     class:popover--right={align === "right"}
     class:popover--match-trigger={matchTriggerWidth}
+    class:popover--up={openUpward}
     id={popoverId}
     bind:this={popoverEl}
     hidden={!open}
+    style:max-height={maxHeightPx !== undefined ? `${maxHeightPx}px` : undefined}
   >
     {@render children()}
   </div>
@@ -192,11 +231,25 @@
     color: var(--text-primary);
     font-size: var(--text-sm);
     box-shadow: var(--elev-3);
+    /* fix round (D6): a CSS-level floor regardless of the JS measurement above -- overflow
+       scrolls rather than rendering content past the visible viewport (under the phone's fixed
+       bottom rail) if that measurement is ever unavailable (e.g. a caller/test environment with
+       no real layout). `max-height` itself is set inline, per-open, by the JS above. */
+    overflow-y: auto;
   }
 
   .popover--right {
     left: auto;
     right: 0;
+  }
+
+  /* fix round (D6): flips the popover to open ABOVE the trigger instead of below, when the JS
+     measurement above finds more room there -- the ramp picker sitting at the very bottom of a
+     phone sheet's own "Data" row is the motivating case (its natural height ran under the fixed
+     bottom tab rail when it always opened downward). */
+  .popover--up {
+    top: auto;
+    bottom: calc(100% + var(--space-2));
   }
 
   /* Fix round (orchestrator, 2026-09-25): "the popover as wide as the trigger" -- `.popover-wrap`

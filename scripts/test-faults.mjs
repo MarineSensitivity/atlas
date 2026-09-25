@@ -891,6 +891,16 @@ export const FAULTS = [
       "fly-to and stays on the whole study area",
     gate: ["npx", "vitest", "run", "tests/lens/species/camera.test.ts", "-t", "D8"],
   },
+  {
+    id: "species-wide-range-threshold-inverted",
+    patch: "tests/faults/species-wide-range-threshold-inverted.patch",
+    describe:
+      "R3-A1's wide-range span check flips to `span < WIDE_RANGE_SPAN_DEG` -- a COMPACT model " +
+      "(under the threshold) gets wrongly narrowed to a US intersection it was never supposed to " +
+      "have, while a genuinely WIDE model (over the threshold, e.g. the leatherback-shaped " +
+      "130-deg fixture) keeps its whole, un-narrowed range and the 'Zoom to' toggle never appears",
+    gate: ["npx", "vitest", "run", "tests/lens/species/camera.test.ts", "-t", "R3-A1"],
+  },
   // RETIRED (P9, 0.10.49): "phone-zoom-boost-neutered" patched `PHONE_STUDY_AREA_ZOOM_BOOST` to 0,
   // proving the phone's initial camera stayed zoomed in. P9 found the deeper bug that mechanism
   // never caught: the boosted camera was still centred on `FALLBACK_FULL_STUDY_AREA`'s own
@@ -1843,6 +1853,23 @@ export const FAULTS = [
     ],
     env: { PW_PORT: "4437" },
     duckdbExt: true,
+  },
+  // --- round 3, W6 (consistency slice A: shell + shared UI) ---------------------------------------
+  {
+    id: "notify-toast-dropped",
+    patch: "tests/faults/notify-toast-dropped.patch",
+    describe:
+      "announcer.ts's notify() drops its pushToast() call -- a user-initiated action's result/" +
+      "error goes back to reaching only a screen reader, with no visible toast at all (UI-1)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.toast.spec.ts",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4471" },
   },
   // --- round 3, W7 (consistency + copy, Ben's popup-sparkline ask) --------------------------------
   {

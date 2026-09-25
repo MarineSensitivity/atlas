@@ -215,7 +215,10 @@ test.describe("S-01: the study area is a CAMERA — sel.area drives it on load a
     expect(errors).toEqual([]);
   });
 
-  test("changing the Zoom to region select FULL -> AK flies there (real moveend) and writes area=AK to the URL", async ({
+  // W6 (Ben, 2026-09-25): "Regions move into the Search bar" -- the Layers pane's own "Zoom to
+  // region" select is gone; picking a region now goes through the top-bar Search field's "Regions"
+  // group (`ScoresSearch.svelte`, `search.ts#matchRegions`/`selectRegion`).
+  test("picking Alaska from the Search bar's Regions group flies there (real moveend) and writes area=AK to the URL", async ({
     page,
   }) => {
     await gotoScoresArea(page, "");
@@ -234,7 +237,9 @@ test.describe("S-01: the study area is a CAMERA — sel.area drives it on load a
     );
     await waitForCameraNear(page, paddedFull);
 
-    await flyAndWaitForMoveEnd(page, () => page.getByLabel("Zoom to region").selectOption(AK.key));
+    const input = page.getByRole("combobox", { name: "Search Program Areas or coordinates" });
+    await input.click(); // open on focus -- lists Regions with nothing typed (UI-17/W6)
+    await flyAndWaitForMoveEnd(page, () => page.getByRole("option", { name: AK.label }).click());
 
     const camera = await getCamera(page);
     expect(camera.lng).toBeCloseTo(AK.lon, 0);
@@ -249,9 +254,9 @@ test.describe("S-01: the study area is a CAMERA — sel.area drives it on load a
     await gotoScoresArea(page, `&area=${AK.key}`);
     await waitForCameraNear(page, { lon: AK.lon, lat: AK.lat });
 
-    await flyAndWaitForMoveEnd(page, () =>
-      page.getByLabel("Zoom to region").selectOption(FULL.key),
-    );
+    const input = page.getByRole("combobox", { name: "Search Program Areas or coordinates" });
+    await input.click();
+    await flyAndWaitForMoveEnd(page, () => page.getByRole("option", { name: FULL.label }).click());
     // WebKit-only flake, found under repeat: a native <select> change can fire the `flyTo`
     // animation's OWN moveend more than once before the camera has actually finished travelling
     // (e.g. an intermediate easing tick), so `flyAndWaitForMoveEnd`'s "count went up once" check
@@ -312,9 +317,10 @@ test.describe("S-01: the study area is a CAMERA — sel.area drives it on load a
     await gotoScoresArea(page, "&area=AK");
     await waitForCameraNear(page, { lon: AK.lon, lat: AK.lat });
 
-    // the panel body really is absent — the Zoom to region <select> is not in the DOM at all — so
-    // this also proves the assertion above did not accidentally exercise the panel's own onchange
-    // path.
-    await expect(page.getByLabel("Zoom to region")).toHaveCount(0);
+    // the panel body really is absent — the Layer <select> (W6: the only field left in the Layers
+    // pane's `fields-row` now "Zoom to region" moved into the Search bar) is not in the DOM at all
+    // — so this also proves the assertion above did not accidentally exercise the panel's own
+    // `LibLayersPanel` at all.
+    await expect(page.getByLabel("Layer", { exact: true })).toHaveCount(0);
   });
 });

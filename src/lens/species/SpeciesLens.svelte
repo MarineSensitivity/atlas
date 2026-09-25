@@ -52,8 +52,10 @@
   // the scores lens' zone choropleth), so the toggle is simply omitted (`LibLayersPanel`'s own
   // `unitToggle` prop is optional, and its whole block does not render without it) rather than
   // shown disabled with a reason nobody asked for.
-  function onOutlineChange(value: "programarea" | "ecoregion") {
-    selStore.set({ out: value as Outline });
+  // fix round D7: `value` is the wider `Outline` type now -- see ScoresLens.svelte's own comment
+  // on `onOutlineChange` (same shape here, species-lens copy).
+  function onOutlineChange(value: Outline) {
+    selStore.set({ out: value });
   }
   const outline = $derived<LayersOutlineChoice>({ value: sel.out, onChange: onOutlineChange });
 
@@ -83,7 +85,12 @@
              other (transient/infra) failure gets a plain retry hint. -->
         <p class="error" role="alert">{speciesCardErrorText(lens.cardError.kind, lens.ver)}</p>
       {:else if lens.card}
-        <SpeciesTitle sci={lens.card.sci} common={lens.card.common} />
+        <SpeciesTitle
+          sci={lens.card.sci}
+          common={lens.card.common}
+          wideRange={lens.wideRange}
+          onSetZoomTarget={(target) => lens.setZoomTarget(target)}
+        />
         {#if lens.bar}
           <LayerBarView
             bar={lens.bar}

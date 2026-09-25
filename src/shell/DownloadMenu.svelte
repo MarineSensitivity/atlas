@@ -47,8 +47,15 @@
     ver: string | null;
     mapHandle: MapHandle | undefined;
     boot: unknown;
-    /** the layer/species human title -- a metric's `label` (scores) or the species' `sci` name. */
+    /** the SHORT layer/species title -- the metric's short display label (never its long
+     * description, D3 fix) or the species' `sci` name. */
     title: string;
+    /** the layer's own LONG description, ALREADY deduped against `title` by the caller
+     * (`Shell.svelte`'s `phoneLegendDescription`) -- `null`/omitted for species (no per-model
+     * description) or when the release publishes none. An optional second, smaller footer line;
+     * dropped instead if it does not fit the figure's width (`footer.ts#fitsWidth`, applied in
+     * `mapCapture.ts`/`mapSvgExport.ts`, not here -- this component only passes the candidate through). */
+    description?: string | null;
     unit?: string;
     /** the id the GeoTIFF filename carries -- a `metric_key` (scores) or `mdl_key` (species). */
     metricOrMdlKey: string | null;
@@ -81,6 +88,7 @@
     mapHandle,
     boot,
     title,
+    description = null,
     unit,
     metricOrMdlKey,
     cogUrl,
@@ -110,7 +118,9 @@
   );
 
   function footerInfo() {
-    return { title, unit, ver: ver ?? "unknown", url: location.href };
+    // `location.href` -- the SAME absolute string `Shell.svelte#onShare` copies (D3 fix: never
+    // stripped to a relative path); `footer.ts#canonicalShareUrl` drops `theme` from it.
+    return { title, description, unit, ver: ver ?? "unknown", url: location.href };
   }
 
   async function downloadMapPng() {

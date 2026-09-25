@@ -96,20 +96,27 @@
   <div class="sheet-head">
     <h2 class="sheet-title" id={titleId}>{title}</h2>
     <div class="panel-controls" role="group" aria-label="Sheet size">
+      <!-- UI-19 fix (Opus 5.5 eyes-on review, round 3): at "peek" this button used to stay
+           "Collapse to a peek" -- already the current detent, so clicking it was a no-op with no
+           visual "pressed" state anywhere on the row, unlike "half"/"full" which both frame the
+           current detent via `aria-pressed`. It now flips to "Expand to half" at peek, keeping
+           this row a real three-way control with no dead button. -->
       <button
         type="button"
         data-sheet-control="collapse"
         aria-expanded={detent !== "peek"}
         aria-controls={bodyId}
-        aria-label="Collapse to a peek"
-        onclick={collapseToPeek}
+        aria-label={detent === "peek" ? "Expand to half" : "Collapse to a peek"}
+        data-tooltip={detent === "peek" ? "Expand to half" : "Collapse to a peek"}
+        onclick={() => (detent === "peek" ? setDetent("half") : collapseToPeek())}
       >
-        <Icon name="collapseDown" size={18} />
+        <Icon name={detent === "peek" ? "collapseUp" : "collapseDown"} size={18} />
       </button>
       <button
         type="button"
         aria-pressed={detent === "half"}
         aria-label="Half height"
+        data-tooltip="Half height"
         onclick={() => setDetent("half")}
       >
         <Icon name="dockBottom" size={18} />
@@ -118,6 +125,7 @@
         type="button"
         aria-pressed={detent === "full"}
         aria-label="Full height"
+        data-tooltip="Full height"
         onclick={() => setDetent("full")}
       >
         <Icon name="expand" size={18} />

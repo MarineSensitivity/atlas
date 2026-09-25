@@ -50,6 +50,61 @@ naming which layer is displayed — plus UI-4/5/8/9 from the Opus 5.5 review.
   blank-space defect B9 fixed for `SpeciesTable.svelte` — both now fill whatever height
   `TablePanel.svelte`'s own `height: 100%` hands down, the same fix, applied the same way.
 
+# atlas 0.10.73
+
+Round 3, W6 (consistency slice A: shell + shared UI). Two live-site bugs (a second Program-Area
+search pick not zooming; Regions folded into the Search bar) plus a first pass on the Opus 5.5
+consistency review's UI-1/2/3/10/11/13/16/17/19 items.
+
+- **Fixed: a SECOND Program-Area pick from the Search bar did not zoom the camera** (Ben,
+  live-site report). `selectZone`'s bounds lookup used to query the map FILTERED to the one key
+  just picked, which only answers from tiles loaded for the CURRENT viewport — the first pick's own
+  `flyToBounds` had already zoomed in tight on the first zone, so the second zone's tile was never
+  requested and the query came back empty on every later pick. Fixed by querying UNFILTERED and
+  caching every zone the query happens to see (`places/zoneStats.ts#zoneBboxesByKeyFromFeatures`,
+  `state.svelte.ts`'s new `zoneBoundsCache`) — the first pick's own query now incidentally primes
+  the cache for every OTHER zone loaded at that moment (normally all of them, at the app's initial
+  wide camera), so a later pick is a cache hit with no live query at all.
+- **Regions move into the Search bar** (Ben): the Search field opens its dropdown ON FOCUS, before
+  any typing, listing **Regions** (the release's `study_areas`) then **Program Areas**, then a
+  coordinate-syntax hint; picking a region does exactly what the Layers pane's now-removed "Zoom to
+  region" select did (a pure camera move — the raster/legend never change, confirmed against
+  `boot.ts#fullSubregion`'s own "the study area is a camera, never a filter" rule). Typing also
+  ranks region matches alongside zone matches by actual match quality (an exact zone-key match
+  always outranks a merely-similar region name), not "every region ahead of every zone"
+  regardless of fit. The Layers pane's Layer field is now full width.
+- **Fixed: the Search dropdown stayed open after focus left it** (UI-17) — closes on `focusout` to
+  any target outside the combobox; a click on a result still resolves first.
+- **Fixed: the phone map attribution was hidden behind the sheet** at "peek" and "half" (UI-2) — it
+  now tracks the sheet's own real height, the same variable the legend chip already used.
+- **Fixed: the phone sheet's "peek" detent had a dead "Collapse to a peek" button** (UI-19) — it now
+  reads "Expand to half" there, so all three detent controls do something.
+- **New: `<Toast>` is mounted** (Shell.svelte) and `announcer.ts` gains `notify(text, {tone})` —
+  announces AND shows a visible toast. Every user-initiated Places action (pick on/off, add/remove/
+  duplicate/download a place, draw hints, every "couldn't…" error) and the top bar's Share/chunk-
+  load-failure messages now use it; previously all ~60 of these reached only a screen reader (UI-1).
+- **New: one global `[data-tooltip]` hover/focus tooltip** (`src/lib/ui/tooltip.css`, replacing two
+  independent copies) — every icon-only button now has one: the panel's Dock/Full screen/Collapse
+  controls, the phone sheet's three detent buttons, the Table's info/download buttons, a map
+  popup's close button. Suppressed while the button's own menu/dialog is open (`[aria-haspopup]`);
+  About's tooltip now reads "About this release", matching its label (UI-11).
+- **Fixed: native checkboxes/range sliders used the browser's default blue accent** in both themes
+  (the Layers opacity sliders, the Columns menu, "Only species in US waters", the welcome "Don't
+  show this again" box) — `:root { accent-color }` now matches `--focus-ring` (gold on navy, steel
+  on paper); the species card's merged-model "✓" moves off the gold `--fill-accent` FILL token (was
+  ~1.5:1 on paper) onto `--text-accent`; the "quiet" Switch's ON state keeps its neutral track but
+  its thumb now reads gold in both themes (UI-10).
+- **Fixed: the Scores Species table printed scientific names upright**, the one place that
+  disagreed with the (already-italic) species card/popup — a new shared `<SciName>` component
+  (`src/lib/ui/`) (UI-13).
+- **About modal fixes** (UI-16): the release line's separator no longer drops its leading space
+  ("v7· 2026-06-12" → "v7 · 2026-06-12"); "Documentation" now opens the release's own versioned
+  Atlas chapter instead of the docs book root; "What changed" now opens the DATA release's own
+  notes chapter instead of the app's CHANGELOG.md; the restricted-release note's "--" is now an em
+  dash; the Help menu lists the zoom-out key ("-") alongside zoom-in; the phone ⋯ menu's redundant
+  "Report" quick action is dropped (desktop never had an equivalent — the rail's own "Report" tool
+  is the one place both viewports already share).
+
 # atlas 0.10.72
 
 Round 3, W5 (process and tooling debt): gallery screenshot stability, seeded-fault patch hygiene,
@@ -80,6 +135,41 @@ e2e/feedback.spec.ts`).
   anchor point on the fallback camera path).
 - `docs/status.md`'s Decisions table (R1–R6) now shows the correct landed version and "shipped"
   instead of a stale "building"/scheduling note for work that has been live since round 2.
+- **Fixed (D3, Download menu): the map-view export's title/filename used the layer's LONG
+  description** (~190 characters for `primprod`), not the short label the Layer select and legend
+  chip already show — the download title/filename now match what is on screen; the long
+  description can still appear as an optional, smaller second footer line when it fits. **The
+  footer's "share URL" was relative and carried `theme=`** — it is now the same absolute URL
+  Share copies, with `theme` dropped. **Nit:** the Download tooltip no longer draws over its own
+  open menu.
+
+# atlas 0.10.71
+
+Round 3, W4: the phone's default first view, wide-range species framing, and the category
+palette (R3-A1, R3-A2, R3-A3).
+
+- **Fixed (R3-A2): the phone's default first view showed only the northern Gulf of Mexico**, one
+  region of four. `PHONE_DEFAULT_BOUNDS` now frames the Pacific coast and Florida/the Gulf, chosen
+  by looking at real builds and measuring directly against a 10%-of-free-area sky-band target
+  (`e2e/shell.firstview.phone.spec.ts`'s own two-colour probe, checked at both the "half" and
+  "peek" sheet detents). First pass framed the lower 48 + a south-east-Alaska/Gulf-of-Alaska hint
+  (`[[-128,24],[-65,52]]`) but left ~43%/23% of the free area as empty sky above the globe's rim;
+  second pass narrowed further to `[[-119,25],[-78,51]]` (zoom ~2.6), measuring 7.0%/3.7% sky — both
+  under target. A span narrow enough to clear the target cannot also carry the Alaska hint or the
+  Atlantic seaboard north of the Carolinas (the same lever narrows both), so per the decision's own
+  fallback, both are dropped in favor of a clean, minimal-sky lower-48 view.
+- **New (R3-A1): a wide-range species model frames its IN-US portion by default**, with a compact
+  "Zoom to: US waters | Whole range" toggle in the species card as the escape hatch back to the
+  whole thing. The v7 leatherback's own model spans the whole Pacific (SWOT DPS nesting near
+  Oceania, foraging to Alaska); when a model's fitted bbox spans more than 120° of longitude, it is
+  intersected against a dateline-aware "study area as a box" (the release's own published extent if
+  one ever exists, else derived from the same camera the desktop default view renders — never a
+  hardcoded number). Applies to both viewports; a compact model is completely unaffected.
+- **Changed (R3-A3): re-hued Fish (blue-violet) and Turtle (moss/olive) in the eight-category
+  palette**, and nudged Mammal darker/more golden — `--cat-bird`/`--cat-fish` and
+  `--cat-mammal`/`--cat-turtle` were near-identical in both themes, and Coral/Mammal collapsed
+  under a protanopia simulation despite passing on normal-vision CIE76 ΔE alone. Every category
+  stays ≥4.5:1 text / ≥3:1 non-text (`npm run contrast`) and distinct from `--cat-primprod`.
 
 # atlas 0.10.70
 

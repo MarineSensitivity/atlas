@@ -75,7 +75,9 @@ test.describe("P1: phone search button", () => {
     const input = dialog.getByRole("combobox", { name: "Search Program Areas or coordinates" });
     await expect(input).toBeVisible({ timeout: 10_000 });
     await expect(input).toBeFocused();
-    await expect(input).toHaveAttribute("placeholder", "Program Areas or lon, lat");
+    // W6 (Ben, 2026-09-25): "Regions move into the Search bar" -- the placeholder now names all
+    // three match kinds the dropdown groups (Regions, then Program Areas, then a coordinate hint).
+    await expect(input).toHaveAttribute("placeholder", "Regions, Program Areas or lon, lat");
   });
 
   test("desktop (1280x800): the phone search button is not rendered", async ({ page }) => {

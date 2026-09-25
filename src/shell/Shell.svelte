@@ -28,9 +28,10 @@
   import Segmented from "../lib/ui/Segmented.svelte";
   import VersionBadge from "../lib/ui/VersionBadge.svelte";
   import Announcer from "../lib/ui/Announcer.svelte";
+  import Toast from "../lib/ui/Toast.svelte";
   import Honeycomb from "../lib/ui/Honeycomb.svelte";
   import LegendChip from "../lib/ui/LegendChip.svelte";
-  import { announce } from "../lib/ui/announcer";
+  import { announce, notify } from "../lib/ui/announcer";
   // V3 (Ben's report, 2026-09-24): titiler-v8/the API going dark for an hour with a perfectly
   // normal-looking, raster-less map -- src/lib/health/* is the probe state machine (Svelte-free,
   // per tests/state/invariants.test.ts's gate); createHealthStore is this file's own reactive
@@ -140,7 +141,6 @@
   // driver.js). Both are small/dependency-free, so both stay ordinary static imports; only the
   // TOUR RUNTIME (tourRuntime.ts, which imports driver.js) is a dynamic import() -- see
   // `beginTour()` below and that file's own header.
-  import { recordRecentReport, reportAction } from "./report";
   import { tourStepsForLens, type TourActions } from "./tour";
   import type { Lens } from "../lib/state/types";
 
@@ -296,39 +296,27 @@
   async function onShare() {
     try {
       await navigator.clipboard.writeText(location.href);
-      announce("Link copied to your clipboard.");
+      notify("Link copied to your clipboard.");
     } catch {
-      announce("Couldn't copy the link automatically — copy it from the address bar.");
+      notify("Couldn't copy the link automatically — copy it from the address bar.", {
+        tone: "error",
+      });
     }
   }
 
-  // --- Report (U6, round 2, docs/usability.md M1) -------------------------------------------------
-  // "Report" does the obvious thing with what is selected NOW: `reportAction()` (report.ts, pure)
-  // decides between opening report.html straight away (a place list in `#pl=`, or a zone selected
-  // via `sel=zone:…`) and showing the chooser -- the SAME rail panel `selectTool("report")` already
-  // opens for every other tool, never a second surface. window.open() runs SYNCHRONOUSLY here (no
-  // `await` before it), the same popup-blocker rule Places.svelte/TablePanel.svelte's own "Report"
-  // actions already follow.
-  function reportStorage(): Storage | null {
-    try {
-      return window.sessionStorage;
-    } catch {
-      return null; // private mode / storage disabled -- chrome, not correctness
-    }
-  }
+  // UI-16 (round 3, Opus 5.5 eyes-on review): the phone ⋯ menu's own quick "Report" action
+  // (`onReport()`, its `reportAction()`-driven "open a recent report straight away, or the
+  // chooser") is REMOVED -- desktop never had an equivalent top-bar button, only the rail's own
+  // "Report" tool (`selectTool("report")`, below), so this was the one ⋯-vs-desktop mismatch the
+  // review named. `ReportTool.svelte` (the rail tool's own panel body) already calls the SAME
+  // `reportAction()`/`recordRecentReport()` pair independently ("a shortcut to open a report for
+  // whatever is already selected", that file's own header) the moment it opens, so nothing here
+  // loses functionality -- the smart-open behaviour just now lives in the ONE place both viewports
+  // already share, instead of a second copy only the phone's quick action reached.
 
   // R2 (docs/usability.md §7): "About this release" moved from the on-map bottom-left card into
   // the top bar (`data-control="about"`, TopBarActions.svelte) -- there is no longer a stub `onHelp`
   // here pointing a keyboard/AT user at it; U6's own real Help menu (below) owns `onHelp` outright.
-  function onReport() {
-    const action = reportAction(sel, earlyVersion);
-    if (action.kind === "open") {
-      window.open(action.href, "_blank", "noopener");
-      recordRecentReport(reportStorage(), { href: action.href, label: action.label });
-    } else {
-      selectTool("report");
-    }
-  }
 
   // --- Help menu (U6, round 2) ---------------------------------------------------------------------
   // A non-modal disclosure (Popover.svelte's own dismiss-on-outside-click/Esc pattern, inlined here
@@ -603,16 +591,35 @@
     sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresLens?.mapExtra.legend ?? null),
   );
 
+  // UI-1 (round 3): `<Toast>`'s own phone bottom-offset PROP -- see its mount point (below) for why
+  // this is a prop, never a wrapping `<div>`. Same "rail row + sheet's real height while floating"
+  // formula `.map-attribution`/`.legend-chip-region` already use (shell.css), computed in PX here
+  // since Toast.svelte sets it as a literal inline style, not a `calc()` string referencing tokens
+  // this component does not import (64/8 mirror `chromePadding.ts#PHONE_RAIL_ROW_PX` and
+  // `tokens.css`'s `--space-2`, the SAME "estimate, not import" convention that file's own header
+  // explains).
+  const toastPhoneBottomOffsetPx = $derived(
+    64 +
+      (phoneLegend && legendChipMode(sheetGeom.detent) === "floating" ? sheetGeom.height : 0) +
+      8,
+  );
+
   // R3-W2: the Download menu's per-lens context -- built from data every lens ALREADY resolves
   // (the current layer row, the active species pill/asset), never a second read of `sel.lyr`/`sel.in`
   // against a different rule than the one that actually painted the map. `effectiveLyr` (never raw
   // `sel.lyr`) is the SAME fallback `state.svelte.ts#lyr` applies -- an unset/unknown `?lyr=` still
   // resolves to the release's own composite default, matching what the raster ACTUALLY paints.
   const downloadLyr = $derived(effectiveLyr(sel.lyr, boot));
+  // Fix round (Opus 5.5 eyes-on review, D3): this used to read `layerByKey(...)?.label` directly
+  // -- `boot.layers[].label` is the layer's LONG description (~190 chars for `primprod`), not a
+  // title. `phoneLegend.title` (below) is the SAME short label the Layer select and the legend
+  // chip already show (`mapInputs.ts`'s own `title`, `metricKeyLabel()`/the manifest's short
+  // `metricLabels` preferred over the long `layer.label`) -- reused here, never re-derived, so the
+  // download title can never drift from what the app is already displaying.
   const downloadTitle = $derived(
     sel.lens === "species"
       ? (speciesLens.card?.sci ?? "Species")
-      : (layerByKey(boot, downloadLyr)?.label ?? downloadLyr ?? "Score"),
+      : (phoneLegend?.title ?? downloadLyr ?? "Score"),
   );
   const downloadLegendStops = $derived(
     phoneLegend && "stops" in phoneLegend ? phoneLegend.stops : [],
@@ -645,7 +652,6 @@
       : downloadLyr,
   );
   const downloadPlaces = $derived(placesFromHash(sel.pl));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   // `typeof DownloadMenu` (not `Component<any>`, unlike the other lazy chunks below) -- this is the
   // ONE lazy chunk in this file `bind:this` calls a method on (`downloadMenuRef?.openPhoneModal()`);
   // `Component<any>`'s implicit empty Exports would make `bind:this` yield a shape lacking
@@ -685,6 +691,17 @@
     if (desc === null) return null;
     return desc === (phoneLegend?.title ?? null) ? null : desc;
   });
+
+  // R3-W2 fix round (Opus 5.5 eyes-on review, D3): the Download menu's footer, optional second
+  // line -- reuses `phoneLegendDescription` verbatim (declared just above; it is ALREADY deduped
+  // against `phoneLegend.title` there -- `null` when the description would just repeat the title,
+  // the release publishes none, or the lens is species). Never a second, independent read of
+  // `layer?.label` here -- one place decides "is this description worth showing at all". Declared
+  // AFTER `phoneLegendDescription` on purpose: `npm run check` (svelte-aware, unlike plain `tsc`)
+  // flags a `const` referenced before its OWN declaration even when the read only happens inside a
+  // closure Svelte invokes later (a `$derived` callback) -- the runtime would have been fine, but
+  // the static check is not, so source order here matters.
+  const downloadDescription = $derived(sel.lens === "scores" ? phoneLegendDescription : null);
 
   // G-25 fix: `Sel.out`'s ONE effect on the map, applied to whichever `zones` array (the shell's
   // own outline-only `zoneUnits`, or the scores lens' richer `scoresLens.mapExtra.zones`) is about
@@ -1133,6 +1150,21 @@
         : `https://marinesensitivity.org/docs/${earlyVersion}/apps/atlas.html`,
   );
 
+  // UI-16 (round 3, Opus 5.5 eyes-on review): the About modal's "What changed" used to link the
+  // APP's own CHANGELOG.md (github.com/MarineSensitivity/atlas) -- the ATLAS CODE's history, not
+  // the DATA release the person is actually looking at. Structurally identical to `docsHref` just
+  // above (same public/restricted/unknown resolution, same "never import src/lib/release" rule),
+  // one chapter path swapped -- `src/lib/release/docsUrl.ts#releaseNotesUrl` is the tested,
+  // imported-from-a-test-only twin (`tests/release/docsUrl.test.ts`); this hand duplicate is what
+  // `TopBarActions.svelte` actually renders.
+  const releaseNotesHref = $derived(
+    !earlyVersion || !currentVersionRow
+      ? "https://marinesensitivity.org/docs/"
+      : releaseRestricted
+        ? `https://preview.marinesensitivity.org/docs/${earlyVersion}/release_notes.html`
+        : `https://marinesensitivity.org/docs/${earlyVersion}/release_notes.html`,
+  );
+
   // --- Deliverable 4: "Report a problem" -> a prefilled GitHub issue, zero backend --------------
   // `viewport` is the one field with no existing reactive source (unlike lens/ver/theme, all read
   // off `sel`/`earlyVersion`/`resolvedTheme` below) -- tracked the same way `isPhone` above is.
@@ -1275,7 +1307,7 @@
   // (a lens/tool switch away and back, which re-reads `sel.lens`/`activeTool` -- both already this
   // effect's own trigger).
   function announceChunkFailure(what: string): void {
-    announce(`Couldn't load ${what}. Try switching tools again.`);
+    notify(`Couldn't load ${what}. Try switching tools again.`, { tone: "error" });
   }
 
   // P1 (Opus eyes-on assessment, 2026-09-24): the topbar `.search-field` -- which also hosts the
@@ -1436,6 +1468,20 @@
      fires before ANYONE has subscribed at all. -->
 <Announcer />
 
+<!-- UI-1 (round 3, Opus 5.5 eyes-on review): "the visible toast component exists but the app never
+     mounts it" -- about 60 announce()-only messages (Share's copy confirmation, pick-mode on/off,
+     draw hints, every "couldn't..." error) reached only a screen reader. ONE instance here
+     (report.html mounts its own, separately -- see Report.svelte); every `notify()` call
+     (announcer.ts) reaches it via `toastQueue.ts#subscribeToastPush`, no `bind:this` needed.
+     `toastPhoneBottomOffsetPx` (script block) is the SAME "rail row + sheet's real height while
+     floating, else just the rail row" formula `.map-attribution`/`.legend-chip-region` already use
+     (shell.css) -- "the toast must never cover the phone sheet's buttons or the legend chip" --
+     passed as a PROP (Toast.svelte sets it on its own root), never a wrapping `<div>`: an extra
+     static block element ahead of the top bar, even with a `position: fixed` child, was found (real
+     Playwright run) to intercept pointer events across the WHOLE page -- `elementFromPoint`
+     resolved to `#shell.app` itself, nowhere near any toast, and every rail/panel click timed out. -->
+<Toast phoneBottomOffsetPx={toastPhoneBottomOffsetPx} />
+
 <header class="topbar" data-tour="topbar">
   <span data-tour="brand" style="display:flex;align-items:center;gap:var(--space-2)">
     <WaveHexMark size={28} />
@@ -1497,6 +1543,7 @@
         {boot}
         onSelectZone={(unit: string, key: string) => scoresLens?.selectZone(unit, key)}
         onSelectCoord={(lon: number, lat: number) => void scoresLens?.selectCoordinate(lon, lat)}
+        onSelectRegion={(key: string) => scoresLens?.selectRegion(key)}
       />
     {:else}
       <input
@@ -1550,6 +1597,7 @@
       {mapHandle}
       {boot}
       title={downloadTitle}
+      description={downloadDescription}
       unit={downloadUnit}
       metricOrMdlKey={downloadMetricOrMdlKey}
       cogUrl={downloadCogUrl}
@@ -1593,7 +1641,7 @@
       aria-expanded={helpOpen}
       aria-controls="help-menu"
       aria-label="Help"
-      data-tooltip="Help"
+      data-tooltip={helpOpen ? undefined : "Help"}
       bind:this={helpTriggerEl}
       onclick={onHelp}
     >
@@ -1621,6 +1669,10 @@
           <li>Esc — close the open panel or dialog</li>
           <li>↓ / ↑ / Home / End — move within the tool rail</li>
           <li>= — zoom the map in</li>
+          <!-- UI-16 fix (round 3, Opus 5.5 eyes-on review): "lists '= — zoom the map in' but no
+               zoom-out key" -- MapLibre's own default keyboard handler binds "-" (zoom out)
+               alongside "="/"+" (zoom in); only the in-key was ever documented here. -->
+          <li>- — zoom the map out</li>
         </ul>
       </div>
       <a
@@ -1670,8 +1722,8 @@
     {feedbackHref}
     onFeedbackClick={openFeedback}
     {onShare}
-    onReportTop={onReport}
     helpDocsHref={docsHref}
+    {releaseNotesHref}
     onTakeTour={onHelpTakeTour}
     {resolvedTheme}
     onToggleTheme={toggleTheme}
@@ -1780,6 +1832,9 @@
     role="group"
     aria-label="Map data attribution"
     data-testid="map-attribution"
+    style={`--legend-chip-sheet-height: ${
+      legendChipMode(sheetGeom.detent) === "floating" ? sheetGeom.height : 0
+    }px`}
   >
     <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre</a>
     <span aria-hidden="true">|</span>
@@ -2098,6 +2153,10 @@
             }}
             onSelectCoord={(lon: number, lat: number) => {
               void scoresLens?.selectCoordinate(lon, lat);
+              closePhoneSearch();
+            }}
+            onSelectRegion={(key: string) => {
+              scoresLens?.selectRegion(key);
               closePhoneSearch();
             }}
           />

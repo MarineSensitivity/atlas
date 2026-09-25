@@ -338,20 +338,28 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
   // `LayersPanel.svelte#move` now refocuses a real button in the SAME row after the DOM settles
   // (`tick()`): the SAME direction's button when it is still enabled, the OPPOSITE direction's
   // once the row hits the edge. Walks BOTH paths with `.press("Enter")` (a real keyboard
-  // activation, not `.click()`) on "Move Place labels down" -- `basemap-labels` starts at
-  // arrIndex 4 (DEFAULT_LAYER_STACK), several presses from the very BOTTOM (arrIndex 0), where
-  // "down" becomes html-disabled (`arrIndex === 0`). Land & water (arrIndex 0) or Selection
-  // (pinned at the top, M7) would each only ever exercise ONE of the two paths -- Place labels'
-  // own multi-step trip to the floor exercises "still enabled, same button" on every press but
-  // the last and "now disabled, refocus the other direction" on the last, and checks all three
-  // signals the review named: the URL (`layers=` changes), the live region (announces each
-  // move), and `document.activeElement` (never reverts to <body>).
+  // activation, not `.click()`) on "Move Place labels UP" -- `basemap-labels` sits at the BOTTOM
+  // of the panel's own visible list (every basemap row below it is hidden, D2 fix round below),
+  // several presses from its OWN visible ceiling (directly under the pinned "Selection" row).
+  //
+  // Fix round (Opus 5.5 eyes-on review, D2): this test used to drive "down" -- with the
+  // visible-aware move (`moveLayerStackEntryVisible`), Place labels' own DOWN is now disabled
+  // FROM THE START (see the dedicated D2 test right after this one), so it can no longer supply
+  // a multi-press trip to a boundary. "up" is the one direction Place labels genuinely has more
+  // than one legal move in (it hops up past Data, then Outlines, before "Selection"'s own pin
+  // blocks a third) -- Selection itself (pinned, boundary on both sides) or Outlines/Data (each
+  // only ONE legal move away from a pin in the direction that matters) would each only ever
+  // exercise ONE of the two paths this test needs; Place labels' "up" is the one row/direction
+  // combination that still walks BOTH "still enabled, same button" (every press but the last)
+  // and "now disabled, refocus the other direction" (the last), while checking all three signals
+  // the review named: the URL (`layers=` changes), the live region (announces each move), and
+  // `document.activeElement` (never reverts to <body>).
   //
   // R3 (round-3 plan, W1 "Layers pane redesign"): this test used to drive "Boundaries" --
   // `LAYER_GROUP_IN_PANEL` now hides that row from the panel entirely (still a full model
   // citizen, just with no row here), so "Place labels" (still listed) replaces it. Driven as a
-  // bounded LOOP (never a hand-simulated position count) so the exact arrIndex a future
-  // `DEFAULT_LAYER_STACK` reorder gives "Place labels" can never desync this test from reality.
+  // bounded LOOP (never a hand-simulated position count) so the exact number of presses "Place
+  // labels" needs can never desync this test from reality.
   //
   // P5 fix (post-merge finding): `LayersPanel.svelte` used to render its own private
   // `.layers-stack [aria-live]` region -- a real SC 4.1.3 regression (the shell's own rule is
@@ -367,47 +375,118 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     const errors = collectConsoleErrors(page);
     await gotoLayersScores(page, "");
     const label = "Place labels";
-    const downBtn = page.getByRole("button", {
-      name: `Move ${label} down (toward the bottom of the map)`,
-    });
     const upBtn = page.getByRole("button", {
       name: `Move ${label} up (toward the top of the map)`,
+    });
+    const downBtn = page.getByRole("button", {
+      name: `Move ${label} down (toward the bottom of the map)`,
     });
     const liveRegion = page.locator('[role="status"]').first();
     const activeElementLabel = () =>
       page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? null);
 
-    await downBtn.focus();
-    // first press: still enabled (Place labels starts several rows above the bottom) -- the
-    // "same button keeps focus while it stays enabled" half of the property.
-    await downBtn.press("Enter");
+    await upBtn.focus();
+    // first press: still enabled (Place labels' visible ceiling is 2 rows up) -- the "same
+    // button keeps focus while it stays enabled" half of the property.
+    await upBtn.press("Enter");
     await expect.poll(() => page.url(), { timeout: 10_000 }).toContain("layers=");
     await expect(liveRegion).toContainText(`${label} moved to position`);
-    await expect(downBtn).toBeEnabled();
+    await expect(upBtn).toBeEnabled();
     await expect
       .poll(activeElementLabel, { timeout: 10_000 })
-      .toBe(`Move ${label} down (toward the bottom of the map)`);
+      .toBe(`Move ${label} up (toward the top of the map)`);
 
-    // keep pressing "down" until the row itself reaches the very bottom of the stack and its
-    // OWN button disables -- bounded at the stack's own size (8) so a real regression (the
-    // button never disabling at all) fails loudly instead of looping forever. Never a
-    // hand-simulated position count: robust to wherever "Place labels" sits in
-    // DEFAULT_LAYER_STACK, unlike the fixed arrIndex this test used to assume.
+    // keep pressing "up" until the row reaches its own visible ceiling (directly under the
+    // pinned Selection row) and its OWN button disables -- bounded at the stack's own size (8) so
+    // a real regression (the button never disabling at all) fails loudly instead of looping
+    // forever. Never a hand-simulated press count: robust to wherever "Place labels" sits and how
+    // many OTHER visible rows a future release adds between it and Selection.
     let presses = 1;
-    while ((await downBtn.isEnabled()) && presses < 8) {
-      await downBtn.press("Enter");
+    while ((await upBtn.isEnabled()) && presses < 8) {
+      await upBtn.press("Enter");
       presses++;
       await expect.poll(() => page.url(), { timeout: 10_000 }).toContain("layers=");
       await expect(liveRegion).toContainText(`${label} moved to position`);
     }
-    expect(presses, "the row never reached the bottom of the stack").toBeLessThan(8);
-    // ITS OWN "down" button is now disabled (nothing left below it) -- focus must have moved to
-    // "up" instead of silently reverting to <body>.
-    await expect(downBtn).toBeDisabled();
+    expect(presses, "the row never reached its own visible ceiling").toBeLessThan(8);
+    // ITS OWN "up" button is now disabled (Selection's pin blocks anything further) -- focus must
+    // have moved to "down" instead of silently reverting to <body>.
+    await expect(upBtn).toBeDisabled();
     await expect
       .poll(activeElementLabel, { timeout: 10_000 })
-      .toBe(`Move ${label} up (toward the top of the map)`);
-    expect(await upBtn.evaluate((el) => el === document.activeElement)).toBe(true);
+      .toBe(`Move ${label} down (toward the bottom of the map)`);
+    expect(await downBtn.evaluate((el) => el === document.activeElement)).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  // Fix round (Opus 5.5 eyes-on review, D2): "Place labels' own ↓ is enabled but does nothing
+  // visible -- it swaps with a HIDDEN basemap row, the visible order never changes." Read (not
+  // guessed) from `layerStack.ts#moveLayerStackEntryVisible`'s own header: Place labels is the
+  // BOTTOM-most row the panel ever lists (every basemap row below it is hidden), so it has no
+  // visible neighbour to swap with at all -- the fix makes its own "down" button DISABLED on
+  // load, the same honest signal `canMoveLayerStackEntry` already gave "Selection" (the review
+  // round 2 test right after this one), not a silent no-op click.
+  test("D2 fix: Place labels' own ↓ is DISABLED on load (no visible row below it), not a silent no-op click", async ({
+    page,
+  }) => {
+    const errors = collectConsoleErrors(page);
+    await gotoLayersScores(page, "");
+    const placeLabelsDown = page.getByRole("button", {
+      name: "Move Place labels down (toward the bottom of the map)",
+    });
+    await expect(placeLabelsDown).toBeDisabled();
+
+    const liveRegion = page.locator('[role="status"]').first();
+    const urlBefore = page.url();
+    await placeLabelsDown.click({ force: true });
+    expect(page.url()).toBe(urlBefore);
+    await page.waitForTimeout(500);
+    await expect(liveRegion).not.toContainText(/moved to position/);
+    expect(errors).toEqual([]);
+  });
+
+  // Fix round (Opus 5.5 eyes-on review, D2): the general "hop over hidden entries" proof, driven
+  // through a REAL click (not just `tests/map/layerStack.test.ts`'s own unit coverage). The two
+  // visible rows that can ever trade places via the move buttons are Place labels (a basemap row,
+  // no fixed-order constraint) and Data (`data-raster`'s own relative order vs. Outlines/Selection
+  // is FIXED, M7 -- Place labels is the only visible row it can ever swap with at all). This
+  // `layers=` token puts a hidden `basemap-roads` row directly BETWEEN Place labels and Data in
+  // the model -- moving Place labels UP must hop that hidden row and land beside Data, and the
+  // PANEL'S OWN row order changes as a result (not just `layers=`, which the old, non-visible-
+  // aware move already changed even while doing nothing a viewer could see -- exactly how D2
+  // slipped through in the first place).
+  test("D2 fix: clicking a row's move button hops a hidden entry and changes the PANEL'S OWN visible row order (and layers=)", async ({
+    page,
+  }) => {
+    const errors = collectConsoleErrors(page);
+    await gotoLayersScores(
+      page,
+      "&layers=basemap-land,basemap-bathymetry,basemap-boundaries,basemap-labels,basemap-roads:h,data-raster,data-zones,data-places",
+    );
+    const rowOrder = () =>
+      page
+        .locator("[data-row-id]")
+        .evaluateAll((els) => els.map((e) => e.getAttribute("data-row-id")));
+    // Place labels still sits BELOW Data in the panel (same relative order the default stack
+    // gives them) -- the hidden basemap-roads row is sandwiched between them in the MODEL, but
+    // (having no row of its own) invisible to this list either way.
+    await expect
+      .poll(rowOrder)
+      .toEqual(["data-places", "data-zones", "data-raster", "basemap-labels"]);
+
+    const placeLabelsUp = page.getByRole("button", {
+      name: "Move Place labels up (toward the top of the map)",
+    });
+    await expect(placeLabelsUp).toBeEnabled();
+    await placeLabelsUp.click();
+
+    // Place labels hopped the hidden basemap-roads row and landed beside its real visible
+    // neighbour, Data -- the two visible rows TRADED PLACES in the panel's own DOM order, the
+    // exact property the old array-index-only move could silently fail to produce.
+    await expect
+      .poll(rowOrder)
+      .toEqual(["data-places", "data-zones", "basemap-labels", "data-raster"]);
+    await expect.poll(() => page.url(), { timeout: 10_000 }).toContain("layers=");
     expect(errors).toEqual([]);
   });
 
@@ -1042,20 +1121,36 @@ test.describe("R3: Layers-pane redesign", () => {
     expect(errors).toEqual([]);
   });
 
-  test("the Outlines row's outline radio writes out= to the URL", async ({ page }) => {
+  // Fix round (Opus 5.5 eyes-on review, D7): rewritten for the checkbox shape -- there is no
+  // longer a radio group ("the radio is not a choice" if the ecoregion line draws regardless; it
+  // does, read from `boot.ts#ecoregionZoneUnitFromManifest`'s own header, so the panel now shows
+  // it as a fixed fact, not a live control). The Program Areas checkbox is the one REAL toggle.
+  test("the Outlines row's Program Areas checkbox writes out= to the URL; Ecoregions is a fixed, always-on fact", async ({
+    page,
+  }) => {
     const errors = collectConsoleErrors(page);
     await gotoLayersScores(page, "");
     expect(page.url()).not.toContain("out=");
 
     await page.getByRole("button", { name: "Outlines", exact: true }).click();
-    const ecoregionRadio = page.getByRole("radio", { name: "Ecoregions" });
-    await expect(ecoregionRadio).toBeVisible();
-    await ecoregionRadio.click();
+    const programAreas = page.getByRole("checkbox", { name: "Program Areas", exact: false });
+    await expect(programAreas).toBeVisible();
+    await expect(programAreas).toBeChecked(); // scores' own default (defaultOut()) is "programarea"
 
-    await expect.poll(() => page.url(), { timeout: 10_000 }).toContain("out=ecoregion");
-    await expect(ecoregionRadio).toBeChecked();
-    const programAreaRadio = page.getByRole("radio", { name: "Program Areas" });
-    await expect(programAreaRadio).not.toBeChecked();
+    const ecoregions = page.getByRole("checkbox", { name: "Ecoregions", exact: false });
+    await expect(ecoregions).toBeChecked();
+    await expect(ecoregions).toBeDisabled();
+
+    await programAreas.click(); // uncheck -- the only real move this row offers
+
+    await expect.poll(() => page.url(), { timeout: 10_000 }).toContain("out=none");
+    await expect(programAreas).not.toBeChecked();
+    // unchanged either way -- it is not wired to sel.out at all, by design (D7's own finding).
+    await expect(ecoregions).toBeChecked();
+    await expect(ecoregions).toBeDisabled();
+
+    await programAreas.click(); // re-check -- back to the default, so out= drops from the URL
+    await expect.poll(() => page.url(), { timeout: 10_000 }).not.toContain("out=");
     expect(errors).toEqual([]);
   });
 

@@ -56,11 +56,35 @@
 }
 
 .atlas-popup .maplibregl-popup-close-button {
+  position: relative;
   color: var(--text-primary);
   font-size: var(--text-lg);
   line-height: 1;
   padding: var(--space-1);
   border-radius: var(--radius-control);
+}
+
+/* UI-11 (round 3): MapLibre generates this button itself (its own `aria-label="Close popup"`), so
+   it carries no `data-tooltip` to opt into `src/lib/ui/tooltip.css`'s global utility -- a small,
+   hardcoded copy of the SAME visual convention (`content: attr(data-tooltip)` there, a literal
+   string here, matching MapLibre's own label) is simpler than reaching into the library's DOM
+   after construction just to set an attribute. */
+.atlas-popup .maplibregl-popup-close-button:hover::after,
+.atlas-popup .maplibregl-popup-close-button:focus-visible::after {
+  content: "Close popup";
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 30;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  box-shadow: var(--elev-2);
+  pointer-events: none;
 }
 
 .atlas-popup .maplibregl-popup-close-button:hover {

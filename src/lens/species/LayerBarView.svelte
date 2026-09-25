@@ -139,8 +139,12 @@
     color: var(--text-secondary);
   }
 
+  /* UI-10 fix (round 3, Opus 5.5 eyes-on review): `--fill-accent` (gold, a FILL token) used as
+     TEXT here -- gold-on-white (paper) measures ~1.5:1, which tokens.css's own contrast rules
+     forbid for text. `--text-accent` is the token this app already defines FOR text (gold on
+     navy, steel on paper), the same pair the merged-model "✓" needs. */
   .layer-bar.is-merged .layer-mark {
-    color: var(--fill-accent);
+    color: var(--text-accent);
   }
 
   .layer-title {

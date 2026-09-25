@@ -32,9 +32,38 @@
 // test 1/2/3 below all passing (none of them ever asked WHAT was on screen, only "is it zoomed in"
 // and "is the sky gap small"). `camera.ts#phoneDefaultCamera`'s own header has the full
 // measurement, both broken and fixed, and why a real Gulf-of-Mexico/south-east-coast bbox fit
-// replaces the boost-the-same-point approach. Test 1 and 2 below are rewritten for the new
-// mechanism (they could not stay green under it — see each one's own comment); test 3 is
-// unchanged and still passes (the new zoom, ~4.9, is comfortably above the sky-gap floor too).
+// replaces the boost-the-same-point approach.
+//
+// R3-A2 (Ben, 2026-09-25): P9's tight single-region box (~4.9-5.2 zoom, comfortably clear of the
+// sky-gap floor) read as "one region of four" to reviewers. FIRST PASS: `PHONE_DEFAULT_BOUNDS`
+// covered the lower 48's waters + a south-east-Alaska/Gulf-of-Alaska hint at `[[-128,24],[-65,52]]`
+// -- width-bound on a 390px phone, zoom ~1.97, and the empty-space gap this file's own two-colour
+// probe measures came out to ~141 CSS px (43.0% of the free area at the default "half" sheet
+// detent, 22.7% at "peek"). That was accepted at the time as a deliberate trade against the OLD
+// absolute-pixel ceiling (180px against the whole canvas) -- but expressed as a fraction of the
+// space a viewer actually sees, it was closer to "roughly the top third of the free area is empty
+// navy sky above the globe's rim" than the old header's own "~100 CSS px" framing suggested, and a
+// real screenshot (`phone-02-map.png`) confirmed it reads that way.
+//
+// SECOND PASS (orchestrator, 2026-09-25, after reading that screenshot): measured directly, zoom in
+// this WIDTH-bound regime does not depend on the sheet's bottom padding at all (confirmed: IDENTICAL
+// zoom and IDENTICAL absolute gapPx at "half" and "peek", only the free area's own height differs),
+// so the only lever that shrinks the sky band is narrowing the bbox's own longitude SPAN -- which
+// directly trades away width, not degrees north-south. Measured the tradeoff directly rather than
+// guessing from the zoom formula alone (a "cliff": span 43 measured 11.6%/6.1%, span 40 measured
+// 4.6%/2.4% -- NOT smoothly proportional to zoom, because the specific pixel the probe first hits
+// depends on exactly where land vs. ocean sits at that latitude/longitude, not zoom in isolation).
+// `PHONE_DEFAULT_BOUNDS` is now `[[-119,25],[-78,51]]` (span 41, zoom ~2.59): keeps the Pacific
+// coast and Florida/the Gulf in frame (both explicitly required), but a span this narrow cannot ALSO
+// keep the Alaska hint (needs west out to ~-130) or the full Atlantic seaboard past the Carolinas
+// (needs east out to ~-65) within the same 10%-sky budget -- both are the SAME lever (narrower
+// width = higher zoom = less sky), so something had to give. Per the explicit fallback ("if the
+// Alaska sliver cannot survive that, keep the full lower 48 with minimal sky and say so with the
+// shot"): the Alaska hint is dropped; the Atlantic is ALSO trimmed north of roughly the Carolinas,
+// a corollary of the same constraint the brief anticipated for Alaska specifically. Measured on
+// this exact fixture: 7.0% at half detent, 3.7% at peek -- both comfortably under the 10% target.
+// Tests 1, 2 and 4 below are updated to the new bbox/zoom/gap; test 3 (the old FALLBACK centroid is
+// not what the camera frames near) is unchanged and still passes.
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -120,7 +149,17 @@ async function routeTwoColorBasemap(page: Page) {
   );
 }
 
-async function gotoPhone(page: Page, path = "/") {
+/** R3-A2 second pass (orchestrator, 2026-09-25, after reading `phone-02-map.png`): `detent`, when
+ * given, is written to the sheet's own persisted localStorage key (`sheetGeometry.ts#
+ * sheetStorageKey("shell")`) via `addInitScript` -- BEFORE the page's own inline bootstrap runs --
+ * so `initialChromePadding()` (Shell.svelte) reads it as the STARTING detent, exactly as a real
+ * visitor who last left the sheet at "peek" would. Unset, the sheet boots at its own default
+ * ("half", `DEFAULT_SHEET_DETENT`) -- no localStorage write needed, matching every other test in
+ * this file. */
+async function gotoPhone(page: Page, path = "/", detent?: "peek" | "half" | "full") {
+  if (detent) {
+    await page.addInitScript((d) => window.localStorage.setItem("atlas.sheet.shell", d), detent);
+  }
   await routeBucket(page, "v7", BOOT);
   await routeSession(page, null);
   await routeSealFixture(page);
@@ -137,12 +176,58 @@ async function gotoPhone(page: Page, path = "/") {
   await page.waitForTimeout(400);
 }
 
+/**
+ * R3-A2 second pass: the sky-band gap, expressed as a PERCENT of the FREE area's own height (top
+ * bar's bottom to the sheet's top -- not the whole canvas, which extends full-height BEHIND the
+ * sheet). Same WebGL `readPixels` technique the original px-based probe used (black "space" vs.
+ * white "water"), Y-flipped, scanning a column straight down the canvas' own horizontal centre --
+ * but bounded to the free area's own bottom (the sheet top), because a pixel below that is covered
+ * chrome, not empty sky, and would otherwise inflate the ratio for a tall-sheet detent.
+ */
+async function measureSkyBandPercent(page: Page): Promise<{ gapPx: number; percent: number }> {
+  const topbarBox = await page.locator(".topbar").boundingBox();
+  const sheetBox = await page.locator(".sheet").first().boundingBox();
+  if (!topbarBox || !sheetBox) throw new Error("missing .topbar or .sheet box");
+  const freeTop = topbarBox.y + topbarBox.height;
+  const freeBottom = sheetBox.y;
+  const freeHeight = freeBottom - freeTop;
+
+  const gapPx = await page.evaluate(
+    ({ freeTop, freeHeight }) => {
+      const w = window as unknown as {
+        __atlasMap: { handle: { map: { getCanvas(): HTMLCanvasElement } } };
+      };
+      const c = w.__atlasMap.handle.map.getCanvas();
+      const gl = (c.getContext("webgl2") ?? c.getContext("webgl")) as WebGLRenderingContext | null;
+      if (!gl) return -1;
+      const rect = c.getBoundingClientRect();
+      const dpr = c.width / rect.width;
+      const xDevice = Math.round((rect.width / 2) * dpr);
+      const startCssY = Math.max(0, freeTop - rect.top);
+      const endCssY = startCssY + freeHeight; // never scan past the free area's own bottom
+      const px = new Uint8Array(4);
+      for (let yCss = startCssY; yCss < endCssY; yCss += 1) {
+        const yDevice = Math.round(yCss * dpr);
+        gl.readPixels(xDevice, c.height - yDevice, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        if (px[0] > 40 || px[1] > 40 || px[2] > 40) return yCss - startCssY;
+      }
+      return freeHeight; // never found -- the whole free area stayed empty
+    },
+    { freeTop, freeHeight },
+  );
+  return { gapPx, percent: (gapPx / freeHeight) * 100 };
+}
+
 test.describe("P2: the phone first view frames the study area, not empty sky", () => {
-  // P9 rewrite (this file's own header): the invariant that survives is still true (the phone's
-  // initial zoom is well above the FALLBACK preset's own low zoom), but it no longer proves the
-  // MECHANISM that made it true -- `PHONE_STUDY_AREA_ZOOM_BOOST` is retired. What actually matters,
-  // and what test 2 below checks, is WHERE the camera ends up, not merely how zoomed in it is.
-  test("the initial camera zoom is well above the study-area preset's own zoom (escapes the globe-sphere regime)", async ({
+  // P9 rewrite (this file's own header): what actually matters, and what test 2 below checks, is
+  // WHERE the camera ends up, not merely how zoomed in it is. R3-A2 SECOND PASS: the final bbox is
+  // width-bound and its own zoom (~2.59 measured) sits ABOVE the FALLBACK preset's zoom (2.16) --
+  // raised specifically to bring the sky band under the 10% target (this file's own header has the
+  // full measurement) -- but still clearly BELOW a collapse toward a single-region-tight fit
+  // (P9's own ~4.9-5.2). This test pins the zoom to a band that distinguishes it from all three real
+  // failure modes: the whole-study-area bbox (~1.27), the first-pass R3-A2 bbox (~1.97, too much
+  // sky), and an over-narrowed collapse back toward a tight single region (~4.9+).
+  test("the initial camera zoom sits in the SECOND-PASS band (raised for the 10% sky target)", async ({
     page,
   }) => {
     await gotoPhone(page);
@@ -151,8 +236,8 @@ test.describe("P2: the phone first view frames the study area, not empty sky", (
         window as unknown as { __atlasMap: { handle: { map: { getZoom(): number } } } }
       ).__atlasMap.handle.map.getZoom(),
     );
-    expect(zoom).toBeGreaterThan(FALLBACK.zoom);
-    expect(zoom).toBeGreaterThan(3.5); // the ~3 floor `camera.ts#phoneDefaultCamera`'s header names
+    expect(zoom).toBeGreaterThan(2.3); // clear of the first-pass bbox's own ~1.97 (too much sky)
+    expect(zoom).toBeLessThan(3.5); // clear of a collapse toward a tight single-region fit (~4.9+)
   });
 
   // P9 rewrite: the OLD version of this test checked the `FALLBACK_FULL_STUDY_AREA` centroid
@@ -212,46 +297,30 @@ test.describe("P2: the phone first view frames the study area, not empty sky", (
     expect(dLon > 5 || dLat > 5).toBe(true);
   });
 
-  // the pixel-probe half of P2's own red-first instructions ("no empty sky … probe pixel rows"):
-  // with `water` painted WHITE and `background` (space) painted BLACK, the first non-black row
-  // below the top bar is where "the globe" visibly starts. Before the fix this gap measured ~100
-  // CSS px; the cap must cut it substantially. WebGL `readPixels` (not `getContext("2d")`, which
-  // cannot attach a SECOND context to a canvas MapLibre already owns as WebGL — `e2e/map.spec.ts`'s
-  // own `readPixel` helper is the precedent this follows), Y-flipped (readPixels' origin is
-  // bottom-left; screen/CSS y is top-left).
-  test("no large blank band of 'space' between the top bar and the globe", async ({ page }) => {
-    await gotoPhone(page);
-    const topbarBox = await page.locator(".topbar").boundingBox();
-    const canvas = page.locator("#map canvas").first();
-    await expect(canvas).toBeVisible();
-
-    const gapPx = await page.evaluate((topbarBottom) => {
-      const w = window as unknown as {
-        __atlasMap: { handle: { map: { getCanvas(): HTMLCanvasElement } } };
-      };
-      const c = w.__atlasMap.handle.map.getCanvas();
-      const gl = (c.getContext("webgl2") ?? c.getContext("webgl")) as WebGLRenderingContext | null;
-      if (!gl) return -1;
-      const rect = c.getBoundingClientRect();
-      const dpr = c.width / rect.width;
-      const xCss = rect.width / 2; // straight down the canvas' own horizontal center
-      const xDevice = Math.round(xCss * dpr);
-      const startCssY = Math.max(0, topbarBottom - rect.top);
-      const px = new Uint8Array(4);
-      for (let yCss = startCssY; yCss < rect.height; yCss += 1) {
-        const yDevice = Math.round(yCss * dpr);
-        gl.readPixels(xDevice, c.height - yDevice, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-        // "not black" = the globe's own white water fill has started (allow for AA blending).
-        if (px[0] > 40 || px[1] > 40 || px[2] > 40) return yCss - startCssY;
-      }
-      return rect.height - startCssY; // never found — the whole probe stayed empty
-    }, topbarBox!.y + topbarBox!.height);
-
-    expect(gapPx, "gap between the top bar and the globe, in CSS px").toBeGreaterThanOrEqual(0);
-    // measured on this exact fixture: 102px uncapped (MAX_STUDY_AREA_SHIFT_PX raised past any real
-    // padding — the review's own "~100 CSS px", reproduced), 62px capped at 200. 80 sits between
-    // the two with margin on both sides — comfortably below the red baseline (catches a regression
-    // back toward it) and comfortably above the green measurement (not flaky on render jitter).
-    expect(gapPx).toBeLessThan(80);
-  });
+  // R3-A2 SECOND PASS (orchestrator, 2026-09-25, after reading a real `phone-02-map.png`): the
+  // first pass's absolute-pixel ceiling (180px against the whole canvas height) hid a real problem
+  // it wasn't shaped to catch -- expressed as a fraction of the actual FREE area (not the whole
+  // canvas, most of which sits behind the sheet), the sky band was roughly a THIRD to a HALF of the
+  // free area's own height (measured 43.0% at half detent, 22.7% at peek, on the first R3-A2
+  // bbox). `PHONE_DEFAULT_BOUNDS` was narrowed further (camera.ts's own header has the exact
+  // numbers and the iteration log) to bring this under a 10% target at BOTH detents a real visitor
+  // might have left the sheet at -- measured 7.0% at half, 3.7% at peek, on the FINAL bbox. Both
+  // detents are checked because zoom in this width-bound regime does not depend on the bottom
+  // padding (confirmed by measurement: identical zoom, identical absolute gapPx, at both detents),
+  // so only the FREE AREA's own height differs between them, making "half" (the taller sheet, the
+  // smaller free area, the tighter percent) the binding case -- but both are asserted so a future
+  // change to either the padding formula or the bbox cannot silently regress the one not measured.
+  for (const detent of ["half", "peek"] as const) {
+    test(`the sky band stays <= 10% of the free area at the ${detent} detent`, async ({ page }) => {
+      await gotoPhone(page, "/", detent);
+      const canvas = page.locator("#map canvas").first();
+      await expect(canvas).toBeVisible();
+      const { gapPx, percent } = await measureSkyBandPercent(page);
+      expect(gapPx, "gap between the top bar and the globe, in CSS px").toBeGreaterThanOrEqual(0);
+      expect(
+        percent,
+        `sky band = ${percent.toFixed(1)}% of the free area (${gapPx}px)`,
+      ).toBeLessThanOrEqual(10);
+    });
+  }
 });

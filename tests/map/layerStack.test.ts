@@ -5,6 +5,7 @@ import {
   ALL_LAYER_GROUPS,
   applyLayerGroupStyling,
   canMoveLayerStackEntry,
+  canMoveLayerStackEntryVisible,
   classifyBasemapLayer,
   DEFAULT_LAYER_STACK,
   defaultLayerStackEntries,
@@ -14,6 +15,7 @@ import {
   LAYER_GROUP_ENABLED,
   LAYER_GROUP_IN_PANEL,
   moveLayerStackEntry,
+  moveLayerStackEntryVisible,
   normalizeLayerStack,
   parseLayerStack,
   scaleOpacity,
@@ -614,5 +616,85 @@ describe("canMoveLayerStackEntry", () => {
   it("moving to the SAME position (from === to, after clamping) returns false", () => {
     const entries = defaultLayerStackEntries();
     expect(canMoveLayerStackEntry(entries, 2, 2)).toBe(false);
+  });
+});
+
+// fix round (Opus 5.5 eyes-on review of main, D2): "Place labels ↓" swapped with the HIDDEN
+// basemap-roads row -- the panel's own visible order never changed, yet the button stayed
+// enabled (`canMoveLayerStackEntry` is blind to visibility, only the underlying array's own
+// boundary/pin rules). `moveLayerStackEntryVisible`/`canMoveLayerStackEntryVisible` are the fix:
+// hop over any number of hidden entries to reach the nearest VISIBLE neighbour, and disable the
+// button outright when there is none in that direction.
+describe("moveLayerStackEntryVisible / canMoveLayerStackEntryVisible (D2 fix)", () => {
+  it("regression: basemap-labels (Place labels) has NO visible neighbour below it -- 'down' is a real no-op, not a swap with a hidden row", () => {
+    const entries = defaultLayerStackEntries();
+    const before = entries.map((e) => e.id);
+    const next = moveLayerStackEntryVisible(
+      entries,
+      "basemap-labels",
+      "down",
+      LAYER_GROUP_IN_PANEL,
+    );
+    expect(next.map((e) => e.id)).toEqual(before); // unchanged -- every row below it is hidden
+    expect(
+      canMoveLayerStackEntryVisible(entries, "basemap-labels", "down", LAYER_GROUP_IN_PANEL),
+    ).toBe(false);
+  });
+
+  it("basemap-labels (Place labels) 'up' swaps with its real visible neighbour, data-raster (Data)", () => {
+    const entries = defaultLayerStackEntries();
+    const next = moveLayerStackEntryVisible(entries, "basemap-labels", "up", LAYER_GROUP_IN_PANEL);
+    const labelsIdx = next.findIndex((e) => e.id === "basemap-labels");
+    const rasterIdx = next.findIndex((e) => e.id === "data-raster");
+    expect(labelsIdx).toBeGreaterThan(rasterIdx); // labels now draws ABOVE the raster
+    expect(
+      canMoveLayerStackEntryVisible(entries, "basemap-labels", "up", LAYER_GROUP_IN_PANEL),
+    ).toBe(true);
+  });
+
+  it("hops over MULTIPLE hidden entries at once, leaving them in their own relative order", () => {
+    // a synthetic in-panel map: only basemap-land and basemap-roads are visible basemap rows
+    // (bathymetry/boundaries hidden between them) -- proves the hop is not hard-coded to "exactly
+    // one hidden row," the real shape between Place labels and the three dropped basemap rows.
+    const inPanel = {
+      ...LAYER_GROUP_IN_PANEL,
+      "basemap-land": true,
+      "basemap-bathymetry": false,
+      "basemap-boundaries": false,
+      "basemap-roads": true,
+    };
+    const entries = defaultLayerStackEntries(); // land, bathymetry, boundaries, roads, labels, raster, zones, places
+    const next = moveLayerStackEntryVisible(entries, "basemap-roads", "down", inPanel);
+    const ids = next.map((e) => e.id);
+    // roads hopped down past both hidden rows to sit directly below land (its nearest VISIBLE
+    // neighbour); bathymetry/boundaries kept their own relative order, just shifted up one.
+    expect(ids.indexOf("basemap-roads")).toBeLessThan(ids.indexOf("basemap-land"));
+    expect(ids.indexOf("basemap-bathymetry")).toBeLessThan(ids.indexOf("basemap-boundaries"));
+    expect(canMoveLayerStackEntryVisible(entries, "basemap-roads", "down", inPanel)).toBe(true);
+  });
+
+  it("the pin/fixed-order rules still apply through the hop -- Outlines (data-zones) has NO legal move either direction against its two REAL visible neighbours", () => {
+    const entries = defaultLayerStackEntries();
+    // up: its only visible neighbour above is data-places, which is pinned (never a valid target).
+    expect(canMoveLayerStackEntryVisible(entries, "data-zones", "up", LAYER_GROUP_IN_PANEL)).toBe(
+      false,
+    );
+    // down: swapping past data-raster would invert the fixed raster < zones < places order.
+    expect(canMoveLayerStackEntryVisible(entries, "data-zones", "down", LAYER_GROUP_IN_PANEL)).toBe(
+      false,
+    );
+  });
+
+  it("an id not present in entries is a no-op, never throws", () => {
+    const entries = defaultLayerStackEntries().filter((e) => e.id !== "basemap-roads");
+    expect(() =>
+      moveLayerStackEntryVisible(entries, "basemap-roads", "up", LAYER_GROUP_IN_PANEL),
+    ).not.toThrow();
+    expect(
+      moveLayerStackEntryVisible(entries, "basemap-roads", "up", LAYER_GROUP_IN_PANEL),
+    ).toEqual(entries);
+    expect(
+      canMoveLayerStackEntryVisible(entries, "basemap-roads", "up", LAYER_GROUP_IN_PANEL),
+    ).toBe(false);
   });
 });

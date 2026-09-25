@@ -25,6 +25,11 @@
 // WHY THERE IS NO QUERY HERE. The extent comes from the shard, which is what retires the per-model
 // min/max over the 17 M-row cell table.
 import { bboxSpansGlobe } from "../../../lib/grid/grid";
+import {
+  STUDY_AREA_REFERENCE_VIEWPORT,
+  cameraViewToBounds,
+  type CameraBoundsInput,
+} from "../../../lib/map/camera";
 import { MERGED_IN } from "./resolve";
 import type { Bbox, TaxonCard } from "./shards";
 
@@ -44,6 +49,12 @@ export interface BoundsCamera {
   bounds: CameraBounds;
   padding: number;
   source: Exclude<CameraSource, "study-area">;
+  /** R3-A1 (round-3 plan, Ben 2026-09-25): set when `bounds` is the narrowed IN-US portion of a
+   * wide-range model's own extent (the SWOT leatherback: nesting near Oceania, foraging to Alaska —
+   * no phone zoom shows the whole thing meaningfully) — the un-narrowed bbox the species card's
+   * "Zoom to: Whole range" toggle re-fits to. Absent for a compact model (nothing was narrowed) and
+   * for every source but `"input"`/`"merged"` (the only two that call {@link wideRangeAware}). */
+  wholeRangeBounds?: CameraBounds;
 }
 
 /** the last resort: `boot.study_areas[FULL]` is a VIEW (lon/lat/zoom), not an extent — which is
@@ -68,16 +79,27 @@ export const GLOBE_SPAN_DEG = 350;
  * same 180-deg threshold `geo/unwrap.ts` uses on a ring's edges). */
 export const MAX_FRAME_SPAN_DEG = 180;
 
-/** `boot.study_areas[*]` — a camera preset, not an extent. */
+/** `boot.study_areas[*]` — a camera preset, not an extent (see {@link StudyAreaView.bbox} for the
+ * one forward-compatible exception). */
 export interface StudyAreaView {
   key: string;
   lon: number;
   lat: number;
   zoom: number;
+  /** R3-A1: a real extent, IF the release ever publishes one on this row (`msens::app_zones()`/
+   * `study_areas()` do not today — every reader here still falls back to
+   * {@link studyAreaBboxFallback}). Read opportunistically so this module needs no change the day
+   * a release does start publishing one. */
+  bbox?: Bbox;
 }
 
 /** the key that must always exist: "All US waters". */
 export const FULL_STUDY_AREA = "FULL";
+
+function bboxOf(raw: unknown): Bbox | undefined {
+  if (!Array.isArray(raw) || raw.length !== 4) return undefined;
+  return raw.every((v) => typeof v === "number" && Number.isFinite(v)) ? (raw as Bbox) : undefined;
+}
 
 /**
  * Read a study-area view out of `boot.study_areas`. Accepts the whole `boot` or the bare array.
@@ -94,9 +116,94 @@ export function studyAreaView(boot: unknown, key: string = FULL_STUDY_AREA): Stu
     if (r.key !== key) continue;
     if (typeof r.lon !== "number" || typeof r.lat !== "number" || typeof r.zoom !== "number")
       return null;
-    return { key, lon: r.lon, lat: r.lat, zoom: r.zoom };
+    const bbox = bboxOf(r.bbox);
+    return bbox
+      ? { key, lon: r.lon, lat: r.lat, zoom: r.zoom, bbox }
+      : { key, lon: r.lon, lat: r.lat, zoom: r.zoom };
   }
   return null;
+}
+
+/**
+ * R3-A1: "the study area as a box" — the release's own {@link StudyAreaView.bbox} when published,
+ * else derived from the SAME camera the desktop default view already renders
+ * ({@link cameraViewToBounds} at {@link STUDY_AREA_REFERENCE_VIEWPORT} — never an invented number;
+ * see that constant's own header for the source). Converted to this module's `[[w,s],[e,n]]`
+ * `Bbox` shape (xmin,ymin,xmax,ymax).
+ */
+export function studyAreaBboxFallback(area: StudyAreaView): Bbox {
+  if (area.bbox) return area.bbox;
+  const b: CameraBoundsInput = cameraViewToBounds(area, STUDY_AREA_REFERENCE_VIEWPORT);
+  return [b[0][0], b[0][1], b[1][0], b[1][1]];
+}
+
+/** R3-A1: a model bbox spanning more than this many degrees of longitude cannot be usefully framed
+ * whole on a narrow viewport — frame the IN-US portion instead (Ben, round-3 plan, 2026-09-25: the
+ * SWOT leatherback nests near Oceania and forages to Alaska, a near-Pacific-wide span with no zoom
+ * that shows it meaningfully on a 390px phone). Applies on BOTH viewports (a whole-Pacific fit is
+ * also poor on desktop) — this module has no notion of viewport width, only of whether the MODEL
+ * itself is wide, which is the same fact either way. */
+export const WIDE_RANGE_SPAN_DEG = 120;
+
+/**
+ * Dateline-aware bbox intersection, in the SAME continuous (never re-wrapped) degree space
+ * {@link minimalFrame} produces — either box may have `east`/`xmax` past 180 (a Bering Sea model),
+ * or the two may simply have been re-expressed in DIFFERENT frames for the same ground (a model
+ * written 160..210, a study area written -170..-120). Tries `b` as given and shifted a whole turn
+ * either way, keeping whichever shift gives the WIDEST longitude overlap — the same "try the
+ * complementary frame, keep whichever is narrower/real" spirit {@link minimalFrame} itself uses,
+ * applied to two boxes instead of one. `null` when no shift produces a real (positive-area)
+ * overlap — the caller's documented fallback is to keep the model's own whole-range fit, exactly as
+ * a model under {@link WIDE_RANGE_SPAN_DEG} does today.
+ */
+export function intersectBbox(a: Bbox, b: Bbox): Bbox | null {
+  let best: Bbox | null = null;
+  let bestOverlap = 0;
+  for (const shift of [0, -360, 360]) {
+    const west = Math.max(a[0], b[0] + shift);
+    const east = Math.min(a[2], b[2] + shift);
+    if (east <= west) continue;
+    const overlap = east - west;
+    if (overlap <= bestOverlap) continue;
+    const south = Math.max(a[1], b[1]);
+    const north = Math.min(a[3], b[3]);
+    if (north <= south) continue;
+    bestOverlap = overlap;
+    best = [west, south, east, north];
+  }
+  return best;
+}
+
+/**
+ * R3-A1: applies the wide-range narrowing to one already-{@link framed} bbox (an `input`/`merged`
+ * extent — the two `cameraFor()` steps this runs from). A compact model (span under {@link
+ * WIDE_RANGE_SPAN_DEG}) or one with no study area to intersect against is unaffected — the ordinary
+ * whole-range bounds, no `wholeRangeBounds` set (the species card's toggle stays hidden). A wide
+ * model whose intersection comes back empty (the dateline-shift search in {@link intersectBbox}
+ * found no real overlap) ALSO keeps the whole-range fit — narrowing to nothing would be worse than
+ * not narrowing at all.
+ */
+function wideRangeAware(
+  bbox: Bbox,
+  padding: number,
+  source: "input" | "merged",
+  studyArea: StudyAreaView | null | undefined,
+): BoundsCamera {
+  const span = bbox[2] - bbox[0];
+  if (span > WIDE_RANGE_SPAN_DEG && studyArea) {
+    const usBbox = studyAreaBboxFallback(studyArea);
+    const intersection = intersectBbox(bbox, usBbox);
+    if (intersection) {
+      return {
+        kind: "bounds",
+        bounds: boundsOf(intersection),
+        padding,
+        source,
+        wholeRangeBounds: boundsOf(bbox),
+      };
+    }
+  }
+  return { kind: "bounds", bounds: boundsOf(bbox), padding, source };
 }
 
 export interface CameraOptions {
@@ -198,10 +305,11 @@ export function anyInputBbox(card: TaxonCard, rep?: string): Bbox | null {
 
 /**
  * The camera for a taxon + the layer on screen (§6.3's fit target, with fix round 1's chain, D8's
- * "sibling" step added 2026-09-24):
- *   1. the INPUT's own extent (when an input is on screen), re-framed;
- *   2. the MERGED extent, re-framed — a wraparound range's own COG honestly is -180..180, and
- *      obeying it framed every Bering Sea species off Iceland (§11.10);
+ * "sibling" step added 2026-09-24, R3-A1's wide-range narrowing added 2026-09-25):
+ *   1. the INPUT's own extent (when an input is on screen), re-framed, then narrowed to its IN-US
+ *      portion if it spans more than {@link WIDE_RANGE_SPAN_DEG} ({@link wideRangeAware});
+ *   2. the MERGED extent, re-framed and SIMILARLY narrowed — a wraparound range's own COG honestly
+ *      is -180..180, and obeying it framed every Bering Sea species off Iceland (§11.10);
  *   3. the supplied ecoregion extent;
  *   4. ANY OTHER input of the SAME taxon that publishes a bbox (`anyInputBbox` — the walrus `am`
  *      selection frames itself off its own `ax` sibling's extent rather than falling one more step
@@ -220,10 +328,10 @@ export function cameraFor(
 
   if (selectedInput !== MERGED_IN) {
     const own = framed(inputBbox(card, selectedInput, opts.rep));
-    if (own) return { kind: "bounds", bounds: boundsOf(own), padding, source: "input" };
+    if (own) return wideRangeAware(own, padding, "input", opts.studyArea);
   }
   const merged = framed(card.merged?.bbox ?? null);
-  if (merged) return { kind: "bounds", bounds: boundsOf(merged), padding, source: "merged" };
+  if (merged) return wideRangeAware(merged, padding, "merged", opts.studyArea);
   const er = framed(opts.fallbackBbox);
   if (er) return { kind: "bounds", bounds: boundsOf(er), padding, source: "ecoregion" };
   const sibling = framed(anyInputBbox(card, opts.rep));

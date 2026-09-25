@@ -53,11 +53,18 @@
     feedbackHref: string;
     onFeedbackClick: (e: MouseEvent) => void;
     onShare: () => void;
-    onReportTop: () => void;
     /** the Help menu's own "Docs" destination (Shell.svelte's `docsHref`) -- the phone ⋯ menu's
      * "Docs" item opens this directly rather than toggling Shell.svelte's Help disclosure, which
-     * is `topbar-desktop-only` and so invisible at the width the ⋯ menu itself only exists at. */
+     * is `topbar-desktop-only` and so invisible at the width the ⋯ menu itself only exists at.
+     * UI-16 (round 3): the About modal's own "Documentation" link now uses THIS, the release's
+     * versioned Atlas chapter -- it used to be a hardcoded `marinesensitivity.org/docs/` (the book
+     * root), while the Help menu right next to it already linked the real chapter. */
     helpDocsHref: string;
+    /** UI-16 (round 3): the About modal's "What changed" -- Shell.svelte's `releaseNotesHref`
+     * (structurally identical to `helpDocsHref`/`docsHref`, a different chapter path — see that
+     * field's own header). Replaces a hardcoded link to the APP's own CHANGELOG.md, which named the
+     * atlas CODE's history, not the DATA release the person is looking at. */
+    releaseNotesHref: string;
     /** starts the SAME guided tour the desktop Help menu's "Take a tour" item starts
      * (Shell.svelte's `onHelpTakeTour`, passed through verbatim) -- the phone ⋯ menu's own
      * "Take a tour" item. */
@@ -88,8 +95,8 @@
     feedbackHref,
     onFeedbackClick,
     onShare,
-    onReportTop,
     helpDocsHref,
+    releaseNotesHref,
     onTakeTour,
     resolvedTheme,
     onToggleTheme,
@@ -98,6 +105,18 @@
     agency = import.meta.env.VITE_AGENCY,
     sealUrl = import.meta.env.VITE_SEAL_URL || DEFAULT_SEAL_URL,
   }: Props = $props();
+
+  // UI-16 fix (round 3, Opus 5.5 eyes-on review): the release line rendered "v7· 2026-06-12" — no
+  // space before the dot — because the separator lived as bare TEXT at the very start of an
+  // `{#if}` block ({#if x} · {y}{/if}), and Svelte trims an `{#if}` block's own leading/trailing
+  // whitespace. Computed here as ONE derived string instead: no block-boundary text for Svelte to
+  // trim, and the template becomes a single conditional mustache (never a bare string-literal
+  // mustache, which `svelte/no-useless-mustaches` would flag as needless).
+  const releaseLineExtra = $derived(
+    [releaseStatus && releaseStatus !== "released" ? releaseStatus : null, releaseDate]
+      .filter((v): v is string => !!v)
+      .join(" · "),
+  );
 
   let sealFailed = $state(false);
   const showSeal = $derived(shouldShowSeal(sealFlag, agency) && !sealFailed);
@@ -142,14 +161,19 @@
   }
   // R2, round 2: "Help" split into its two destinations ("Take a tour" / "Docs") so the tour is
   // actually reachable on the phone -- see this file's header comment. Order: Share, Download,
-  // Report, Feedback, About this release, Take a tour, Docs, Theme -- e2e/shell.chrome.spec.ts
-  // asserts this exact item-name list. "Theme" (P5 fix round 2) is last, mirroring its own
-  // rightmost position in the desktop topbar; "Download" (R3-W2) sits right after "Share",
-  // mirroring ITS own rightmost-of-the-left-group position in the desktop topbar.
+  // Feedback, About this release, Take a tour, Docs, Theme -- e2e/shell.chrome.spec.ts asserts
+  // this exact item-name list. "Theme" (P5 fix round 2) is last, mirroring its own rightmost
+  // position in the desktop topbar; "Download" (R3-W2) sits right after "Share", mirroring ITS own
+  // rightmost-of-the-left-group position in the desktop topbar.
+  //
+  // UI-16 (round 3, Opus 5.5 eyes-on review): "Report" DROPPED from this menu -- the desktop top
+  // bar has never had a Report item here (Report is a rail tool, not a top-bar action, on both
+  // viewports), so this menu carrying one was the one thing that did NOT match its desktop
+  // equivalent. `onReportTop` is kept as a prop (Shell.svelte's own mount line is unchanged, so
+  // reinstating a Report row later is a one-line revert) but nothing in this file calls it now.
   const moreItems = $derived<MoreItem[]>([
     { label: "Share", icon: "share", run: () => onShare() },
     { label: "Download…", icon: "download", run: () => onOpenDownload() },
-    { label: "Report", icon: "report", run: () => onReportTop() },
     { label: "Feedback", icon: "feedback", run: handleFeedback, href: feedbackHref },
     { label: "About this release", icon: "info", run: () => (aboutOpen = true) },
     // `run` (not `href`): starts the tour directly, same as the desktop Help menu's own button --
@@ -245,7 +269,7 @@
   data-control="about"
   aria-label="About this release"
   aria-haspopup="dialog"
-  data-tooltip="Info"
+  data-tooltip="About this release"
   onclick={() => (aboutOpen = true)}
 >
   <Icon name="info" size={18} />
@@ -311,25 +335,28 @@
   <dl class="meta">
     <dt>Release</dt>
     <dd>
-      <b>{earlyVersion ?? "—"}</b>{#if releaseStatus && releaseStatus !== "released"}
-        · {releaseStatus}{/if}{#if releaseDate}
-        · {releaseDate}{/if}
+      <!-- UI-16 fix (round 3): `releaseLineExtra` (script block) computes the WHOLE " · status ·
+           date" tail as one string -- see its own header for why (Svelte trimmed the separator's
+           leading space when it lived as bare text at an `{#if}` block boundary: "v7· 2026-06-12",
+           no space at all). -->
+      <b>{earlyVersion ?? "—"}</b>{releaseLineExtra ? ` · ${releaseLineExtra}` : ""}
     </dd>
     <dt>App</dt>
     <dd>Atlas {appVersion}</dd>
   </dl>
   {#if restricted}
     <p class="restricted-note">
-      This is a pre-release under review, not the public release -- see the version chip to switch.
+      This is a pre-release under review, not the public release — see the version chip to switch.
     </p>
   {/if}
+  <!-- UI-16 fix (round 3): "Documentation" now opens THIS release's own Atlas chapter
+       (`helpDocsHref`, the SAME href the Help menu's "Docs" item already uses right next to it) --
+       it used to be a hardcoded link to the book's ROOT. "What changed" now opens the DATA
+       release's own notes chapter (`releaseNotesHref`) -- it used to link the APP's own
+       CHANGELOG.md, which is the atlas CODE's history, not the data release being viewed. -->
   <div class="pop-links">
-    <a href="https://marinesensitivity.org/docs/" target="_blank" rel="noopener">Documentation</a>
-    <a
-      href="https://github.com/MarineSensitivity/atlas/blob/main/CHANGELOG.md"
-      target="_blank"
-      rel="noopener">What changed</a
-    >
+    <a href={helpDocsHref} target="_blank" rel="noopener">Documentation</a>
+    <a href={releaseNotesHref} target="_blank" rel="noopener">What changed</a>
     <a href="https://github.com/MarineSensitivity/atlas" target="_blank" rel="noopener">GitHub</a>
   </div>
   <!-- owner review item 4 (live 0.10.62): "credit Ben Best of Ocean Metrics LLC ... and Timothy

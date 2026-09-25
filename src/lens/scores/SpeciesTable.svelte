@@ -20,6 +20,7 @@
   import { onMount } from "svelte";
   import { announce } from "../../lib/ui/announcer";
   import Icon from "../../lib/ui/Icon.svelte";
+  import SciName from "../../lib/ui/SciName.svelte";
   import {
     columnWidthPx,
     filterRows,
@@ -363,6 +364,11 @@
                     >
                       {cellText(row, col)}
                     </a>
+                  {:else if col.key === "scientific"}
+                    <!-- UI-13 (round 3): every printed binomial goes through the SAME `<SciName>`
+                         (italic) -- this table used to print it upright, the one style break next
+                         to the (already-italic) species card/popup. -->
+                    <SciName name={cellText(row, col)} />
                   {:else}
                     {cellText(row, col)}
                   {/if}
