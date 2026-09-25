@@ -178,6 +178,77 @@ describe("mergeCartoStyle", () => {
     expect(Object.keys(sources)).toEqual([]);
     expect(merged.layers).toEqual([]);
   });
+
+  // UI-21 (round-3 review, Ben's ask): basemap labels in English.
+  it('rewrites a plain `["get","name"]` symbol text-field to prefer name_en, falling back to name', () => {
+    const carto: CartoStyleLike = {
+      sources: { carto: { type: "vector", url: "https://tiles.example/tiles.json" } },
+      layers: [
+        {
+          id: "place-label",
+          type: "symbol",
+          source: "carto",
+          "source-layer": "place",
+          layout: { "text-field": ["get", "name"] },
+        } as unknown as NonNullable<CartoStyleLike["layers"]>[number],
+      ],
+    };
+    const merged = mergeCartoStyle(carto, {});
+    const layers = merged.layers as unknown as Array<{
+      id: string;
+      layout?: Record<string, unknown>;
+    }>;
+    const label = layers.find((l) => l.id === `${BASEMAP_LAYER_PREFIX}place-label`);
+    expect(label?.layout?.["text-field"]).toEqual([
+      "coalesce",
+      ["get", "name_en"],
+      ["get", "name"],
+    ]);
+  });
+
+  it('rewrites the legacy `"{name}"` token string the same way', () => {
+    const carto: CartoStyleLike = {
+      sources: {},
+      layers: [
+        {
+          id: "place-label",
+          type: "symbol",
+          layout: { "text-field": "{name}" },
+        } as unknown as NonNullable<CartoStyleLike["layers"]>[number],
+      ],
+    };
+    const merged = mergeCartoStyle(carto, {});
+    const label = merged.layers[0] as unknown as { layout: Record<string, unknown> };
+    expect(label.layout["text-field"]).toEqual(["coalesce", ["get", "name_en"], ["get", "name"]]);
+  });
+
+  it("never touches a DIFFERENT field, e.g. water_name — CARTO's own water-body labels stay as published", () => {
+    const carto: CartoStyleLike = {
+      sources: {},
+      layers: [
+        {
+          id: "water-label",
+          type: "symbol",
+          layout: { "text-field": ["get", "water_name"] },
+        } as unknown as NonNullable<CartoStyleLike["layers"]>[number],
+      ],
+    };
+    const merged = mergeCartoStyle(carto, {});
+    const label = merged.layers[0] as unknown as { layout: Record<string, unknown> };
+    expect(label.layout["text-field"]).toEqual(["get", "water_name"]);
+  });
+
+  it("leaves a non-symbol layer's fields untouched entirely", () => {
+    const merged = mergeCartoStyle(FAKE_CARTO_STYLE, {});
+    const water = merged.layers.find((l) => l.id === `${BASEMAP_LAYER_PREFIX}water`);
+    expect(water).toEqual({
+      id: `${BASEMAP_LAYER_PREFIX}water`,
+      type: "fill",
+      source: `${BASEMAP_LAYER_PREFIX}carto`,
+      "source-layer": "water",
+      paint: {},
+    });
+  });
 });
 
 describe("cartoStyleHasSymbolLayer", () => {

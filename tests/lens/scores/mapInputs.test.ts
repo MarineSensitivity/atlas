@@ -135,7 +135,9 @@ describe("scoresMapInputs — legend title precedence (M6)", () => {
       selection: null,
       metricLabels: { primprod: PRIMPROD_SHORT_LABEL },
     });
-    expect(out.legend?.title).toBe(PRIMPROD_SHORT_LABEL);
+    // R3-W7 follow-up: `metricKeyLabel()` now sentence-cases every label it returns, useful or
+    // fallback -- "prim prod, ..." -> "Prim prod, ...".
+    expect(out.legend?.title).toBe("Prim prod, 2014-2023 avg (mg C/m^2/day)");
   });
 
   // R3-B1 (round-3 plan): a release whose composite `metric_key` really IS the bare string

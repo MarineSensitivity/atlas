@@ -2126,7 +2126,13 @@
 {/if}
 {#if WelcomeModalComp}
   {@const Comp = WelcomeModalComp}
-  <Comp tour={sel.tour} onTakeTour={() => void beginTour()} />
+  <Comp
+    tour={sel.tour}
+    onTakeTour={() => void beginTour()}
+    onSwitchToSpecies={() => onLensChange("species")}
+    {docsHref}
+    ver={earlyVersion}
+  />
 {/if}
 
 <!-- P1 (Opus eyes-on assessment, 2026-09-24): the phone-only search modal -- see

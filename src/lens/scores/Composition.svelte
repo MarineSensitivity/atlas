@@ -64,17 +64,23 @@
          it small (few, high-suitability species inflate a suitability x ER x area sum without
          inflating a species count). The suit_er_area measure still exists in composition.ts as an
          internal option, not wired to any control here yet. -->
-    <Comp {title} data={tree} valueLabel="n species" />
+    <Comp {title} data={tree} valueLabel="species" />
   {:else}
     <p class="note">Loading the treemap…</p>
   {/if}
 </div>
 
 <style>
+  /* W3 hand-off (round-3 review): the SAME `max-height: 50vh` blank-space defect B9 fixed for
+     SpeciesTable.svelte/ZonesTable.svelte -- a definite height, flowed down the SAME
+     `TablePanel.svelte` `.table-panel { height: 100% }` chain, so the treemap below can fill a
+     tall desktop dock instead of stopping short of it. */
   .composition {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+    height: 100%;
+    min-height: 0;
   }
 
   .note {

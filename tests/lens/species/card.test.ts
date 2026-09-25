@@ -5,6 +5,7 @@ import {
   esaListing,
   noSurfaceNotice,
   speciesCard,
+  speciesCardErrorText,
   wormsUrl,
 } from "../../../src/lens/species/data/card";
 import { MERGED_IN } from "../../../src/lens/species/data/resolve";
@@ -21,8 +22,11 @@ describe("the facts list", () => {
       // P round V5 fix: the facts list shows the DISPLAY category ("Mammal"), not the raw sp_cat
       // string categoryLabel() cleans up (Opus eyes-on desktop-18: "Category: mammal" lowercase).
       { label: "Category", value: "Mammal" },
-      { label: "ESA Listing", value: "NMFS:LC" },
-      { label: "IUCN RedList", value: "VU" },
+      // UI-9 (round-3 review): "NMFS:LC" read as if LC were an ESA status (it is not one) --
+      // the code is now mapped to a reviewer-legible label, the source named once, in the fact's
+      // own LABEL rather than duplicated into the value.
+      { label: "Listed under the ESA (NMFS)", value: "Not listed (LC)" },
+      { label: "IUCN Red List", value: "Vulnerable (VU)" },
       {
         label: "WoRMS",
         value: "137077",
@@ -46,27 +50,57 @@ describe("the facts list", () => {
   });
 });
 
+// UI-9 (round-3 review): a NOAA reviewer stops at "ESA Listing: FWS:LC" (LC is not an ESA status)
+// and "ESA Listing: NMFS:EN (NMFS)" (the source named twice). The source lives in `esa.code`
+// itself (`"{SOURCE}:{STATUS}"`) -- `esaListing()` reads it from there, never from the separate
+// `esa.source` field (which duplicated it).
 describe("the ESA line", () => {
-  it("is '{code} ({SOURCE})' with the ch_ prefix dropped and upper-cased", () => {
-    expect(esaListing("FWS:TN", "ch_fws")).toBe("FWS:TN (FWS)");
-    expect(esaListing("IUCN:TN", "ch_nmfs")).toBe("IUCN:TN (NMFS)");
+  it("maps the status to a reviewer-legible label, code kept in parentheses; source named once, in the fact's label", () => {
+    expect(esaListing("FWS:TN")).toEqual({
+      label: "Listed under the ESA (FWS)",
+      value: "Threatened (TN)",
+    });
+    // the same TN status code, sourced from a different prefix (the data-level IUCN:TN bug,
+    // UI-L9, tracked separately) -- the source clause simply reflects whatever prefix the code
+    // carries; TN still maps to "Threatened" either way.
+    expect(esaListing("IUCN:TN")).toEqual({
+      label: "Listed under the ESA (IUCN)",
+      value: "Threatened (TN)",
+    });
     const card = speciesCard(CARDS.murrelet(), { ...v9(), ver: "v7", datasets: datasetsFor("v7") });
-    expect(card.facts).toContainEqual({ label: "ESA Listing", value: "FWS:TN (FWS)" });
+    expect(card.facts).toContainEqual({
+      label: "Listed under the ESA (FWS)",
+      value: "Threatened (TN)",
+    });
   });
 
-  it("with NO source, omits the parenthetical rather than printing R's '(NA)'", () => {
-    expect(esaListing("FWS:EN", null)).toBe("FWS:EN");
+  it("an unrecognized status code falls back to the bare code, never a blank label", () => {
+    expect(esaListing("FWS:XX")).toEqual({ label: "Listed under the ESA (FWS)", value: "XX" });
+  });
+
+  it("LC maps to 'Not listed', not left as a bare, misleading status code", () => {
+    expect(esaListing("NMFS:LC")).toEqual({
+      label: "Listed under the ESA (NMFS)",
+      value: "Not listed (LC)",
+    });
+  });
+
+  it("a code with no ':' has no source clause in the label", () => {
+    expect(esaListing("EN")).toEqual({ label: "Listed under the ESA", value: "Endangered (EN)" });
+  });
+
+  it("leatherback's FWS:EN code -> 'Listed under the ESA (FWS)' / 'Endangered (EN)'", () => {
     expect(speciesCard(CARDS.leatherback(), v9()).facts).toContainEqual({
-      label: "ESA Listing",
-      value: "FWS:EN",
+      label: "Listed under the ESA (FWS)",
+      value: "Endangered (EN)",
     });
   });
 
   it("with no code, the row is omitted entirely", () => {
-    expect(esaListing(null, "ch_fws")).toBeNull();
+    expect(esaListing(null)).toBeNull();
     expect(
       speciesCard(CARDS.whelk(), { ...v9(), ver: "v1", datasets: datasetsFor("v1") }).facts,
-    ).not.toContainEqual(expect.objectContaining({ label: "ESA Listing" }));
+    ).not.toContainEqual(expect.objectContaining({ label: expect.stringContaining("ESA") }));
   });
 });
 
@@ -167,5 +201,28 @@ describe("the document title", () => {
     ).toBe(
       "Ubiquitous globalis distribution (fish; ms_merge|DERIVED:513) from Merged Model | Marine Sensitivity",
     );
+  });
+});
+
+// UI-9 (round-3 review): the species card's load-error copy stopped printing the raw error kind.
+describe("speciesCardErrorText", () => {
+  it("not-found, with a release: names the release and points back at search", () => {
+    expect(speciesCardErrorText("not-found", "v7")).toBe(
+      "This species isn't in release v7. Search for another above.",
+    );
+  });
+
+  it("not-found, no release resolved yet: a version-agnostic fallback, never 'release null'", () => {
+    expect(speciesCardErrorText("not-found", null)).toBe(
+      "This species isn't in this release. Search for another above.",
+    );
+  });
+
+  it("every other kind (network/http/parse/schema): a plain retry hint, never the raw code", () => {
+    for (const kind of ["network", "http", "parse", "schema"]) {
+      expect(speciesCardErrorText(kind, "v7")).toBe(
+        "Couldn't load this species. Please try again.",
+      );
+    }
   });
 });

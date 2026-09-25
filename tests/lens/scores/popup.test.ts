@@ -1,71 +1,70 @@
-// atlas-4 fix round 3: the scores lens' click popup text — cell id, lon/lat (3 dp), the displayed
-// layer's value (the Selection checklist), and the zone tooltip text (§6.4, `zoneFill.ts`'s
-// `zoneTooltip()`, now actually wired to something).
+// atlas-4 fix round 3 / R3-W7 (round-3 review, Ben's colour-coding + sparkline ask): the scores
+// lens' click popup — UI-4's shared subject/value lines through `lib/map/popup.ts#valuePopupHtml`,
+// a ramp-colour swatch, and an optional distribution sparkline.
 import { describe, expect, it } from "vitest";
 import {
   cellPopupAnnounceText,
   cellPopupLoadingText,
   cellPopupText,
-  escapeHtml,
+  cellSwatch,
+  zonePopupAnnounceText,
   zonePopupText,
 } from "../../../src/lens/scores/popup";
 import type { ZoneRow } from "../../../src/lens/scores/boot";
 
+const STOPS = ["#000000", "#ffffff"] as const;
+
 describe("cellPopupText", () => {
-  it("cell id, lon/lat at EXACTLY 3 dp, and the displayed layer's value", () => {
+  it("the shared subject line + 'Label value' (UI-4), swatch coloured against the ramp", () => {
     const text = cellPopupText({
       cellId: 123456,
       lon: -70.123456,
       lat: 41.987654,
       layerLabel: "Overall score",
       value: 42,
+      ramp: { stops: STOPS, min: 0, max: 100 },
     });
-    expect(text).toBe("Cell 123456 · lon -70.123, lat 41.988 · Overall score: 42");
+    expect(text).toContain("Cell 123456 · 41.988° N, 70.123° W");
+    expect(text).toContain("Overall score 42");
+    expect(text).toContain("atlas-popup-swatch");
   });
 
-  it("2 dp instead of 3 is the exact fault this popup must never regress to", () => {
-    const text = cellPopupText({
-      cellId: 1,
-      lon: -70.123456,
-      lat: 41.987654,
-      layerLabel: "x",
-      value: 1,
-    });
-    expect(text).not.toContain("lon -70.12,");
-    expect(text).toContain("lon -70.123,");
-    expect(text).toContain("lat 41.988");
-  });
-
-  it("the value is round(value, 2), half-to-even (the flower panel's own per-component convention)", () => {
-    expect(cellPopupText({ cellId: 1, lon: 0, lat: 0, layerLabel: "x", value: 17.005 })).toContain(
-      "x: 17",
+  it("the value is rounded to the nearest integer (formatValueLine, UI-4's 'Score 44' convention)", () => {
+    expect(cellPopupText({ cellId: 1, lon: 0, lat: 0, layerLabel: "x", value: 17.4 })).toContain(
+      "x 17",
     );
-    expect(
-      cellPopupText({ cellId: 1, lon: 0, lat: 0, layerLabel: "x", value: 17.005001 }),
-    ).toContain("x: 17.01");
+    expect(cellPopupText({ cellId: 1, lon: 0, lat: 0, layerLabel: "x", value: 17.6 })).toContain(
+      "x 18",
+    );
+  });
+
+  it("no ramp resolved yet: still shows the value, with a neutral swatch (never a guessed colour)", () => {
+    const text = cellPopupText({ cellId: 1, lon: 0, lat: 0, layerLabel: "x", value: 42 });
+    expect(text).toContain("x 42");
+    expect(text).toContain("background:grey");
   });
 
   // D3 (Opus 5.5 eyes-on, 2026-09-24): a click outside the scored area (Utah, on the owner's
   // screenshot) used to read "Cell 2711027 · lon -113.526, lat 38.932 · {30-word layer
   // description}: no value" -- a cell id (implying the app found a scored cell — it did not) and
-  // the FULL layer title, both misleading. Superseded by the fixture below: the OLD assertion
-  // ("Cell 1 · lon 0.000, lat 0.000 · Overall score: no value") is the exact bug, not a spec to
-  // keep passing.
-  it("D3: a click with NO value (off-grid / unscored) reads a plain 'No scored cell here' + coordinates — never a cell id, never the layer label", () => {
+  // the FULL layer title, both misleading.
+  it("D3: a click with NO value (off-grid / unscored) reads 'No scored cell here' — never a cell id, never the layer label", () => {
     const text = cellPopupText({
       cellId: 2711027,
       lon: -113.526,
       lat: 38.932,
       layerLabel: "Primary productivity: Oregon State Vertically Generalized Production Model",
       value: null,
+      ramp: { stops: STOPS, min: 0, max: 100 },
     });
-    expect(text).toBe("No scored cell here · lon -113.526, lat 38.932");
-    expect(text).not.toContain("2711027");
+    expect(text).toContain("No scored cell here");
     expect(text).not.toContain("Primary productivity");
-    expect(text).not.toContain("no value"); // the old, data-blaming wording
+    expect(text).not.toContain("2711027"); // never a cell id for a no-value click
+    expect(text).toContain("38.932° N, 113.526° W");
+    expect(text).toContain("background:grey"); // no ramp value to colour against
   });
 
-  it("D3: the announce() text matches (no escaping needed — no dynamic label is interpolated)", () => {
+  it("D3: the announce() text matches, no markup, no cell id", () => {
     const text = cellPopupAnnounceText({
       cellId: 2711027,
       lon: -113.526,
@@ -73,13 +72,56 @@ describe("cellPopupText", () => {
       layerLabel: "<b>whatever</b>",
       value: null,
     });
-    expect(text).toBe("No scored cell here · lon -113.526, lat 38.932");
+    expect(text).toBe("38.932° N, 113.526° W: No scored cell here");
   });
 
-  it("the layer label is escaped (a release string is untrusted text, never markup)", () => {
+  it("the layer label is escaped in the HTML (a release string is untrusted text, never markup)", () => {
     const text = cellPopupText({ cellId: 1, lon: 0, lat: 0, layerLabel: "<b>x</b>", value: 1 });
-    expect(text).not.toContain("<b>");
-    expect(text).toContain("&lt;b&gt;");
+    expect(text).not.toContain("<b>x</b>");
+    expect(text).toContain("&lt;b&gt;x&lt;/b&gt;");
+  });
+
+  it("carries the sparkline block when one is supplied, only for a scored value", () => {
+    const withSparkline = cellPopupText({
+      cellId: 1,
+      lon: 0,
+      lat: 0,
+      layerLabel: "x",
+      value: 42,
+      ramp: { stops: STOPS, min: 0, max: 100 },
+      sparkline: "loading",
+    });
+    expect(withSparkline).toContain("atlas-popup-sparkline--loading");
+
+    // a no-value popup never shows a sparkline, even if the caller happened to pass one along
+    const noValue = cellPopupText({
+      cellId: 1,
+      lon: 0,
+      lat: 0,
+      layerLabel: "x",
+      value: null,
+      sparkline: "loading",
+    });
+    expect(noValue).not.toContain("atlas-popup-sparkline");
+  });
+});
+
+describe("cellSwatch", () => {
+  it("colours against the ramp, black/white contrast", () => {
+    expect(cellSwatch(0, { stops: STOPS, min: 0, max: 100 })).toEqual({
+      color: "#000000",
+      textColor: "white",
+    });
+    expect(cellSwatch(100, { stops: STOPS, min: 0, max: 100 })).toEqual({
+      color: "#ffffff",
+      textColor: "black",
+    });
+  });
+
+  it("null value or no ramp -> null, never a guessed colour", () => {
+    expect(cellSwatch(null, { stops: STOPS, min: 0, max: 100 })).toBeNull();
+    expect(cellSwatch(42, null)).toBeNull();
+    expect(cellSwatch(42, undefined)).toBeNull();
   });
 });
 
@@ -92,40 +134,75 @@ const ZONES: ZoneRow[] = [
 describe("zonePopupText", () => {
   // V4 fix (owner phone report, 2026-09-24, docs fact-check item 3): both the has-value branch
   // (via `zoneValuesFor`'s own `paLabel()` fix) and the no-value branch (this module's own
-  // `paLabel()` call) now show "Full Name (KEY)", the same label the Zones table already shows,
-  // instead of the bare published name.
-  it("'{name}: {round(value)}' — parity doc §6.4, verbatim (half-to-even, 0 dp)", () => {
-    expect(zonePopupText(ZONES, "score", { key: "GAA", name: "Gulf of America, Eastern" })).toBe(
-      "Gulf of America, Eastern (GAA): 33",
-    );
+  // `paLabel()` call) show "Full Name (KEY)", the same label the Zones table already shows.
+  it("the shared subject line + 'Score {value}' (UI-4), swatch coloured against the ramp", () => {
+    const text = zonePopupText({
+      zones: ZONES,
+      lyr: "score",
+      zone: { key: "GAA", name: "Gulf of America, Eastern" },
+      stops: STOPS,
+    });
+    expect(text).toContain("Gulf of America, Eastern (GAA)");
+    expect(text).toContain("Score 33");
+    expect(text).toContain("atlas-popup-swatch");
   });
 
   it("falls back to the key when the zone carries no name (and no PROGRAM_AREA_NAMES fallback)", () => {
-    expect(zonePopupText(ZONES, "score", { key: "NONAME", name: "NONAME" })).toBe("NONAME: 10");
+    const text = zonePopupText({
+      zones: ZONES,
+      lyr: "score",
+      zone: { key: "NONAME", name: "NONAME" },
+    });
+    expect(text).toContain("NONAME");
+    expect(text).toContain("Score 10");
   });
 
-  it("no value for this layer -> '{name} (KEY): no value', never a throw", () => {
-    expect(zonePopupText(ZONES, "score", { key: "MDA", name: "Mid Atlantic" })).toBe(
-      "Mid Atlantic (MDA): no value",
-    );
+  it("no value for this layer -> 'No scored cell here', never a throw", () => {
+    const text = zonePopupText({
+      zones: ZONES,
+      lyr: "score",
+      zone: { key: "MDA", name: "Mid Atlantic" },
+    });
+    expect(text).toContain("Mid Atlantic (MDA)");
+    expect(text).toContain("No scored cell here");
+    expect(text).toContain("background:grey");
   });
 
-  it("lyr === null (no boot.layers yet) -> 'no value' rather than guessing a metric", () => {
-    expect(zonePopupText(ZONES, null, { key: "GAA", name: "Gulf of America, Eastern" })).toBe(
-      "Gulf of America, Eastern (GAA): no value",
-    );
+  it("lyr === null (no boot.layers yet) -> 'No scored cell here' rather than guessing a metric", () => {
+    const text = zonePopupText({
+      zones: ZONES,
+      lyr: null,
+      zone: { key: "GAA", name: "Gulf of America, Eastern" },
+    });
+    expect(text).toContain("No scored cell here");
   });
 
-  it("the zone's own name is escaped too (paLabel's parenthetical key is plain text, never escaped away)", () => {
-    expect(zonePopupText([], "score", { key: "X", name: "<i>X</i>" })).toBe(
-      "&lt;i&gt;X&lt;/i&gt; (X): no value",
-    );
+  it("the zone's own name is escaped too", () => {
+    const text = zonePopupText({ zones: [], lyr: "score", zone: { key: "X", name: "<i>X</i>" } });
+    expect(text).toContain("&lt;i&gt;X&lt;/i&gt; (X)");
+    expect(text).not.toContain("<i>X</i>");
+  });
+
+  it("no stops resolved: still shows the value, with a neutral swatch", () => {
+    const text = zonePopupText({
+      zones: ZONES,
+      lyr: "score",
+      zone: { key: "GAA", name: "Gulf of America, Eastern" },
+    });
+    expect(text).toContain("Score 33");
+    expect(text).toContain("background:grey");
   });
 });
 
-describe("escapeHtml", () => {
-  it("escapes the four characters that matter in an innerHTML string", () => {
-    expect(escapeHtml(`<a href="x">&</a>`)).toBe("&lt;a href=&quot;x&quot;&gt;&amp;&lt;/a&gt;");
+describe("zonePopupAnnounceText", () => {
+  it("plain text, no markup", () => {
+    expect(
+      zonePopupAnnounceText({
+        zones: ZONES,
+        lyr: "score",
+        zone: { key: "GAA", name: "Gulf of America, Eastern" },
+      }),
+    ).toBe("Gulf of America, Eastern (GAA): Score 33");
   });
 });
 

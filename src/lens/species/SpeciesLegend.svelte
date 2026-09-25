@@ -36,6 +36,7 @@
   <div class="species-legend" data-testid="species-legend">
     <Legend
       title={legend.title}
+      subtitle={legend.subtitle}
       stops={legend.stops}
       unit={legend.unit}
       formatValue={formatSpeciesLegendValue}
@@ -49,6 +50,9 @@
     data-testid="species-legend"
   >
     <h2 id={catTitleId}>{legend.title}</h2>
+    {#if legend.subtitle}
+      <p class="legend-subtitle">{legend.subtitle}</p>
+    {/if}
     <div class="row">
       <span class="swatch" style="background:{legend.color}"></span>
       <span>{legend.label}</span>
@@ -102,6 +106,15 @@
   .species-legend--categorical h2 {
     font-size: var(--text-sm);
     margin: 0 0 var(--space-1);
+  }
+
+  /* same rule as `Legend.svelte`'s own `.legend-subtitle` (Ben's UI-L2 ask) -- the categorical
+     branch renders its own markup rather than going through that shared component, so it needs
+     its own copy of the same small caption style. */
+  .legend-subtitle {
+    margin: 0 0 var(--space-2);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
   }
 
   .row {

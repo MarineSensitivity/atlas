@@ -990,7 +990,14 @@
     </div>
   </section>
 {:else if progressDone === 0 && places.length === 0 && earlySettled}
-  <p>No places in this link — nothing to report on.</p>
+  <!-- UI-7 (round-3 review): an empty report (no places in the link) used to be a dead end -- add
+       the SAME "open the Atlas" escape hatch the populated report's header already offers, so a
+       reader who lands here from a stale/malformed link has somewhere to go. -->
+  <p>
+    No places in this link — nothing to report on. <a
+      href={ver ? `./index.html?ver=${ver}` : "./index.html"}>Open the Atlas</a
+    >.
+  </p>
 {/if}
 
 <style>

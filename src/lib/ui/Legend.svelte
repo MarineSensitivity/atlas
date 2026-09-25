@@ -9,6 +9,10 @@
 
   interface Props {
     title: string;
+    /** Ben's ask (round-3 review, UI-L2): "which layer is being displayed" -- a second line under
+     * the title, built by `lib/map/legendTitle.ts#legendTitle()` (e.g. "Raster cells · All US
+     * waters · v7"). `null`/omitted renders no second line at all. */
+    subtitle?: string | null;
     stops: LegendStop[];
     formatValue?: (value: number) => string;
     /** the unit the values are in (e.g. "score", "%"); passed by the caller, never hard-coded
@@ -24,6 +28,7 @@
 
   let {
     title,
+    subtitle = null,
     stops,
     formatValue = (v: number) => v.toFixed(2),
     unit,
@@ -49,6 +54,9 @@
 
 <div class="legend" role="region" aria-labelledby={titleId}>
   <h2 id={titleId}>{title}</h2>
+  {#if subtitle}
+    <p class="legend-subtitle">{subtitle}</p>
+  {/if}
   <div class="ramp" role="img" aria-label={rampName} style="background: {gradient}"></div>
   <div class="ramp-ticks" aria-hidden="true">
     {#each tickStops as s, i (i)}
@@ -65,7 +73,13 @@
 
   .legend h2 {
     font-size: var(--text-sm);
+    margin: 0 0 var(--space-1);
+  }
+
+  .legend-subtitle {
     margin: 0 0 var(--space-2);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
   }
 
   .ramp {

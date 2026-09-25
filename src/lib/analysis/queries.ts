@@ -27,6 +27,11 @@ export interface Templates {
   species_shares: string;
   cell_components: string;
   cell_value: string;
+  /** Ben's ask (round-3 review): the popup's distribution sparkline, scores/Raster-cells branch --
+   * every finite value of one column, over whatever tiles are currently mounted (`sql/
+   * cell_histogram.sql`; `lib/map/distribution.ts` bins them in JS via `lib/map/density.ts`, the
+   * same binner every distribution source shares). */
+  cell_histogram: string;
   composition: string;
   cell_model_key: string;
   cell_model_seq: string;
@@ -245,6 +250,28 @@ export function cellValue(
     const val = rows[0]?.val;
     return typeof val === "number" && Number.isFinite(val) ? val : null;
   });
+}
+
+/**
+ * Every finite value of ONE caller-chosen `metric_key`, over whatever tiles are currently mounted
+ * -- `sql/cell_histogram.sql`, the popup's distribution sparkline (Ben's ask, round-3 review,
+ * scores/Raster-cells branch; see `lib/map/distribution.ts`). Binning happens in JS
+ * (`lib/map/density.ts#binValues`), not here -- this only hands back the raw column.
+ */
+export function cellHistogramValues(
+  db: SqlRunner,
+  t: Templates,
+  opts: { metricKey: string },
+): Promise<number[]> {
+  // NOT an `async function`: same rule as `cellValue()` above -- `ident()` must throw synchronously.
+  const sql = renderSql(t.cell_histogram, {}, { raw: { cols: colsOf([opts.metricKey]) } });
+  return db
+    .exec<{ val: unknown }>(sql)
+    .then((rows) =>
+      rows
+        .map((r) => r.val)
+        .filter((v): v is number => typeof v === "number" && Number.isFinite(v)),
+    );
 }
 
 // ---- species -----------------------------------------------------------------------------------

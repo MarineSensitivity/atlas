@@ -5,6 +5,7 @@
 import { formatSel } from "../../lib/state/codec";
 import { defaultOut, type Sel } from "../../lib/state/types";
 import { signif3 } from "../../lib/geo/round";
+import { formatSubject } from "../../lib/format";
 import type { ScoresSelection } from "./selection";
 
 /** the release's one drawable unit's singular display name, for the species header (parity doc
@@ -27,15 +28,30 @@ export interface SpeciesContext {
   unit: string;
   unitLabel: string | null;
   zoneAllKey: string;
+  /** the clicked cell's own centre (`cellRing()`), when `selection.kind === "cell"` — `ScoresSelection`
+   * itself carries only the bare cell id, so the caller (`TablePanel.svelte`) passes the SAME
+   * `cellCoords` `FlowerPanel` already receives, so `formatSubject()` below can print the cell's
+   * coordinates (UI-4) rather than the id alone. `undefined` degrades to the id-only form — a
+   * caller that has not wired coords through yet still gets a correct, if shorter, subject. */
+  cellCoords?: { lon: number; lat: number };
 }
 
-/** `spp_tbl_hdr` (parity doc §7.3), verbatim per state. */
+/** `spp_tbl_hdr` (parity doc §7.3) — UI-4's fix: "Species in {subject}" for EVERY state (a clicked
+ * cell, a clicked zone, or nothing selected), where `{subject}` is the SAME `formatSubject()` line
+ * the map popup and the flower panel print, so the SAME cell can never read three different ways
+ * across the three panels again. Replaces the old three bespoke spellings ("Species for Cell ID:
+ * …", "Species for Program Area: …", "Species in Full study area"). */
 export function speciesHeader(ctx: SpeciesContext): string {
-  if (ctx.selection?.kind === "cell") return `Species for Cell ID: ${ctx.selection.cellId}`;
-  if (ctx.selection?.kind === "zone") {
-    return `Species for ${unitSingularLabel(ctx.selection.unit, ctx.unitLabel)}: ${ctx.zoneName ?? ctx.selection.key}`;
+  if (ctx.selection?.kind === "cell") {
+    const subject = ctx.cellCoords
+      ? formatSubject({ kind: "cell", cellId: ctx.selection.cellId, ...ctx.cellCoords })
+      : `Cell ${ctx.selection.cellId}`;
+    return `Species in ${subject}`;
   }
-  return "Species in Full study area";
+  if (ctx.selection?.kind === "zone") {
+    return `Species in ${ctx.zoneName ?? ctx.selection.key}`;
+  }
+  return "Species in All US waters";
 }
 
 /**

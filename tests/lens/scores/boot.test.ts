@@ -362,10 +362,17 @@ describe("metricKeyLabel (R3-B1: title-case a bare metric_key)", () => {
       expect(metricKeyLabel("score", null)).toBe("Score");
     });
 
-    it("a REAL, different label wins verbatim -- the common case, unaffected", () => {
+    // R3-W7 follow-up (Ben, 2026-09-25): a real, different label still wins verbatim -- but its
+    // FIRST character is now sentence-cased too (a v7 manifest published a real, non-degenerate
+    // "score" label that stayed lowercase forever because it differed from its key).
+    it("a REAL, different label wins, sentence-cased -- the common case", () => {
       expect(metricKeyLabel("primprod", "prim prod, 2014-2023 avg (mg C/m^2/day)")).toBe(
-        "prim prod, 2014-2023 avg (mg C/m^2/day)",
+        "Prim prod, 2014-2023 avg (mg C/m^2/day)",
       );
+    });
+
+    it("R3-W7: a real label that is itself lowercase gets sentence-cased", () => {
+      expect(metricKeyLabel("composite_score", "score")).toBe("Score");
     });
 
     it("the reported bug: a curated label equal to the key (same case) is NOT treated as real", () => {

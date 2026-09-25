@@ -533,12 +533,15 @@ function describeTop(name: string, rows: readonly TopSpeciesRow[]): string {
   );
 }
 
+// UI-15 (round-3 review): reader copy drops "immutable" and "marine atlas" -- both name internal
+// data-repo/versioning concepts a reader of the REPORT has no reason to know. "data release {ver}"
+// is the same product-naming form the welcome modal and version picker now use.
 const INTRO =
-  "This report was computed in your browser from immutable release {ver} of the MarineSensitivity " +
-  "marine atlas — no geometry left this device and nothing was rendered on a server. The link " +
-  "above reproduces it exactly. Scores are ecoregionally rescaled to 0–100 within each BOEM " +
-  "Ecoregion, so they reflect relative sensitivity within a region rather than absolute values " +
-  "across regions.";
+  "This report was computed in your browser from data release {ver} of the Marine Sensitivity " +
+  "Atlas — no geometry left this device and nothing was rendered on a server. The link above " +
+  "reproduces it exactly. Scores are ecoregionally rescaled to 0–100 within each BOEM Ecoregion, " +
+  "so they reflect relative sensitivity within a region rather than absolute values across " +
+  "regions.";
 
 // fix round 2, item 1 (spec §2.4, verbatim) -- static, but still a MODEL field (never a literal
 // in Report.svelte): the component just renders whatever this module hands it.
@@ -817,7 +820,11 @@ export function buildReport(input: BuildReportInput): ReportModel {
     intro: {
       ver,
       text: INTRO.replace("{ver}", ver),
-      appHref: appHref(ver),
+      // UI-7 (round-3 review): carries the report's OWN place token(s) -- opening "this release in
+      // the Atlas" from a multi-place report used to land on the bare default view with none of
+      // the report's places loaded; `placeTokens` is the SAME `pl=` value the header's own
+      // permalink already encodes (above), just reused as `appHref`'s patch.
+      appHref: appHref(ver, { pl: placeTokens || undefined }),
       docsHref,
     },
     parameters,

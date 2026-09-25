@@ -180,14 +180,21 @@ export function layerByKey(boot: unknown, key: string | undefined | null): BootL
  * `ScoresLens.svelte`'s `metricLabel()` (the Layer `<select>`), `mapInputs.ts`'s legend `title`
  * (which `ScoresLegend.svelte`'s `<h2>` AND `LegendChip.svelte`'s chip text both read verbatim —
  * one fix covers all three surfaces the plan names) both call this now.
+ *
+ * R3-W7 follow-up (Ben, 2026-09-25): a v7 manifest publishes a REAL, non-degenerate curated label
+ * for the composite row that is itself the literal lowercase word "score" (`label !== key`, so the
+ * `isUseful` branch above fired and returned it VERBATIM) — the Layer select, legend and chip all
+ * still read lowercase "score" beside every other sentence-cased label on the same panel. Sentence
+ * case is now applied to the FIRST character of every label this function returns, useful or
+ * fallback alike — the only thing that changed is a real, differently-worded curated label no
+ * longer bypasses the casing rule this function exists to enforce.
  */
 export function metricKeyLabel(key: string, label?: string | null): string {
   const trimmedKey = key.trim();
   const trimmedLabel = typeof label === "string" ? label.trim() : "";
   const isUseful = trimmedLabel !== "" && trimmedLabel.toLowerCase() !== trimmedKey.toLowerCase();
-  if (isUseful) return trimmedLabel;
-  const spaced = trimmedKey.replace(/_/g, " ");
-  return spaced ? spaced[0].toUpperCase() + spaced.slice(1) : spaced;
+  const raw = isUseful ? trimmedLabel : trimmedKey.replace(/_/g, " ");
+  return raw ? raw[0].toUpperCase() + raw.slice(1) : raw;
 }
 
 /** `layer.by_subregion.FULL` — the raster is ALWAYS the FULL COG (D7: "the study area is a camera,

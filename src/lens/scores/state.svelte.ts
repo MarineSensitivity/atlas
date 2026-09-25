@@ -57,6 +57,7 @@ import {
 import { scoresMapInputs, type ScoresMapInputs, type ScoresMapState } from "./mapInputs";
 import type { ManifestOverlayRow } from "./raster";
 import {
+  fullSubregion,
   layerByKey,
   metricLabelsFromManifest,
   primaryUnitType,
@@ -73,6 +74,13 @@ import {
   zonePopupAnnounceText,
   zonePopupText,
 } from "./popup";
+// R3-W7 (Ben's colour-coding + sparkline ask): the popup's swatch ramp and its distribution
+// sparkline -- see `lib/map/popup.ts`/`lib/map/density.ts`/`lib/map/distribution.ts`'s own headers.
+import { popupSparkline, type SparklineSlot } from "../../lib/map/popup";
+import { rasterCellDistribution, valueListDistribution } from "../../lib/map/distribution";
+import { paletteStopsWithFallback } from "../../lib/raster/ramps";
+import { zoneValuesFor } from "./zoneFill";
+import { exclusive } from "../../lib/analysis/exclusive";
 // Q1 (atlas-8 P-round, 2026-09-24): the top-bar search's "fly to the zone's own centroid" reuses
 // the SAME point `places/zoneStats.ts#zoneCenterFromBoot` already computes for a zone Place's own
 // "Zoom to place" (`Places.svelte`) — one reader for "where does this zone's label sit", never a
@@ -302,6 +310,44 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     if (e.key === "Escape") clearPopup();
   });
 
+  /** R3-W7 (Ben's colour-coding + sparkline ask): the Program-Area popup's ramp stops + its
+   * distribution sparkline -- both cheap and SYNCHRONOUS (`boot.zones` is already in memory, no
+   * engine/network call), unlike the cell branch's raster histogram. Shared by every zone-popup
+   * call site (a real click, the search-pick paths) so the ramp/sparkline logic lives in one
+   * place; the marker is placed at `zoneValue` (the specific clicked zone's own value). */
+  function zonePopupExtras(
+    zRows: ReturnType<typeof zoneRows>,
+    zoneValue: number | undefined,
+  ): { stops: ReturnType<typeof paletteStopsWithFallback>; sparkline: SparklineSlot } {
+    const bootObj = deps.boot() as { palettes?: unknown } | null | undefined;
+    const stops = lyr ? paletteStopsWithFallback(bootObj, deps.selStore.sel.pal) : null;
+    const values = lyr ? zoneValuesFor(zRows, lyr).map((v) => v.value) : [];
+    const histogram = values.length ? valueListDistribution(values) : null;
+    const sparkline =
+      histogram && stops && zoneValue !== undefined
+        ? popupSparkline(histogram, zoneValue, stops)
+        : null;
+    return { stops, sparkline };
+  }
+
+  /** builds the whole zone popup (HTML + announce text) for `zone`, over `zRows` -- the ONE place
+   * every zone-popup call site (a real click, the two search-pick paths) resolves the clicked
+   * zone's own value once and reuses it for both the ramp/sparkline marker AND `zonePopupText`'s
+   * own lookup, rather than looking it up twice. */
+  function buildZonePopup(
+    zRows: ReturnType<typeof zoneRows>,
+    zone: { unit: string; key: string; name: string },
+  ): { html: string; announceText: string } {
+    const zoneValue = lyr
+      ? zoneValuesFor(zRows, lyr).find((v) => v.key === zone.key)?.value
+      : undefined;
+    const { stops, sparkline } = zonePopupExtras(zRows, zoneValue);
+    return {
+      html: zonePopupText({ zones: zRows, lyr, zone, stops, sparkline }),
+      announceText: zonePopupAnnounceText({ zones: zRows, lyr, zone }),
+    };
+  }
+
   async function showCellPopup(
     cellId: number,
     lngLat: { lng: number; lat: number },
@@ -312,12 +358,27 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     const bootObj = deps.boot() as Record<string, unknown>;
     const ver = deps.ver();
     let value: number | null = null;
+    // R3-W7 (Ben's ask): the popup's distribution sparkline, scores/Raster-cells branch -- fetched
+    // AFTER the value, as a SEPARATE `exclusive()` call on the SAME engine (never nested inside
+    // `fetchCellValue`'s own `exclusive()` -- `analysis/exclusive.ts`'s own header: "NEVER nest
+    // exclusive() on the same database"). The tile `fetchCellValue` just mounted is still the
+    // `cell` view's content, so this reads it without mounting anything a second time.
+    let sparkline: SparklineSlot = null;
     try {
       if (ver && lyr) {
         const grid = gridFromBoot(bootObj);
         const tile = tileOf(cellId, grid);
         const sources = await getAnalysisSources(ver, bootObj);
         value = await fetchCellValue(sources, { cellId, tile, metricKey: lyr });
+        if (value !== null) {
+          const histogram = await exclusive(sources.db, () =>
+            rasterCellDistribution(sources.db, sources.templates, lyr as string),
+          ).catch(() => null);
+          if (histogram) {
+            const stops = paletteStopsWithFallback(bootObj, deps.selStore.sel.pal);
+            if (stops) sparkline = popupSparkline(histogram, value, stops);
+          }
+        }
       }
     } catch {
       value = null; // no engine / no tile for this cell (off-grid, unscored) — "no value", not a throw
@@ -329,7 +390,16 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     // Model (VGPM)..."), which used to print verbatim in a one-line popup. Falls back to the long
     // label, then the bare metric_key, exactly as before, when a release's manifest has not
     // published a short name for this metric yet.
-    const label = (lyr && metricLabels[lyr]) || layerByKey(bootObj, lyr)?.label || lyr || "value";
+    const layer = layerByKey(bootObj, lyr);
+    const label = (lyr && metricLabels[lyr]) || layer?.label || lyr || "value";
+    // R3-W7: the SAME ramp the raster tile itself is painted with (`raster/ramps.ts`'s own
+    // fallback-aware lookup, never a guessed colour) -- `fullSubregion(layer)?.rescale` is the
+    // manifest's own [min, max] band, the SAME one `scoreRasterSpec`/`rasterLegend` (mapInputs.ts)
+    // already read for this exact layer.
+    const rescale = layer ? fullSubregion(layer)?.rescale : undefined;
+    const rampStops = paletteStopsWithFallback(bootObj, deps.selStore.sel.pal);
+    const ramp =
+      rescale && rampStops ? { stops: rampStops, min: rescale[0], max: rescale[1] } : null;
     // R3-B3 (Opus eyes-on review, 2026-09-25): the popup used to print the raw CLICK point
     // (lngLat, wherever the pointer landed inside the cell) while the flower panel's own title
     // printed the CELL CENTRE (`ScoresLens.svelte`'s `cellCoords`, itself `mapSelection`'s
@@ -337,7 +407,15 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     // UI showed it. `center` (the caller's `cellRing()` result, the SAME helper the panel's
     // `mapSelection` already runs through) is now the ONE source for what a cell's coordinates
     // are; `lngLat` is kept only for the popup's own map ANCHOR (where it points on screen).
-    const input = { cellId, lon: center.lon, lat: center.lat, layerLabel: label, value };
+    const input = {
+      cellId,
+      lon: center.lon,
+      lat: center.lat,
+      layerLabel: label,
+      value,
+      ramp,
+      sparkline,
+    };
     // D3(a) round 2 (orchestrator, 2026-09-24 -- fixes a regression the FIRST D3 fix introduced):
     // `handleMapClick` below now writes `sel` EAGERLY, synchronously, on click -- exactly the
     // pre-D3 behaviour -- so the URL/selection updates at once regardless of how long (or whether
@@ -375,6 +453,10 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     hit: { unit: string; key: string; name: string },
     zRows: ReturnType<typeof zoneRows>,
   ): void {
+    // R3-W7: the popup goes through the SAME shared builder (colour swatch + sparkline) a real map
+    // click uses, not the bare `zonePopupText`/`zonePopupAnnounceText` pair this helper called
+    // directly before W7's unified popup template landed.
+    const popup = buildZonePopup(zRows, hit);
     if (bounds) {
       // P3 fix (Opus eyes-on review, 2026-09-24): a flat 40px padding ignored the sheet/panel
       // actually covering the map — a Program Area search pick landed under the phone sheet
@@ -392,11 +474,7 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       // Program-Area place to — "zoomed out just enough to see a Program Area's own extent".
       handle.flyTo({ key: "place", lon: center.lon, lat: center.lat, zoom: 6 });
     }
-    showPopup(
-      { lng: center.lon, lat: center.lat },
-      zonePopupText(zRows, lyr, hit),
-      zonePopupAnnounceText(zRows, lyr, hit),
-    );
+    showPopup({ lng: center.lon, lat: center.lat }, popup.html, popup.announceText);
   }
 
   /**
@@ -523,11 +601,8 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       } else if (result.zone) {
         deps.selStore.set({ sel: formatZoneToken(result.zone.unit, result.zone.key) });
         const zRows = zoneRows(deps.boot(), result.zone.unit);
-        showPopup(
-          lngLat,
-          zonePopupText(zRows, lyr, result.zone),
-          zonePopupAnnounceText(zRows, lyr, result.zone),
-        );
+        const popup = buildZonePopup(zRows, result.zone);
+        showPopup(lngLat, popup.html, popup.announceText);
       }
     },
 
@@ -596,7 +671,7 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       // CI's fully-parallel three-engine job. The retry is a SECOND, later attempt at the exact
       // same resolution (`zoneKnownBounds`), never a different one: `zoneCenterFromBoot` is not
       // re-tried (it reads only `boot`, which does not change between attempts).
-      announce(zonePopupAnnounceText(zRows, lyr, hit));
+      announce(zonePopupAnnounceText({ zones: zRows, lyr, zone: hit }));
       if (handle) void retryZoneFlyAfterIdle(handle, boot, unit, key, hit, zRows);
     },
 

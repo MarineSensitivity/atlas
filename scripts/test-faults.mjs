@@ -1934,6 +1934,16 @@ export const FAULTS = [
     ],
     env: { PW_PORT: "4471" },
   },
+  // --- round 3, W7 (consistency + copy, Ben's popup-sparkline ask) --------------------------------
+  {
+    id: "sparkline-marker-unclamped",
+    patch: "tests/faults/sparkline-marker-unclamped.patch",
+    describe:
+      "density.ts's markerX() drops its clamp to [0, 1] -- a clicked value outside the " +
+      "distribution's own [min, max] (a stale/rounding edge case) now places the popup " +
+      "sparkline's marker line OFF the visible SVG instead of pinned to the nearest end",
+    gate: ["npx", "vitest", "run", "tests/lib/map/density.test.ts"],
+  },
   // round-3 tooling fix: scripts/gallery-baselines-from-ci-core.mjs's baselineNameFor() reverted to
   // dropping the "-actual" suffix alone (no "-chromium-linux" added), the same bug commit 6aa87aa
   // fixed by hand -- a CI actual (e.g. "gallery-navy-desktop-about-actual.png") again maps to a

@@ -749,6 +749,10 @@ test.describe("M6: the Data row's short label wins over the long description, wh
     "from daily averages available as monthly averaged to annual and averaged to overall for " +
     "the most recently available full years of data 2014 to 2023";
   const PRIMPROD_SHORT_LABEL = "prim prod, 2014-2023 avg (mg C/m^2/day)"; // v7's real manifest.metrics label
+  // R3-W7 follow-up: `metricKeyLabel()` now sentence-cases every label it returns (a real v7
+  // manifest label that is ITSELF lowercase used to stay lowercase forever) -- the rendered
+  // option text is this, not the raw fixture string above.
+  const PRIMPROD_SHORT_LABEL_DISPLAY = "Prim prod, 2014-2023 avg (mg C/m^2/day)";
 
   function bootWithPrimprod() {
     const boot = bootFor("v7") as { layers: unknown[] };
@@ -823,7 +827,7 @@ test.describe("M6: the Data row's short label wins over the long description, wh
     const errors = collectConsoleErrors(page);
     await gotoLayersScoresPrimprod(page, [{ metric_key: "primprod", label: PRIMPROD_SHORT_LABEL }]);
     await expect(
-      page.getByRole("option", { name: PRIMPROD_SHORT_LABEL, exact: true }),
+      page.getByRole("option", { name: PRIMPROD_SHORT_LABEL_DISPLAY, exact: true }),
     ).toBeAttached();
     await expect(page.getByRole("option", { name: PRIMPROD_LONG_LABEL, exact: true })).toHaveCount(
       0,

@@ -15,6 +15,7 @@ import { safeRoute } from "./routeSafety";
 import { routeBucket, routeSealFixture, routeSession, waitForHydration, BUCKET } from "./hermetic";
 import { routeBasemapStyle, routeGlyphs } from "./map-hermetic";
 import { cellLonLat, type GridSpec } from "../src/lib/grid/grid";
+import { formatLatLon } from "../src/lib/format";
 
 test.skip(({ browserName }) => browserName !== "chromium", "WebGL gate: chromium only (S2)");
 test.describe.configure({ mode: "serial" });
@@ -153,7 +154,7 @@ const OFF_TILE_CELL_ID = 39 * GRID.nc + 40;
 const CELL_OFF_TILE = cellLonLat(OFF_TILE_CELL_ID, GRID, true);
 
 test.describe("D3: the click popup outside the scored area (Opus 5.5 eyes-on, 2026-09-24)", () => {
-  test("a click with no value opens a ONE-line 'No scored cell here' popup + coordinates — never a cell id, never the layer title", async ({
+  test("a click with no value opens a popup naming the coordinates + 'No scored cell here' — never a cell id, never the layer title", async ({
     page,
   }) => {
     await gotoScores(page);
@@ -161,15 +162,13 @@ test.describe("D3: the click popup outside the scored area (Opus 5.5 eyes-on, 20
 
     await expect(page.locator(".atlas-popup")).toBeVisible({ timeout: 15_000 });
     await expect.poll(() => popupText(page), { timeout: 15_000 }).toContain("No scored cell here");
-    // `.innerText()` on `.maplibregl-popup-content` also picks up the close button's own "×" glyph
-    // (a sibling inside the same content box) — `startsWith` isolates the popup's OWN text line
-    // from that unrelated control, same as scores.popup.spec.ts's own `toContain` assertions do.
+    // R3-W7 (round-3 review, Ben's colour-coding ask): the popup now goes through the SHARED
+    // `valuePopupHtml()` template (subject line, then value line) rather than one bespoke string —
+    // the subject is the coordinates ALONE for a no-value click (D3: never a cell id), the value
+    // line is the plain status text.
     const text = await popupText(page);
-    expect(
-      text.startsWith(
-        `No scored cell here · lon ${CELL_OFF_TILE.lon.toFixed(3)}, lat ${CELL_OFF_TILE.lat.toFixed(3)}`,
-      ),
-    ).toBe(true);
+    expect(text).toContain(formatLatLon(CELL_OFF_TILE.lat, CELL_OFF_TILE.lon));
+    expect(text).toContain("No scored cell here");
     expect(text).not.toContain(String(OFF_TILE_CELL_ID));
     expect(text).not.toContain("Primary productivity");
     expect(text).not.toContain("Cell "); // never a cell id line at all
@@ -181,7 +180,7 @@ test.describe("D3: the click popup outside the scored area (Opus 5.5 eyes-on, 20
     await gotoScores(page);
     // select a real, scored cell first.
     await fireMapClick(page, { lng: CELL_1.lon, lat: CELL_1.lat });
-    await expect.poll(() => popupText(page), { timeout: 15_000 }).toContain(`${SHORT_LABEL}: 50`);
+    await expect.poll(() => popupText(page), { timeout: 15_000 }).toContain(`${SHORT_LABEL} 50`);
     await expect.poll(() => new URL(page.url()).searchParams.get("sel")).toBe("cell:1");
 
     // now click somewhere with no value.
@@ -209,14 +208,12 @@ test.describe("D3: the click popup outside the scored area (Opus 5.5 eyes-on, 20
   }) => {
     await gotoScores(page);
     await fireMapClick(page, { lng: CELL_1.lon, lat: CELL_1.lat });
-    await expect.poll(() => popupText(page), { timeout: 15_000 }).toContain(`${SHORT_LABEL}: 50`);
+    await expect.poll(() => popupText(page), { timeout: 15_000 }).toContain(`${SHORT_LABEL} 50`);
     expect(new URL(page.url()).searchParams.get("sel")).toBe("cell:1");
     const text = await popupText(page);
-    expect(
-      text.startsWith(
-        `Cell 1 · lon ${CELL_1.lon.toFixed(3)}, lat ${CELL_1.lat.toFixed(3)} · ${SHORT_LABEL}: 50`,
-      ),
-    ).toBe(true);
+    expect(text).toContain("Cell 1");
+    expect(text).toContain(formatLatLon(CELL_1.lat, CELL_1.lon));
+    expect(text).toContain(`${SHORT_LABEL} 50`);
     // D4: the popup's own defect — `boot.layers[].label` is the LONG description text, and the
     // owner's report showed it printing verbatim in a one-line popup.
     expect(text).not.toContain("Primary productivity");

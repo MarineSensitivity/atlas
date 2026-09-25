@@ -50,8 +50,13 @@
   // was looking at" for a multi-select made here.
   const selectedInRankOrder = $derived(rows.map((r) => r.key).filter((k) => selected.has(k)));
 
+  // UI-8 (round-3 review): "29" beside "29.7" -- `maximumFractionDigits` alone has no MINIMUM, so
+  // an integer-valued score prints with no decimal at all beside one that has one. Both bounds
+  // fixed at 1 read as the SAME rounding rule everywhere in this column.
   function formatValue(v: number | null): string {
-    return v === null ? "—" : v.toLocaleString("en-US", { maximumFractionDigits: 1 });
+    return v === null
+      ? "—"
+      : v.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   }
 
   // Rank + Zone + Score + one NARROW column per published component.
@@ -108,7 +113,7 @@
           {#if onReportSelected}
             <th scope="col"><span class="sr-only">Select</span></th>
           {/if}
-          <th scope="col">Rank</th>
+          <th scope="col" class="num">Rank</th>
           <!-- the zone/name column: sticky on the left, same convention as SpeciesTable.svelte's
                own "Scientific name" -- a `position: sticky; left: 0` cell need not be the row's
                first cell to pin correctly (it covers whatever scrolls out from under it). -->
@@ -118,13 +123,15 @@
                pushed every data row out of view. "Score" is a short, fixed header text; the full
                label is still reachable as a hover `title` AND as the accessible name (`aria-label`)
                so "Score" alone is never the only cue to which metric is ranked. -->
-          <th scope="col" title={metricLabel} aria-label={`Score (${metricLabel})`}>Score</th>
+          <th scope="col" class="num" title={metricLabel} aria-label={`Score (${metricLabel})`}
+            >Score</th
+          >
           {#if rows[0]}
             {#each rows[0].components as c (c.label)}
               <!-- P round V2 fix (Opus eyes-on: raw lowercase component labels show in the UI):
                    `c.label` (the each-block KEY, matching `r.components` below positionally) stays
                    RAW -- only the displayed text goes through `categoryLabel()`. -->
-              <th scope="col">{categoryLabel(c.label)}</th>
+              <th scope="col" class="num">{categoryLabel(c.label)}</th>
             {/each}
           {/if}
         </tr>
@@ -198,9 +205,24 @@
     border: 0;
   }
 
+  /* W3 hand-off (round-3 review, B9's own fix for SpeciesTable.svelte, applied here the same way):
+     a fixed `max-height: 50vh` left blank panel below the table on a tall desktop dock (the box
+     never grew past half the viewport no matter how tall the panel actually was). `.zones-table-wrap`
+     (this file's own root) now matches `SpeciesTable.svelte`'s `.species-table` -- a flex column
+     filling whatever height `TablePanel.svelte`'s own `.table-panel { height: 100% }` hands down --
+     so `.zones-table` (`flex: 1`) can grow to fill it instead. `min-height` keeps a handful of rows
+     visible where the panel is short (the phone sheet's "half" detent). */
+  .zones-table-wrap {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+
   .zones-table {
     overflow: auto;
-    max-height: 50vh;
+    flex: 1;
+    min-height: 160px;
     border: 1px solid var(--border-control);
     border-radius: var(--radius-control);
   }
@@ -227,9 +249,24 @@
     text-align: left;
     padding: var(--space-1) var(--space-2);
     /* P3 fix: a header label is never truncated -- it wraps instead of ellipsizing (unlike a DATA
-       cell, below, which keeps its ellipsis + hover/`title` full value). */
+       cell, below, which keeps its ellipsis + hover/`title` full value).
+       UI-12 (round-3 review): plain `overflow-wrap: break-word` let "Primary production" break
+       mid-word ("Primary producti/on") the instant the column got narrow. `hyphens: auto` (real
+       hyphenation points, e.g. "Inverte-brate") is tried FIRST -- `<html lang="en">` gives Chromium
+       what it needs on a real desktop build. `overflow-wrap: break-word` stays as the fallback
+       (not `normal`): a CI/headless Chromium build missing its hyphenation dictionary data still
+       must not let a long, unhyphenatable word overflow its own column
+       (`e2e/scores.table.spec.ts`'s own phone-width gate caught exactly this when `normal` alone
+       left "Invertebrate and coral" wider than its box). */
     white-space: normal;
     overflow-wrap: break-word;
+    hyphens: auto;
+  }
+
+  /* UI-8 (round-3 review): the "Score" header sat left-aligned over its own right-aligned numeric
+     column (`.num` below) -- every numeric header now right-aligns to match its data. */
+  th.num {
+    text-align: right;
   }
 
   /* the Zone column: sticky on the left, stacking above a plain top-sticky header cell scrolling

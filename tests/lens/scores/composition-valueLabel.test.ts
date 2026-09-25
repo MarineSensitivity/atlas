@@ -29,13 +29,16 @@ import { describe, expect, it } from "vitest";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const COMPOSITION_SVELTE = join(ROOT, "src/lens/scores/Composition.svelte");
 
+// UI-8 (round-3 review): "16,153 n species across 7 categories" reads as a raw value-label typo,
+// not English -- `valueLabel="species"` (dropping the leading "n") is the R8-correct wording.
 describe("Composition.svelte's valueLabel is pinned to R8's real wording (species count)", () => {
   it("REGRESSION: passes the exact current phrase, matching the count-based measure it now renders", () => {
     const src = readFileSync(COMPOSITION_SVELTE, "utf8");
-    expect(src).toContain('valueLabel="n species"');
+    expect(src).toContain('valueLabel="species"');
     // the exact shape G-23 originally fixed: a label that does not describe the value actually
     // passed. R8 made the value a real count, so the OLD suit_er_area phrase would now be the
     // mislabel.
     expect(src).not.toMatch(/valueLabel\s*=\s*"combined suitability/);
+    expect(src).not.toContain('valueLabel="n species"'); // UI-8: the leading "n" read as a typo
   });
 });

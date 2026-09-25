@@ -213,7 +213,7 @@ export const STATUS = {
       },
       {
         file: "tests/lens/scores/popup.test.ts",
-        name: "'{name}: {round(value)}' — parity doc §6.4, verbatim (half-to-even, 0 dp)",
+        name: "the shared subject line + 'Score {value}' (UI-4), swatch coloured against the ramp",
       },
       {
         file: "tests/raster/ramps.test.ts",
@@ -278,7 +278,7 @@ export const STATUS = {
       },
       {
         file: "tests/lens/scores/popup.test.ts",
-        name: "cell id, lon/lat at EXACTLY 3 dp, and the displayed layer's value",
+        name: "the shared subject line + 'Label value' (UI-4), swatch coloured against the ramp",
       },
       {
         file: "e2e/scores.popup.spec.ts",
@@ -303,7 +303,7 @@ export const STATUS = {
         file: "tests/lens/scores/flower.test.ts",
         name: "strips extrisk_ and _ecoregion_rescaled, underscores to spaces",
       },
-      { file: "tests/lens/scores/flower.test.ts", name: "cell: id + coords to 3 dp" },
+      { file: "tests/lens/scores/flower.test.ts", name: "cell: the shared subject line, 3 dp" },
       {
         file: "tests/lens/scores/flower.test.ts",
         name: "v8/v9 cell click: de-duplicates the extrisk_primary_producer/primprod pair the same way",
@@ -336,7 +336,7 @@ export const STATUS = {
     diffs: ["ID-08"],
     evidence: [
       { file: "tests/lens/scores/flower.test.ts", name: "reads boot.flower_default[zoneAllKey]" },
-      { file: "tests/lens/scores/flower.test.ts", name: "nothing selected: Full study area" },
+      { file: "tests/lens/scores/flower.test.ts", name: "nothing selected: All US waters" },
       {
         file: "tests/lens/scores/flower.test.ts",
         name: "v7's real flower_default.FULL (8 components, Other included)",
@@ -523,7 +523,7 @@ export const STATUS = {
       },
       {
         file: "e2e/scores.welcome.spec.ts",
-        name: "Take a Tour announces (no real tour this phase); hidden when ?tour=off",
+        name: "Take a tour announces (no real tour this phase); hidden when ?tour=off",
       },
       {
         file: "e2e/scores.versionPicker.spec.ts",
@@ -840,7 +840,7 @@ export const STATUS = {
       },
       {
         file: "tests/lens/species/card.test.ts",
-        name: "is '{code} ({SOURCE})' with the ch_ prefix dropped and upper-cased",
+        name: "maps the status to a reviewer-legible label, code kept in parentheses; source named once, in the fact's label",
       },
       {
         file: "tests/lens/species/card.test.ts",

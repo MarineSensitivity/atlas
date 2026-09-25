@@ -11,6 +11,7 @@
   import Legend from "../../lib/ui/Legend.svelte";
   import { uid } from "../../lib/ui/uid";
   import { formatScoresLegendValue, type ScoresLegend } from "./mapInputs";
+  import { legendTitle } from "../../lib/map/legendTitle";
 
   interface Props {
     legend: ScoresLegend;
@@ -19,13 +20,29 @@
      * a zone choropleth is a vector fill from `cell_model` data and keeps working -- so this only
      * overrides that one branch, never "zone"/"unavailable"/"empty". */
     tilesDown?: boolean;
+    /** Ben's ask (round-3 review, UI-L2): the Zoom-to-region select's current label and the
+     * release id, folded into the legend subtitle when the caller has them at hand
+     * (`legendTitle()`'s own header: a caller mid-wiring still gets a correct, shorter legend). */
+    zoomRegionLabel?: string | null;
+    release?: string | null;
   }
 
-  let { legend, tilesDown = false }: Props = $props();
+  let { legend, tilesDown = false, zoomRegionLabel = null, release = null }: Props = $props();
   // fix list #11 (SC 1.3.1): the "not published yet"/"no zones" notes below render their OWN h2,
   // never through the shared Legend.svelte -- so they need the same region/aria-labelledby fix
   // applied locally, per instance (not a shared literal).
   const noteTitleId = uid("scores-legend-note-title");
+  const lt = $derived(
+    legend
+      ? legendTitle({
+          lens: "scores",
+          branch: legend.kind === "zone" ? "zone" : "raster",
+          metricLabel: legend.title,
+          zoomRegionLabel,
+          release,
+        })
+      : null,
+  );
 </script>
 
 {#if legend?.kind === "raster" && tilesDown}
@@ -41,7 +58,8 @@
 {:else if legend?.kind === "raster" || legend?.kind === "zone"}
   <div class="scores-legend" data-testid="scores-legend">
     <Legend
-      title={legend.title}
+      title={lt?.title ?? legend.title}
+      subtitle={lt?.subtitle}
       stops={legend.stops}
       unit="score"
       formatValue={formatScoresLegendValue}
