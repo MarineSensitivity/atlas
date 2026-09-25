@@ -396,7 +396,6 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     // is plain (non-reactive) state precisely so switching `in`/`rep` alone (no species change)
     // does not retrigger this effect a second time once the camera has already been applied.
     const needsFit = untrack(() => refitNeeded(prevCameraKey, key));
-    prevCameraKey = key;
     if (!needsFit) return;
     const boot = deps.boot();
     const cam = cameraFor(card, selStore.sel.in, {
@@ -405,11 +404,24 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
       studyArea: studyAreaView(boot, FULL_STUDY_AREA),
       padding: DEFAULT_CAMERA_PADDING,
     });
+    // R3-rr fix 1, round 4 (Opus 5.5 eyes-on review round 3, real-build eyes-on, 2026-09-25):
+    // `cameraFor()` returns `null` ONLY when it has no study area to fall back to (its own last
+    // resort) -- and on the LIVE app, `deps.boot()` -> `studyAreaView()` can still be incomplete
+    // on this effect's FIRST run (this same $effect reads `deps.boot()` reactively and re-runs once
+    // it fills in -- confirmed live: a real load hit `cam === null` on pass 1, then a real,
+    // populated `boot` on pass 2). The OLD code unconditionally wrote `prevCameraKey = key` before
+    // this null check, so `refitNeeded()` on pass 2 saw the SAME key and reported "already fitted"
+    // -- permanently skipping the species' own camera fit (and the COG-bounds last resort below)
+    // for the rest of the session, EVEN ONCE real study-area data existed. `prevCameraKey` is now
+    // only latched once a camera was actually computed, so a null-boot pass retries on the very
+    // next boot update instead of silently giving up forever.
+    if (!cam) return;
+    prevCameraKey = key;
     applyCamera(cam);
     recordWideRangeCamera(cam);
     // D8: the bundle published no bbox anywhere for this taxon — try the COG's own extent before
     // giving up on framing it at all.
-    if (cam?.kind === "center") void refineCameraFromCogBounds(card, key);
+    if (cam.kind === "center") void refineCameraFromCogBounds(card, key);
   });
 
   return {
