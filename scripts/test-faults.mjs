@@ -1980,6 +1980,27 @@ export const FAULTS = [
       "silently reopens on the Layers tab instead of reproducing what was showing",
     gate: ["npx", "vitest", "run", "tests/shell/uiState.test.ts"],
   },
+  // R3-W8 item 5 (Ben, verbatim: "some care should be given to not wiping out existing selections
+  // that have been explicitly added to Places"): a map click must never touch `sel.pl` -- only
+  // `reportSubjects()`'s own callers (never that pure function) can violate this, so the fault is
+  // seeded at the one real call site, `state.svelte.ts#handleMapClick`'s cell branch.
+  {
+    id: "places-list-wiped-by-click",
+    patch: "tests/faults/places-list-wiped-by-click.patch",
+    describe:
+      "state.svelte.ts's handleMapClick cell branch clears `pl` (the explicit Places list) " +
+      "alongside `sel` on every click -- a place added to Places is silently removed the next " +
+      "time the viewer clicks a scored cell",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/places.last-clicked.spec.ts",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4496" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
