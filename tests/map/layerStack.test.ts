@@ -124,20 +124,23 @@ describe("defaultLayerStackEntries / isDefaultLayerStack", () => {
 // the model (DEFAULT_LAYER_STACK/ALL_LAYER_GROUPS), the classifier, or the layers= codec, which is
 // exactly the property a hidden basemap group's own URL token still needs.
 describe("LAYER_GROUP_IN_PANEL (R3: hidden basemap rows stay full model citizens)", () => {
-  it("every group has an entry, and the three named-hidden basemap groups are false", () => {
+  it("every group has an entry, and the four hidden basemap groups are false", () => {
     for (const id of ALL_LAYER_GROUPS) expect(LAYER_GROUP_IN_PANEL[id]).toBeTypeOf("boolean");
     expect(LAYER_GROUP_IN_PANEL["basemap-land"]).toBe(false);
     expect(LAYER_GROUP_IN_PANEL["basemap-boundaries"]).toBe(false);
     expect(LAYER_GROUP_IN_PANEL["basemap-roads"]).toBe(false);
+    // orchestrator hand-off (Opus UI review of main, 2026-09-25): "do NOT ship the 'Bathymetry —
+    // coming soon' stub row to reviewers" -- hidden too, still a full model citizen (still
+    // disabled via LAYER_GROUP_ENABLED, unchanged).
+    expect(LAYER_GROUP_IN_PANEL["basemap-bathymetry"]).toBe(false);
+    expect(LAYER_GROUP_ENABLED["basemap-bathymetry"]).toBe(false);
   });
 
-  it("Place labels and Bathymetry stay listed (Ben did not name them; bathymetry documents 'coming soon')", () => {
+  it("Place labels stays listed (Ben did not name it)", () => {
     expect(LAYER_GROUP_IN_PANEL["basemap-labels"]).toBe(true);
-    expect(LAYER_GROUP_IN_PANEL["basemap-bathymetry"]).toBe(true);
-    expect(LAYER_GROUP_ENABLED["basemap-bathymetry"]).toBe(false); // still disabled, just visible
   });
 
-  it("every data group (Selection, Zone outlines, Data) stays listed", () => {
+  it("every data group (Selection, Outlines, Data) stays listed", () => {
     expect(LAYER_GROUP_IN_PANEL["data-raster"]).toBe(true);
     expect(LAYER_GROUP_IN_PANEL["data-zones"]).toBe(true);
     expect(LAYER_GROUP_IN_PANEL["data-places"]).toBe(true);

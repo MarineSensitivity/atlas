@@ -232,7 +232,7 @@ export const STATUS = {
       },
       {
         file: "e2e/layers.spec.ts",
-        name: "M3: the Zone outlines row's eye hides programarea_ln's rendered features (>0 -> 0), never removes the layer",
+        name: "M3: the Outlines row's eye hides programarea_ln's rendered features (>0 -> 0), never removes the layer",
       },
       {
         file: "e2e/layers.spec.ts",

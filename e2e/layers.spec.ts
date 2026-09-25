@@ -269,7 +269,7 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
   // (Gulf of America, Eastern) -- its CENTRE, -157/27, is far enough from the 1px boundary line
   // that a probe there can only ever read the invisible query fill (or the raster through it),
   // never the line. In cell mode (the default unit here) there is no visible zone FILL at all, so
-  // dimming "Zone outlines" (data-zones) to 50% must leave the plain raster blend untouched --
+  // dimming "Outlines" (data-zones) to 50% must leave the plain raster blend untouched --
   // exactly what a REPLACING implementation would break (0 x 0.5 stays 0 either way for a NUMBER,
   // but a replacing bug turns the invisible placeholder's `fill-opacity: 0` paint key into the
   // stack's own 0.5, painting the near-black QUERY_FILL_COLOR visibly over this pixel instead).
@@ -498,7 +498,7 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     );
   }
 
-  test("M3: the Zone outlines row's eye hides programarea_ln's rendered features (>0 -> 0), never removes the layer", async ({
+  test("M3: the Outlines row's eye hides programarea_ln's rendered features (>0 -> 0), never removes the layer", async ({
     page,
   }) => {
     // deliberately the DEFAULT `unit=cell` (never `unit=programarea`): `zoneUnitsFromBoot` always
@@ -509,7 +509,7 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     await gotoLayersScores(page, "");
     await expect.poll(() => zoneFeatureCount(page), { timeout: 20_000 }).toBeGreaterThan(0);
 
-    await page.getByRole("checkbox", { name: "Zone outlines visible on the map" }).click();
+    await page.getByRole("checkbox", { name: "Outlines visible on the map" }).click();
 
     await expect.poll(() => zoneFeatureCount(page), { timeout: 20_000 }).toBe(0);
     expect(
@@ -934,13 +934,14 @@ test.describe("P round deliverable 1: the Layers panel's spatial-unit toggle (sc
 // invariant hiding three basemap rows from the pane must not break (a `layers=` token naming one
 // still parses and applies).
 test.describe("R3: Layers-pane redesign", () => {
-  test("hidden basemap rows (Land & water, Boundaries, Roads & buildings) are absent from the pane, but a layers= token naming one still parses and applies", async ({
+  test("hidden rows (Land & water, Boundaries, Roads & buildings, Bathymetry) are absent from the pane, but a layers= token naming one still parses and applies", async ({
     page,
   }) => {
     const errors = collectConsoleErrors(page);
     await gotoLayersScores(page, "&layers=basemap-land:h,data-raster,data-zones,data-places");
-    // absent from the pane -- no row, no checkbox, whatever the URL says.
-    for (const label of ["Land & water", "Boundaries", "Roads & buildings"]) {
+    // absent from the pane -- no row, no checkbox, whatever the URL says. Bathymetry too
+    // (orchestrator hand-off, 2026-09-25: "do NOT ship the 'Bathymetry — coming soon' stub row").
+    for (const label of ["Land & water", "Boundaries", "Roads & buildings", "Bathymetry"]) {
       await expect(page.getByRole("checkbox", { name: `${label} visible on the map` })).toHaveCount(
         0,
       );
@@ -956,7 +957,7 @@ test.describe("R3: Layers-pane redesign", () => {
       })
       .toBe(BLENDED_RASTER_OVER_BACKGROUND_RGB.join(","));
     // the still-listed rows are unaffected.
-    for (const label of ["Data", "Zone outlines", "Selection", "Place labels"]) {
+    for (const label of ["Data", "Outlines", "Selection", "Place labels"]) {
       await expect(page.getByRole("checkbox", { name: `${label} visible on the map` })).toHaveCount(
         1,
       );
@@ -964,12 +965,12 @@ test.describe("R3: Layers-pane redesign", () => {
     expect(errors).toEqual([]);
   });
 
-  test("the Zone outlines row's outline radio writes out= to the URL", async ({ page }) => {
+  test("the Outlines row's outline radio writes out= to the URL", async ({ page }) => {
     const errors = collectConsoleErrors(page);
     await gotoLayersScores(page, "");
     expect(page.url()).not.toContain("out=");
 
-    await page.getByRole("button", { name: "Zone outlines", exact: true }).click();
+    await page.getByRole("button", { name: "Outlines", exact: true }).click();
     const ecoregionRadio = page.getByRole("radio", { name: "Ecoregions" });
     await expect(ecoregionRadio).toBeVisible();
     await ecoregionRadio.click();

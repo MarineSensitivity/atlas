@@ -158,7 +158,7 @@
     onChange: onAreaChange,
   });
 
-  // R3 deliverable 6: the "Zone outlines" row's outline CHOICE, bound to `Sel.out`.
+  // R3 deliverable 6: the "Outlines" row's outline CHOICE, bound to `Sel.out`.
   function onOutlineChange(value: "programarea" | "ecoregion") {
     selStore.set({ out: value as Outline });
   }

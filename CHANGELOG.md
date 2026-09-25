@@ -17,19 +17,26 @@ something more minimalist and compact," plus the hexagon pip removal and two lab
 - **Every stack row's `Switch` became a plain checkbox**, and the inline opacity slider moved into
   a small per-row "opacity" popover button — the row itself is one compact line: name, checkbox,
   opacity, move buttons (now 32px, quieter).
-- **Three basemap rows — Land & water, Boundaries, Roads & buildings — are hidden from the pane**
-  (fine to leave on as default basemap without worrying about layer ordering); they stay full model
-  citizens (`layerStack.ts`'s new `LAYER_GROUP_IN_PANEL`) — still in the default stack, the
-  `layers=` URL codec, and Reset, just with no row to change them from in the panel.
+- **Four rows are hidden from the pane** — Land & water, Boundaries, Roads & buildings (fine to
+  leave on as default basemap without worrying about layer ordering) and Bathymetry (an unbuilt
+  "coming soon" stub, not a feature to preview). All four stay full model citizens
+  (`layerStack.ts`'s new `LAYER_GROUP_IN_PANEL`) — still in the default stack, the `layers=` URL
+  codec, and Reset, just with no row to change them from in the panel.
 - **The Data row's body is now just the color palette and "Cells outside Program Areas."** Color
   palette is a real visual ramp picker — a button showing the current palette's own gradient strip
   - name, opening a listbox of every palette (strip + name, arrow keys + Enter/Esc) — instead of a
     plain `<select>` of palette names.
-- **"Zone outlines" gained an expander**: a two-option radio choice (Program Areas / Ecoregions)
+- **The "Zone outlines" row is renamed "Outlines"** ("zone" does not otherwise appear anywhere in
+  this app's UI) and gained an expander: a two-option radio choice (Program Areas / Ecoregions)
   bound to the existing `out=` URL key, each with a one-line explanation. "None" is reached via the
   row's own visible checkbox, not a third radio.
 - **"Sphere" moved to the bottom of the pane**, below the stack — both lenses now share one
   projection control there (previously scores-only).
+- **The species lens no longer shows the "Raster cells | Program areas" toggle at all** — species
+  has no spatial-unit choice to make (unlike scores' zone choropleth), so the toggle is omitted
+  entirely instead of rendered disabled with a reason.
+- **Every checkbox/radio/range this pane renders now sets `accent-color: var(--fill-accent)`** —
+  an unstyled native control rendered the browser's own default blue on the paper theme.
 - **Fixed (R3-B1): a release whose composite layer is literally `metric_key: "score"` with no
   label anywhere showed the raw lowercase key** in the Layer picker, the floating legend, and the
   phone legend chip. All three now title-case a bare metric key via one shared helper

@@ -14,19 +14,21 @@
    * R3 (Ben, live-review 2026-09-25): "prettify this pill so [it] doesn't look like [a] 3rd missing
    * option on right that is not colored when 'Program areas' is selected" -- rendered with
    * `Segmented`'s new `fit` prop (content-sized, left-aligned) instead of the P-round's row-stretch
-   * layout, the same shape the top bar's own Scores|Species switch already uses. */
+   * layout, the same shape the top bar's own Scores|Species switch already uses.
+   *
+   * Orchestrator hand-off (Opus UI review of main, 2026-09-25): "in the Species lens HIDE the
+   * toggle instead of showing it disabled with a reason" -- species has no spatial-unit CHOICE to
+   * make at all (unlike scores' zone choropleth), so `SpeciesLens.svelte` now omits this prop
+   * entirely (this whole panel section is `{#if unitToggle}`) rather than passing a disabled one.
+   * The disabled/reason path this type used to carry for that case is gone with it -- `onChange`
+   * is required now, matching the one real caller left (scores, always enabled). */
   export interface LayersUnitToggle {
     /** `lens/scores/boot.ts#unitOptions(boot)` — "Raster cells" always first (R3: the "(0.05°)"
      * resolution note was dropped, Ben 2026-09-25), then the release's one drawable unit (e.g.
      * "Program areas") when it publishes one. */
     options: SegmentedOption[];
     value: string;
-    /** omitted (species lens): the toggle renders disabled, and `disabledReason` (below) must be
-     * set — there is nothing for a click to call. */
-    onChange?: (value: string) => void;
-    /** set ONLY when this toggle is disabled (species lens: "species surfaces are rasters only" —
-     * there is no spatial-unit CHOICE to make there, unlike the scores lens' zone choropleth). */
-    disabledReason?: string;
+    onChange: (value: string) => void;
   }
 
   /** R3 deliverable 3: the Layer (metric) picker, promoted from inside the Data row's own body
@@ -56,7 +58,7 @@
     onChange: (value: string) => void;
   }
 
-  /** R3 deliverable 6: the "Zone outlines" row's expander body — a two-option radio choice bound
+  /** R3 deliverable 6: the "Outlines" row's expander body — a two-option radio choice bound
    * to `Sel.out`. `"none"` is deliberately NOT a third radio option: the row's own visible
    * checkbox (every row has one) already hides the whole `data-zones` group — unchecking IS
    * "none", so the radio group only ever offers the two real outlines. `value` may still arrive as
@@ -94,7 +96,7 @@
   // body; every stack row's `Switch` became a plain checkbox; the inline opacity slider moved into
   // a per-row popover; three basemap rows (Land & water, Boundaries, Roads & buildings) are hidden
   // from the list (still full model citizens -- `layerStack.ts#LAYER_GROUP_IN_PANEL`'s own header);
-  // "Zone outlines" gained an expander for the `Sel.out` choice; "Sphere" moved to the very bottom.
+  // "Outlines" gained an expander for the `Sel.out` choice; "Sphere" moved to the very bottom.
   import { tick, type Snippet } from "svelte";
   import Icon from "./Icon.svelte";
   import Segmented from "./Segmented.svelte";
@@ -139,7 +141,7 @@
     /** R3 deliverable 3 — see {@link LayersZoomField}. */
     zoomField?: LayersZoomField;
     /** R3 deliverable 6 — see {@link LayersOutlineChoice}. Omitted while a lens has not resolved
-     * `sel`/`boot` yet; the "Zone outlines" row then still expands but shows no radio body,
+     * `sel`/`boot` yet; the "Outlines" row then still expands but shows no radio body,
      * matching `dataControls`' own "nothing to render yet" convention. */
     outline?: LayersOutlineChoice;
     /** R3 deliverable 7 — see {@link LayersProjectionControl}. */
@@ -158,13 +160,13 @@
   }: Props = $props();
 
   function onUnitToggleChange(value: string) {
-    // a disabled toggle passes no onChange at all (species lens) -- this call would otherwise be a
-    // silent no-op; the `?.` below is the same defensive style `Segmented.svelte`'s own onclick
-    // uses, not a special case for the disabled toggle.
-    unitToggle?.onChange?.(value);
+    // `unitToggle` itself is optional (a lens that has not resolved `boot` yet, or -- species --
+    // has no toggle at all now the disabled path is gone); the `?.` guards ONLY that, never a
+    // missing `onChange` (required on the type now there is exactly one real caller).
+    unitToggle?.onChange(value);
   }
 
-  /** the two rows this panel EXPANDS — "Data" (the lens's own layer) and "Zone outlines" (the
+  /** the two rows this panel EXPANDS — "Data" (the lens's own layer) and "Outlines" (the
    * outline choice, R3 deliverable 6). Every other group is visible/opacity/reorder only. */
   const DATA_ROW_ID: LayerGroupId = "data-raster";
   const ZONES_ROW_ID: LayerGroupId = "data-zones";
@@ -261,13 +263,9 @@
         options={unitToggle.options}
         value={unitToggle.value}
         ariaLabel="Spatial units"
-        disabled={!!unitToggle.disabledReason}
         onchange={onUnitToggleChange}
         fit
       />
-      {#if unitToggle.disabledReason}
-        <p class="unit-toggle-reason">{unitToggle.disabledReason}</p>
-      {/if}
     </div>
   {/if}
 
@@ -400,7 +398,7 @@
           <!-- R3 deliverable 6: the outline CHOICE (which unit's own outline draws) -- "none" is
                reached via the row's own visible checkbox above, never a third radio here. -->
           <div class="row-body" id={ZONES_ROW_BODY_ID}>
-            <div class="outline-choice" role="radiogroup" aria-label="Zone outline">
+            <div class="outline-choice" role="radiogroup" aria-label="Outline">
               <label class="outline-option">
                 <input
                   type="radio"
@@ -476,12 +474,6 @@
     gap: var(--space-1);
     padding-bottom: var(--space-2);
     border-bottom: 1px solid var(--divider);
-  }
-
-  .unit-toggle-reason {
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: var(--text-xs);
   }
 
   .fields-row {
@@ -598,15 +590,18 @@
 
   /* R3: a native checkbox replaces the Switch (Ben, 2026-09-25: "checkbox instead of toggle") --
      the app's own tokens, not the browser default appearance, but otherwise a plain checkbox.
-     `--border-control` (not `--fill-accent`): the P-round coordinator's own rule for this panel
-     carries over -- "every switch in that panel [is] the quiet variant (accent stays only on the
-     segmented toggle)" -- 4-5 of these rows are checked by default at once, and a real accent
-     color here would be the same "too much yellow emphasis" Ben already flagged once. */
+     Orchestrator hand-off (Opus UI review of main, 2026-09-25): an unstyled native checkbox/range
+     renders the BROWSER's own default blue accent on the paper theme -- off-brand and a real
+     regression the P-round's own "too much yellow emphasis" concern does not apply to (that was
+     about `--fill-accent` used for a WHOLE-TRACK fill on 4-5 simultaneous switches; accent-color
+     only tints a small native control, not a full row). `--fill-accent` here, everywhere a
+     checkbox/radio/range renders in this panel -- a later slice lands a global `:root {
+     accent-color }` default; scoping it here is deliberately not a duplicate of that, just early. */
   .visible-check {
     width: 20px;
     height: 20px;
     min-width: 20px;
-    accent-color: var(--border-control);
+    accent-color: var(--fill-accent);
     cursor: pointer;
   }
 
@@ -656,6 +651,7 @@
 
   .opacity-range-label input[type="range"] {
     width: 100%;
+    accent-color: var(--fill-accent); /* orchestrator hand-off: no browser-default blue on paper */
   }
 
   .opacity-value {
@@ -717,7 +713,7 @@
 
   .outline-option input {
     margin-top: 3px;
-    accent-color: var(--border-control); /* quiet, same rule as .visible-check above */
+    accent-color: var(--fill-accent); /* same rule as .visible-check above */
   }
 
   .outline-option-text {
@@ -752,7 +748,7 @@
   .sphere-check input {
     width: 20px;
     height: 20px;
-    accent-color: var(--border-control); /* quiet, same rule as .visible-check above */
+    accent-color: var(--fill-accent); /* same rule as .visible-check above */
     cursor: pointer;
   }
 

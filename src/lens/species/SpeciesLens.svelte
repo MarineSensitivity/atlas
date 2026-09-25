@@ -18,17 +18,10 @@
   import LibLayersPanel, {
     type LayersOutlineChoice,
     type LayersProjectionControl,
-    type LayersUnitToggle,
   } from "../../lib/ui/LayersPanel.svelte";
   import type { LayerStackEntry, Outline, Representation, Sel } from "../../lib/state/types";
   import type { SelStore } from "../../lib/state/sel.svelte";
   import type { MapHandle } from "../../lib/map/map";
-  // P round deliverable 1 (Ben, live-review 2026-09-24): "emphasize Raster Cells vs Program Areas
-  // as a toggle similar to Scores vs Species at top, but this only applies to Scores (so grayed out
-  // for Species)". `unitOptions` is a PURE boot reader (no scores-lens state) -- reused here rather
-  // than duplicated so the disabled toggle's own option labels can never drift from what the scores
-  // lens shows for the same release.
-  import { unitOptions } from "../scores/boot";
 
   interface Props {
     lens: SpeciesLens;
@@ -36,7 +29,7 @@
     layerStack: readonly LayerStackEntry[];
     onLayerStackChange: (next: readonly LayerStackEntry[]) => void;
     boot: unknown;
-    /** R3 deliverable 6/7: the shared panel's "Zone outlines" outline choice and "Sphere" row are
+    /** R3 deliverable 6/7: the shared panel's "Outlines" outline choice and "Sphere" row are
      * lens-independent (`Sel.out`/`Sel.proj`) -- new here (this component previously took no `sel`/
      * `selStore`/`mapHandle` at all, since the old panel body had no such controls of its own). */
     sel: Sel;
@@ -44,18 +37,17 @@
     mapHandle: MapHandle | undefined;
   }
 
-  let { lens, rep, layerStack, onLayerStackChange, boot, sel, selStore, mapHandle }: Props =
-    $props();
+  // `boot` stays a declared prop (Shell.svelte always passes it, and a lens prop this narrow is
+  // not worth a second Shell.svelte branch to drop) but is no longer destructured -- this
+  // component reads nothing from it now the toggle it used to feed is gone (below).
+  let { lens, rep, layerStack, onLayerStackChange, sel, selStore, mapHandle }: Props = $props();
 
-  // species surfaces are rasters only -- there is no zone-fill CHOICE to make in this lens (unlike
-  // the scores lens' zone choropleth), so the toggle renders disabled with a short reason rather
-  // than a working control that would do nothing.
-  const unitToggle = $derived<LayersUnitToggle>({
-    options: unitOptions(boot),
-    value: "cell",
-    disabledReason: "Species surfaces are rasters only.",
-  });
-
+  // Orchestrator hand-off (Opus UI review of main, 2026-09-25): "in the Species lens HIDE the
+  // 'Raster cells | Program areas' toggle instead of showing it disabled with a reason." Species
+  // surfaces are rasters only -- there is no zone-fill CHOICE to make in this lens at all (unlike
+  // the scores lens' zone choropleth), so the toggle is simply omitted (`LibLayersPanel`'s own
+  // `unitToggle` prop is optional, and its whole block does not render without it) rather than
+  // shown disabled with a reason nobody asked for.
   function onOutlineChange(value: "programarea" | "ecoregion") {
     selStore.set({ out: value as Outline });
   }
@@ -72,13 +64,7 @@
   });
 </script>
 
-<LibLayersPanel
-  stack={layerStack}
-  onChange={onLayerStackChange}
-  {unitToggle}
-  {outline}
-  {projection}
->
+<LibLayersPanel stack={layerStack} onChange={onLayerStackChange} {outline} {projection}>
   {#snippet dataControls()}
     <div class="species-panel" data-testid="species-panel">
       {#if lens.cardError}
