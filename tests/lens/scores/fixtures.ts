@@ -163,6 +163,16 @@ export const BOOT_V7 = {
   },
 };
 
+// owner review item 9 (live 0.10.62): "flower plot with component 'No data'" -- the real cause,
+// trimmed VERBATIM from the live `v1/app/boot.json` (curl --compressed
+// https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/marine-atlas/v1/app/boot.json,
+// `zones.ecoregion[0].metrics`, orchestrator-verified 2026-09-25): v1 (and every pre-v8 release)
+// publishes `extrisk_reptile_ecoregion_rescaled` -- a real, SCORED category that predates the
+// current eight-slot `hue_pal()` palette (reptiles were later excluded from scoring entirely,
+// CLAUDE.md's own "reptile/amphibian EXCLUDED"). `flower_default` stays `{}` (also verbatim -- no
+// live release publishes one for v1, confirmed against the same fetch); this bug is reached
+// through the ZONE/CELL click path (`zoneFlowerComponents`/`cellFlowerComponents`), never
+// `defaultFlowerComponents` -- see the `USA` row below, still empty for that reason.
 export const BOOT_V1_PLANAREA = {
   ...BOOT_V7,
   ver: "v1",
@@ -179,6 +189,28 @@ export const BOOT_V1_PLANAREA = {
   zones: {
     subregion: [
       { key: "USA", name: "All US waters", n_cells: 1, area_km2: 1, n_taxa: 1, metrics: {} },
+    ],
+    // ecoregion "CAC" -- REAL v1 metrics (see this const's own header); the zone a click on the
+    // map would actually resolve to.
+    ecoregion: [
+      {
+        key: "CAC",
+        name: "California Current",
+        n_cells: 24420,
+        area_km2: 592478.298484974,
+        n_taxa: 3848,
+        metrics: {
+          extrisk_all_ecoregion_rescaled: 17.8723702282074,
+          extrisk_bird_ecoregion_rescaled: 30.7055742952418,
+          extrisk_coral_ecoregion_rescaled: 11.5078809415848,
+          extrisk_fish_ecoregion_rescaled: 34.6673959734962,
+          extrisk_invertebrate_ecoregion_rescaled: 11.5208243281511,
+          extrisk_mammal_ecoregion_rescaled: 68.481812426732,
+          extrisk_other_ecoregion_rescaled: 10.474400150756,
+          extrisk_reptile_ecoregion_rescaled: 15.8720487921304,
+          primprod_ecoregion_rescaled: 9.48391732940771,
+        },
+      },
     ],
   },
   flower_default: {},

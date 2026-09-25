@@ -205,16 +205,21 @@
   });
 </script>
 
+<!-- owner review item 5 (live 0.10.62): icon-only + a CSS hover/focus tooltip (shell.css's
+     `.tool[data-tooltip]` rule, shared with Shell.svelte's Share/Help) -- `aria-label` keeps the
+     SAME accessible name the visible "Feedback" text used to give. -->
 <a
   class="tool topbar-desktop-only"
   data-tour="feedback"
   data-control="feedback"
+  aria-label="Feedback"
+  data-tooltip="Feedback"
   href={feedbackHref}
   target="_blank"
   rel="noopener"
   onclick={handleFeedback}
 >
-  <Icon name="feedback" size={18} />Feedback
+  <Icon name="feedback" size={18} />
 </a>
 
 <button
@@ -224,6 +229,7 @@
   data-control="about"
   aria-label="About this release"
   aria-haspopup="dialog"
+  data-tooltip="Info"
   onclick={() => (aboutOpen = true)}
 >
   <Icon name="info" size={18} />
@@ -310,6 +316,13 @@
     >
     <a href="https://github.com/MarineSensitivity/atlas" target="_blank" rel="noopener">GitHub</a>
   </div>
+  <!-- owner review item 4 (live 0.10.62): "credit Ben Best of Ocean Metrics LLC ... and Timothy
+       White of MMA" -- exact wording, link on "Ocean Metrics LLC" only (per the review note). -->
+  <p class="credits">
+    Prepared by Ben Best of
+    <a href="https://oceanmetrics.io" target="_blank" rel="noopener">Ocean Metrics LLC</a>
+    and Timothy White of MMA.
+  </p>
   {#if showSeal}
     <div class="seal-row">
       <span class="seal-plate">
@@ -358,6 +371,14 @@
     gap: var(--space-1) var(--space-3);
     margin: 0 0 var(--space-3);
     font-size: var(--text-sm);
+  }
+
+  /* owner review item 4: the credits line -- same secondary-text treatment as `.restricted-note`'s
+     own surrounding copy, not styled as another link row (`.pop-links`). */
+  .credits {
+    margin: 0 0 var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
   }
 
   .seal-row {

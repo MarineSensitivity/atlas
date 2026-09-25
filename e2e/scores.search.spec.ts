@@ -100,6 +100,44 @@ test.describe("Q1: Scores-lens top-bar search (desktop, 1280x800)", () => {
     await expect(page.locator(".flower-svg .petal").first()).toBeVisible();
   });
 
+  // owner review item 1 (Ben, live 0.10.62): "Entering Program Area (PA) in search bar at top
+  // should zoom to that PA, like it already zooms to lon,lat" -- RED-FIRST, fails on the pre-fix
+  // tree because `zoneCenterFromBoot` needs `label_pt`, which no published release carries
+  // (docs/parity.html's "known gap G-01"), so `selectZone` fell straight through to the
+  // announce-only branch and the camera never moved. `zoneBoundsFromMap` (state.svelte.ts) is the
+  // real fix -- ALA's own polygon, queried live off the SAME zones20 PMTiles fixture already
+  // routed for this suite (`gotoScoresSearch`'s own `routeZones20`), lon [-170,-168] lat [20,22]
+  // (e2e/fixtures/scores/zones20.geojson).
+  test("Enter flies the camera into the Aleutian Arc's own polygon bbox", async ({ page }) => {
+    await gotoScoresSearch(page);
+    await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
+
+    const input = page.getByRole("combobox", { name: "Search Program Areas or coordinates" });
+    await expect(input).toBeVisible({ timeout: 10_000 });
+    await input.fill("ALA");
+    await expect(page.getByRole("option", { name: "Aleutian Arc (ALA)" })).toBeVisible();
+    await input.press("Enter");
+
+    await expect.poll(() => urlSel(page)).toBe("zone:programarea:ALA");
+
+    // ALA's fixture polygon spans lon [-170,-168] lat [20,22] -- flyToBounds settles the camera
+    // CENTRE somewhere inside that box (the exact acceptance test this fix round names).
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const c = (
+              window as unknown as {
+                __atlasMap: { handle: { map: { getCenter(): { lng: number; lat: number } } } };
+              }
+            ).__atlasMap.handle.map.getCenter();
+            return c.lng >= -170 && c.lng <= -168 && c.lat >= 20 && c.lat <= 22;
+          }),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+  });
+
   test("typing '-140, 57' selects a cell -- URL carries sel=cell:", async ({ page }) => {
     await gotoScoresSearch(page);
 

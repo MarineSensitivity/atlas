@@ -4,6 +4,7 @@ import {
   paLabel,
   summarizeZoneStats,
   zoneCellsAvailable,
+  zoneBboxFromFeatures,
   zoneCenterFromBoot,
   zoneComponentScores,
   zoneDisplayName,
@@ -336,6 +337,78 @@ describe("zoneCenterFromBoot", () => {
 
   it("is null when none of the picked keys has a label point", () => {
     expect(zoneCenterFromBoot(BOOT, "programarea", ["WGA"])).toBeNull();
+  });
+});
+
+// owner review item 1 (live 0.10.62): "entering a Program Area in the search bar should zoom to
+// it" -- RED-FIRST, this covers the real fallback `zoneBoundsFromMap` (state.svelte.ts) leans on
+// when (as every published release does today) `zoneCenterFromBoot` above has nothing.
+describe("zoneBboxFromFeatures", () => {
+  it("is the combined bbox of a single Polygon feature (a MapLibre querySourceFeatures result)", () => {
+    const features = [
+      {
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [-170, 20],
+              [-168, 20],
+              [-168, 22],
+              [-170, 22],
+              [-170, 20],
+            ],
+          ],
+        },
+      },
+    ];
+    expect(zoneBboxFromFeatures(features)).toEqual([
+      [-170, 20],
+      [-168, 22],
+    ]);
+  });
+
+  it("unions a MultiPolygon feature's rings", () => {
+    const features = [
+      {
+        geometry: {
+          type: "MultiPolygon",
+          coordinates: [
+            [
+              [
+                [-170, 20],
+                [-169, 20],
+                [-169, 21],
+                [-170, 21],
+                [-170, 20],
+              ],
+            ],
+            [
+              [
+                [-160, 30],
+                [-159, 30],
+                [-159, 31],
+                [-160, 31],
+                [-160, 30],
+              ],
+            ],
+          ],
+        },
+      },
+    ];
+    expect(zoneBboxFromFeatures(features)).toEqual([
+      [-170, 20],
+      [-159, 31],
+    ]);
+  });
+
+  it("is null when the query found no feature (tile not loaded, or an unpublished key)", () => {
+    expect(zoneBboxFromFeatures([])).toBeNull();
+  });
+
+  it("ignores a non-polygon geometry rather than throwing", () => {
+    expect(
+      zoneBboxFromFeatures([{ geometry: { type: "Point", coordinates: [-170, 20] } }]),
+    ).toBeNull();
   });
 });
 

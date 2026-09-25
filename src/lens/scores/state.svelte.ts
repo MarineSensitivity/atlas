@@ -69,7 +69,8 @@ import {
 // the SAME point `places/zoneStats.ts#zoneCenterFromBoot` already computes for a zone Place's own
 // "Zoom to place" (`Places.svelte`) — one reader for "where does this zone's label sit", never a
 // second bbox/centroid computation invented here.
-import { zoneCenterFromBoot } from "../../places/zoneStats";
+import { zoneBboxFromFeatures, zoneCenterFromBoot } from "../../places/zoneStats";
+import { zoneKeyProperty, zoneSourceId, zoneUnitsFromBoot } from "../../lib/map/layers/zones";
 
 /** the map ring's own shape — a cell's centre + half-extents (pure arithmetic on the release's
  * grid) or a zone key to outline; `ScoresMapState["selection"]`'s own type, named here so
@@ -133,6 +134,33 @@ export interface ScoresLens {
    * release's grid (no boot yet, or genuinely off-grid) — the caller reports "no match", never a
    * throw. */
   selectCoordinate(lon: number, lat: number): Promise<boolean>;
+}
+
+/** owner review item 1 (live 0.10.62): `selectZone`'s real bbox fallback -- queries the zone's OWN
+ * polygon off the SAME PMTiles vector-tile source `map/layers/zones.ts` already composes into the
+ * style for every unit (never a second geometry fetch), so a Program-Area search pick can fly to
+ * its true extent even though no published release carries `label_pt` (`zoneCenterFromBoot`'s own
+ * header). `querySourceFeatures` reads already-loaded tiles only -- `null` (never a throw) when the
+ * unit is unpublished or its covering tile has not loaded, so the caller degrades to the label_pt
+ * centroid and then to an announcement, exactly as before this fix. */
+function zoneBoundsFromMap(
+  handle: MapHandle,
+  boot: unknown,
+  unit: string,
+  key: string,
+): [[number, number], [number, number]] | null {
+  const spec = zoneUnitsFromBoot(boot).find((u) => u.unit === unit);
+  if (!spec) return null;
+  let features: { geometry: { type: string; coordinates: unknown } }[];
+  try {
+    features = handle.map.querySourceFeatures(zoneSourceId(unit), {
+      sourceLayer: spec.sourceLayer,
+      filter: ["==", ["get", zoneKeyProperty(unit)], key] as never,
+    }) as never;
+  } catch {
+    return null; // source not added/loaded yet — never a throw for a search pick
+  }
+  return zoneBboxFromFeatures(features);
 }
 
 export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
@@ -375,20 +403,34 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
 
       const zRows = zoneRows(boot, unit);
       const hit = { unit, key, name: zRows.find((z) => z.key === key)?.name ?? key };
-      const center = zoneCenterFromBoot(boot, unit, [key]);
       const handle = deps.mapHandle();
+      // owner review item 1 (live 0.10.62, "entering a Program Area should zoom to it, like it
+      // already zooms to lon,lat"): `zoneCenterFromBoot` needs `label_pt`, which no published
+      // release carries (docs/parity.html's own known gap), so this always fell through to the
+      // announce-only branch below in production. `zoneBoundsFromMap` (above) is the real fix --
+      // the zone's OWN polygon, queried live off the map — tried first; `zoneCenterFromBoot` stays
+      // as the fallback for the day a release does publish `label_pt`.
+      const bounds = handle ? zoneBoundsFromMap(handle, boot, unit, key) : null;
+      const center = bounds
+        ? { lon: (bounds[0][0] + bounds[1][0]) / 2, lat: (bounds[0][1] + bounds[1][1]) / 2 }
+        : zoneCenterFromBoot(boot, unit, [key]);
       if (handle && center) {
-        // zoom 6, the SAME literal `Places.svelte#zoomTo`'s own "zone" branch flies a Program-Area
-        // place to — one convention for "zoomed out just enough to see a Program Area's own extent".
-        handle.flyTo({ key: "place", lon: center.lon, lat: center.lat, zoom: 6 });
+        if (bounds) {
+          handle.flyToBounds(bounds, { padding: 40 });
+        } else {
+          // zoom 6, the SAME literal `Places.svelte#zoomTo`'s own "zone" branch flies a
+          // Program-Area place to — "zoomed out just enough to see a Program Area's own extent".
+          handle.flyTo({ key: "place", lon: center.lon, lat: center.lat, zoom: 6 });
+        }
         showPopup(
           { lng: center.lon, lat: center.lat },
           zonePopupText(zRows, lyr, hit),
           zonePopupAnnounceText(zRows, lyr, hit),
         );
       } else {
-        // no published label point for this zone (or no map yet) — the selection/URL write above
-        // already stands; just announce it rather than silently doing nothing.
+        // no published label point AND no loaded polygon tile for this zone (or no map yet) — the
+        // selection/URL write above already stands; just announce it rather than silently doing
+        // nothing.
         announce(zonePopupAnnounceText(zRows, lyr, hit));
       }
     },

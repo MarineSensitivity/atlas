@@ -1552,6 +1552,43 @@ const FAULTS = [
       "draws its reference ring at the fixed outer edge",
     gate: ["npx", "vitest", "run", "tests/ui/flowerGeometry.test.ts", "-t", "a real maxScore"],
   },
+  {
+    id: "zonebbox-rings-dropped",
+    patch: "tests/faults/zonebbox-rings-dropped.patch",
+    describe:
+      "zoneBboxFromFeatures() (zoneStats.ts, item 1: the Scores search field never flew the camera " +
+      "to a chosen Program Area) hardcodes `polygons: Ring[][] = []` instead of calling " +
+      "ringsFromFeatures() -- always returns null, so a zone search pick falls straight through to " +
+      "the (currently unpublished) label_pt fallback again",
+    gate: ["npx", "vitest", "run", "tests/places/zoneStats.test.ts"],
+  },
+  {
+    id: "places-geojson-name-fallback-reverted",
+    patch: "tests/faults/places-geojson-name-fallback-reverted.patch",
+    describe:
+      "download.ts's zoneFeature() reverts to the bare `p.keys.join(\", \")` for a zone place's " +
+      "name (item 2: 'Download places' wrote the bare acronym instead of the release's full 'Name " +
+      "(KEY)' label) instead of zoneDisplayName(zoneStatsFor(...))",
+    gate: ["npx", "vitest", "run", "tests/places/download.test.ts"],
+  },
+  {
+    id: "species-inputs-table-emptied",
+    patch: "tests/faults/species-inputs-table-emptied.patch",
+    describe:
+      "inputsTableRows() (item 7: the species Table tool showed a permanent placeholder) returns " +
+      "`[]` unconditionally instead of reshaping the LayerBar's own pills -- the Table tool goes " +
+      "back to 'no inputs' for every species, real or not",
+    gate: ["npx", "vitest", "run", "tests/lens/species/inputsTable.test.ts"],
+  },
+  {
+    id: "flower-category-label-reverted",
+    patch: "tests/faults/flower-category-label-reverted.patch",
+    describe:
+      "computeFlowerGeometry() (flowerGeometry.ts, item 9: v1's real 'reptile' component rendered " +
+      "as a flower petal literally labelled 'No data') drops the categoryLabel() override and goes " +
+      "back to bare categoryFor(c.key) -- any unrecognized-but-real category is 'No data' again",
+    gate: ["npx", "vitest", "run", "tests/lens/scores/flower.test.ts"],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

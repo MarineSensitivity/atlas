@@ -55,11 +55,8 @@ const KEYS: KeySpec[] = [
   },
   { key: "search", skeleton: '[data-control="search"]', hydrated: '[data-control="search"]' },
   { key: "share", skeleton: '[data-control="share"]', hydrated: '[data-control="share"]' },
-  {
-    key: "report-top",
-    skeleton: '[data-control="report-top"]',
-    hydrated: '[data-control="report-top"]',
-  },
+  // owner review item 3 (live 0.10.62): the desktop "report-top" topbar button is REMOVED
+  // (duplicative with the rail's own Report tool) -- no skeleton/hydrated pair to compare any more.
   { key: "help", skeleton: '[data-control="help"]', hydrated: '[data-control="help"]' },
   { key: "theme", skeleton: '[data-control="theme"]', hydrated: '[data-control="theme"]' },
   { key: "rail-frame", skeleton: "#rail-region > *", hydrated: "#rail-region > *" },

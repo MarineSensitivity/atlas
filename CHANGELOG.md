@@ -20,6 +20,43 @@ control and the Scores-lens flower plot.
   back to 100, and says so, on a release that publishes no such maximum — true of every release
   today).
 
+# atlas 0.10.63
+
+Round 2, W1: fixes for Ben's own live-app review of 0.10.62 (search, Places export, the utility
+menu, About, the species Table tool, and two category-label bugs).
+
+- **Fixed: the Scores search field never flew the map to a chosen Program Area** — only a typed
+  coordinate zoomed the camera; selecting "Aleutian Arc (ALA)" from the dropdown wrote the URL
+  selection but left the view exactly where it was, because no published release carries a zone
+  label point (`label_pt`) for the camera to fly to. Selecting a Program Area now flies to its own
+  polygon, queried live off the same PMTiles source the map already draws its outline from, falling
+  back to the (currently unpublished) label point only if that query finds nothing.
+- **Fixed: "Download places" wrote `geometry: null` and the bare acronym (`name: "GAA"`) for every
+  Program Area, never its full name or a real shape** — the exported GeoJSON now carries the
+  release's own resolved "Full Name (KEY)" label and the zone's real polygon (queried live off the
+  same PMTiles source), falling back to a small bbox square (marked `geometry_source: "bbox"`) when
+  no polygon tile has loaded, and an explanatory `note` — never a silent `null` — as the last
+  resort.
+- **Changed: the desktop top-bar utility row dropped its duplicate Report button** — Report already
+  lives in the left tool rail; the phone ⋯ menu's own Report item is unchanged.
+- **Changed: Share, Help, Feedback and the (i) info button are icon-only, with a hover/focus
+  tooltip** — the accessible name (aria-label) is unchanged, so keyboard and screen-reader users see
+  no difference; only the visible word is gone.
+- **Added: an About-dialog credits line** for Ben Best (Ocean Metrics LLC) and Timothy White (MMA).
+- **Fixed: the top-bar search field was narrower, with a visible doubled border, in the Species lens
+  than in the Scores lens** — both fields now fill the same width and share one clean border (the
+  field's own), never a border nested inside another.
+- **Added: the species lens' Table tool now lists the selected model's real inputs** (name, dataset,
+  representation, availability — struck through with its reason when a release has no raster
+  registered) instead of a permanent "arrives in a later phase" placeholder.
+- **Changed: the "Primary producer" flower/table category is now labelled "Primary production"**,
+  matching the published scoring documentation.
+- **Fixed: v1's flower plot showed a "No data" petal for a real, scored component** — v1 (and every
+  pre-v8 release) publishes a `reptile` extinction-risk category that predates the current
+  eight-category palette; it now shows its own name ("Reptile") instead of the "not reportable"
+  label, the same treatment every other unrecognized-but-real category already gets on the score
+  tables.
+
 # atlas 0.10.62
 
 Round 2, V7: fix for CI run 36070452831 (three-engine job, 97/1119 failed on chromium, webkit AND

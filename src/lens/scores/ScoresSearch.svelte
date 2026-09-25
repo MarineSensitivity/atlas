@@ -162,6 +162,11 @@
     width: 100%;
   }
 
+  /* owner review item 6's SECOND half ("the extra inset outline") -- see SpeciesPicker.svelte's
+     own `.picker-input` header (the SAME rule, same reason): the PHONE search modal needs this
+     border/padding/background (no ancestor chrome of its own); the DESKTOP topbar field's doubled
+     ring is stripped by a desktop-scoped override in `shell.css`
+     (`.topbar .search-field .scores-search-input`) instead of here. */
   .scores-search-input {
     width: 100%;
     padding: 0 var(--space-3);

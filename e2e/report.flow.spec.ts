@@ -1,9 +1,14 @@
-// U6 (round 2): the top-bar "Report" button and the "report" rail tool do the obvious thing with
-// what is currently selected (docs/usability.md M1) -- this is the end-to-end proof, one level up
-// from tests/shell/report.test.ts's pure-function coverage of the same rule (reportAction(),
+// U6 (round 2): the "report" rail tool does the obvious thing with what is currently selected
+// (docs/usability.md M1) -- this is the end-to-end proof, one level up from
+// tests/shell/report.test.ts's pure-function coverage of the same rule (reportAction(),
 // src/shell/report.ts). HERMETIC, same convention as e2e/keyboard-walk.spec.ts's own "step 3" (whose
 // `page.context().waitForEvent("page")` pattern for a `window.open()`-opened report this file
 // reuses directly).
+//
+// Owner review item 3 (live 0.10.62): every click below used to hit the desktop topbar's OWN
+// Report button (`data-control="report-top"`), now removed as duplicative with this exact rail
+// tool -- `reportAction()`'s own logic (open directly, or show the chooser) is identical either
+// way, so retargeting the click is the whole update this fix needs here.
 //
 // Every place kind (zone/geom/upload) reaches "Done" under `blockWasm()` -- `loadPlaceData()`
 // (src/report/data.ts) degrades every kind to a graceful `{scores:null, ...}` when the engine
@@ -65,9 +70,15 @@ test.describe("Report: a zone selected on the map", () => {
   test("Report opens report.html for that Program Area, in a new tab", async ({ page }) => {
     await gotoShell(page, "/?sel=zone:programarea:GAA");
 
+    // the rail tool OPENS THE PANEL (Shell.svelte's `<Rail onSelect={selectTool}>`, every rail
+    // tool's own behaviour) -- with a zone already selected, `ReportTool.svelte` shows an "Open
+    // report" shortcut (`action.kind === "open"`, reportAction()) rather than opening a tab by
+    // itself; that shortcut's own click is what must run SYNCHRONOUSLY for the popup blocker
+    // (ReportTool.svelte's own header). Two clicks where the removed `report-top` button took one.
+    await page.locator('#rail-region button[aria-label="Report"]').click();
     const [reportPage] = await Promise.all([
       page.context().waitForEvent("page"),
-      page.locator('[data-control="report-top"]').click(),
+      page.getByRole("button", { name: "Open report" }).click(),
     ]);
     await reportPage.waitForLoadState("domcontentloaded");
 
@@ -114,9 +125,13 @@ test.describe("Report: a place list present", () => {
     // builds directly rather than through the UI.
     await gotoShell(page, `/#pl=${encodeURIComponent(pl)}`);
 
+    // same two-click shape as the zone-selected test above -- a non-empty place list is ALSO
+    // `action.kind === "open"` (reportAction()'s own rule, `onReport`'s header comment: "a place
+    // list in #pl=, or a zone selected").
+    await page.locator('#rail-region button[aria-label="Report"]').click();
     const [reportPage] = await Promise.all([
       page.context().waitForEvent("page"),
-      page.locator('[data-control="report-top"]').click(),
+      page.getByRole("button", { name: "Open report" }).click(),
     ]);
     await reportPage.waitForLoadState("domcontentloaded");
 
@@ -141,7 +156,7 @@ test.describe("Report: nothing selected", () => {
 
     let opened = false;
     page.context().on("page", () => (opened = true));
-    await page.locator('[data-control="report-top"]').click();
+    await page.locator('#rail-region button[aria-label="Report"]').click();
 
     // the chooser (ReportTool.svelte, lazy) -- give it a moment to load, then assert its content,
     // never a bare `activeTool==="report"` internal check (that would pass even on the old

@@ -31,7 +31,7 @@
 // -- however small -- always draws a visible band immediately outside the hub; only an EXACT score
 // of 0 is naturally degenerate (innerRadius == outerRadius, zero-width, nothing to draw), which is
 // the same "real but invisible" contract `sectorPath`'s `radius <= 0` case already had.
-import { categoryFor, categoryKeyFor, type Category } from "./categories";
+import { categoryFor, categoryKeyFor, categoryLabel, type Category } from "./categories";
 import { formatScore } from "../format";
 import { signif3 } from "../geo/round";
 
@@ -287,7 +287,23 @@ export function computeFlowerGeometry(
   components.forEach((c, i) => {
     const startAngle = i * angleStep;
     const endAngle = (i + 1) * angleStep;
-    const category = categoryFor(c.key);
+    // owner review item 9 (live 0.10.62): "In v1 I am seeing flower plot with component 'No
+    // data', which should not exist." Root cause: v1 (and every pre-v8 release) publishes an
+    // `extrisk_reptile_ecoregion_rescaled` component -- a real, SCORED sp_cat that predates the
+    // current eight-category `hue_pal()` palette (reptiles were later excluded from scoring
+    // entirely, CLAUDE.md's own "reptile/amphibian EXCLUDED"). `categoryFor()` has no such
+    // category, so it fell back to `NO_DATA_CATEGORY` -- a swatch reserved for "nothing published
+    // here" -- and its label ("No data") is exactly what rendered, even though the component
+    // carries a real number. `categoryLabel()` already has the right rule for this (every OTHER
+    // surface -- ResultsPanel/SpeciesTable/ZonesTable -- sentence-cases an unrecognized-but-real
+    // label instead of blanking it, this function's own header); this override applies that SAME
+    // rule to the flower without touching `categoryFor()` itself (still used elsewhere for its
+    // "genuinely absent" semantics) or Flower.svelte/FlowerPanel.svelte (this round does not own
+    // those). The swatch (`.color`) is unchanged -- several genuinely unrecognized categories
+    // already share one color by design (this function's own header, just below) -- only the TEXT
+    // a caller reads off `.label` changes, from the literal word "No data" to the release's own
+    // component name.
+    const category = { ...categoryFor(c.key), label: categoryLabel(c.key) };
     if (c.score === null) {
       noData.push({ key: c.key, category, startAngle, endAngle });
       return;

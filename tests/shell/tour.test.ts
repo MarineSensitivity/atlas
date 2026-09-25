@@ -50,17 +50,21 @@ describe("SCORES_TOUR_STEPS: 8 steps, docs/usability.md §5", () => {
     }
   });
 
-  it("the map/release/lenses/click/report steps have no before() -- their anchor is always mounted", () => {
-    for (const id of ["release", "lenses", "click", "report"]) {
+  it("the map/release/lenses/click steps have no before() -- their anchor is always mounted", () => {
+    for (const id of ["release", "lenses", "click"]) {
       expect(SCORES_TOUR_STEPS.find((s) => s.id === id)?.before).toBeUndefined();
     }
   });
 
-  it("the layers/table/places steps each open exactly their own rail tool via selectTool()", () => {
+  it("the layers/table/places/report steps each open exactly their own rail tool via selectTool()", () => {
+    // owner review item 3 (live 0.10.62): "report" moved from the removed desktop topbar button
+    // to the rail's own Report tool (tour.ts's own header) -- it now needs the SAME before() hook
+    // its rail siblings already had, not the "always mounted" exemption above.
     for (const [id, tool] of [
       ["layers", "layers"],
       ["table", "table"],
       ["places", "places"],
+      ["report", "report"],
     ] as const) {
       const a = fakeActions();
       SCORES_TOUR_STEPS.find((s) => s.id === id)?.before?.(a);

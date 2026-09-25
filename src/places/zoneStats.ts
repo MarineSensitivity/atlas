@@ -27,6 +27,7 @@ import { zoneLabelsFromBoot } from "../lib/map/layers/zones";
 import { componentMetricKeys } from "../lib/analysis/queries";
 import { componentLabel } from "../lens/scores/flower";
 import { PROGRAM_AREA_NAMES } from "../lib/zones/programAreaNames";
+import { bboxOf, type Ring } from "../lib/geo/types";
 
 export interface ZoneStat {
   key: string;
@@ -251,6 +252,47 @@ export function zoneCenterFromBoot(
     lat += y;
   }
   return { lon: lon / pts.length, lat: lat / pts.length };
+}
+
+/** every Polygon/MultiPolygon ring of a MapLibre `querySourceFeatures()`/`queryRenderedFeatures()`
+ * result -- the same shape `report/reportMap.ts#ringsFromRenderedFeatures` extracts, kept as its
+ * own small copy here (never imported from `report/`) so the interactive bundle never pulls in
+ * that module's maplibre-gl-heavy neighbours (`composeStyle`, `loadBasemapStyle`) just for this one
+ * pure helper -- `report/reportMap.ts` is reached only through a dynamic `import()` on purpose.
+ * Exported (not just used by `zoneBboxFromFeatures` below) so `places/download.ts`'s "Download
+ * places" GeoJSON export (owner review item 2) can embed the REAL polygon rings it finds, not just
+ * their bbox. */
+export function ringsFromFeatures(
+  features: readonly { geometry: { type: string; coordinates: unknown } }[],
+): Ring[][] {
+  const polygons: Ring[][] = [];
+  for (const f of features) {
+    const g = f.geometry;
+    if (g.type === "Polygon") polygons.push(g.coordinates as Ring[]);
+    else if (g.type === "MultiPolygon") for (const p of g.coordinates as Ring[][]) polygons.push(p);
+  }
+  return polygons;
+}
+
+/**
+ * "Zoom to place" for a zone place, FALLBACK 2 (owner review item 1, live 0.10.62): the real
+ * polygon bbox from the release's own PMTiles vector-tile source, queried live off the map --
+ * `zoneCenterFromBoot` above needs `boot.zones[unit][*].label_pt`, which NO published release
+ * carries yet (docs/parity.html's own "known gap G-01"), so a Program-Area search pick never had
+ * anywhere to fly to and silently fell through to an announcement alone. `null` when the query
+ * found no feature (the covering tile has not loaded, or the key genuinely is not in the archive)
+ * -- the caller falls back further rather than assuming "the whole world".
+ */
+export function zoneBboxFromFeatures(
+  features: readonly { geometry: { type: string; coordinates: unknown } }[],
+): [[number, number], [number, number]] | null {
+  const polygons = ringsFromFeatures(features);
+  if (polygons.length === 0) return null;
+  const [x0, y0, x1, y1] = bboxOf({ type: "MultiPolygon", coordinates: polygons });
+  return [
+    [x0, y0],
+    [x1, y1],
+  ];
 }
 
 // --- Q3 (P round, 2026-09-24): "Selecting a Program Area place opens no results panel in

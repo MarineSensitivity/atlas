@@ -57,7 +57,8 @@
   import { installPickMode, type PickMapLike, type PickModeHandle } from "./pickInstall";
   import { renderedZoneOutline, type RenderedFeatureMap } from "./zoneOutline";
   import { clearRecents, loadRecents, pushRecent, recentPlace } from "./recents";
-  import { downloadGeoJson, placesToGeoJson } from "./download";
+  import { downloadGeoJson, placesToGeoJson, type ZonePolygonSource } from "./download";
+  import { zoneKeyProperty, zoneSourceId, zoneUnitsFromBoot } from "../lib/map/layers/zones";
   import {
     createDrawSession,
     loadTerraDraw,
@@ -709,12 +710,41 @@
     track("place_share", placeShareParams(linkLength));
   }
 
+  // owner review item 2 (Ben, live 0.10.62): "Download places returns geometry: null and name:
+  // GAA" -- `placesToGeoJson` (download.ts) now resolves the full "Name (KEY)" label itself off
+  // `boot` and, given this query function, a zone place's REAL polygon straight off the release's
+  // own PMTiles vector-tile source (the SAME source/layer `map/layers/zones.ts` already draws the
+  // zone's outline/choropleth from -- no second geometry fetch). `querySourceFeatures` reads
+  // already-loaded tiles regardless of the CURRENT viewport (unlike `renderedZoneOutline`'s own
+  // `queryRenderedFeatures`, which this file's pick-mode highlight uses and which this export
+  // deliberately does NOT reuse -- a zone added to Places earlier in the session may be off-screen
+  // by the time "Download" is clicked).
+  function zonePolygonSource(): ZonePolygonSource | undefined {
+    if (!mapHandle) return undefined;
+    const handle = mapHandle;
+    return {
+      queryZonePolygons(unit, keys) {
+        const spec = zoneUnitsFromBoot(boot).find((u) => u.unit === unit);
+        if (!spec) return [];
+        const wanted = new Set(keys.map(String));
+        try {
+          return handle.map.querySourceFeatures(zoneSourceId(unit), {
+            sourceLayer: spec.sourceLayer,
+            filter: ["in", ["get", zoneKeyProperty(unit)], ["literal", [...wanted]]] as never,
+          }) as never;
+        } catch {
+          return []; // source not added/loaded yet — never a throw for a download click
+        }
+      },
+    };
+  }
+
   function onDownload() {
     if (!places.length) {
       announce("No places to download yet.");
       return;
     }
-    downloadGeoJson(placesToGeoJson(places));
+    downloadGeoJson(placesToGeoJson(places, boot, zonePolygonSource()));
     announce(`Downloaded ${places.length} place${places.length === 1 ? "" : "s"} as GeoJSON.`);
   }
 
@@ -1022,6 +1052,8 @@
     {selStore}
     {places}
     grid={gridOrNull()}
+    {boot}
+    polygons={zonePolygonSource()}
     onShare={onShareTracked}
   />
 </div>

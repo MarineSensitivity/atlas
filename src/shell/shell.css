@@ -378,6 +378,25 @@ button.chip {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+/* owner review item 6 (live 0.10.62, "Search bar... can we keep it clean and wide without [the
+   extra inset outline]?"): `.search-field`'s OWN border/padding/background above already draws the
+   field's chrome; `SpeciesPicker.svelte`'s `.picker-input` and `ScoresSearch.svelte`'s
+   `.scores-search-input` each additionally carry their OWN identical border/padding/background
+   (still needed for the phone search modal, which has none of its own -- see either component's
+   own header), nesting a visible second ring one level down on the DESKTOP topbar field only. This
+   override strips it there. `.topbar .search-field .picker-input` chains THREE classes for
+   specificity (0,3,0), which beats the component's own scoped rule (0,2,0) regardless of which one
+   the CSS bundle happens to order last -- the SAME deliberate technique
+   `.search-field-phone.search-field-phone--species .picker-dropdown` (further down this file)
+   already uses, for the identical reason (that rule's own comment). */
+.topbar .search-field .picker-input,
+.topbar .search-field .scores-search-input {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
 .tool {
   display: inline-flex;
   align-items: center;
@@ -409,6 +428,35 @@ button.chip {
     height: var(--size-touch);
     min-width: var(--size-touch);
   }
+}
+
+/* owner review item 5 (live 0.10.62, "let's drop words but add tooltip on hover: Share, Help,
+   Feedback, Info"): a CSS-only hover/focus tooltip, `content: attr(data-tooltip)` -- no JS state,
+   so the SAME label a screenshot needs to prove ("the utility menu with tooltips") is a real
+   painted element on `:hover`, not a native browser tooltip a headless capture cannot show.
+   `aria-label` (Shell.svelte/TopBarActions.svelte) carries the accessible name; this pseudo-element
+   is decorative only (generated content is not exposed to the accessibility tree), so nothing is
+   announced twice. `.tool` already scopes both a real `<button>` and the one real `<a>` (Feedback) --
+   see that rule's own header. */
+.tool[data-tooltip] {
+  position: relative;
+}
+.tool[data-tooltip]:hover::after,
+.tool[data-tooltip]:focus-visible::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 30;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  box-shadow: var(--elev-2);
+  pointer-events: none;
 }
 
 /* R2: the inverse of `.topbar-desktop-only` (below, in the phone media query) -- the ⋯ overflow

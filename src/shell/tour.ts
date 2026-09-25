@@ -106,13 +106,17 @@ export const SCORES_TOUR_STEPS: TourStep[] = [
     before: (a) => a.selectTool("places"),
   },
   {
+    // owner review item 3 (live 0.10.62): the desktop topbar's own Report button was dropped
+    // (duplicative with this exact rail tool -- TopBarActions.svelte/Shell.svelte's own header),
+    // so this step now anchors the rail's Report tool instead of `[data-tour="report-top"]`, which
+    // no longer exists -- same `before`/`side` convention as its "table"/"places" siblings above.
+    // "Share" (still a topbar button) keeps no tour step of its own, same as before this fix.
     id: "report",
-    element: '[data-tour="report-top"]',
-    side: "bottom",
-    align: "end",
-    title: "Report and share",
-    description:
-      "Report builds a printable, downloadable report for what you selected; Share copies this exact view.",
+    element: '[data-tour="rail-report"]',
+    side: "right",
+    title: "Report",
+    description: "Build a printable, downloadable report for what you selected.",
+    before: (a) => a.selectTool("report"),
   },
 ];
 
