@@ -1,0 +1,15 @@
+diff --git a/src/lens/scores/state.svelte.ts b/src/lens/scores/state.svelte.ts
+index 4336ef2..2bb15f7 100644
+--- a/src/lens/scores/state.svelte.ts
++++ b/src/lens/scores/state.svelte.ts
+@@ -433,9 +433,7 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
+       // V1/owner review item 1's own header names: "a zone far outside the current view can fall
+       // back to the announce-only path"). No published release carries `bbox` yet (msens will,
+       // R3-C3), so `zoneBoundsFromMap` stays the effective path until then.
+-      const bounds =
+-        zoneBboxFromBoot(boot, unit, key) ??
+-        (handle ? zoneBoundsFromMap(handle, boot, unit, key) : null);
++      const bounds = handle ? zoneBoundsFromMap(handle, boot, unit, key) : null;
+       const center = bounds
+         ? { lon: (bounds[0][0] + bounds[1][0]) / 2, lat: (bounds[0][1] + bounds[1][1]) / 2 }
+         : zoneCenterFromBoot(boot, unit, [key]);

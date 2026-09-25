@@ -1775,6 +1775,32 @@ export const FAULTS = [
       "scrolls the map figure into view with a real scrollIntoView call",
     ],
   },
+  // R3-B14/C3 (round-3 W5-tooling round): `selectZone`'s newly-added preference for a PUBLISHED
+  // `boot.zones[unit][*].bbox` over `zoneBoundsFromMap`'s live-tile query, reverted -- a search
+  // pick with BOTH a bbox and an already-loaded polygon tile falls back to the polygon's own box
+  // instead of the (deliberately different, in the fixture) bbox. Must turn
+  // e2e/scores.search.spec.ts's own "Enter prefers a PUBLISHED bbox..." test red: the camera
+  // settles inside ALA's real fixture polygon (lon [-170,-168] lat [20,22]) instead of its
+  // published bbox (lon/lat [40,42]).
+  {
+    id: "scores-search-bbox-preference-dropped",
+    patch: "tests/faults/scores-search-bbox-preference-dropped.patch",
+    describe:
+      "state.svelte.ts's selectZone bounds resolution drops the zoneBboxFromBoot() preference, " +
+      "falling back to zoneBoundsFromMap alone -- a published zone bbox is no longer preferred " +
+      "over a currently-loaded map tile",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.search.spec.ts",
+      "-g",
+      "prefers a PUBLISHED bbox",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4451" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

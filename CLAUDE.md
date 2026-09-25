@@ -270,7 +270,7 @@ e2e/shell.*.spec.ts e2e/feedback.spec.ts`, ~3 min — the alias exists so this l
   colour at a control point first.
 - **Seeded-fault registry hygiene.** `test-faults.mjs --only <id>` takes ONE id per run. After
   every merge, `git apply --check` every `tests/faults/*.patch` — or just run `npm run
-  faults:check` (R3-D2, `scripts/check-faults-apply.mjs`), which does exactly that against
+faults:check` (R3-D2, `scripts/check-faults-apply.mjs`), which does exactly that against
   `test-faults.mjs`'s own `FAULTS` manifest (the one place a patch path is written — `FAULTS` is
   now `export`ed so this script can read it without running a single gate) and exits 1 listing
   every patch that no longer applies. It is a much cheaper first line of defense than discovering a
@@ -288,11 +288,11 @@ e2e/shell.*.spec.ts e2e/feedback.spec.ts`, ~3 min — the alias exists so this l
 - **Gallery baselines are two sets.** Darwin regenerates locally (`npm run e2e:gallery --
 --update-snapshots`, then LOOK at the PNG); linux comes only from CI (`gh run download <run> -n
 gallery-test-results`, copy each final-attempt `*-actual.png` over `*-chromium-linux.png`) — or run
-`npm run gallery:baselines-from-ci -- <run-id>` (R3-D1, `scripts/gallery-baselines-from-ci.mjs`),
-which does exactly that (downloads the artifact, keeps each screenshot's final CI attempt, copies
-it over the matching `e2e/gallery.spec.ts-snapshots/*.png`, prints what it replaced/added) so
-installing the linux set is one command instead of a manual unzip-and-copy. Still needs a human to
-`git diff --stat` the result before committing — the script never commits for you.
+  `npm run gallery:baselines-from-ci -- <run-id>` (R3-D1, `scripts/gallery-baselines-from-ci.mjs`),
+  which does exactly that (downloads the artifact, keeps each screenshot's final CI attempt, copies
+  it over the matching `e2e/gallery.spec.ts-snapshots/*.png`, prints what it replaced/added) so
+  installing the linux set is one command instead of a manual unzip-and-copy. Still needs a human to
+  `git diff --stat` the result before committing — the script never commits for you.
   Every gallery-rendered component change costs a second push.
 - **One screenshot PER SECTION, never a full-page shot (R3-D1).** `e2e/gallery.spec.ts` used to
   take one `toHaveScreenshot({ fullPage: true })` per theme x viewport; the desktop shot's total
