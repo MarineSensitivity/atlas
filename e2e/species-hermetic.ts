@@ -36,6 +36,12 @@ export const LEATHERBACK_SP = encodeURIComponent("ms_merge|WORMS:137209");
 export const WALRUS_AM_MDL_KEY = encodeURIComponent("am|ITS-Mam-180639");
 /** `valid_usa: false` — the "US-only toggle falls back to the default" case's non-US taxon. */
 export const WRYBILL_SP = encodeURIComponent("ms_merge|BOTW:22693928");
+/** R3-A1: `tests/fixtures/species/derived/taxon-widerange.json`'s synthetic taxon — a 130°-span
+ * bbox (`[130, 10, 260, 65]`), over `WIDE_RANGE_SPAN_DEG`, loosely modelled on the real v7
+ * leatherback's reported range. The shard id (`84`, below) is DERIVED from this key's trailing
+ * digits mod 256 (`shardIdFor`) — changing the key without recomputing it 404s silently through
+ * `routeBucket`'s own fallback. */
+export const WIDE_RANGE_SP = encodeURIComponent("ms_merge|DERIVED:900");
 
 const FIXTURES = new URL("../tests/fixtures/species/", import.meta.url);
 function readFixture(path: string): unknown {
@@ -100,6 +106,9 @@ const SHARD_FILES: Record<string, string> = {
   "v9/app/taxon/f9.json": "v9/taxon/f9.json",
   "v9/app/taxon/75.json": "v9/taxon/75.json",
   "v9/app/taxon/28.json": "v9/taxon/28.json",
+  // R3-A1: WIDE_RANGE_SP's shard (shardIdFor("ms_merge|DERIVED:900") === "84") — reached only via
+  // `?sp=` (never legacy `mdl_key`/`mdl_seq`), so no matching alias entry is needed.
+  "v9/app/taxon/84.json": "derived/taxon-widerange.json",
   "v9/app/alias/f9.json": "v9/alias/f9.json",
   "v9/app/alias/9f.json": "v9/alias/9f.json",
   "v7/app/taxon/6f.json": "v7/taxon/6f.json",
