@@ -57,7 +57,20 @@ describe("finalAttemptActuals", () => {
 });
 
 describe("baselineNameFor", () => {
-  it("strips the '-actual' suffix Playwright inserts before the extension", () => {
+  // named after the bug: CI's real actual files carry NO platform suffix at all -- a Playwright
+  // gallery job's `toHaveScreenshot("gallery-navy-desktop-about.png")` call passes a bare name and
+  // Playwright appends `-{project}-{platform}` itself only when resolving the BASELINE path, not
+  // the mismatch artifact it writes. CI run 36158947685's real artifact held exactly
+  // `gallery-navy-desktop-about-actual.png`; the earlier version of this test asserted the wrong
+  // input shape (`...-chromium-linux-actual.png`) and stayed green while the installed baselines
+  // were suffix-less files the spec never reads (fixed by hand in commit 6aa87aa).
+  it("adds the -chromium-linux suffix a real CI actual does not carry", () => {
+    expect(baselineNameFor("gallery-navy-desktop-about-actual.png")).toBe(
+      "gallery-navy-desktop-about-chromium-linux.png",
+    );
+  });
+
+  it("does not double the suffix when the stem is already -chromium-<platform>", () => {
     expect(baselineNameFor("gallery-navy-desktop-about-chromium-linux-actual.png")).toBe(
       "gallery-navy-desktop-about-chromium-linux.png",
     );

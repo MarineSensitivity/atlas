@@ -13,6 +13,11 @@
 // `git diff --stat` the result before committing it -- committing an unreviewed linux screenshot
 // as truth would defeat the point of a visual baseline.
 //
+// A CI actual (`<stem>-actual.png`) carries NO platform suffix itself -- `gallery-baselines-from-
+// ci-core.mjs#baselineNameFor()` is the one place that adds `-chromium-linux` to land on the
+// suffixed baseline name the spec actually reads; see that function's own header for why (a
+// suffix-less mapping shipped once, commit 6aa87aa fixed it by hand after the fact).
+//
 // Usage: node scripts/gallery-baselines-from-ci.mjs <run-id>
 //   (a "run id" is the numeric id `gh run list` / the Actions URL shows, e.g. 36114961882)
 // Needs `gh` authenticated for this repo (`gh auth status`).
