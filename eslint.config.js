@@ -21,6 +21,15 @@ export default ts.config(
       ".tmp", // sandbox-only TMPDIR override, gitignored
       "spikes", // S1-S4 spike harnesses (each its own package.json); root config must not lint them
       ".claude/worktrees", // parallel spike-agent worktrees, each a full checkout with own node_modules
+      // R3-B16: a local Quarto render of docs/status.md (or any other docs/*.md) leaves
+      // docs/<name>_files/ next to it -- Quarto's own asset dir for a rendered page, already
+      // gitignored, but `npm run lint` still WALKS it when it exists on disk, and it is full of
+      // bundled third-party JS (jquery, bootstrap, ...) that is not this repo's source and was
+      // never meant to pass this config's rules (724 errors, observed). `docs/status_files` is
+      // named explicitly too so the glob's own shape is provably right even for the one render
+      // most likely to exist locally, not just the general pattern.
+      "docs/*_files/",
+      "docs/status_files",
     ],
   },
   js.configs.recommended,

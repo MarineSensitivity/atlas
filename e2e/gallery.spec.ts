@@ -44,16 +44,44 @@ test("gallery.html has its own descriptive title", async ({ page }) => {
   await expect(page).toHaveTitle("Atlas component gallery");
 });
 
+// R3-D1: ONE screenshot per gallery `<section>` element, not a single `fullPage` shot of the
+// whole document. `App.svelte` renders each component demo inside its own
+// `<section class="gallery-section" id={slug}>` (one per `src/gallery/sections/*.svelte` module,
+// alphabetical) -- that id is what this test screenshots and what names the baseline file
+// (`gallery-{theme}-{viewport}-{sectionId}.png`), so a future section (added just by dropping a
+// new file under sections/, per App.svelte's own header) gets its own baseline automatically,
+// with no edit here.
+//
+// Diagnosis (2026-09-25, CI run 36114961882): even with the linux baselines taken from the
+// previous run's own actual PNGs, the desktop full-page gallery shot kept failing --
+// `Expected an image 1280px by 10212px, received 1280px by 10211px` (and the reverse on retry).
+// `toHaveScreenshot` refuses ANY size mismatch before it ever compares pixels, so a 1px full-page
+// HEIGHT jitter (font-metric/subpixel rounding somewhere down a ~10,000px page under CI's fonts)
+// failed the job every time, regardless of `maxDiffPixelRatio` -- the phone sizes never showed
+// this because they are much shorter pages, not because they are immune to it. Per-section
+// elements have their own, much smaller, stable heights, so the SAME 1px-of-total-page jitter (if
+// it still occurs anywhere) lands inside `maxDiffPixelRatio`'s tolerance for that one section
+// instead of failing the whole-page size check outright.
 test.describe("screenshots: every section, both themes, phone and desktop widths", () => {
   for (const theme of THEMES) {
     for (const viewport of VIEWPORTS) {
       test(`${theme} @ ${viewport.name}`, async ({ page }) => {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await gotoGallery(page, theme);
-        await expect(page).toHaveScreenshot(`gallery-${theme}-${viewport.name}.png`, {
-          fullPage: true,
-          maxDiffPixelRatio: 0.02,
-        });
+        const sectionIds = await page
+          .locator(".gallery-section")
+          .evaluateAll((els) => els.map((el) => el.id));
+        // sanity: the gallery really has many sections -- a locator that matched nothing (a
+        // selector typo, a page that failed to mount) would otherwise pass this loop vacuously.
+        expect(sectionIds.length).toBeGreaterThan(10);
+        for (const id of sectionIds) {
+          // ids come from App.svelte's own `slug()` (lowercase letters/digits/hyphens only, no
+          // CSS-special characters), so a plain `#id` selector never needs escaping.
+          await expect(page.locator(`#${id}`)).toHaveScreenshot(
+            `gallery-${theme}-${viewport.name}-${id}.png`,
+            { maxDiffPixelRatio: 0.02 },
+          );
+        }
       });
     }
   }
@@ -99,13 +127,18 @@ test.describe("screenshots: every section, both themes, phone and desktop widths
 //     original 6 nodes remain (the "Color token" column's `<code>` cells past the fold) --
 //     verified reachable the same way as #data-table's, so TRIAGED.
 // measured today (both themes report the SAME numbers/reasons):
-//   phone (390x844):       40 nodes, {bgOverlap, pseudoContent, elmPartiallyObscured}
-//   desktop (1280x900):    16 nodes, {bgOverlap, pseudoContent} -- unaffected, unchanged
-//   phoneNarrow (320x800): 67 nodes, {bgOverlap, pseudoContent, elmPartiallyObscured}
+//   phone (390x844):       41 nodes, {bgOverlap, pseudoContent, elmPartiallyObscured}
+//   desktop (1280x900):    17 nodes, {bgOverlap, pseudoContent}
+//   phoneNarrow (320x800): 68 nodes, {bgOverlap, pseudoContent, elmPartiallyObscured}
+// R3-W2: +1 at every viewport -- the new Menu gallery section's second (right-aligned) trigger
+// button sits close enough to the first that axe cannot statically resolve one of their
+// overlapping computed backgrounds (`bgOverlap`, the SAME reason the existing rail/panel nodes
+// already cite) -- see this describe block's own reason-key assertion below, which still passes
+// with no NEW reason key, confirming this is the same already-triaged category, not a fresh bug.
 const COLOR_CONTRAST_INCOMPLETE_CEILING: Record<string, number> = {
-  phone: 40,
-  desktop: 16,
-  phoneNarrow: 67,
+  phone: 41,
+  desktop: 17,
+  phoneNarrow: 68,
 };
 const COLOR_CONTRAST_INCOMPLETE_REASONS = ["bgOverlap", "pseudoContent", "elmPartiallyObscured"];
 

@@ -28,11 +28,14 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-const FAULTS = [
+// R3-D2: exported so scripts/check-faults-apply.mjs can read every patch path this manifest names
+// without running a single gate -- the manifest itself stays the one place a fault's patch path is
+// written (never duplicated into a second list that could drift).
+export const FAULTS = [
   {
     id: "coverage-quadratic-scan",
     patch: "tests/faults/coverage-quadratic-scan.patch",
@@ -1782,6 +1785,62 @@ const FAULTS = [
       "the phone legend chip, instead of title-casing it ('score' -> 'Score').",
     gate: ["npx", "vitest", "run", "tests/lens/scores/boot.test.ts", "-t", "metricKeyLabel"],
   },
+  {
+    id: "svgwrapper-footer-text-dropped",
+    patch: "tests/faults/svgwrapper-footer-text-dropped.patch",
+    describe:
+      "R3-W2: buildMapSvg() (src/lib/download/svgWrapper.ts) drops the two footer <text> elements " +
+      "-- the Download menu's 'Map view · SVG' export keeps its background band but loses the " +
+      "title/unit/app/version/share-URL line entirely, silently",
+    gate: ["npx", "vitest", "run", "tests/download/svgWrapper.test.ts"],
+  },
+  // R3-B14/C3 (round-3 W5-tooling round): `selectZone`'s newly-added preference for a PUBLISHED
+  // `boot.zones[unit][*].bbox` over `zoneBoundsFromMap`'s live-tile query, reverted -- a search
+  // pick with BOTH a bbox and an already-loaded polygon tile falls back to the polygon's own box
+  // instead of the (deliberately different, in the fixture) bbox. Must turn
+  // e2e/scores.search.spec.ts's own "Enter prefers a PUBLISHED bbox..." test red: the camera
+  // settles inside ALA's real fixture polygon (lon [-170,-168] lat [20,22]) instead of its
+  // published bbox (lon/lat [40,42]).
+  {
+    id: "scores-search-bbox-preference-dropped",
+    patch: "tests/faults/scores-search-bbox-preference-dropped.patch",
+    describe:
+      "state.svelte.ts's selectZone bounds resolution drops the zoneBboxFromBoot() preference, " +
+      "falling back to zoneBoundsFromMap alone -- a published zone bbox is no longer preferred " +
+      "over a currently-loaded map tile",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.search.spec.ts",
+      "-g",
+      "prefers a PUBLISHED bbox",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4451" },
+  },
+  // --- round 3, W3 (app nits with a known fix) ----------------------------------------------------
+  {
+    id: "popup-cellcentre-click-point",
+    patch: "tests/faults/popup-cellcentre-click-point.patch",
+    describe:
+      "state.svelte.ts's showCellPopup() goes back to printing the raw click point (lngLat) " +
+      "instead of the cell centre (cellRing()) -- the SAME cell then reads two different " +
+      "coordinate pairs depending on whether you look at the popup or the flower panel's own title",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.popup.spec.ts",
+      "-g",
+      "CELL CENTRE",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4437" },
+    duckdbExt: true,
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
@@ -1947,4 +2006,9 @@ function main() {
   process.exit(failed ? 1 : 0);
 }
 
-main();
+// R3-D2: only run the (expensive, gate-running) main() when this file is executed directly --
+// `import { FAULTS } from "./test-faults.mjs"` (scripts/check-faults-apply.mjs) must be a plain,
+// side-effect-free read of the manifest.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

@@ -18,6 +18,13 @@ export interface DataTableColumn<T> {
    * Yes/No, a two-letter code) and can fit narrower than the text-column minimum -- see
    * `columnWidthPx()`. Defaults to `numeric`'s own width when unset. */
   narrow?: boolean;
+  /** R3-B9 (Opus eyes-on review, 2026-09-25): a SHORT stand-in for the filter input's
+   * `placeholder`, for a `label` too long to read inside its own column's width ("Area (km²)",
+   * "Avg. suitability", "% of category" all truncated mid-word, e.g. "Area (kn"). `label` itself
+   * stays the accessible name (the filter's `<label>`/`aria-label`) and the input's own `title`
+   * (native hover tooltip) -- this only changes what's visible IN the box before anything is
+   * typed. Unset for every column short enough that `label` already fits. */
+  filterPlaceholder?: string;
 }
 
 // P3 fix (owner-reported, 2026-09-24): "Table is an absurdity of unintelligible ellipses" -- 12

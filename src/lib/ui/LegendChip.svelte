@@ -22,9 +22,15 @@
   interface Props {
     title: string;
     children: Snippet;
+    /** R3-B5 (Opus eyes-on review, 2026-09-25): the current layer's own long description, when the
+     * release publishes one and it says something the ramp's own title does not already say
+     * (`Shell.svelte`'s `phoneLegendDescription`, the SAME dedupe rule `LayersPanel.svelte`'s
+     * `currentLayerDescription` already applies) -- shown under the ramp instead of leaving that
+     * space blank. `undefined`/`null` renders nothing (species has none to offer yet). */
+    description?: string | null;
   }
 
-  let { title, children }: Props = $props();
+  let { title, children, description = null }: Props = $props();
   let open = $state(false);
 </script>
 
@@ -51,10 +57,12 @@
        ramp's 280px-wide box past this modal's own (much narrower) left edge -- invisible for as
        long as the modal body was `display:none` (the OTHER P1 bug), so nobody had seen it render
        until now. `:global()` neutralizes it to normal flow, using the component's own natural
-       width instead of the desktop offset; the min-height below is then unneeded for layout but
-       harmless to keep as a floor. -->
+       width instead of the desktop offset. -->
   <div class="legend-modal-body">
     {@render children()}
+    {#if description}
+      <p class="legend-description">{description}</p>
+    {/if}
   </div>
 </Modal>
 
@@ -107,9 +115,18 @@
     }
   }
 
+  /* R3-B5: sizes to its own content -- the OLD `min-height: 140px` floor left ~65px of dead card
+     below a ramp that only needs ~76px, empty on every release that has no description to show.
+     No floor at all now: the ramp card alone is never so short that a floor would have mattered,
+     and a description paragraph (below) fills real space when one is published. */
   .legend-modal-body {
     position: relative;
-    min-height: 140px;
+  }
+
+  .legend-description {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
   }
 
   /* P1 fix: see the template comment above `<Modal>` -- reaches into the reused child components'

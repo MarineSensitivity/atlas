@@ -39,9 +39,25 @@ function bootWithAleutianArc(): object {
   return boot;
 }
 
-async function gotoScoresSearch(page: Page): Promise<void> {
+// R3-B14/C3: the SAME fixture, plus a PUBLISHED `bbox` on ALA's own row -- deliberately FAR from
+// its real fixture polygon (lon [-170,-168] lat [20,22], `zones20.geojson`, the box the test above
+// proves via `zoneBoundsFromMap`) so a camera settling inside THIS box, rather than the polygon's,
+// proves `zoneBboxFromBoot` (`src/lens/scores/boot.ts`) is tried BEFORE `zoneBoundsFromMap`, not
+// merely available as an equivalent fallback -- the property the seeded fault
+// `tests/faults/scores-search-bbox-preference-dropped.patch` reverts.
+function bootWithAleutianArcBbox(): object {
+  const boot = bootWithAleutianArc() as {
+    zones: { programarea: (BootProgramAreaZone & { bbox?: [number, number, number, number] })[] };
+  };
+  boot.zones.programarea = boot.zones.programarea.map((z) =>
+    z.key === "ALA" ? { ...z, bbox: [40, 40, 42, 42] } : z,
+  );
+  return boot;
+}
+
+async function gotoScoresSearch(page: Page, boot: object = bootWithAleutianArc()): Promise<void> {
   await blockWasm(page);
-  await routeBucket(page, "v9", bootWithAleutianArc());
+  await routeBucket(page, "v9", boot);
   // v9 is `restricted` in the versions fixture (matching the live registry) -- a preview session
   // is the honest way to view it, same as `scores-hermetic.ts#gotoScoresMap`'s own reason.
   await routeSession(page, { preview: true, ver: "v9" });
@@ -133,6 +149,43 @@ test.describe("Q1: Scores-lens top-bar search (desktop, 1280x800)", () => {
               }
             ).__atlasMap.handle.map.getCenter();
             return c.lng >= -170 && c.lng <= -168 && c.lat >= 20 && c.lat <= 22;
+          }),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+  });
+
+  // R3-B14/C3: a PUBLISHED `boot.zones[unit][*].bbox` (`msens::app_zones()`, `zoneBboxFromBoot` in
+  // `src/lens/scores/boot.ts`) is preferred over `zoneBoundsFromMap`'s live tile query -- it needs
+  // no map handle and no already-loaded tile, so a zone far outside the current view (the gap the
+  // test above's own header names) zooms correctly without depending on tile state. ALA's fixture
+  // here carries BOTH a bbox (lon/lat [40,42]) and its real routed polygon (lon [-170,-168] lat
+  // [20,22], zones20.geojson) -- the camera settling inside the BBOX, never the polygon's box,
+  // proves the preference, not just that a bbox works when it is the only thing available.
+  test("Enter prefers a PUBLISHED bbox over the map's own loaded polygon, when both are present", async ({
+    page,
+  }) => {
+    await gotoScoresSearch(page, bootWithAleutianArcBbox());
+    await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
+
+    const input = page.getByRole("combobox", { name: "Search Program Areas or coordinates" });
+    await expect(input).toBeVisible({ timeout: 10_000 });
+    await input.fill("ALA");
+    await expect(page.getByRole("option", { name: "Aleutian Arc (ALA)" })).toBeVisible();
+    await input.press("Enter");
+
+    await expect.poll(() => urlSel(page)).toBe("zone:programarea:ALA");
+
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const c = (
+              window as unknown as {
+                __atlasMap: { handle: { map: { getCenter(): { lng: number; lat: number } } } };
+              }
+            ).__atlasMap.handle.map.getCenter();
+            return c.lng >= 40 && c.lng <= 42 && c.lat >= 40 && c.lat <= 42;
           }),
         { timeout: 10_000 },
       )

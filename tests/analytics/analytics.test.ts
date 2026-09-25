@@ -441,3 +441,79 @@ describe("createAnalytics — privacy fix round 1: no hit ever falls back to gta
     expect(calls).toEqual([]);
   });
 });
+
+// R3-B15 (Opus eyes-on review, 2026-09-25): `Shell.svelte`/`Report.svelte` both construct with
+// `preview: false` (the session fetch that would know better is still in flight) — `updatePreview()`
+// is how the real, async answer corrects `content_group` once `resolveSession()` settles.
+describe("createAnalytics — updatePreview() (R3-B15)", () => {
+  it("flips content_group from 'atlas' to 'atlas-preview' on every later gtag call and Sheet row", () => {
+    const { transport, sent } = fakeTransport();
+    const { gtag, calls } = fakeGtag();
+    const a = register(
+      createAnalytics({
+        appVersion: "v1",
+        preview: false,
+        logUrl: "https://log.example.test/exec",
+        transport,
+        gtag,
+        isWebdriver: () => false,
+        location: () => LOC,
+        clientStore: null,
+        sessionStore: null,
+      }),
+    );
+    // the constructor's own config call, before updatePreview(), is still the public group.
+    const configCall = calls.find((c) => c[0] === "config");
+    expect(configCall?.[2]).toMatchObject({ content_group: "atlas" });
+
+    a.updatePreview(true);
+    const setCall = calls.find((c) => c[0] === "set");
+    expect(setCall?.[1]).toMatchObject({ content_group: "atlas-preview" });
+
+    a.track("open_about", {});
+    const eventCall = calls.find((c) => c[0] === "event" && c[1] === "open_about");
+    expect((eventCall?.[2] as Record<string, unknown>).content_group).toBe("atlas-preview");
+
+    a.flush();
+    // the Sheet leg carries no content_group column of its own (see LOG_HEADER), but proves the
+    // call went through with the new state live rather than throwing.
+    expect(sent).toHaveLength(1);
+  });
+
+  it("flips back to 'atlas' when called with false (a public session resolving after a false start)", () => {
+    const { gtag, calls } = fakeGtag();
+    const a = register(
+      createAnalytics({
+        appVersion: "v1",
+        preview: true,
+        transport: fakeTransport().transport,
+        gtag,
+        isWebdriver: () => false,
+        location: () => LOC,
+        clientStore: null,
+        sessionStore: null,
+      }),
+    );
+    a.updatePreview(false);
+    const setCall = calls.find((c) => c[0] === "set");
+    expect(setCall?.[1]).toMatchObject({ content_group: "atlas" });
+  });
+
+  it("is a no-op leg-wise for a webdriver session (never calls gtag)", () => {
+    const { gtag, calls } = fakeGtag();
+    const a = register(
+      createAnalytics({
+        appVersion: "v1",
+        preview: false,
+        transport: fakeTransport().transport,
+        gtag,
+        isWebdriver: () => true,
+        location: () => LOC,
+        clientStore: null,
+        sessionStore: null,
+      }),
+    );
+    a.updatePreview(true);
+    expect(calls).toEqual([]);
+  });
+});

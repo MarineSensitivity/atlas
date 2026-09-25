@@ -24,7 +24,15 @@ export function createPopup(options: PopupOptions = {}): Popup {
   return new Popup({
     closeButton: true,
     closeOnClick: true,
-    maxWidth: "260px",
+    // R3-B3 (Opus eyes-on review, 2026-09-25, phone-06-flower-half): 260px was too narrow for a
+    // cell popup's own text once it carries id + lon + lat + label + value ("Cell 3350704 · lon
+    // -90.575, lat 28.625 · score: 44") -- measured: the string needs ~300px on one line at this
+    // font-size, so 260px wrapped it with "44" stranded alone on its own line regardless of any
+    // `min-width` on the content box (popup.css's own `min-width: 220px` floor helps a SHORTER
+    // string that would otherwise auto-size narrower than that, but cannot widen a box already at
+    // its ceiling). 320px is enough margin for this string with a shorter metric label; a release
+    // whose label is longer still wraps, just not down to one bare trailing number.
+    maxWidth: "320px",
     ...rest,
     className: [POPUP_CLASS_NAME, className].filter(Boolean).join(" "),
   });

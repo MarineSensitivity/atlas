@@ -25,7 +25,18 @@
 
   $effect(() => {
     if (!dialogEl) return;
-    if (open && !dialogEl.open) dialogEl.showModal();
+    // R3-B4 (Opus eyes-on review, 2026-09-25): `showModal()`'s own default -- focus the first
+    // focusable descendant -- landed on the CLOSE BUTTON in every modal here (it is always the
+    // first focusable element in the head), so first paint showed a thick gold focus ring around
+    // the little "x" nobody asked to interact with yet. Focusing the dialog CONTAINER itself
+    // instead (needs `tabindex="-1"` below, since a `<dialog>` is not natively focusable) is the
+    // one fix that works for every `Modal` caller without each one having to name its own
+    // "primary action" -- a keyboard user's first Tab still lands on the first real control, and
+    // `:focus-visible` keeps ringing every focus a keyboard interaction actually produces.
+    if (open && !dialogEl.open) {
+      dialogEl.showModal();
+      dialogEl.focus();
+    }
     if (!open && dialogEl.open) dialogEl.close();
   });
 
@@ -88,7 +99,7 @@
   });
 </script>
 
-<dialog bind:this={dialogEl} aria-labelledby={titleId} onclose={() => onclose?.()}>
+<dialog bind:this={dialogEl} tabindex="-1" aria-labelledby={titleId} onclose={() => onclose?.()}>
   <div class="modal-head">
     <h2 id={titleId}>{title}</h2>
     <button type="button" class="modal-close" aria-label="Close" onclick={() => dialogEl?.close()}>
@@ -115,6 +126,15 @@
   dialog::backdrop {
     background: var(--scrim);
     opacity: 0.6;
+  }
+
+  /* R3-B4: the container itself is the programmatic focus target on open (see the `$effect`
+     above) -- browsers do not treat a `.focus()` call as a KEYBOARD interaction, so `:focus-visible`
+     already skips this in practice, but this is the explicit, don't-rely-on-heuristics version of
+     that: no ring around the whole card just because it holds focus. A REAL keyboard Tab into the
+     dialog still lands on a real control inside it, which keeps its own `:focus-visible` ring. */
+  dialog:focus {
+    outline: none;
   }
 
   .modal-head {

@@ -446,6 +446,20 @@ const STATES = [
       const picked = await selectProgramArea(p, vp);
       const missed = picked ? "" : "-MISSED";
       await shot(p, vp, `19-programarea-popup${missed}`);
+      // R3-B17 (Opus eyes-on review 5, 2026-09-25): review 5 could not verify the map tooltip's
+      // FULL Program Area name in 19-programarea-popup on desktop -- the docked panel (still open
+      // at its default detent from page load; nothing in this state ever collapses it) sits over
+      // the popup's own anchor point. `selectZone`'s bounds-fit padding (state.svelte.ts) only
+      // reserves the panel's footprint when a REAL zone bbox is available (a loaded map tile
+      // today, R3-B14/C3's published `boot.zones[].bbox` once a release carries one); the
+      // fallback path centers the camera on the WHOLE viewport, which the panel then covers. This
+      // does not change what the app itself renders -- it just gets the panel out of the way
+      // (same `collapseSheet` used by state "map"/02) so this harness can actually photograph the
+      // tooltip's full name on desktop.
+      if (vp === "desktop") {
+        await collapseSheet(p);
+        await shot(p, vp, `19b-programarea-popup-collapsed${missed}`);
+      }
       await tool(p, "Flower plot");
       await shot(p, vp, `20-programarea-flower${missed}`);
       await tool(p, "Table");

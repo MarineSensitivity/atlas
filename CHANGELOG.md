@@ -1,3 +1,115 @@
+# atlas 0.10.72
+
+Round 3, W5 (process and tooling debt): gallery screenshot stability, seeded-fault patch hygiene,
+a local shell/UI gate alias, the search-zoom bbox preference, and harness/docs cleanup. No
+user-visible behavior change on the map/panel — this round is process and tooling.
+
+- **Gallery screenshots are per-section, not one full-page shot** (`e2e/gallery.spec.ts`) — a
+  full-page shot's total page height jittered by 1px between CI runs, failing the job outright
+  before any pixel comparison. Each gallery component section now gets its own, much smaller,
+  stable-height screenshot; a new gallery section gets its own baseline automatically.
+- **New `scripts/gallery-baselines-from-ci.mjs`** (`npm run gallery:baselines-from-ci -- <run-id>`)
+  installs the linux gallery baselines from a CI run's `gallery-test-results` artifact in one
+  command (keeps each screenshot's final CI attempt, copies it over the matching local baseline,
+  prints what changed) instead of a manual `gh run download` + copy.
+- **New `scripts/check-faults-apply.mjs`** (`npm run faults:check`) runs `git apply --check` over
+  every seeded-fault patch `scripts/test-faults.mjs` references and lists any that no longer apply
+  — a cheap first line of defense against a stale patch, ahead of a full (sometimes browser-build)
+  `npm run test:faults` run.
+- **New `npm run e2e:shell` alias** for the "any change under `src/shell/` or `src/lib/ui/` runs
+  the shell/feedback specs locally" rule (chromium, `--workers=1`, `e2e/shell.*.spec.ts
+e2e/feedback.spec.ts`).
+- **Scores search: a zone zoom now prefers a published `boot.zones[unit][*].bbox`** over querying
+  the map for an already-loaded tile, when the bundle publishes one (no released bundle does yet —
+  the msens/notebook side lands separately). A search pick on a zone far outside the current view
+  will zoom correctly without depending on tile state, once a release publishes bbox.
+- **Harness: a desktop-only `programarea` eyes-on shot with the panel collapsed**, so the map
+  tooltip's full Program Area name is verifiable (the docked panel could sit over the popup's own
+  anchor point on the fallback camera path).
+- `docs/status.md`'s Decisions table (R1–R6) now shows the correct landed version and "shipped"
+  instead of a stale "building"/scheduling note for work that has been live since round 2.
+
+# atlas 0.10.70
+
+Round 3, W3 (app nits with a known fix, 2026-09-25): the cell popup now agrees with the panel on
+where a click landed, the welcome modal's first paint no longer rings the close button, the phone
+legend modal fits its own content, several small copy/sizing fixes, and analytics now knows it is
+on the preview host.
+
+- **Fixed: the map popup printed the raw CLICK point while the flower panel printed the cell
+  CENTRE for the same cell** ("lon -90.550, lat 28.601" vs. "-90.575, 28.625") — both now read the
+  cell centre (`cellRing()`, the same helper the panel's own coordinate line already used), since
+  the cell is the unit being described, not wherever the pointer happened to land inside it. The
+  popup's `maxWidth` also grows from 260px to 320px, and its content box gets a `min-width`, so its
+  own text ("Cell 3350704 · lon -90.575, lat 28.625 · score: 44") no longer wraps with the trailing
+  value stranded alone on its own line.
+- **Fixed: the welcome (and every other) modal focused its own close button on open**, showing a
+  thick gold focus ring around the "x" before anything was clicked. `Modal.svelte` now focuses the
+  dialog container itself; a keyboard user's first Tab still lands on the first real control, and
+  `:focus-visible` still rings it.
+- **Fixed: the phone legend modal left ~65px of empty card under the ramp** on every release with
+  no per-layer description to show. Removed the fixed `min-height` floor that caused it, and — when
+  the release publishes one — the current layer's own long description now fills that space instead
+  of leaving it blank.
+- **Fixed: the Places panel's Share / Download places / Report buttons read visibly larger** than
+  the rest of the panel (the browser's own default button font, never set to this panel's `0.9rem`
+  like everything else in it).
+- **Fixed: a single-place Report repeated the place's name twice** — once as a tab "pill", once as
+  the figure's own heading directly under it. A report with exactly one place no longer renders the
+  (pointless, for one item) tab list; the heading is the figure's accessible name either way. A
+  report with two or more places is unchanged.
+- **Fixed: the AquaMaps citation's "Content from AquaMaps as provided in this R package..."** read
+  as orphaned prose once copied into a report that never mentions any R package elsewhere — now
+  reads "...as provided in the msens R package", a display-time patch (`cite.ts`) alongside the
+  existing "UnportedLicense" fix; both retire once msens's own source text is corrected.
+- **Fixed: the desktop species table's column filters truncated to "Area (kn", "Avg. suit", "% of
+  cat"** — the three long labels (Area (km²), Avg. suitability, % of category) now get short
+  placeholders ("Area", "Suit.", "% cat") that fit, with the full label still available as a hover
+  title. The table body also now fills the panel's real height instead of stopping at a fixed 50vh
+  and leaving ~180px blank underneath at full screen.
+- **Fixed: the desktop flower panel's "Mean" row (the table's own last row) sat half-cut at the
+  panel's bottom edge** at half panel width, reachable only by scrolling the whole panel with no
+  visible affordance that there was more. The component table now scrolls inside its own small,
+  bordered box.
+- **Fixed: the report's static map cropped CARTO's own place-name labels ("LOUISIANA") at the
+  fitted view's top edge.** The report already draws its own place labels; the basemap's own text
+  labels (`symbol` layers) are now dropped entirely rather than padded around, which a longer label
+  could still beat.
+- **Fixed: `content_group` read `"atlas"` (never `"atlas-preview"`) for analytics on the review
+  host.** `Shell.svelte`/`Report.svelte` both construct `Analytics` with a necessary `preview: false`
+  guess (the session fetch is still in flight); a new `updatePreview()` on the `Analytics` interface
+  corrects it — and gtag's own persistent `content_group` field — the moment the real, async answer
+  from `resolveSession()`/`window.__early.session` lands.
+- `eslint.config.js` now ignores `docs/*_files/` (and `docs/status_files` by name): a local Quarto
+  render of a docs page left `npm run lint` walking Quarto's own bundled third-party JS and failing
+  with 724 unrelated errors.
+
+# atlas 0.10.69
+
+Round 3, W2: a Download menu (PNG/SVG of the map view, GeoTIFF/GeoJSON of the current data layer),
+plus the theme toggle's gear-like icon (R3-B12).
+
+- **New: a Download menu** — desktop, a top-bar icon button beside Share; phone, a "Download…" entry
+  in the ⋯ menu opening the same item list in a Modal. Items: **Map view · PNG** (the current map,
+  composited with a theme background, a footer stamp — title/unit · app · version · share URL — and
+  the legend gradient bottom-left, never transparent), **Map view · SVG** (the same figure as a
+  vector-wrapped raster: the footer and legend are real SVG text/gradient elements, the map imagery
+  stays a raster — the menu says so), **Data layer · GeoTIFF** (fetches the current view's own COG —
+  the scores lens' current metric × subregion, or the species lens' currently drawn surface — and
+  saves it; disabled with the reason as its hint when no COG is published for the view), and
+  **Selected places · GeoJSON** (the current places, reusing `places/download.ts`'s existing
+  resolved-geometry export) when there is a selection. "Program areas · GeoJSON" is deliberately
+  NOT offered: no published release carries a complete Program-Area geometry asset today (see this
+  round's report for what publishing `app/zones/programarea.geojson` would take). New reusable
+  `src/lib/ui/Menu.svelte` (a `role="menu"` dropdown — trigger, roving-tabindex list, Esc/outside-
+  click/item-click close, left/right align) backs the desktop button; a gallery section demonstrates
+  it. One `download_export` analytics event fires per download kind.
+- **Fixed (R3-B12): the theme toggle read as a settings gear**, not a sun/moon — `mdiBrightness7`/
+  `mdiBrightness4`'s shared castellated ring (the same pair CalCOFI explore also uses) reads as a
+  gear frame at 18px. Swapped for `mdiWhiteBalanceSunny`/`mdiMoonWaningCrescent` — unambiguous
+  sun/moon glyphs with no gear-like border, on both the desktop button and the phone ⋯ menu's
+  "Switch to light/dark theme" item.
+
 # atlas 0.10.68
 
 Round 3, W1: the Layers pane redesign (Ben, live-review 2026-09-25) — "clean up the Layers pane to

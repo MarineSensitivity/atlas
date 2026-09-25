@@ -56,7 +56,13 @@ import {
 } from "./selection";
 import { scoresMapInputs, type ScoresMapInputs, type ScoresMapState } from "./mapInputs";
 import type { ManifestOverlayRow } from "./raster";
-import { layerByKey, metricLabelsFromManifest, primaryUnitType, zoneRows } from "./boot";
+import {
+  layerByKey,
+  metricLabelsFromManifest,
+  primaryUnitType,
+  zoneBboxFromBoot,
+  zoneRows,
+} from "./boot";
 import { fetchCellValue } from "./cellClick";
 import { getAnalysisSources } from "./engine";
 import {
@@ -150,7 +156,9 @@ export interface ScoresLens {
  * its true extent even though no published release carries `label_pt` (`zoneCenterFromBoot`'s own
  * header). `querySourceFeatures` reads already-loaded tiles only -- `null` (never a throw) when the
  * unit is unpublished or its covering tile has not loaded, so the caller degrades to the label_pt
- * centroid and then to an announcement, exactly as before this fix. */
+ * centroid and then to an announcement, exactly as before this fix. R3-B14/C3: `selectZone` tries
+ * `zoneBboxFromBoot` (`./boot.ts`, a PUBLISHED bbox, needs no map handle or loaded tile) first --
+ * this stays the fallback for a release that does not publish one, which is every release today. */
 function zoneBoundsFromMap(
   handle: MapHandle,
   boot: unknown,
@@ -260,6 +268,7 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
   async function showCellPopup(
     cellId: number,
     lngLat: { lng: number; lat: number },
+    center: { lon: number; lat: number },
     token: number,
     prevSel: string | undefined,
   ): Promise<void> {
@@ -284,7 +293,14 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     // label, then the bare metric_key, exactly as before, when a release's manifest has not
     // published a short name for this metric yet.
     const label = (lyr && metricLabels[lyr]) || layerByKey(bootObj, lyr)?.label || lyr || "value";
-    const input = { cellId, lon: lngLat.lng, lat: lngLat.lat, layerLabel: label, value };
+    // R3-B3 (Opus eyes-on review, 2026-09-25): the popup used to print the raw CLICK point
+    // (lngLat, wherever the pointer landed inside the cell) while the flower panel's own title
+    // printed the CELL CENTRE (`ScoresLens.svelte`'s `cellCoords`, itself `mapSelection`'s
+    // `cellRing()` result) — the same cell read two different coordinate pairs depending on which
+    // UI showed it. `center` (the caller's `cellRing()` result, the SAME helper the panel's
+    // `mapSelection` already runs through) is now the ONE source for what a cell's coordinates
+    // are; `lngLat` is kept only for the popup's own map ANCHOR (where it points on screen).
+    const input = { cellId, lon: center.lon, lat: center.lat, layerLabel: label, value };
     // D3(a) round 2 (orchestrator, 2026-09-24 -- fixes a regression the FIRST D3 fix introduced):
     // `handleMapClick` below now writes `sel` EAGERLY, synchronously, on click -- exactly the
     // pre-D3 behaviour -- so the URL/selection updates at once regardless of how long (or whether
@@ -373,12 +389,15 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
           // place once it answers.
           const prevSel = deps.selStore.sel.sel;
           deps.selStore.set({ sel: formatCellToken(result.cellId) });
+          // R3-B3: the cell CENTRE (same `cellRing()` helper `mapSelection`/the flower panel's
+          // `cellCoords` already use), not the click point — see `showCellPopup`'s own comment.
+          const center = cellRing(result.cellId, grid);
           showPopup(
             lngLat,
-            cellPopupLoadingText({ cellId: result.cellId, lon: lngLat.lng, lat: lngLat.lat }),
+            cellPopupLoadingText({ cellId: result.cellId, lon: center.lon, lat: center.lat }),
             "Loading value…",
           );
-          void showCellPopup(result.cellId, lngLat, token, prevSel);
+          void showCellPopup(result.cellId, lngLat, center, token, prevSel);
         }
       } else if (result.zone) {
         deps.selStore.set({ sel: formatZoneToken(result.zone.unit, result.zone.key) });
@@ -415,10 +434,19 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       // owner review item 1 (live 0.10.62, "entering a Program Area should zoom to it, like it
       // already zooms to lon,lat"): `zoneCenterFromBoot` needs `label_pt`, which no published
       // release carries (docs/parity.html's own known gap), so this always fell through to the
-      // announce-only branch below in production. `zoneBoundsFromMap` (above) is the real fix --
-      // the zone's OWN polygon, queried live off the map — tried first; `zoneCenterFromBoot` stays
-      // as the fallback for the day a release does publish `label_pt`.
-      const bounds = handle ? zoneBoundsFromMap(handle, boot, unit, key) : null;
+      // announce-only branch below in production. `zoneBoundsFromMap` (below) is the real fix --
+      // the zone's OWN polygon, queried live off the map — tried second; `zoneCenterFromBoot`
+      // stays as the last-resort fallback for the day a release does publish `label_pt`.
+      //
+      // R3-B14/C3: a PUBLISHED `boot.zones[unit][*].bbox` (`zoneBboxFromBoot`) is tried FIRST,
+      // ahead of `zoneBoundsFromMap` -- it needs no map handle and no already-loaded tile, so a
+      // Program-Area search pick zooms correctly even far outside the current view (the gap
+      // V1/owner review item 1's own header names: "a zone far outside the current view can fall
+      // back to the announce-only path"). No published release carries `bbox` yet (msens will,
+      // R3-C3), so `zoneBoundsFromMap` stays the effective path until then.
+      const bounds =
+        zoneBboxFromBoot(boot, unit, key) ??
+        (handle ? zoneBoundsFromMap(handle, boot, unit, key) : null);
       const center = bounds
         ? { lon: (bounds[0][0] + bounds[1][0]) / 2, lat: (bounds[0][1] + bounds[1][1]) / 2 }
         : zoneCenterFromBoot(boot, unit, [key]);
@@ -465,6 +493,9 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       const cellId = cellFromLonLat(lon, lat, grid);
       if (cellId === null) return false; // off this release's grid — a fact about the point, not a throw
       const lngLat = { lng: lon, lat };
+      // R3-B3: the cell CENTRE, not the typed point — same rule `handleMapClick` applies to a real
+      // click (see `showCellPopup`'s own comment).
+      const center = cellRing(cellId, grid);
       const token = ++popupToken;
       clearPopup();
       const prevSel = deps.selStore.sel.sel;
@@ -474,8 +505,12 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       // per-place heuristic `places/camera.ts#MAX_ZOOM` (12) reserves for a drawn place's true point
       // extent — a typed coordinate is a known location to LOOK AT, not a place being measured.
       if (handle) handle.flyTo({ key: "place", lon, lat, zoom: 9 });
-      showPopup(lngLat, cellPopupLoadingText({ cellId, lon, lat }), "Loading value…");
-      void showCellPopup(cellId, lngLat, token, prevSel);
+      showPopup(
+        lngLat,
+        cellPopupLoadingText({ cellId, lon: center.lon, lat: center.lat }),
+        "Loading value…",
+      );
+      void showCellPopup(cellId, lngLat, center, token, prevSel);
       return true;
     },
   };

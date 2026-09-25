@@ -44,9 +44,21 @@ function str(v: unknown): string | null {
  * ("Creative Commons Attribution-NonCommercial 3.0 UnportedLicense, please see ..."), verified
  * against the real v7-v9 `datasets.json` `am_0.05` row. That text is release metadata this repo
  * does not generate (it comes from `workflows`/`msens`'s own dataset registry, out of this fix's
- * reach) -- correcting it here is display-only and never touches the published field itself. */
+ * reach) -- correcting it here is display-only and never touches the published field itself.
+ *
+ * R3-B8 (Opus eyes-on review, 2026-09-25): a second, same-row exception -- the AquaMaps R
+ * package's own upstream text says "Content from AquaMaps as provided in this R package is
+ * licensed...", which reads fine INSIDE that package's own CITATION file but is orphaned prose
+ * once copied verbatim into `datasets.json` and printed in a report that never mentions "this R
+ * package" anywhere else -- a reader has no antecedent for "this". "the msens R package" names
+ * the package the text is actually quoting from (`workflows`'s own sibling `msens`, which vendors
+ * this citation string). DISPLAY-TIME ONLY, same as the typo fix above: the real fix is
+ * `msens`'s own `inst/.../datasets.json` (R3-C4, a separate workflows task) -- retire this second
+ * replacement once that source text is corrected and every bundle republished with it. */
 function fixKnownCitationTypos(v: string): string {
-  return v.replace(/\bUnportedLicense\b/g, "Unported License");
+  return v
+    .replace(/\bUnportedLicense\b/g, "Unported License")
+    .replace(/\bas provided in this R package\b/g, "as provided in the msens R package");
 }
 
 function citationStr(v: unknown): string | null {

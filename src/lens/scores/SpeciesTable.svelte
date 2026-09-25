@@ -104,6 +104,8 @@
       format: (r) => formatAreaKm2(r.area_km2),
       sortable: true,
       numeric: true,
+      // R3-B9: the filter box is narrower than "Area (km²)" -- truncated to "Area (kn" in review.
+      filterPlaceholder: "Area",
     },
     {
       key: "avg_suit",
@@ -112,6 +114,7 @@
       format: (r) => formatPercent2(r.avg_suit),
       sortable: true,
       numeric: true,
+      filterPlaceholder: "Suit.",
     },
     {
       key: "pct_cat",
@@ -120,6 +123,7 @@
       format: (r) => formatPercent2(r.pct_cat),
       sortable: true,
       numeric: true,
+      filterPlaceholder: "% cat",
     },
   ];
   const ALL_COLUMN_KEYS = columns.map((c) => c.key);
@@ -320,7 +324,8 @@
                 <input
                   type="text"
                   value={filters[col.key] ?? ""}
-                  placeholder={col.label}
+                  placeholder={col.filterPlaceholder ?? col.label}
+                  title={`Filter ${col.label}`}
                   oninput={(e) =>
                     onFilterInput(col.key, (e.currentTarget as HTMLInputElement).value)}
                 />
@@ -377,6 +382,16 @@
     flex-direction: column;
     gap: var(--space-2);
     font-size: var(--text-sm);
+    /* R3-B9 (Opus eyes-on review, 2026-09-25): fills whatever height `TablePanel.svelte`'s own
+       `height: 100%` now hands down, so `.scroll-region` below (flex: 1) can grow into a tall
+       desktop panel instead of stopping at a fixed 50vh and leaving the rest of the panel blank.
+       `min-height: 0` is the flex-child fix for "a flex item's automatic minimum size is its
+       content size" -- without it this box refuses to shrink below the table's own full height,
+       and `.scroll-region`'s internal scroll never engages at all. Resolves to `auto` (no-op) when
+       an ancestor's own height is itself `auto` (the gallery, Panel.svelte's own identical note),
+       so this degrades gracefully anywhere this component is mounted without a definite height. */
+    height: 100%;
+    min-height: 0;
   }
 
   .columns-bar {
@@ -456,9 +471,16 @@
 
   .scroll-region {
     /* P3 fix: the TABLE scrolls horizontally (the panel around it never does) -- `overflow: auto`
-       handles both axes, and the table below is allowed to be WIDER than this box. */
+       handles both axes, and the table below is allowed to be WIDER than this box.
+       R3-B9: a fixed `max-height: 50vh` left ~180px of blank panel below the table on a tall
+       desktop dock (the box never grew past half the viewport no matter how tall the panel
+       actually was) -- `flex: 1` (this box's own parent, `.species-table`, is a flex column with
+       `height: 100%`) lets it fill whatever the panel actually gives it instead. `min-height`
+       keeps a handful of rows visible even where the panel is short (the phone sheet's "half"
+       detent) -- the closest equivalent of the OLD cap's floor, not its ceiling. */
     overflow: auto;
-    max-height: 50vh;
+    flex: 1;
+    min-height: 160px;
     border: 1px solid var(--border-control);
     border-radius: var(--radius-control);
   }

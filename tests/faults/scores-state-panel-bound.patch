@@ -35,10 +35,10 @@ index 90495bb..84a2c2f 100644
    // `unitToggle` prop) -- replaces the old "Spatial units" `<Select>` that used to live in
    // `ScoresLayersPanel` (`./LayersPanel.svelte`, still rendered below for the Data row's OTHER
 diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
-index d584c57..1b6dc19 100644
+index 9375f3b..ddd69af 100644
 --- a/src/shell/Shell.svelte
 +++ b/src/shell/Shell.svelte
-@@ -570,12 +570,17 @@
+@@ -583,12 +583,17 @@
    // every read of it below is null-safe and falls back to "the shell's own base view", same as
    // the old `{}` default did.
    let scoresLens = $state<ScoresLensState | null>(null);
@@ -56,8 +56,8 @@ index d584c57..1b6dc19 100644
 +    sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresPanelMapExtra?.legend ?? null),
    );
  
-   // G-25 fix: `Sel.out`'s ONE effect on the map, applied to whichever `zones` array (the shell's
-@@ -589,7 +594,7 @@
+   // R3-W2: the Download menu's per-lens context -- built from data every lens ALREADY resolves
+@@ -665,7 +670,7 @@
    // never mounted on a species view in the first place.
    const zonesForStyle = $derived<ZoneUnitSpec[]>(
      zoneUnitsWithOutline(
@@ -66,7 +66,7 @@ index d584c57..1b6dc19 100644
        sel.out,
      ),
    );
-@@ -982,11 +987,11 @@
+@@ -1058,11 +1063,11 @@
      projection: sel.proj,
      zones: ecoregionUnit ? [...zonesForStyle, ecoregionUnit] : zonesForStyle,
      raster:
@@ -81,7 +81,7 @@ index d584c57..1b6dc19 100644
      layerStack,
    });
  
-@@ -1759,6 +1764,7 @@
+@@ -1881,6 +1886,7 @@
              lens={scoresLens}
              {layerStack}
              {onLayerStackChange}
@@ -89,7 +89,7 @@ index d584c57..1b6dc19 100644
              compactFlower={isPhone && sheetGeom.detent === "half"}
            />
          {:else}
-@@ -1823,7 +1829,7 @@
+@@ -1945,7 +1951,7 @@
    {:else if sel.lens === "scores" && ScoresLegendComp}
      {@const Comp = ScoresLegendComp}
      <div class="lens-legend-region">
