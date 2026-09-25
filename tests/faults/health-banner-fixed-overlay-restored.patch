@@ -1,5 +1,5 @@
 diff --git a/src/lib/ui/HealthBanner.svelte b/src/lib/ui/HealthBanner.svelte
-index 7affcf4..cbaec21 100644
+index 7affcf4..f302f87 100644
 --- a/src/lib/ui/HealthBanner.svelte
 +++ b/src/lib/ui/HealthBanner.svelte
 @@ -65,7 +65,9 @@
@@ -13,3 +13,16 @@ index 7affcf4..cbaec21 100644
      top: 0;
      left: 0;
      right: 0;
+@@ -78,7 +80,11 @@
+        A banner reporting a real outage has to be the thing you can actually act on, so it now
+        outranks that chrome instead -- still BELOW a maximized panel (40) or an open `<dialog>`
+        (native top-layer regardless of z-index), which stay the more urgent surface. */
+-    z-index: 18;
++    /* SEEDED FAULT: the pre-fix z-index (above the topbar's own 20), so a fixed banner covers
++       it again -- position alone is not enough to reproduce the click-blocking symptom, since
++       this file's real z-index (18) sits BELOW the topbar's (20) in the shared root stacking
++       context once the banner is no longer `.stage`-confined. */
++    z-index: 59;
+     display: flex;
+     align-items: center;
+     gap: var(--space-2);
