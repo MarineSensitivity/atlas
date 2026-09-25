@@ -1,9 +1,9 @@
 diff --git a/src/lib/ui/LayersPanel.svelte b/src/lib/ui/LayersPanel.svelte
-index 45a0a46..2f6afe3 100644
+index 7160d49..fa25da9 100644
 --- a/src/lib/ui/LayersPanel.svelte
 +++ b/src/lib/ui/LayersPanel.svelte
-@@ -75,10 +75,8 @@
-   let { stack, onChange, dataControls, unitToggle }: Props = $props();
+@@ -158,10 +158,8 @@
+   }: Props = $props();
  
    function onUnitToggleChange(value: string) {
 -    // a disabled toggle passes no onChange at all (species lens) -- this call would otherwise be a
@@ -14,4 +14,4 @@ index 45a0a46..2f6afe3 100644
 +    void value;
    }
  
-   /** the ONE row this panel expands — "Data", the lens's own layer (round-2 plan: "the data row
+   /** the two rows this panel EXPANDS — "Data" (the lens's own layer) and "Zone outlines" (the

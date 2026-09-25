@@ -1,0 +1,14 @@
+diff --git a/src/lens/scores/boot.ts b/src/lens/scores/boot.ts
+index aacb8cd..32dfcea 100644
+--- a/src/lens/scores/boot.ts
++++ b/src/lens/scores/boot.ts
+@@ -172,8 +172,7 @@ export function layerByKey(boot: unknown, key: string | undefined | null): BootL
+  * release's own `metricLabels`/`layer.label` have already had first refusal.
+  */
+ export function metricKeyLabel(key: string): string {
+-  const trimmed = key.trim().replace(/_/g, " ");
+-  return trimmed ? trimmed[0].toUpperCase() + trimmed.slice(1) : trimmed;
++  return key;
+ }
+ 
+ /** `layer.by_subregion.FULL` — the raster is ALWAYS the FULL COG (D7: "the study area is a camera,

@@ -1772,6 +1772,16 @@ const FAULTS = [
       "scrolls the map figure into view with a real scrollIntoView call",
     ],
   },
+  {
+    id: "metric-key-label-reverted",
+    patch: "tests/faults/metric-key-label-reverted.patch",
+    describe:
+      "R3-W1 (round-3 plan, R3-B1): boot.ts's metricKeyLabel() reverted to a bare pass-through " +
+      "(`return key`) -- a bare metric_key with no published label (e.g. the composite row " +
+      "'score') shows the raw lowercase key again in the Layer <select>, the floating legend, and " +
+      "the phone legend chip, instead of title-casing it ('score' -> 'Score').",
+    gate: ["npx", "vitest", "run", "tests/lens/scores/boot.test.ts", "-t", "metricKeyLabel"],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
