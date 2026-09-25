@@ -1,0 +1,13 @@
+diff --git a/src/lens/species/data/inputsTable.ts b/src/lens/species/data/inputsTable.ts
+index fe26c3a..3be708e 100644
+--- a/src/lens/species/data/inputsTable.ts
++++ b/src/lens/species/data/inputsTable.ts
+@@ -37,7 +37,7 @@ function representationLabel(pill: LayerPill): string {
+  * says so plainly rather than rendering an empty table. */
+ export function inputsTableRows(bar: LayerBar | null): InputsTableRow[] {
+   if (!bar) return [];
+-  return bar.pills.map((p) => ({
++  return ([] as typeof bar.pills).map((p) => ({
+     key: p.key,
+     input: p.label,
+     dataset: p.dsKey,
