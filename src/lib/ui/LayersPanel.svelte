@@ -550,14 +550,31 @@
      phone anyway -- the Legend modal (W3's B5, merged from main) now shows the SAME layer
      description there. Omitted entirely on phone (never rendered short-but-clamped); unchanged on
      desktop, where there is no Legend-modal duplicate and no space pressure. Paired with a
-     tighter panel-wide gap on the same viewport (below) to free the rest of the room. */
+     tighter panel-wide gap on the same viewport (below) to free the rest of the room.
+
+     Fix round 2 (Ben, 2026-09-25): measured against a real 46svh sheet (`--size-sheet-half`,
+     `lib/brand/tokens.css`) this STILL only clears the first row plus the next row's own top
+     border -- every remaining gap tightened here (unit-toggle's own bottom padding, the stacked
+     Layer/Zoom fields' gap, the "Layers on the map" heading's margin) buys real but modest room;
+     closing the rest would mean shrinking a touch target (every row is >= 44px on a coarse
+     pointer, `.opacity-btn`'s own rule below) or raising `--size-sheet-half` itself, a SHARED
+     token `chromePadding.ts`/`FlowerPanel.svelte`/`tests/map/chromePadding.test.ts` all key off --
+     out of this slice's own scope, left for whoever owns the sheet chrome next. */
   @media (max-width: 480px) {
     .note {
       display: none;
     }
 
     .layers-stack {
-      gap: var(--space-2);
+      gap: var(--space-1);
+    }
+
+    .unit-toggle {
+      padding-bottom: var(--space-1);
+    }
+
+    .fields-row {
+      gap: var(--space-1);
     }
   }
 
