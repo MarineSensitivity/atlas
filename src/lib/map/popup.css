@@ -22,6 +22,12 @@
   font-family: var(--font-body);
   font-size: var(--text-md);
   line-height: var(--leading-normal);
+  /* R3-B3: a cell popup's own text ("Cell 3350704 · lon -90.575, lat 28.625 · score: 44") wrapped
+     its LAST word onto its own line — MapLibre sizes this box to content, up to `createPopup()`'s
+     own 260px `maxWidth`, and the browser's default wrap can leave a box just wide enough for the
+     longest single line while stranding one short trailing word below it. A floor keeps the box
+     wide enough that the wrap point lands somewhere less awkward. */
+  min-width: 220px;
 }
 
 /* the tip is a 10px CSS border-triangle (no content box for `backdrop-filter` to blur), so it

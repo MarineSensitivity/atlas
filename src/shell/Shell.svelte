@@ -73,7 +73,7 @@
   // MANIFEST (never `boot.units[]`, which stays exactly one row per D17) -- a plain `.ts` reader,
   // not a `.svelte` SFC, so it is exempt from `tests/shell/lazy-lens-imports.test.ts`'s static-
   // import ban the same way `state.svelte.ts` already is (that file's own header explains why).
-  import { ecoregionZoneUnitFromManifest } from "../lens/scores/boot";
+  import { ecoregionZoneUnitFromManifest, layerByKey } from "../lens/scores/boot";
   import { studyAreaFromBoot, type StudyArea } from "../lib/map/interaction";
   import {
     INITIAL_AREA_CAMERA_STATE,
@@ -141,9 +141,11 @@
 
   // a minimal Analytics instance (analytics.ts's own header: the GA4 `<script>` LOADER tag is a
   // later phase's job; `track()` calls made before it lands simply queue into `dataLayer` the way
-  // GA4's own snippet already expects — see analytics.ts). `preview` is always false here: the
-  // shell does not yet thread a resolved preview session down to a lens (a known gap, not this
-  // phase's to close — see this component's own boot section below).
+  // GA4's own snippet already expects — see analytics.ts). `preview: false` here is a necessary
+  // GUESS -- the session fetch (`window.__early.session`) has not resolved yet at construction
+  // time -- corrected by `analytics.updatePreview()` in the boot `onMount` below once it does
+  // (R3-B15; every event tracked before that point, on a public-by-default guess, is the same
+  // trade-off `page_location` already makes for the inline early-fetch script's own timing).
   // round 2, Q7 fix: `logUrl` was never passed here, so the Sheet-log beacon (docs/analytics.md)
   // could never fire no matter what Ben set `VITE_LOG_URL` to -- see src/lib/analytics/logUrl.ts.
   const analytics = createAnalytics({
@@ -457,6 +459,10 @@
     // record index.html's inline early-fetch script already resolved -- never a second fetch.
     versions?: Promise<EarlyVersionRow[] | null>;
     denied?: Promise<{ ver: string; reason: string } | null>;
+    // R3-B15: the SAME same-origin `session.json` result index.html's early-fetch script already
+    // resolved (D6's "the one door into preview") -- never a second fetch, and never awaited on
+    // the public path (this is read only once it has already settled on its own).
+    session?: Promise<{ preview: boolean }>;
   }
   // structurally identical to src/lib/release/access.ts's own `VersionRow` -- NOT imported from
   // it: this file must never import src/lib/release (tests/shell/shell-invariants.test.ts's
@@ -507,6 +513,12 @@
         if (d) versionPickerOpen = true;
       })
       .catch(() => {});
+    // R3-B15: `analytics` was constructed above with `preview: false` (a necessary guess -- the
+    // session fetch was still in flight at that point) -- correct it once the real answer lands,
+    // same `window.__early.session` result index.html's own early-fetch script already resolved.
+    // `.catch(() => {})` matches every other `early.*` read here: a rejected/absent session is
+    // simply left at the constructor's public default, never a thrown error.
+    early?.session?.then((s) => analytics.updatePreview(s.preview === true)).catch(() => {});
   });
 
   // --- the map (atlas-map): mounted under the panels, one MapLibre instance ---------------------
@@ -577,6 +589,21 @@
   const phoneLegend = $derived(
     sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresLens?.mapExtra.legend ?? null),
   );
+
+  // R3-B5 (Opus eyes-on review, 2026-09-25): the scores lens' current layer own long description
+  // (`boot.layers[].label`), when the release publishes one that says something `phoneLegend.title`
+  // does not already say -- the SAME dedupe rule `LayersPanel.svelte`'s `currentLayerDescription`
+  // applies, kept in sync deliberately (both compare against the SAME short-vs-long fallback chain,
+  // `mapInputs.ts`'s own `title` derivation). Shown in the phone legend modal instead of leaving
+  // that space blank (`LegendChip.svelte`'s `description` prop); `null` for species (no per-model
+  // description published) or before a layer has resolved.
+  const phoneLegendDescription = $derived.by(() => {
+    if (sel.lens !== "scores" || !scoresLens) return null;
+    const layer = layerByKey(boot, scoresLens.lyr);
+    const desc = layer?.label ?? null;
+    if (desc === null) return null;
+    return desc === (phoneLegend?.title ?? null) ? null : desc;
+  });
 
   // G-25 fix: `Sel.out`'s ONE effect on the map, applied to whichever `zones` array (the shell's
   // own outline-only `zoneUnits`, or the scores lens' richer `scoresLens.mapExtra.zones`) is about
@@ -1673,7 +1700,7 @@
        chips live at once. -->
   {#snippet legendChipContent()}
     {#if phoneLegend}
-      <LegendChip title={phoneLegend.title}>
+      <LegendChip title={phoneLegend.title} description={phoneLegendDescription}>
         {#if sel.lens === "species" && SpeciesLegendComp}
           {@const Comp = SpeciesLegendComp}
           <Comp legend={phoneLegend} tilesDown={health.isDown("tiler")} />

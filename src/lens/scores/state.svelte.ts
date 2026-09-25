@@ -260,6 +260,7 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
   async function showCellPopup(
     cellId: number,
     lngLat: { lng: number; lat: number },
+    center: { lon: number; lat: number },
     token: number,
     prevSel: string | undefined,
   ): Promise<void> {
@@ -284,7 +285,14 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     // label, then the bare metric_key, exactly as before, when a release's manifest has not
     // published a short name for this metric yet.
     const label = (lyr && metricLabels[lyr]) || layerByKey(bootObj, lyr)?.label || lyr || "value";
-    const input = { cellId, lon: lngLat.lng, lat: lngLat.lat, layerLabel: label, value };
+    // R3-B3 (Opus eyes-on review, 2026-09-25): the popup used to print the raw CLICK point
+    // (lngLat, wherever the pointer landed inside the cell) while the flower panel's own title
+    // printed the CELL CENTRE (`ScoresLens.svelte`'s `cellCoords`, itself `mapSelection`'s
+    // `cellRing()` result) — the same cell read two different coordinate pairs depending on which
+    // UI showed it. `center` (the caller's `cellRing()` result, the SAME helper the panel's
+    // `mapSelection` already runs through) is now the ONE source for what a cell's coordinates
+    // are; `lngLat` is kept only for the popup's own map ANCHOR (where it points on screen).
+    const input = { cellId, lon: center.lon, lat: center.lat, layerLabel: label, value };
     // D3(a) round 2 (orchestrator, 2026-09-24 -- fixes a regression the FIRST D3 fix introduced):
     // `handleMapClick` below now writes `sel` EAGERLY, synchronously, on click -- exactly the
     // pre-D3 behaviour -- so the URL/selection updates at once regardless of how long (or whether
@@ -373,12 +381,15 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
           // place once it answers.
           const prevSel = deps.selStore.sel.sel;
           deps.selStore.set({ sel: formatCellToken(result.cellId) });
+          // R3-B3: the cell CENTRE (same `cellRing()` helper `mapSelection`/the flower panel's
+          // `cellCoords` already use), not the click point — see `showCellPopup`'s own comment.
+          const center = cellRing(result.cellId, grid);
           showPopup(
             lngLat,
-            cellPopupLoadingText({ cellId: result.cellId, lon: lngLat.lng, lat: lngLat.lat }),
+            cellPopupLoadingText({ cellId: result.cellId, lon: center.lon, lat: center.lat }),
             "Loading value…",
           );
-          void showCellPopup(result.cellId, lngLat, token, prevSel);
+          void showCellPopup(result.cellId, lngLat, center, token, prevSel);
         }
       } else if (result.zone) {
         deps.selStore.set({ sel: formatZoneToken(result.zone.unit, result.zone.key) });
@@ -465,6 +476,9 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       const cellId = cellFromLonLat(lon, lat, grid);
       if (cellId === null) return false; // off this release's grid — a fact about the point, not a throw
       const lngLat = { lng: lon, lat };
+      // R3-B3: the cell CENTRE, not the typed point — same rule `handleMapClick` applies to a real
+      // click (see `showCellPopup`'s own comment).
+      const center = cellRing(cellId, grid);
       const token = ++popupToken;
       clearPopup();
       const prevSel = deps.selStore.sel.sel;
@@ -474,8 +488,12 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       // per-place heuristic `places/camera.ts#MAX_ZOOM` (12) reserves for a drawn place's true point
       // extent — a typed coordinate is a known location to LOOK AT, not a place being measured.
       if (handle) handle.flyTo({ key: "place", lon, lat, zoom: 9 });
-      showPopup(lngLat, cellPopupLoadingText({ cellId, lon, lat }), "Loading value…");
-      void showCellPopup(cellId, lngLat, token, prevSel);
+      showPopup(
+        lngLat,
+        cellPopupLoadingText({ cellId, lon: center.lon, lat: center.lat }),
+        "Loading value…",
+      );
+      void showCellPopup(cellId, lngLat, center, token, prevSel);
       return true;
     },
   };

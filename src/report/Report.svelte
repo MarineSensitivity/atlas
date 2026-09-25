@@ -74,7 +74,13 @@
     Promise.allSettled([
       early.version.then((v) => (ver = v)),
       early.boot?.then((b) => (boot = b)) ?? Promise.resolve(),
-      early.session?.then((s) => (preview = s.preview === true)) ?? Promise.resolve(),
+      // R3-B15: the SAME resolved session this `preview` state already drives the watermark/banner
+      // from -- `analytics.updatePreview()` corrects `content_group` (constructed as a `preview:
+      // false` guess below, same reason `Shell.svelte`'s own comment gives) once it is known.
+      early.session?.then((s) => {
+        preview = s.preview === true;
+        analytics.updatePreview(preview);
+      }) ?? Promise.resolve(),
       early.denied?.then((d) => (denied = d)) ?? Promise.resolve(),
     ]).then(() => (earlySettled = true));
   });
@@ -87,10 +93,11 @@
   // re-render would tick the "generated" stamp and the permalink while the page is still loading.
   const appSha = __APP_VERSION__; // package version stands in for a git SHA until CI wires one in
 
-  // `preview: false` here matches Shell.svelte's own current stance ("a known gap, not this
-  // phase's job to close" -- the GA4 loader tag itself is not wired app-wide yet either): the
-  // component's OWN `preview` state (below) still drives the document's watermark/banner, which
-  // is the thing that actually matters for a restricted release.
+  // `preview: false` here is a necessary GUESS, same as Shell.svelte's own -- the session fetch
+  // has not resolved yet at construction time. The component's OWN `preview` state (below) drives
+  // the document's watermark/banner and is corrected the instant `early.session` resolves (see the
+  // `onMount` above); `analytics.updatePreview()` there keeps `content_group` in step with it
+  // (R3-B15) -- the GA4 loader tag itself is a separate, still-open gap (not this fix's job).
   // round 2, Q7 fix: `logUrl` was never passed here either -- see Shell.svelte's own comment and
   // src/lib/analytics/logUrl.ts.
   const analytics = createAnalytics({
@@ -650,39 +657,48 @@
     <h2 id="s-flowers">Plot of Scores</h2>
     <!-- tabindex="-1" on the CONTAINER (role="tablist") is not a real tab stop -- same as
          Rail.svelte's own role="toolbar" div; only the tabs inside it are (roving tabindex,
-         below) -- but svelte-check's a11y rule wants an explicit value on any interactive role. -->
-    <div
-      class="flower-tabs no-print"
-      role="tablist"
-      aria-label="Places"
-      tabindex="-1"
-      onkeydown={handleFlowerTabsKeydown}
-    >
-      {#each model.flowers as f, i (f.name)}
-        <button
-          type="button"
-          id={`flower-tab-${i}`}
-          role="tab"
-          aria-selected={activeFlower === i}
-          aria-controls={`flower-panel-${i}`}
-          tabindex={activeFlower === i ? 0 : -1}
-          onclick={() => selectFlower(i)}
-        >
-          {f.name}
-        </button>
-      {/each}
-    </div>
+         below) -- but svelte-check's a11y rule wants an explicit value on any interactive role.
+         R3-B7 (Opus eyes-on review, 2026-09-25): a SINGLE place rendered one tab -- a pill reading
+         "GOA Program Area A (GAA)" -- directly above the panel's OWN `<figcaption>`, the same
+         text again as a heading line right under it. A one-item tablist has nothing to navigate
+         between, so it is hidden entirely (never rendered) when there is exactly one place; the
+         figcaption is then the ONE visible name, and the figure's `aria-labelledby` points at it
+         directly instead of a tab that no longer exists. Two or more places keep the tabs exactly
+         as before (each tab's own text differs from every other place's, so nothing repeats). -->
+    {#if model.flowers.length > 1}
+      <div
+        class="flower-tabs no-print"
+        role="tablist"
+        aria-label="Places"
+        tabindex="-1"
+        onkeydown={handleFlowerTabsKeydown}
+      >
+        {#each model.flowers as f, i (f.name)}
+          <button
+            type="button"
+            id={`flower-tab-${i}`}
+            role="tab"
+            aria-selected={activeFlower === i}
+            aria-controls={`flower-panel-${i}`}
+            tabindex={activeFlower === i ? 0 : -1}
+            onclick={() => selectFlower(i)}
+          >
+            {f.name}
+          </button>
+        {/each}
+      </div>
+    {/if}
     <div class="flower-panels">
       {#each model.flowers as f, i (f.name)}
         <figure
           id={`flower-panel-${i}`}
           class="flower-panel"
           role="tabpanel"
-          aria-labelledby={`flower-tab-${i}`}
+          aria-labelledby={model.flowers.length > 1 ? `flower-tab-${i}` : `flower-caption-${i}`}
           hidden={activeFlower !== i}
           aria-describedby={`flower-summary-${i}`}
         >
-          <figcaption>{f.name}</figcaption>
+          <figcaption id={`flower-caption-${i}`}>{f.name}</figcaption>
           <p class="narrative">{f.narrative}</p>
           <svg
             viewBox="0 0 200 200"

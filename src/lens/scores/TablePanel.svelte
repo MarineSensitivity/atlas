@@ -289,6 +289,15 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+    /* R3-B9 (Opus eyes-on review, 2026-09-25): hands a definite height down to `SpeciesTable.svelte`'s
+       own root (`.species-table { height: 100% }`), which is what lets ITS `.scroll-region` grow
+       to fill a tall desktop panel instead of stopping at a fixed 50vh -- see that component's own
+       comment. `min-height: 0` is the matching flex-child fix (an auto-height flex item refuses to
+       shrink below its content's natural height by default). Resolves to `auto` wherever the
+       ancestor chain (`Panel.svelte`'s `.panel-body`) has no definite height of its own, same
+       graceful no-op `Panel.svelte`'s own header documents. */
+    height: 100%;
+    min-height: 0;
   }
 
   .header-row {

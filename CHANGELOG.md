@@ -1,3 +1,56 @@
+# atlas 0.10.70
+
+Round 3, W3 (app nits with a known fix, 2026-09-25): the cell popup now agrees with the panel on
+where a click landed, the welcome modal's first paint no longer rings the close button, the phone
+legend modal fits its own content, several small copy/sizing fixes, and analytics now knows it is
+on the preview host.
+
+- **Fixed: the map popup printed the raw CLICK point while the flower panel printed the cell
+  CENTRE for the same cell** ("lon -90.550, lat 28.601" vs. "-90.575, 28.625") — both now read the
+  cell centre (`cellRing()`, the same helper the panel's own coordinate line already used), since
+  the cell is the unit being described, not wherever the pointer happened to land inside it. The
+  popup also gets a `min-width` so a short trailing word ("44") no longer wraps onto its own line.
+- **Fixed: the welcome (and every other) modal focused its own close button on open**, showing a
+  thick gold focus ring around the "x" before anything was clicked. `Modal.svelte` now focuses the
+  dialog container itself; a keyboard user's first Tab still lands on the first real control, and
+  `:focus-visible` still rings it.
+- **Fixed: the phone legend modal left ~65px of empty card under the ramp** on every release with
+  no per-layer description to show. Removed the fixed `min-height` floor that caused it, and — when
+  the release publishes one — the current layer's own long description now fills that space instead
+  of leaving it blank.
+- **Fixed: the Places panel's Share / Download places / Report buttons read visibly larger** than
+  the rest of the panel (the browser's own default button font, never set to this panel's `0.9rem`
+  like everything else in it).
+- **Fixed: a single-place Report repeated the place's name twice** — once as a tab "pill", once as
+  the figure's own heading directly under it. A report with exactly one place no longer renders the
+  (pointless, for one item) tab list; the heading is the figure's accessible name either way. A
+  report with two or more places is unchanged.
+- **Fixed: the AquaMaps citation's "Content from AquaMaps as provided in this R package..."** read
+  as orphaned prose once copied into a report that never mentions any R package elsewhere — now
+  reads "...as provided in the msens R package", a display-time patch (`cite.ts`) alongside the
+  existing "UnportedLicense" fix; both retire once msens's own source text is corrected.
+- **Fixed: the desktop species table's column filters truncated to "Area (kn", "Avg. suit", "% of
+  cat"** — the three long labels (Area (km²), Avg. suitability, % of category) now get short
+  placeholders ("Area", "Suit.", "% cat") that fit, with the full label still available as a hover
+  title. The table body also now fills the panel's real height instead of stopping at a fixed 50vh
+  and leaving ~180px blank underneath at full screen.
+- **Fixed: the desktop flower panel's "Mean" row (the table's own last row) sat half-cut at the
+  panel's bottom edge** at half panel width, reachable only by scrolling the whole panel with no
+  visible affordance that there was more. The component table now scrolls inside its own small,
+  bordered box.
+- **Fixed: the report's static map cropped CARTO's own place-name labels ("LOUISIANA") at the
+  fitted view's top edge.** The report already draws its own place labels; the basemap's own text
+  labels (`symbol` layers) are now dropped entirely rather than padded around, which a longer label
+  could still beat.
+- **Fixed: `content_group` read `"atlas"` (never `"atlas-preview"`) for analytics on the review
+  host.** `Shell.svelte`/`Report.svelte` both construct `Analytics` with a necessary `preview: false`
+  guess (the session fetch is still in flight); a new `updatePreview()` on the `Analytics` interface
+  corrects it — and gtag's own persistent `content_group` field — the moment the real, async answer
+  from `resolveSession()`/`window.__early.session` lands.
+- `eslint.config.js` now ignores `docs/*_files/` (and `docs/status_files` by name): a local Quarto
+  render of a docs page left `npm run lint` walking Quarto's own bundled third-party JS and failing
+  with 724 unrelated errors.
+
 # atlas 0.10.67
 
 P round, W5 (Opus 5.5 eyes-on review 5 of 0.10.66, 2026-09-25): two zone-fit framing gutters, a

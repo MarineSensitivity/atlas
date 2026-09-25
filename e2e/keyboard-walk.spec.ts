@@ -536,7 +536,8 @@ test.describe("step 2: create a place by coordinates", () => {
     const dialog = page.getByRole("dialog", { name: "Enter coordinates" });
     await expect(dialog).toBeVisible();
 
-    // showModal() puts initial focus inside the dialog; Tab from there reaches the textarea.
+    // R3-B4: initial focus lands on the dialog container (Modal.svelte), not a control inside it
+    // -- Tab from there reaches the textarea.
     await tabTo(page, browserName, "Coordinates, bounding box, or WKT/GeoJSON", {
       step: "step 2: the coordinates field",
       max: 12,
@@ -561,7 +562,8 @@ test.describe("step 2: create a place by coordinates", () => {
     await page.keyboard.press("Enter");
     await expect(page.getByRole("dialog", { name: "Enter coordinates" })).toBeVisible();
 
-    // showModal() puts initial focus on the dialog's own Close button; Enter activates it.
+    // R3-B4: initial focus lands on the dialog CONTAINER now (Modal.svelte), not the Close button
+    // -- `tabTo` still finds it within `max`, one Tab press further along than before.
     await tabTo(page, browserName, "Close", { step: "step 2b: the Close button", max: 12 });
     await page.keyboard.press("Enter");
     await expect(page.getByRole("dialog", { name: "Enter coordinates" })).toBeHidden();

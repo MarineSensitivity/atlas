@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   bboxFromRenderedFeatures,
+  buildReportMapStyle,
   captureRejectionReason,
   combinedBbox,
   luminanceStatsFromRgba,
@@ -12,6 +13,7 @@ import {
   zonePolygonLayers,
 } from "../../src/report/reportMap";
 import { REPORT_MAP_OUTLINE, REPORT_NODATA_COLOR } from "../../src/report/colors";
+import { loadBasemapStyle, resetBasemapStyleCacheForTests } from "../../src/lib/map/layers/basemap";
 
 describe("combinedBbox", () => {
   it("null when no place carries a geometry or point", () => {
@@ -278,5 +280,59 @@ describe("luminanceStatsFromRgba / captureRejectionReason", () => {
     const meanOnlyWouldAccept = flat.mean >= 1 && flat.mean <= 254;
     expect(meanOnlyWouldAccept).toBe(true); // the exact gap the old rule had
     expect(captureRejectionReason(flat)).toContain("flat, single-colour");
+  });
+});
+
+// R3-B11 (Opus eyes-on review, 2026-09-25, desktop-13b-report-map): CARTO's own basemap place-name
+// labels ("LOUISIANA") were clipped at the fitted map's own edge -- the report draws its own place
+// labels, so the fix drops the basemap's own `symbol` (text) layers entirely rather than chasing a
+// padding number that a longer label could still beat.
+describe("buildReportMapStyle: the basemap's own place-name labels are dropped", () => {
+  beforeEach(() => {
+    resetBasemapStyleCacheForTests();
+  });
+
+  function fakeCartoStyleWithLabels() {
+    return {
+      sources: { carto: { type: "vector", url: "https://tiles.example/tiles.json" } },
+      sprite: "https://tiles.example/sprite",
+      glyphs: "https://tiles.example/fonts/{fontstack}/{range}.pbf",
+      layers: [
+        { id: "water", type: "fill", source: "carto", "source-layer": "water", paint: {} },
+        { id: "roads", type: "line", source: "carto", "source-layer": "roads", paint: {} },
+        {
+          id: "place-label",
+          type: "symbol",
+          source: "carto",
+          "source-layer": "place",
+          layout: { "text-field": ["get", "name"] },
+          paint: {},
+        },
+      ],
+    };
+  }
+
+  it("keeps every non-symbol basemap layer, drops every basemap symbol layer, and still draws the report's OWN place-labels layer", async () => {
+    await loadBasemapStyle("paper", () =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(fakeCartoStyleWithLabels()),
+      } as never),
+    );
+    const { style } = await buildReportMapStyle({
+      theme: "paper",
+      places: [{ name: "GOA Program Area A (GAA)", score: 33, point: [-150, 58] }],
+      domain: [0, 100],
+      paletteStops: ["#000000", "#ffffff"],
+    });
+    // composeStyle()/mergeCartoStyle() prefixes every CARTO layer id with "basemap-"
+    // (BASEMAP_LAYER_PREFIX, lib/map/style.ts) to keep it from colliding with an app id.
+    const ids = style.layers.map((l) => l.id);
+    expect(ids).toContain("basemap-water");
+    expect(ids).toContain("basemap-roads");
+    expect(ids).not.toContain("basemap-place-label"); // the basemap's own symbol layer
+    const symbolLayers = style.layers.filter((l) => l.type === "symbol");
+    // the ONLY symbol layer left is the report's own place labels, never a basemap one.
+    expect(symbolLayers.map((l) => l.id)).toEqual(["place-labels"]);
   });
 });
