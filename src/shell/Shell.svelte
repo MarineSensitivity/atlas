@@ -634,7 +634,13 @@
   );
   const downloadPlaces = $derived(placesFromHash(sel.pl));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let DownloadMenuComp = $state<Component<any> | null>(null);
+  // `typeof DownloadMenu` (not `Component<any>`, unlike the other lazy chunks below) -- this is the
+  // ONE lazy chunk in this file `bind:this` calls a method on (`downloadMenuRef?.openPhoneModal()`);
+  // `Component<any>`'s implicit empty Exports would make `bind:this` yield a shape lacking
+  // `openPhoneModal` (svelte-check error, plain `tsc` does not see it -- CLAUDE.md's own note on
+  // why `npm run check` is required for a `.svelte` edit), and would also make every prop this
+  // component takes (including the inline `track` callback below) implicitly `any`.
+  let DownloadMenuComp = $state<typeof DownloadMenu | null>(null);
   let downloadMenuRef = $state<ReturnType<typeof DownloadMenu> | undefined>(undefined);
   let downloadAutoOpen = $state<"desktop" | "phone" | undefined>(undefined);
   // desktop: Shell.svelte's own static placeholder button (below) calls this on its FIRST click
