@@ -1,0 +1,13 @@
+diff --git a/src/lens/species/data/camera.ts b/src/lens/species/data/camera.ts
+index b97558c..0eb4c9a 100644
+--- a/src/lens/species/data/camera.ts
++++ b/src/lens/species/data/camera.ts
+@@ -190,7 +190,7 @@ function wideRangeAware(
+   studyArea: StudyAreaView | null | undefined,
+ ): BoundsCamera {
+   const span = bbox[2] - bbox[0];
+-  if (span > WIDE_RANGE_SPAN_DEG && studyArea) {
++  if (span < WIDE_RANGE_SPAN_DEG && studyArea) {
+     const usBbox = studyAreaBboxFallback(studyArea);
+     const intersection = intersectBbox(bbox, usBbox);
+     if (intersection) {

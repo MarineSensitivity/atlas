@@ -1,11 +1,11 @@
 diff --git a/src/lens/species/state.svelte.ts b/src/lens/species/state.svelte.ts
-index df0b961..ac3fce5 100644
+index aab6d32..a508197 100644
 --- a/src/lens/species/state.svelte.ts
 +++ b/src/lens/species/state.svelte.ts
-@@ -427,11 +427,12 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
-         padding: DEFAULT_CAMERA_PADDING,
+@@ -472,11 +472,12 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
        });
        applyCamera(cam);
+       recordWideRangeCamera(cam);
 -      // D8 fold-in (orchestrator round 2, 2026-09-24): the manual "zoom to layer" button used to
 -      // stop at `cameraFor()`'s own bundle-only chain, so a taxon with NO published bbox anywhere
 -      // (v7's walrus) fell to `kind: "center"` here too — the SAME COG-bounds last resort the
@@ -18,5 +18,5 @@ index df0b961..ac3fce5 100644
 +      // Must turn e2e/species.camera.spec.ts's "zoomToLayer() ALSO reaches the COG-bounds last
 +      // resort" test red.
      },
- 
-     async handleMapClick(lngLat: LngLat, point: { x: number; y: number }): Promise<void> {
+     setZoomTarget(target: "us" | "whole") {
+       if (!wideRangeCamera?.wholeRangeBounds || target === zoomTarget) return;

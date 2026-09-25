@@ -1,9 +1,9 @@
 diff --git a/src/lens/species/data/camera.ts b/src/lens/species/data/camera.ts
-index 6c77981..da193eb 100644
+index b97558c..fe0d022 100644
 --- a/src/lens/species/data/camera.ts
 +++ b/src/lens/species/data/camera.ts
-@@ -215,8 +215,12 @@ export function cameraFor(
-   if (merged) return { kind: "bounds", bounds: boundsOf(merged), padding, source: "merged" };
+@@ -334,8 +334,12 @@ export function cameraFor(
+   if (merged) return wideRangeAware(merged, padding, "merged", opts.studyArea);
    const er = framed(opts.fallbackBbox);
    if (er) return { kind: "bounds", bounds: boundsOf(er), padding, source: "ecoregion" };
 -  const sibling = framed(anyInputBbox(card, opts.rep));

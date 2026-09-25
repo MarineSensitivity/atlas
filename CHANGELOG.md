@@ -29,6 +29,34 @@ e2e/feedback.spec.ts`).
 - `docs/status.md`'s Decisions table (R1–R6) now shows the correct landed version and "shipped"
   instead of a stale "building"/scheduling note for work that has been live since round 2.
 
+# atlas 0.10.71
+
+Round 3, W4: the phone's default first view, wide-range species framing, and the category
+palette (R3-A1, R3-A2, R3-A3).
+
+- **Fixed (R3-A2): the phone's default first view showed only the northern Gulf of Mexico**, one
+  region of four. `PHONE_DEFAULT_BOUNDS` now frames the Pacific coast and Florida/the Gulf, chosen
+  by looking at real builds and measuring directly against a 10%-of-free-area sky-band target
+  (`e2e/shell.firstview.phone.spec.ts`'s own two-colour probe, checked at both the "half" and
+  "peek" sheet detents). First pass framed the lower 48 + a south-east-Alaska/Gulf-of-Alaska hint
+  (`[[-128,24],[-65,52]]`) but left ~43%/23% of the free area as empty sky above the globe's rim;
+  second pass narrowed further to `[[-119,25],[-78,51]]` (zoom ~2.6), measuring 7.0%/3.7% sky — both
+  under target. A span narrow enough to clear the target cannot also carry the Alaska hint or the
+  Atlantic seaboard north of the Carolinas (the same lever narrows both), so per the decision's own
+  fallback, both are dropped in favor of a clean, minimal-sky lower-48 view.
+- **New (R3-A1): a wide-range species model frames its IN-US portion by default**, with a compact
+  "Zoom to: US waters | Whole range" toggle in the species card as the escape hatch back to the
+  whole thing. The v7 leatherback's own model spans the whole Pacific (SWOT DPS nesting near
+  Oceania, foraging to Alaska); when a model's fitted bbox spans more than 120° of longitude, it is
+  intersected against a dateline-aware "study area as a box" (the release's own published extent if
+  one ever exists, else derived from the same camera the desktop default view renders — never a
+  hardcoded number). Applies to both viewports; a compact model is completely unaffected.
+- **Changed (R3-A3): re-hued Fish (blue-violet) and Turtle (moss/olive) in the eight-category
+  palette**, and nudged Mammal darker/more golden — `--cat-bird`/`--cat-fish` and
+  `--cat-mammal`/`--cat-turtle` were near-identical in both themes, and Coral/Mammal collapsed
+  under a protanopia simulation despite passing on normal-vision CIE76 ΔE alone. Every category
+  stays ≥4.5:1 text / ≥3:1 non-text (`npm run contrast`) and distinct from `--cat-primprod`.
+
 # atlas 0.10.70
 
 Round 3, W3 (app nits with a known fix, 2026-09-25): the cell popup now agrees with the panel on

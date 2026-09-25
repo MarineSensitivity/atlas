@@ -3,13 +3,19 @@
   // rejects `NotAllowedError` whenever the document is unfocused (§11.7) — ALWAYS keep the
   // `execCommand('copy')` fallback, and flash a check/cross for 1.2 s either way.
   import Icon from "../../lib/ui/Icon.svelte";
+  import Segmented from "../../lib/ui/Segmented.svelte";
+  import type { WideRangeZoom } from "./state.svelte";
 
   interface Props {
     sci: string;
     common: string | null;
+    /** R3-A1: `null` hides the toggle entirely — this model was never narrowed (a compact range,
+     * or no study area to narrow against), so there is only one meaningful framing. */
+    wideRange?: WideRangeZoom;
+    onSetZoomTarget?: (target: "us" | "whole") => void;
   }
 
-  let { sci, common }: Props = $props();
+  let { sci, common, wideRange = null, onSetZoomTarget }: Props = $props();
   let flash = $state<{ which: "sci" | "common"; ok: boolean } | null>(null);
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -84,8 +90,35 @@
     </button>
   {/if}
 </div>
+{#if wideRange}
+  <!-- R3-A1: a wide-range model (e.g. the leatherback — nesting near Oceania, foraging to Alaska)
+       frames its IN-US portion by default; this is the escape hatch back to the whole range. -->
+  <div class="zoom-target">
+    <Segmented
+      ariaLabel="Zoom to"
+      value={wideRange.value}
+      options={[
+        { value: "us", label: "US waters" },
+        { value: "whole", label: "Whole range" },
+      ]}
+      onchange={(v) => onSetZoomTarget?.(v as "us" | "whole")}
+    />
+  </div>
+{/if}
 
 <style>
+  .zoom-target {
+    margin-top: var(--space-1);
+  }
+
+  /* a compact instance of the shared Segmented look (W4: "the fit prop from W1 is not available to
+     you — use your own compact style") — smaller than the top-bar Scores|Species switch, which
+     otherwise dominates this narrow panel column. */
+  .zoom-target :global(.seg button) {
+    height: 24px;
+    padding: 0 var(--space-2);
+    font-size: var(--text-xs);
+  }
   .sp-title {
     display: flex;
     align-items: center;

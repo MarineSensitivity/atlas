@@ -34,6 +34,7 @@ import {
   GLOBE_SPAN_DEG,
   FULL_STUDY_AREA,
   DEFAULT_CAMERA_PADDING,
+  type BoundsCamera,
   type Camera,
   type CameraKey,
 } from "./data/camera";
@@ -87,6 +88,12 @@ export interface SpeciesLensDeps {
   chromePadding?: () => ChromePadding;
 }
 
+/** R3-A1: which of a wide-range model's two framings is currently applied — `null` when the
+ * current camera was never narrowed (a compact model, or no study area to narrow against), which
+ * is the species card's own cue to hide the "Zoom to" toggle entirely rather than show a control
+ * with only one meaningful choice. */
+export type WideRangeZoom = { value: "us" | "whole" } | null;
+
 export interface SpeciesLens {
   readonly loading: boolean;
   readonly card: TaxonCard | null;
@@ -99,6 +106,7 @@ export interface SpeciesLens {
   readonly popup: { lngLat: LngLat; content: PopupContent } | null;
   readonly taxaIndex: TaxaIndex | null;
   readonly datasets: DatasetIndex;
+  readonly wideRange: WideRangeZoom;
 
   dismissNotFound(): void;
   closePopup(): void;
@@ -108,6 +116,9 @@ export interface SpeciesLens {
   setRepresentation(rep: Representation): void;
   setUsOnly(enabled: boolean): void;
   zoomToLayer(): void;
+  /** R3-A1: the species card's "Zoom to: US waters | Whole range" toggle — ephemeral (component
+   * state, not `Sel`), a no-op when {@link wideRange} is `null` (nothing to toggle between). */
+  setZoomTarget(target: "us" | "whole"): void;
   handleMapClick(lngLat: LngLat, point: { x: number; y: number }): Promise<void>;
 }
 
@@ -137,6 +148,11 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
   let popup = $state<{ lngLat: LngLat; content: PopupContent } | null>(null);
   let taxaIndex = $state<TaxaIndex | null>(null);
   let prevCameraKey: CameraKey | null = null;
+  // R3-A1: the last camera `cameraFor()`/`zoomToLayer()` actually computed, kept around so the
+  // "Zoom to" toggle can re-apply EITHER of its two framings without recomputing anything — `null`
+  // (or a camera with no `wholeRangeBounds`) means the current model was never narrowed.
+  let wideRangeCamera = $state<BoundsCamera | null>(null);
+  let zoomTarget = $state<"us" | "whole">("us");
   let taxaLoadPromise: Promise<TaxaIndex | null> | null = null;
   /** the real MapLibre popup (§6.5 step 6: "opens immediately", MapLibre's own re-anchors it on
    * pan/zoom) — plain, not `$state`: it is DOM/MapLibre state, not something a template reads. */
@@ -219,6 +235,16 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     } else {
       handle.flyTo({ key: cam.source, lon: cam.center[0], lat: cam.center[1], zoom: cam.zoom });
     }
+  }
+
+  // R3-A1: called after every FRESH `cameraFor()`/`zoomToLayer()` computation (never after a
+  // manual `setZoomTarget()` re-fit, which reuses this same camera rather than recomputing it) —
+  // remembers whether the model just framed is a WIDE one that got narrowed, so the species card's
+  // "Zoom to" toggle knows whether it has two real choices, and resets to "US waters" (the
+  // narrowed framing IS the new default fit — the same "US EEZ" section of the world scores.
+  function recordWideRangeCamera(cam: Camera | null): void {
+    wideRangeCamera = cam?.kind === "bounds" && cam.wholeRangeBounds ? cam : null;
+    zoomTarget = "us";
   }
 
   // D8 (Opus 5.5 eyes-on, 2026-09-24): `cameraFor()`'s own bundle-only chain (input -> merged ->
@@ -367,6 +393,7 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
       padding: DEFAULT_CAMERA_PADDING,
     });
     applyCamera(cam);
+    recordWideRangeCamera(cam);
     // D8: the bundle published no bbox anywhere for this taxon — try the COG's own extent before
     // giving up on framing it at all.
     if (cam?.kind === "center") void refineCameraFromCogBounds(card, key);
@@ -406,6 +433,9 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     get datasets() {
       return datasets;
     },
+    get wideRange(): WideRangeZoom {
+      return wideRangeCamera?.wholeRangeBounds ? { value: zoomTarget } : null;
+    },
 
     dismissNotFound() {
       notFound = null;
@@ -441,11 +471,24 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
         padding: DEFAULT_CAMERA_PADDING,
       });
       applyCamera(cam);
+      recordWideRangeCamera(cam);
       // D8 fold-in (orchestrator round 2, 2026-09-24): the manual "zoom to layer" button used to
       // stop at `cameraFor()`'s own bundle-only chain, so a taxon with NO published bbox anywhere
       // (v7's walrus) fell to `kind: "center"` here too — the SAME COG-bounds last resort the
       // species-change `$effect` above already applies, now wired to this explicit action as well.
       if (cam?.kind === "center") void refineCameraFromCogBounds(card, cameraKeyOf(selStore.sel));
+    },
+    setZoomTarget(target: "us" | "whole") {
+      if (!wideRangeCamera?.wholeRangeBounds || target === zoomTarget) return;
+      zoomTarget = target;
+      const bounds = target === "whole" ? wideRangeCamera.wholeRangeBounds : wideRangeCamera.bounds;
+      applyCamera({
+        kind: "bounds",
+        bounds,
+        padding: wideRangeCamera.padding,
+        source: wideRangeCamera.source,
+      });
+      track("species_zoom_target", { target, mdl_key: card?.key ?? "" });
     },
 
     async handleMapClick(lngLat: LngLat, point: { x: number; y: number }): Promise<void> {

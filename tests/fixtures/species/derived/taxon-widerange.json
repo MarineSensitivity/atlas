@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "ver": "v9",
+  "shard": "84",
+  "taxa": {
+    "ms_merge|DERIVED:900": {
+      "key": "ms_merge|DERIVED:900",
+      "sci": "Derivemys widerangea",
+      "common": "Wide-range test fixture",
+      "sp_cat": "turtle",
+      "taxon_id": "900",
+      "taxon_authority": "worms",
+      "rl": "VU",
+      "esa": { "code": "FWS:EN", "source": null },
+      "mmpa": false,
+      "mbta": false,
+      "er_score": 100,
+      "valid_usa": true,
+      "valid_global": true,
+      "merged": {
+        "type": "cog",
+        "url": "https://example.invalid/derived/widerange_merged.tif",
+        "rescale": [1, 100],
+        "colormap": "spectral_r",
+        "bbox": [130.0, 10.0, 260.0, 65.0]
+      },
+      "inputs": [
+        {
+          "ds_key": "am",
+          "mdl_key": "am|DERIVED-900",
+          "is_mask": false,
+          "assets": [
+            {
+              "rep": "native",
+              "type": "cog",
+              "url": "https://example.invalid/derived/widerange_am.tif",
+              "rescale": [1, 100],
+              "colormap": "spectral_r",
+              "source_layer": null,
+              "bbox": [130.0, 10.0, 260.0, 65.0]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

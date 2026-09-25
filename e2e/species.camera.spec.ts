@@ -17,7 +17,13 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession, waitForHydration } from "./hermetic";
 import { blockWasm, routeGlyphs, routeTitilerTiles } from "./map-hermetic";
-import { WALRUS_AM_MDL_KEY, bootFor, gotoSpecies, routeSpeciesShards } from "./species-hermetic";
+import {
+  WALRUS_AM_MDL_KEY,
+  WIDE_RANGE_SP,
+  bootFor,
+  gotoSpecies,
+  routeSpeciesShards,
+} from "./species-hermetic";
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -549,5 +555,120 @@ test.describe("V4 fix: the species camera fills the free area under globe projec
     // narrowed bbox: [-190, 53.15, -150, 73.75] -- same real value as the desktop D8 test above.
     const NARROWED_BBOX: [number, number, number, number] = [-190, 53.15, -150, 73.75];
     assertMostlyInside(await freeAreaCoverage(page, NARROWED_BBOX));
+  });
+});
+
+// R3-A1 (round-3 plan, Ben 2026-09-25): a wide-range model (the real leatherback's own reported
+// range: SWOT DPS nesting near Oceania, foraging to Alaska) frames its IN-US portion by default,
+// with a "Zoom to: US waters | Whole range" toggle as the escape hatch back to the whole thing.
+// `WIDE_RANGE_SP` is a synthetic fixture (species-hermetic.ts's own header): the real leatherback's
+// own bbox is null (spans the globe, past even this feature's threshold check — see
+// `data/camera.ts`'s `framed()`), so there is no REAL published extent this wide to exercise the
+// narrowing against; this fixture's `[130, 10, 260, 65]` (130 deg span) is the concrete stand-in.
+/**
+ * Waits until the camera has moved measurably away from `from` AND has stopped moving --
+ * deliberately NOT the "poll isMoving() true, then false" shape this file's OTHER camera tests use
+ * (their flights are long enough to observe mid-flight; a `setZoomTarget()` re-fit between two
+ * bboxes that share most of their extent can be short enough to start and finish inside one poll
+ * tick, which raced and flaked the "started moving" half here). Polling the VALUE itself is
+ * equivalent and race-free: a `flyTo` that never actually moved the camera fails this the same way
+ * it would fail an isMoving() check, and one that finished instantly still satisfies it.
+ */
+async function waitForCameraToChangeFrom(
+  page: Page,
+  from: CameraState,
+  label: string,
+): Promise<CameraState> {
+  await expect
+    .poll(
+      async () => {
+        const now = await readCamera(page);
+        return (
+          Math.abs(now.center.lng - from.center.lng) > 1 || Math.abs(now.zoom - from.zoom) > 0.1
+        );
+      },
+      { message: `${label}: the camera never changed`, timeout: 15_000 },
+    )
+    .toBe(true);
+  // then wait for it to actually settle (moving stopped), so the value read next is the final one.
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() => {
+          const w = window as unknown as {
+            __atlasMap?: { handle: { map: { isMoving(): boolean } } };
+          };
+          return !!w.__atlasMap?.handle.map.isMoving();
+        }),
+      { message: `${label}: the camera never stopped moving`, timeout: 15_000 },
+    )
+    .toBe(false);
+  return readCamera(page);
+}
+
+test.describe("R3-A1: a wide-range model frames its IN-US portion, with a Zoom-to toggle", () => {
+  test("the initial camera narrows to the US intersection, and 'Whole range' re-fits to the model's own full extent", async ({
+    page,
+  }) => {
+    await gotoSpecies(page, `/?sp=${WIDE_RANGE_SP}&ver=v9`);
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Derivemys widerangea");
+
+    // the toggle only renders when a model was ACTUALLY narrowed -- its mere presence proves the
+    // threshold fired, before any camera assertion.
+    const toggle = page.getByRole("group", { name: "Zoom to" });
+    await expect(toggle).toBeVisible();
+    const usButton = toggle.getByRole("button", { name: "US waters" });
+    const wholeButton = toggle.getByRole("button", { name: "Whole range" });
+    await expect(usButton).toHaveAttribute("aria-pressed", "true");
+    await expect(wholeButton).toHaveAttribute("aria-pressed", "false");
+
+    // the fixture's own bbox is [130,10,260,65] (130 deg span); the narrowed US intersection is
+    // [158.0057,10,260,65] (tests/lens/species/camera.test.ts pins the exact math) -- narrower AND
+    // shifted east relative to the whole range. MapLibre's own (real, projection-aware)
+    // `cameraForBounds()` does not land on the plain Mercator midpoint (map.ts's own `flyToBounds`
+    // header explains why) -- measured live, ~-123.1 wrapped, which is the continuous frame's
+    // ~236.9 (adding 360 for a negative wrapped value) -- so the assertion is "inside the
+    // intersection's own bounds", the geometric fact the toggle exists to prove, not a hand-guessed
+    // exact number.
+    await expect
+      .poll(async () => (await readCamera(page)).zoom, {
+        message: "the initial narrowed fit never settled",
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(0);
+    const narrowed = await readCamera(page);
+    const narrowedContinuous =
+      narrowed.center.lng < 0 ? narrowed.center.lng + 360 : narrowed.center.lng;
+    expect(
+      narrowedContinuous,
+      "camera centre lands OUTSIDE the US intersection's west edge",
+    ).toBeGreaterThanOrEqual(158);
+    expect(
+      narrowedContinuous,
+      "camera centre lands OUTSIDE the US intersection's east edge",
+    ).toBeLessThanOrEqual(260);
+
+    // switching to "Whole range" re-fits to the model's OWN full bbox -- a REAL flight (not a
+    // no-op), landing on a measurably different camera.
+    await wholeButton.click();
+    const whole = await waitForCameraToChangeFrom(page, narrowed, "Whole range toggle");
+    await expect(wholeButton).toHaveAttribute("aria-pressed", "true");
+    await expect(usButton).toHaveAttribute("aria-pressed", "false");
+
+    // and back to "US waters" returns to the EXACT SAME narrowed fit, not a recomputation that
+    // might drift (state.svelte.ts's setZoomTarget reuses the ORIGINAL camera object, never
+    // re-calls cameraFor) -- the strongest, implementation-verified invariant this test can make
+    // without hand-predicting MapLibre's own fit math.
+    await usButton.click();
+    const backToUs = await waitForCameraToChangeFrom(page, whole, "US waters toggle");
+    expect(backToUs.center.lng).toBeCloseTo(narrowed.center.lng, 3);
+    expect(backToUs.center.lat).toBeCloseTo(narrowed.center.lat, 3);
+    expect(backToUs.zoom).toBeCloseTo(narrowed.zoom, 3);
+  });
+
+  test("a COMPACT model (under the threshold) never shows the toggle", async ({ page }) => {
+    await gotoSpecies(page, `/?mdl_key=${WALRUS_AM_MDL_KEY}&ver=v9`);
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Odobenus rosmarus");
+    await expect(page.getByRole("group", { name: "Zoom to" })).toHaveCount(0);
   });
 });

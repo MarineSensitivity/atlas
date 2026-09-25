@@ -79,7 +79,12 @@
       {#if lens.cardError}
         <p class="error" role="alert">Couldn't load this species ({lens.cardError.kind}).</p>
       {:else if lens.card}
-        <SpeciesTitle sci={lens.card.sci} common={lens.card.common} />
+        <SpeciesTitle
+          sci={lens.card.sci}
+          common={lens.card.common}
+          wideRange={lens.wideRange}
+          onSetZoomTarget={(target) => lens.setZoomTarget(target)}
+        />
         {#if lens.bar}
           <LayerBarView
             bar={lens.bar}

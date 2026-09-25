@@ -28,12 +28,25 @@ the 50 span ≥ 200°; re-expressed in the complementary frame by `minimalFrame(
 179.5° and every centre lands in the model's own longitudes. `v9/study-areas.json` and
 `v7/study-areas.json` are `boot.study_areas` verbatim — the camera of last resort.
 
-`derived/taxon-dateline.json` is the **one hand-written** file, and it is marked as such on
-purpose. No published release currently carries a `bbox` whose `xmax` exceeds 180 (checked across
-all eleven local bundles: of v9's 48,378 published bboxes only **16** have `xmax > 180`, while
+`derived/taxon-dateline.json` is a **hand-written** file, and it is marked as such on purpose. No
+published release currently carries a `bbox` whose `xmax` exceeds 180 (checked across all eleven
+local bundles: of v9's 48,378 published bboxes only **16** have `xmax > 180`, while
 **6,273 are written WRAPPED** with a naive span over 180° and 38,448 are `null`; **v7 publishes no
 bbox at all**), so the `xmax > 180` branch has no real fixture — `v9/wide-bboxes.json` covers the
 wrapped branch with real data. Its numbers are the
 `lon_span_agg` 0–360 frame for the Bering/Chukchi walrus range (`[160, 48, 210, 73]`), plus a
 wraparound input whose own COG honestly reads `[-180, 47, 180, 85]` and a taxon whose merged extent
 spans the globe. Those are exactly the three branches `cameraFor()` has to separate.
+
+`derived/taxon-widerange.json` is the second **hand-written** file (R3-A1, round-3 plan,
+2026-09-25): a synthetic taxon (`ms_merge|DERIVED:900`) whose merged AND `am`-input bbox is
+`[130, 10, 260, 65]` — a 130° span (over `WIDE_RANGE_SPAN_DEG`) loosely modelled on the real v7
+leatherback's own reported range (SWOT DPS nesting near Oceania, foraging to Alaska), 130°E across
+the Pacific to 100°W in the SAME continuous, never-re-wrapped frame `lon_span_agg`/`minimalFrame`
+already use. No real release publishes a non-null bbox this wide today (the real leatherback's own
+`merged.bbox` is `null`, spanning the globe — `v9/taxon/f9.json`'s own row above), so this is the
+only way to exercise "narrow a WIDE, non-degenerate bbox to its US intersection" against a concrete
+extent rather than only through the pure `intersectBbox()`/`cameraFor()` unit fixtures.
+`e2e/species-hermetic.ts`'s `WIDE_RANGE_SP` wires it in at shard `84` (`shardIdFor("ms_merge|
+DERIVED:900")`, the trailing-digits-mod-256 rule) — the shard id is DERIVED, not chosen, so a key
+change here must keep the two in sync (see that constant's own header).
