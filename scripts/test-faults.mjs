@@ -28,11 +28,14 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-const FAULTS = [
+// R3-D2: exported so scripts/check-faults-apply.mjs can read every patch path this manifest names
+// without running a single gate -- the manifest itself stays the one place a fault's patch path is
+// written (never duplicated into a second list that could drift).
+export const FAULTS = [
   {
     id: "coverage-quadratic-scan",
     patch: "tests/faults/coverage-quadratic-scan.patch",
@@ -1937,4 +1940,9 @@ function main() {
   process.exit(failed ? 1 : 0);
 }
 
-main();
+// R3-D2: only run the (expensive, gate-running) main() when this file is executed directly --
+// `import { FAULTS } from "./test-faults.mjs"` (scripts/check-faults-apply.mjs) must be a plain,
+// side-effect-free read of the manifest.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

@@ -250,8 +250,12 @@ screen was wrong. These rules are now part of every merge:
   fixtures did not mock and classed the resulting 404 as an outage; because the banner was a fixed
   overlay it covered the top bar and 97 three-engine tests timed out on every browser. The banner
   now lives in flow below the top bar (never over interactive chrome) and only 5xx / network error /
-  timeout count as down. Any change under `src/shell/` or `src/lib/ui/` runs `e2e/shell.*.spec.ts`
-  - `e2e/feedback.spec.ts` locally (chromium, `--workers=1`) before the merge.
+  timeout count as down. Any change under `src/shell/` or `src/lib/ui/` runs `npm run e2e:shell`
+  locally before the merge (R3-D3: `playwright test --project=chromium --workers=1
+e2e/shell.*.spec.ts e2e/feedback.spec.ts`, ~3 min — the alias exists so this local gate is one
+  command instead of one a round has to remember to hand-type, which is how V3's fixed-overlay
+  banner reached CI with 97 reds in the first place: no local gate ran `e2e/shell.*` unless a
+  round happened to touch those paths).
 - **Every camera fit takes the chrome padding.** The species fit, the Scores zone fit (search pick,
   Places zoom, click) and the phone default all go through `chromePadding.ts`: the sheet's live
   detent + chip band on the phone, the docked panel's footprint + its 12 px outer inset + a 20 px
@@ -265,7 +269,13 @@ screen was wrong. These rules are now part of every merge:
   probe read the basemap colour either way. Gate on the whole spec, or assert the un-promoted
   colour at a control point first.
 - **Seeded-fault registry hygiene.** `test-faults.mjs --only <id>` takes ONE id per run. After
-  every merge, `git apply --check` every `tests/faults/*.patch`; regenerate a stale one on an
+  every merge, `git apply --check` every `tests/faults/*.patch` — or just run `npm run
+  faults:check` (R3-D2, `scripts/check-faults-apply.mjs`), which does exactly that against
+  `test-faults.mjs`'s own `FAULTS` manifest (the one place a patch path is written — `FAULTS` is
+  now `export`ed so this script can read it without running a single gate) and exits 1 listing
+  every patch that no longer applies. It is a much cheaper first line of defense than discovering a
+  stale patch mid-`npm run test:faults` (a full gate run, sometimes a real browser build, per
+  entry) — six patches went stale in ONE round alone (2026-09-25). Regenerate a stale one on an
   otherwise clean tree with `git apply --reject` + a hand edit, cut it with
   `git diff HEAD -- <that one file>`, and prove it red with `--only` **before** writing the commit
   message (a patch once shipped that did not even apply, with a message claiming red). When a fix
@@ -277,8 +287,25 @@ screen was wrong. These rules are now part of every merge:
   in the same change.
 - **Gallery baselines are two sets.** Darwin regenerates locally (`npm run e2e:gallery --
 --update-snapshots`, then LOOK at the PNG); linux comes only from CI (`gh run download <run> -n
-gallery-test-results`, copy each final-attempt `*-actual.png` over `*-chromium-linux.png`).
+gallery-test-results`, copy each final-attempt `*-actual.png` over `*-chromium-linux.png`) — or run
+`npm run gallery:baselines-from-ci -- <run-id>` (R3-D1, `scripts/gallery-baselines-from-ci.mjs`),
+which does exactly that (downloads the artifact, keeps each screenshot's final CI attempt, copies
+it over the matching `e2e/gallery.spec.ts-snapshots/*.png`, prints what it replaced/added) so
+installing the linux set is one command instead of a manual unzip-and-copy. Still needs a human to
+`git diff --stat` the result before committing — the script never commits for you.
   Every gallery-rendered component change costs a second push.
+- **One screenshot PER SECTION, never a full-page shot (R3-D1).** `e2e/gallery.spec.ts` used to
+  take one `toHaveScreenshot({ fullPage: true })` per theme x viewport; the desktop shot's total
+  page height (~10,200px, every section stacked) jittered by 1px between CI runs (a section's
+  subpixel rounding or font metric under CI's fonts), and `toHaveScreenshot` refuses ANY size
+  mismatch before it ever compares pixels — so the job failed every time regardless of
+  `maxDiffPixelRatio` (CI run 36114961882, 2026-09-25). The spec now screenshots each
+  `.gallery-section` element on its own (`gallery-{theme}-{viewport}-{sectionId}.png`, one file per
+  `src/gallery/sections/*.svelte` module) — a much smaller, stable height per file, so the SAME
+  1px-of-total-page jitter (if it recurs) lands inside `maxDiffPixelRatio`'s tolerance for that one
+  section instead of failing a whole-page size check outright. A new gallery section (just a new
+  file under `src/gallery/sections/`, per `App.svelte`'s own header) gets its own baseline
+  automatically — nothing to edit in the spec.
 - **Parallel rounds reserve versions and never share files.** The orchestrator resolves the
   registries (CHANGELOG order = version order, package + both lock fields = the higher version,
   `test-faults.mjs` rebuilt from main's file + the branch's new entries, GATES count). A merge that

@@ -236,13 +236,38 @@ interface RawZoneRow {
   name?: unknown;
   n_taxa?: unknown;
   metrics?: unknown;
+  bbox?: unknown;
 }
+
+/** `[west, south, east, north]`, WGS84, as `msens::app_zones()` will publish it (R3-C3) — a
+ * dateline-crossing zone (e.g. the Aleutians) publishes `west > east` (never a wrapped/negative
+ * trick), the SAME "re-express, don't wrap" convention `lib/map/camera.ts#CameraBoundsInput`
+ * requires of every bounds input in this app. */
+export type ZoneBbox = readonly [west: number, south: number, east: number, north: number];
 
 export interface ZoneRow {
   key: string;
   name?: string;
   n_taxa: number | null;
   metrics: Record<string, number>;
+  /** `undefined` when the release publishes none for this zone (every release before R3-C3, and
+   * any zone a future release simply omits) — callers fall back to their own bounds source, never
+   * assume `[0,0,0,0]` or similar. */
+  bbox?: ZoneBbox;
+}
+
+/** validates a raw `bbox` value: exactly 4 finite numbers, `west`/`east` within [-180, 180],
+ * `south`/`north` within [-90, 90], and `south <= north` (a crossing zone inverts `west`/`east`,
+ * never `south`/`north` — there is no "upside-down" bbox). `undefined` for anything else — a
+ * malformed or stale bundle degrades to "no bbox published", never a throw. */
+function parseZoneBbox(raw: unknown): ZoneBbox | undefined {
+  if (!Array.isArray(raw) || raw.length !== 4) return undefined;
+  const [w, s, e, n] = raw;
+  for (const v of [w, s, e, n]) if (typeof v !== "number" || !Number.isFinite(v)) return undefined;
+  if (w < -180 || w > 180 || e < -180 || e > 180) return undefined;
+  if (s < -90 || s > 90 || n < -90 || n > 90) return undefined;
+  if (s > n) return undefined;
+  return [w, s, e, n];
 }
 
 /** every zone of `unit` (`boot.zones[unit]`), validated — the zones table and the choropleth's raw
@@ -266,9 +291,33 @@ export function zoneRows(boot: unknown, unit: string): ZoneRow[] {
       name: typeof raw.name === "string" ? raw.name : undefined,
       n_taxa: typeof raw.n_taxa === "number" ? raw.n_taxa : null,
       metrics,
+      bbox: parseZoneBbox(raw.bbox),
     });
   }
   return out;
+}
+
+/**
+ * R3-B14/C3: the search zoom's PREFERRED bounds source — a published `bbox` on the zone's own row
+ * (`msens::app_zones()`, once a release carries one), re-expressed into the antimeridian-safe
+ * continuous frame `lib/map/camera.ts#CameraBoundsInput` requires (`east` may exceed 180; NEVER
+ * re-wrapped). `null` when the release publishes no bbox for this zone (every release before
+ * R3-C3, or a zone a release omits it for) or the key does not resolve — the caller falls back to
+ * `zoneBoundsFromMap` (a currently-loaded map tile), exactly as before this existed.
+ */
+export function zoneBboxFromBoot(
+  boot: unknown,
+  unit: string,
+  key: string,
+): readonly [readonly [number, number], readonly [number, number]] | null {
+  const bbox = zoneRows(boot, unit).find((z) => z.key === key)?.bbox;
+  if (!bbox) return null;
+  const [w, s, e, n] = bbox;
+  const east = w > e ? e + 360 : e; // dateline-crossing zone publishes west > east
+  return [
+    [w, s],
+    [east, n],
+  ];
 }
 
 interface RawManifestZoneRow {

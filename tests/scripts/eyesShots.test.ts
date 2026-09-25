@@ -147,6 +147,52 @@ describe("scripts/eyes-shots.mjs: the V5 fixes stay in place (fourth pass)", () 
   });
 });
 
+// R3-B17 (Opus eyes-on review 5, 2026-09-25): review 5 could not verify the map tooltip's full
+// Program Area name on desktop in 19-programarea-popup -- the docked panel (open at its default
+// detent since page load) sits over the popup's own anchor point. A pure SOURCE-SCAN gate, same
+// reasoning as the blocks above -- the harness drives a real browser against a real build, out of
+// scope for vitest.
+describe("scripts/eyes-shots.mjs: R3-B17 adds a desktop programarea shot with the panel collapsed", () => {
+  function programareaState(): string {
+    const start = src.indexOf('id: "programarea"');
+    expect(start, "the programarea state is not defined").toBeGreaterThanOrEqual(0);
+    return src.slice(start, src.length);
+  }
+
+  it("collapses the panel and takes an EXTRA shot on desktop only, after the popup shot", () => {
+    const state = programareaState();
+    const iPopup = state.indexOf("`19-programarea-popup${missed}`");
+    const iDesktopGuard = state.indexOf('vp === "desktop"');
+    const iCollapse = state.indexOf("collapseSheet(p)");
+    const iCollapsedShot = state.indexOf("`19b-programarea-popup-collapsed${missed}`");
+    const iFlower = state.indexOf("`20-programarea-flower${missed}`");
+    expect(iPopup, "19-programarea-popup shot not found").toBeGreaterThanOrEqual(0);
+    expect(iDesktopGuard, "no desktop-only guard found").toBeGreaterThanOrEqual(0);
+    expect(iCollapse, "collapseSheet(p) not called").toBeGreaterThanOrEqual(0);
+    expect(iCollapsedShot, "19b-programarea-popup-collapsed shot not found").toBeGreaterThanOrEqual(
+      0,
+    );
+    // strict order: popup first (uncollapsed, matching every other state), THEN the desktop-only
+    // collapse + extra shot, THEN the flower tool -- never ahead of the popup and never so late it
+    // leaks into a later state's own shots.
+    expect(iPopup).toBeLessThan(iDesktopGuard);
+    expect(iDesktopGuard).toBeLessThan(iCollapse);
+    expect(iCollapse).toBeLessThan(iCollapsedShot);
+    expect(iCollapsedShot).toBeLessThan(iFlower);
+  });
+
+  it("keeps the same -MISSED marking convention as the rest of the programarea state", () => {
+    const state = programareaState();
+    expect(state).toContain("`19b-programarea-popup-collapsed${missed}`");
+  });
+
+  it("does not add a phone/desktop-only guard around the WHOLE state (still runs on both viewports)", () => {
+    const state = src.slice(src.indexOf('id: "programarea"'));
+    expect(state).not.toMatch(/if \(vp !== "phone"\) return;/);
+    expect(state).not.toMatch(/if \(vp !== "desktop"\) return;/);
+  });
+});
+
 // W5 fix (Opus 5.5 eyes-on review 5, 2026-09-25): "the report map figure is never in frame (not at
 // all on the phone, only the top 190px on desktop)... add a shot that scrolls the map figure into
 // view." A pure SOURCE-SCAN gate, same reasoning as the V2/V5 blocks above -- the harness drives a

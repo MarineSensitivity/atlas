@@ -1,3 +1,34 @@
+# atlas 0.10.72
+
+Round 3, W5 (process and tooling debt): gallery screenshot stability, seeded-fault patch hygiene,
+a local shell/UI gate alias, the search-zoom bbox preference, and harness/docs cleanup. No
+user-visible behavior change on the map/panel — this round is process and tooling.
+
+- **Gallery screenshots are per-section, not one full-page shot** (`e2e/gallery.spec.ts`) — a
+  full-page shot's total page height jittered by 1px between CI runs, failing the job outright
+  before any pixel comparison. Each gallery component section now gets its own, much smaller,
+  stable-height screenshot; a new gallery section gets its own baseline automatically.
+- **New `scripts/gallery-baselines-from-ci.mjs`** (`npm run gallery:baselines-from-ci -- <run-id>`)
+  installs the linux gallery baselines from a CI run's `gallery-test-results` artifact in one
+  command (keeps each screenshot's final CI attempt, copies it over the matching local baseline,
+  prints what changed) instead of a manual `gh run download` + copy.
+- **New `scripts/check-faults-apply.mjs`** (`npm run faults:check`) runs `git apply --check` over
+  every seeded-fault patch `scripts/test-faults.mjs` references and lists any that no longer apply
+  — a cheap first line of defense against a stale patch, ahead of a full (sometimes browser-build)
+  `npm run test:faults` run.
+- **New `npm run e2e:shell` alias** for the "any change under `src/shell/` or `src/lib/ui/` runs
+  the shell/feedback specs locally" rule (chromium, `--workers=1`, `e2e/shell.*.spec.ts
+e2e/feedback.spec.ts`).
+- **Scores search: a zone zoom now prefers a published `boot.zones[unit][*].bbox`** over querying
+  the map for an already-loaded tile, when the bundle publishes one (no released bundle does yet —
+  the msens/notebook side lands separately). A search pick on a zone far outside the current view
+  will zoom correctly without depending on tile state, once a release publishes bbox.
+- **Harness: a desktop-only `programarea` eyes-on shot with the panel collapsed**, so the map
+  tooltip's full Program Area name is verifiable (the docked panel could sit over the popup's own
+  anchor point on the fallback camera path).
+- `docs/status.md`'s Decisions table (R1–R6) now shows the correct landed version and "shipped"
+  instead of a stale "building"/scheduling note for work that has been live since round 2.
+
 # atlas 0.10.67
 
 P round, W5 (Opus 5.5 eyes-on review 5 of 0.10.66, 2026-09-25): two zone-fit framing gutters, a
