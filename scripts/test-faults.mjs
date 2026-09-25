@@ -1772,6 +1772,15 @@ const FAULTS = [
       "scrolls the map figure into view with a real scrollIntoView call",
     ],
   },
+  {
+    id: "svgwrapper-footer-text-dropped",
+    patch: "tests/faults/svgwrapper-footer-text-dropped.patch",
+    describe:
+      "R3-W2: buildMapSvg() (src/lib/download/svgWrapper.ts) drops the two footer <text> elements " +
+      "-- the Download menu's 'Map view · SVG' export keeps its background band but loses the " +
+      "title/unit/app/version/share-URL line entirely, silently",
+    gate: ["npx", "vitest", "run", "tests/download/svgWrapper.test.ts"],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

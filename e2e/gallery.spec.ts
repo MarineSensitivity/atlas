@@ -99,13 +99,18 @@ test.describe("screenshots: every section, both themes, phone and desktop widths
 //     original 6 nodes remain (the "Color token" column's `<code>` cells past the fold) --
 //     verified reachable the same way as #data-table's, so TRIAGED.
 // measured today (both themes report the SAME numbers/reasons):
-//   phone (390x844):       40 nodes, {bgOverlap, pseudoContent, elmPartiallyObscured}
-//   desktop (1280x900):    16 nodes, {bgOverlap, pseudoContent} -- unaffected, unchanged
-//   phoneNarrow (320x800): 67 nodes, {bgOverlap, pseudoContent, elmPartiallyObscured}
+//   phone (390x844):       41 nodes, {bgOverlap, pseudoContent, elmPartiallyObscured}
+//   desktop (1280x900):    17 nodes, {bgOverlap, pseudoContent}
+//   phoneNarrow (320x800): 68 nodes, {bgOverlap, pseudoContent, elmPartiallyObscured}
+// R3-W2: +1 at every viewport -- the new Menu gallery section's second (right-aligned) trigger
+// button sits close enough to the first that axe cannot statically resolve one of their
+// overlapping computed backgrounds (`bgOverlap`, the SAME reason the existing rail/panel nodes
+// already cite) -- see this describe block's own reason-key assertion below, which still passes
+// with no NEW reason key, confirming this is the same already-triaged category, not a fresh bug.
 const COLOR_CONTRAST_INCOMPLETE_CEILING: Record<string, number> = {
-  phone: 40,
-  desktop: 16,
-  phoneNarrow: 67,
+  phone: 41,
+  desktop: 17,
+  phoneNarrow: 68,
 };
 const COLOR_CONTRAST_INCOMPLETE_REASONS = ["bgOverlap", "pseudoContent", "elmPartiallyObscured"];
 

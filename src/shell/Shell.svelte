@@ -73,7 +73,11 @@
   // MANIFEST (never `boot.units[]`, which stays exactly one row per D17) -- a plain `.ts` reader,
   // not a `.svelte` SFC, so it is exempt from `tests/shell/lazy-lens-imports.test.ts`'s static-
   // import ban the same way `state.svelte.ts` already is (that file's own header explains why).
-  import { ecoregionZoneUnitFromManifest } from "../lens/scores/boot";
+  import { ecoregionZoneUnitFromManifest, fullSubregion, layerByKey } from "../lens/scores/boot";
+  // R3-W2: the Download menu's `?lyr=` fallback -- the SAME rule `state.svelte.ts#lyr` applies
+  // (an unset/unknown metric key resolves to the release's own composite default), a plain `.ts`
+  // reader like `boot.ts` above, exempt from the lazy-lens-runtime-import ban for the same reason.
+  import { effectiveLyr } from "../lens/scores/fallback";
   import { studyAreaFromBoot, type StudyArea } from "../lib/map/interaction";
   import {
     INITIAL_AREA_CAMERA_STATE,
@@ -122,6 +126,15 @@
   // same reason `state.svelte.ts` does above: `placesSelection` (below) reads it unconditionally,
   // even when the Places PANEL itself (`../places/Places.svelte`, lazy) has never been opened.
   import { createPlacesMapStore } from "../places/placesMap.svelte";
+  // R3-W2: the Download menu -- `places/model.ts#placesFromHash` (never a second parser of `sel.pl`)
+  // gives it the current places list for "Selected places · GeoJSON"'s enabled/disabled state.
+  import { placesFromHash } from "../places/model";
+  // type-only (erased at build time) -- DownloadMenu.svelte's RUNTIME module is loaded dynamically
+  // (see `openDownload()`, below, and that file's own "LAZY" header note): its map-capture/SVG/
+  // COG-fetch logic pushed the static "before first interaction" budget to 449.9/450.0 KB gzip
+  // when statically imported (measured) -- a download is never needed before first interaction,
+  // the exact case `scripts/size-budget.mjs`'s rule exists for.
+  import type DownloadMenu from "./DownloadMenu.svelte";
   import type { ResolvedTheme, ZoneUnitSpec } from "../lib/map/types";
   // U6 (round 2): Report -- pure decision logic (report.ts) + the tour's step DATA (tour.ts, no
   // driver.js). Both are small/dependency-free, so both stay ordinary static imports; only the
@@ -577,6 +590,75 @@
   const phoneLegend = $derived(
     sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresLens?.mapExtra.legend ?? null),
   );
+
+  // R3-W2: the Download menu's per-lens context -- built from data every lens ALREADY resolves
+  // (the current layer row, the active species pill/asset), never a second read of `sel.lyr`/`sel.in`
+  // against a different rule than the one that actually painted the map. `effectiveLyr` (never raw
+  // `sel.lyr`) is the SAME fallback `state.svelte.ts#lyr` applies -- an unset/unknown `?lyr=` still
+  // resolves to the release's own composite default, matching what the raster ACTUALLY paints.
+  const downloadLyr = $derived(effectiveLyr(sel.lyr, boot));
+  const downloadTitle = $derived(
+    sel.lens === "species"
+      ? (speciesLens.card?.sci ?? "Species")
+      : (layerByKey(boot, downloadLyr)?.label ?? downloadLyr ?? "Score"),
+  );
+  const downloadLegendStops = $derived(
+    phoneLegend && "stops" in phoneLegend ? phoneLegend.stops : [],
+  );
+  const downloadUnit = $derived(
+    sel.lens === "scores"
+      ? "score"
+      : phoneLegend && "unit" in phoneLegend
+        ? phoneLegend.unit
+        : undefined,
+  );
+  const downloadCogUrl = $derived.by(() => {
+    if (sel.lens === "species") {
+      const asset = speciesLens.mapInputs.asset;
+      return asset?.type === "cog" ? asset.url : null;
+    }
+    const layer = layerByKey(boot, downloadLyr);
+    return layer ? (fullSubregion(layer)?.cog ?? null) : null;
+  });
+  const downloadCogDisabledReason = $derived(
+    downloadCogUrl
+      ? undefined
+      : sel.lens === "species"
+        ? (speciesLens.mapInputs.notice ?? "no surface selected for this input")
+        : "no COG published for this metric/subregion",
+  );
+  const downloadMetricOrMdlKey = $derived(
+    sel.lens === "species"
+      ? (speciesLens.bar?.pills.find((p) => p.active)?.mdlKey ?? null)
+      : downloadLyr,
+  );
+  const downloadPlaces = $derived(placesFromHash(sel.pl));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // `typeof DownloadMenu` (not `Component<any>`, unlike the other lazy chunks below) -- this is the
+  // ONE lazy chunk in this file `bind:this` calls a method on (`downloadMenuRef?.openPhoneModal()`);
+  // `Component<any>`'s implicit empty Exports would make `bind:this` yield a shape lacking
+  // `openPhoneModal` (svelte-check error, plain `tsc` does not see it -- CLAUDE.md's own note on
+  // why `npm run check` is required for a `.svelte` edit), and would also make every prop this
+  // component takes (including the inline `track` callback below) implicitly `any`.
+  let DownloadMenuComp = $state<typeof DownloadMenu | null>(null);
+  let downloadMenuRef = $state<ReturnType<typeof DownloadMenu> | undefined>(undefined);
+  let downloadAutoOpen = $state<"desktop" | "phone" | undefined>(undefined);
+  // desktop: Shell.svelte's own static placeholder button (below) calls this on its FIRST click
+  // only -- once `DownloadMenuComp` loads, the placeholder is gone (`{#if}`-swapped for the real
+  // component) and every later desktop click is handled by `Menu.svelte`'s own trigger, inside
+  // DownloadMenu.svelte, without ever calling back here. phone: TopBarActions.svelte's ⋯
+  // "Download…" item calls this EVERY time (there is no persistent phone trigger to hand off to),
+  // so an already-loaded component reopens its Modal directly instead of re-importing.
+  function openDownload(mode: "desktop" | "phone") {
+    if (DownloadMenuComp) {
+      if (mode === "phone") downloadMenuRef?.openPhoneModal();
+      return;
+    }
+    downloadAutoOpen = mode;
+    import("./DownloadMenu.svelte")
+      .then((mod) => (DownloadMenuComp = mod.default))
+      .catch(() => announceChunkFailure("the download menu"));
+  }
 
   // G-25 fix: `Sel.out`'s ONE effect on the map, applied to whichever `zones` array (the shell's
   // own outline-only `zoneUnits`, or the scores lens' richer `scoresLens.mapExtra.zones`) is about
@@ -1423,6 +1505,48 @@
   >
     <Icon name="share" size={18} />
   </button>
+  <!-- R3-W2: Download -- PNG/SVG of the current map view, GeoTIFF of the current data layer,
+       GeoJSON of the current places selection. Lazy (see DownloadMenu.svelte's own header + this
+       file's `openDownload()`): until the first click, this is a cheap static placeholder button
+       carrying the real `data-tour`/`data-control`/`data-tooltip` (so the skeleton/hydrated
+       round-trip and `tests/shell/shell-invariants.test.ts` see it exactly as they do Share);
+       DownloadMenu.svelte's OWN `<Menu>`-driven button takes over once loaded, opening itself
+       immediately via `autoOpen` so the click that triggered the import is not lost. See that
+       file's own header for why the phone route is a Modal (TopBarActions.svelte's "Download…"
+       item) rather than a nested Menu. -->
+  {#if DownloadMenuComp}
+    {@const Comp = DownloadMenuComp}
+    <Comp
+      bind:this={downloadMenuRef}
+      autoOpen={downloadAutoOpen}
+      lens={sel.lens}
+      ver={earlyVersion}
+      {mapHandle}
+      {boot}
+      title={downloadTitle}
+      unit={downloadUnit}
+      metricOrMdlKey={downloadMetricOrMdlKey}
+      cogUrl={downloadCogUrl}
+      cogDisabledReason={downloadCogDisabledReason}
+      legendStops={downloadLegendStops}
+      places={downloadPlaces}
+      track={(name, params) => analytics.track(name as never, params as never)}
+    />
+  {:else}
+    <button
+      type="button"
+      class="tool topbar-desktop-only"
+      data-tour="download"
+      data-control="download"
+      aria-label="Download"
+      data-tooltip="Download"
+      aria-haspopup="menu"
+      aria-expanded="false"
+      onclick={() => openDownload("desktop")}
+    >
+      <Icon name="download" size={18} />
+    </button>
+  {/if}
   <!-- U6 (round 2): the (?) Help menu -- tour, keyboard shortcuts, a docs link. Always rendered
        (never {#if helpOpen}), toggled with `hidden`, so `aria-controls` on the trigger names an
        element that actually EXISTS in the DOM (SC 4.1.2) -- Popover.svelte's identical fix. -->
@@ -1525,13 +1649,17 @@
     onTakeTour={onHelpTakeTour}
     {resolvedTheme}
     onToggleTheme={toggleTheme}
+    onOpenDownload={() => openDownload("phone")}
   />
   <!-- U2a (round 2): sun/moon, CalCOFI's convention (src/App.tsx's `.cc-theme-toggle`) -- the
        icon shown is the DESTINATION theme (a sun while dark invites switching to light, a moon
        while light invites switching to dark), and the accessible name states the action in ONE
        vocabulary (light/dark -- the URL's own words, docs/usability.md p3), never "navy"/"paper"
-       (those stay internal token-set names only). mdiBrightness7/mdiBrightness4 are Apache-2.0
-       (@mdi/js, already a project dependency -- see LICENSE.md / node_modules/@mdi/js/LICENSE).
+       (those stay internal token-set names only). R3-W2 fix (R3-B12): mdiBrightness7/mdiBrightness4
+       read as a settings gear at 18px (the castellated ring both share) -- swapped for
+       mdiWhiteBalanceSunny/mdiMoonWaningCrescent (icon-map.json), unambiguous sun/moon glyphs with
+       no gear-like frame. Both pairs are Apache-2.0 (@mdi/js, already a project dependency -- see
+       LICENSE.md / node_modules/@mdi/js/LICENSE).
        P5 fix round 2 (coordinator finding, 390px eyes-on evidence): this used to be the ONE
        control with no `topbar-desktop-only` -- with the new P1 search button added beside ⋯, the
        phone topbar's fixed content (mark hidden already, lens switch, search, ⋯, theme) no longer

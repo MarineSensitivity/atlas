@@ -34,6 +34,11 @@ const REPORT_COLORS_FILE = join("src", "report", "colors.ts");
 // onto a <canvas> 2D context (src/lib/feedback/colors.ts's own header), which does not read a CSS
 // custom property either.
 const FEEDBACK_COLORS_FILE = join("src", "lib", "feedback", "colors.ts");
+// R3-W2: the Download menu's own twin -- `mapCapture.ts`'s canvas 2D context and `mapSvgExport.ts`'s
+// plain SVG document each need a resolved fallback colour for the (rare) case their own
+// `getComputedStyle` read comes back empty; neither reads a CSS custom property directly either
+// (src/lib/download/colors.ts's own header).
+const DOWNLOAD_COLORS_FILE = join("src", "lib", "download", "colors.ts");
 /** an ARRAY of two or more hex stops is a ramp, whatever it is called — the shape the exempt file
  * may never contain. (A count ceiling would not do: the file legitimately holds ~8 unrelated
  * single-purpose colours, and a palette is exactly 11.) */
@@ -89,6 +94,7 @@ export function findRampLiteralsOutsideRamps(
     if (rel === MAP_COLORS_FILE) continue;
     if (rel === REPORT_COLORS_FILE) continue;
     if (rel === FEEDBACK_COLORS_FILE) continue;
+    if (rel === DOWNLOAD_COLORS_FILE) continue;
     if (rel === RAMPS_FILE) continue;
     if (!/\.(ts|svelte|js)$/.test(file)) continue;
     const content = readFileSync(file, "utf8");

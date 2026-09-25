@@ -70,6 +70,10 @@
      * `toggleTheme`, passed through verbatim, same convention as `onTakeTour` above. */
     resolvedTheme: "navy" | "paper";
     onToggleTheme: () => void;
+    /** R3-W2: opens `DownloadMenu.svelte`'s own phone Modal (`bind:this` on that component,
+     * `openPhoneModal()`) -- see that file's header for why the phone route is a Modal rather than
+     * a second Menu instance nested inside this one. */
+    onOpenDownload: () => void;
     sealFlag?: string;
     agency?: string;
     sealUrl?: string;
@@ -89,6 +93,7 @@
     onTakeTour,
     resolvedTheme,
     onToggleTheme,
+    onOpenDownload,
     sealFlag = import.meta.env.VITE_SEAL,
     agency = import.meta.env.VITE_AGENCY,
     sealUrl = import.meta.env.VITE_SEAL_URL || DEFAULT_SEAL_URL,
@@ -122,17 +127,28 @@
 
   interface MoreItem {
     label: string;
-    icon: "share" | "report" | "feedback" | "info" | "help" | "tour" | "themeSun" | "themeMoon";
+    icon:
+      | "share"
+      | "download"
+      | "report"
+      | "feedback"
+      | "info"
+      | "help"
+      | "tour"
+      | "themeSun"
+      | "themeMoon";
     run: (e: MouseEvent) => void;
     href?: string;
   }
   // R2, round 2: "Help" split into its two destinations ("Take a tour" / "Docs") so the tour is
-  // actually reachable on the phone -- see this file's header comment. Order: Share, Report,
-  // Feedback, About this release, Take a tour, Docs, Theme -- e2e/shell.chrome.spec.ts asserts
-  // this exact item-name list. "Theme" (P5 fix round 2) is last, mirroring its own rightmost
-  // position in the desktop topbar.
+  // actually reachable on the phone -- see this file's header comment. Order: Share, Download,
+  // Report, Feedback, About this release, Take a tour, Docs, Theme -- e2e/shell.chrome.spec.ts
+  // asserts this exact item-name list. "Theme" (P5 fix round 2) is last, mirroring its own
+  // rightmost position in the desktop topbar; "Download" (R3-W2) sits right after "Share",
+  // mirroring ITS own rightmost-of-the-left-group position in the desktop topbar.
   const moreItems = $derived<MoreItem[]>([
     { label: "Share", icon: "share", run: () => onShare() },
+    { label: "Download…", icon: "download", run: () => onOpenDownload() },
     { label: "Report", icon: "report", run: () => onReportTop() },
     { label: "Feedback", icon: "feedback", run: handleFeedback, href: feedbackHref },
     { label: "About this release", icon: "info", run: () => (aboutOpen = true) },
@@ -240,7 +256,7 @@
   class="tool topbar-phone-only"
   data-tour="more"
   data-control="more-menu"
-  aria-label="More: Share, Report, Feedback, About, Take a tour, Docs, Theme"
+  aria-label="More: Share, Download, Report, Feedback, About, Take a tour, Docs, Theme"
   aria-haspopup="menu"
   aria-expanded={moreOpen}
   bind:this={moreTriggerEl}

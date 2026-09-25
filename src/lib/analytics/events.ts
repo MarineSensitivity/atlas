@@ -49,6 +49,11 @@ export const EVENT_NAMES = [
   // three).
   "feedback_open",
   "feedback_sent",
+  // R3-W2: the Download menu (`src/shell/DownloadMenu.svelte`) -- one event per download kind
+  // (`download.ts#DownloadItemKind`), never the raw URL/blob (nothing here can identify a person;
+  // `mdl_key`/`metric_key` are already public, opaque ids, the same ones `select_layer`/
+  // `select_species` already carry).
+  "download_export",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -124,4 +129,5 @@ export interface EventParamsMap {
   open_help: Record<string, never>;
   feedback_open: { kind: string; restricted: boolean };
   feedback_sent: { kind: string; restricted: boolean };
+  download_export: { kind: string; lens: string };
 }

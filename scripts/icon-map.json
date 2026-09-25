@@ -6,8 +6,8 @@
   "help": "mdiHelpCircleOutline",
   "search": "mdiMagnify",
   "share": "mdiShareVariant",
-  "themeSun": "mdiBrightness7",
-  "themeMoon": "mdiBrightness4",
+  "themeSun": "mdiWhiteBalanceSunny",
+  "themeMoon": "mdiMoonWaningCrescent",
   "version": "mdiChevronDown",
   "chevronDown": "mdiChevronDown",
   "chevronUp": "mdiChevronUp",
@@ -34,5 +34,9 @@
   "restore": "mdiFullscreenExit",
   "more": "mdiDotsHorizontal",
   "feedback": "mdiMessageAlertOutline",
-  "tour": "mdiCompassOutline"
+  "tour": "mdiCompassOutline",
+  "image": "mdiFileImageOutline",
+  "vectorFile": "mdiSvg",
+  "geoRaster": "mdiFileCad",
+  "geoVector": "mdiMapOutline"
 }
