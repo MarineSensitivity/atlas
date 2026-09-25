@@ -195,7 +195,9 @@ export function petalLabelText(petal: Pick<FlowerPetal, "category" | "score">): 
 /** the reference ring's fallback value (P round, Ben's live review 2026-09-24: "Flower plot...
  * needs a reference outer circle... based on the maximum component score for given version") — used
  * whenever the caller has no real release maximum to hand (`boot.ts#flowerMaxComponentScore`
- * returns `null` for every real release TODAY, since none yet publish a per-component rescale). */
+ * returns `null` when the release manifest publishes no `*_ecoregion_rescaled` metric at all — a
+ * manifest that has not loaded yet, or a pre-metrics release; every real release TODAY (verified
+ * live on v7, 2026-09-25) publishes real per-component maxima and never hits this path). */
 export const FLOWER_MAX_FALLBACK = 100;
 
 export interface FlowerReferenceRing {

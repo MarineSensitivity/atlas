@@ -98,6 +98,9 @@
     sel: Sel;
     selStore: SelStore;
     boot: unknown;
+    /** P round deliverable 2 follow-up: threaded straight through to ResultsPanel.svelte's Flower
+     * (`flowerMaxComponentScore(manifest)`) -- this component reads none of it itself. */
+    manifest: unknown;
     mapHandle: MapHandle | undefined;
     zoneUnits: ZoneUnitSpec[];
     mapStore: PlacesMapStore;
@@ -107,7 +110,16 @@
     track?: Track;
   }
 
-  let { sel, selStore, boot, mapHandle, zoneUnits, mapStore, track = noopTrack }: Props = $props();
+  let {
+    sel,
+    selStore,
+    boot,
+    manifest,
+    mapHandle,
+    zoneUnits,
+    mapStore,
+    track = noopTrack,
+  }: Props = $props();
 
   const places = $derived(placesFromHash(sel.pl));
   const selectedIndex = $derived(selectedPlaceIndex(sel.sel));
@@ -963,7 +975,7 @@
          coverage/flower/components branch differs (published, synchronous) while species still
          goes through the engine. -->
     {#if selectedPlace?.kind === "geom" || selectedPlace?.kind === "zone"}
-      <ResultsPanel place={selectedPlace} {boot} {ver} dataEngine={dataEngineFn} />
+      <ResultsPanel place={selectedPlace} {boot} {manifest} {ver} dataEngine={dataEngineFn} />
     {/if}
   {/if}
 

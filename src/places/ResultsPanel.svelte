@@ -44,16 +44,23 @@
     type ZoneComponentScore,
   } from "./zoneStats";
   import { zoneFlowerComponents } from "../lens/scores/flower";
-  import { zoneRows } from "../lens/scores/boot";
+  import { flowerMaxComponentScore, zoneRows } from "../lens/scores/boot";
 
   interface Props {
     place: GeomPlace | ZonePlace;
     boot: unknown;
+    /** P round deliverable 2 follow-up (coordinator, 2026-09-25): both flowers below pass this
+     * through `flowerMaxComponentScore` for their reference ring, the SAME function/manifest the
+     * scores lens' own Flower tool uses -- a place's flower and a clicked cell/zone's flower must
+     * never draw the ring at two different values for the same release. */
+    manifest: unknown;
     ver: string | null;
     dataEngine: (() => Promise<DataEngineContext>) | undefined;
   }
 
-  let { place, boot, ver, dataEngine }: Props = $props();
+  let { place, boot, manifest, ver, dataEngine }: Props = $props();
+
+  const maxScore = $derived(flowerMaxComponentScore(manifest));
 
   const isZone = $derived(place.kind === "zone");
   const zoneUnit = $derived(place.kind === "zone" ? unitForZoneSet(place.set) : null);
@@ -348,6 +355,7 @@
             components={zoneFlower.components}
             droppedLabels={zoneFlower.droppedLabels}
             size={160}
+            {maxScore}
             showTable={false}
           />
           <p class="composite-figure">
@@ -388,7 +396,13 @@
       </p>
     {:else}
       <div class="composite-row">
-        <Flower title={resultsLabel} components={flowerComponents} size={160} showTable={false} />
+        <Flower
+          title={resultsLabel}
+          components={flowerComponents}
+          size={160}
+          {maxScore}
+          showTable={false}
+        />
         <p class="composite-figure">
           <strong>{scoreResults.composite.toFixed(1)}</strong> composite
         </p>

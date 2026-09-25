@@ -19,6 +19,11 @@
 // second selectable unit), read from the manifest, independent of `sel.unit`/`sel.out`.
 import { unitFromFld } from "../../lib/map/layers/zones";
 import type { ZoneUnitSpec } from "../../lib/map/types";
+// `componentLabel` is a pure metric_key -> label transform (no scores-lens STATE) -- reused here so
+// `flowerMaxComponentScore`'s own "which metrics are the flower's components" filter can never drift
+// from the SAME rule `flower.ts#fromMetrics` uses to build the petals themselves. A type-only import
+// already runs the other way (`flower.ts` -> `ZoneRow` from this file), so this adds no runtime cycle.
+import { componentLabel } from "./flower";
 
 export interface BootLayerRow {
   metric_key: string;
@@ -155,23 +160,52 @@ export function fullSubregion(
   return layer.by_subregion?.[subregionKey] ?? null;
 }
 
+interface RawManifestMetricRescaleRow {
+  metric_key?: unknown;
+  subregion_key?: unknown;
+  rescale_max?: unknown;
+}
+
 /**
  * P round, "Flower plot should be bigger and needs a reference outer circle... based on the
- * maximum component score for given version" (Ben, live-review 2026-09-24): the greatest published
- * `rescale[1]` among this release's own `category === "component"` layers (`CATEGORY_LABEL.component`
- * = "Rescaled by ecoregion" — exactly the rows the flower draws one petal per), i.e. a real ceiling
- * THIS release published, never a guessed/hardcoded one. `null` when none of them publish a
- * `by_subregion.FULL.rescale` — true of every real release TODAY (`e2e/scores-hermetic.ts`'s own
- * header: v9's real boot.json publishes `by_subregion` only on the COMPOSITE row) — `Flower.svelte`
- * falls back to 100 in that case and says so in the ring's own label, rather than pretending a
- * number exists. Forward-compatible: the moment a release publishes a per-component rescale, this
- * picks it up with no code change.
+ * maximum component score for given version" (Ben, live-review 2026-09-24). Coordinator follow-up
+ * (2026-09-25): the FIRST version of this function read `boot.layers[].by_subregion.FULL.rescale`,
+ * which no real release publishes for a `category: "component"` row (only the composite carries
+ * `by_subregion` today) — it was structurally unable to ever return a real number. The release
+ * MANIFEST's `metrics[]` (the SAME array `metricLabelsFromManifest` above reads) is the real source:
+ * one row per `metric_key`×`subregion_key`, each carrying its own `rescale_min`/`rescale_max` —
+ * verified live against v7's own `manifest.json` (2026-09-25): every `*_ecoregion_rescaled` row at
+ * `subregion_key: "FULL"` — `extrisk_{bird,coral,fish,invertebrate,mammal,other,turtle}_ecoregion_rescaled`
+ * and `primprod_ecoregion_rescaled`, exactly the 8 the flower draws — carries `rescale_max: 100`
+ * (ecoregion-rescaling normalizes each component to reach 100 somewhere in the study area, even
+ * though the release's OVERALL composite maxes out lower — v7's own composite row,
+ * `score_extriskspcat_primprod_ecoregionrescaled_equalweights`, carries `rescale_max: 93`, the same
+ * "0-93" the map's own score legend shows). The filter (`_ecoregion_rescaled$` suffix, `FULL`
+ * subregion, `componentLabel(...) !== "all"`) mirrors `flower.ts#fromMetrics`'s OWN "which metrics
+ * are the flower's components" rule exactly, so the two can never disagree about what counts. `null`
+ * only when the manifest publishes no such row at all (has not loaded yet, or a pre-metrics
+ * release) — `Flower.svelte` falls back to 100 and says so in that case, rather than pretending a
+ * number exists.
  */
-export function flowerMaxComponentScore(boot: unknown): number | null {
-  const maxima = layerRows(boot)
-    .filter((r) => r.category === "component")
-    .map((r) => fullSubregion(r)?.rescale?.[1])
-    .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+export function flowerMaxComponentScore(manifest: unknown): number | null {
+  const rows = (manifest as { metrics?: unknown } | null | undefined)?.metrics;
+  if (!Array.isArray(rows)) return null;
+  const maxima: number[] = [];
+  for (const raw of rows as RawManifestMetricRescaleRow[]) {
+    if (
+      !raw ||
+      typeof raw !== "object" ||
+      typeof raw.metric_key !== "string" ||
+      raw.subregion_key !== "FULL" ||
+      !/_ecoregion_rescaled$/.test(raw.metric_key) ||
+      componentLabel(raw.metric_key) === "all" ||
+      typeof raw.rescale_max !== "number" ||
+      !Number.isFinite(raw.rescale_max)
+    ) {
+      continue;
+    }
+    maxima.push(raw.rescale_max);
+  }
   return maxima.length > 0 ? Math.max(...maxima) : null;
 }
 

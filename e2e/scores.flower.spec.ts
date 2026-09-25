@@ -21,9 +21,8 @@
 // Invertebrate, Other and Primary producer (all <= 24) failed it, `document.elementFromPoint` at
 // their own centroid returning the hub `<circle class="hub">`, not their own `<path>`.
 import { expect, test, type Page } from "@playwright/test";
-import { gotoScoresMap, bootFor, routeZones20 } from "./scores-hermetic";
-import { routeBucket, routeSealFixture, routeSession, waitForHydration } from "./hermetic";
-import { blockWasm, routeBasemapStyle, routeGlyphs, routeTitilerTiles } from "./map-hermetic";
+import { gotoScoresMap } from "./scores-hermetic";
+import { BUCKET, safeRoute, waitForHydration } from "./hermetic";
 
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 800 } });
@@ -374,44 +373,58 @@ test.describe("P round deliverable 2: the flower's reference ring", () => {
     );
   });
 
-  /** `bootFor('v7')` (scores-hermetic.ts) publishes only the COMPOSITE layer's `by_subregion` --
-   * adds one `category: "component"` row with a real rescale, the same "extend with one more
-   * layer" pattern `e2e/layers.spec.ts`'s own `bootWithPrimprod` uses, so v7's shared fixture
-   * itself never changes for every OTHER spec in this file. */
-  function bootWithComponentMax(maxScore: number) {
-    const boot = bootFor("v7") as { layers: unknown[] };
-    return {
-      ...boot,
-      layers: [
-        ...boot.layers,
-        {
-          metric_key: "extrisk_bird_ecoregion_rescaled",
-          category: "component",
-          order: 2,
-          by_subregion: { FULL: { rescale: [0, maxScore] } },
-        },
-      ],
-    };
+  /** the release MANIFEST's `metrics[]` (verified live against the real v7 manifest, 2026-09-25:
+   * `curl .../v7/manifest.json` -- every `*_ecoregion_rescaled` row at `subregion_key: "FULL"`
+   * carries `rescale_min: 0, rescale_max: 100`, for all 8: bird/coral/fish/invertebrate/mammal/
+   * other/turtle/primprod; the COMPOSITE row, `score_extriskspcat_..._equalweights`, carries
+   * `rescale_max: 93` -- the SAME "0-93" the map's own legend shows, per the coordinator's
+   * follow-up). This fixture uses DISTINCT synthetic maxima (never all-100, unlike the live data)
+   * so the test proves "the greatest of several DIFFERENT values wins", not an accident of every
+   * row happening to agree. `routeBucket`'s own default manifest (`{ver, capabilities: {}}`, no
+   * `metrics`) is overridden by a route registered AFTER it -- Playwright tries routes newest-first,
+   * matching `e2e/layers.spec.ts`'s own `routeManifestWithMetrics` convention. */
+  const COMPONENT_MAXIMA: Record<string, number> = {
+    bird: 80,
+    coral: 65,
+    fish: 93, // the winner
+    invertebrate: 70,
+    mammal: 88,
+    other: 55,
+    turtle: 60,
+    primprod: 40,
+  };
+
+  async function routeManifestWithComponentMaxima(page: Page, ver: string) {
+    const metrics = Object.entries(COMPONENT_MAXIMA).map(([label, max]) => ({
+      metric_key:
+        label === "primprod"
+          ? "primprod_ecoregion_rescaled"
+          : `extrisk_${label}_ecoregion_rescaled`,
+      subregion_key: "FULL",
+      rescale_min: 0,
+      rescale_max: max,
+      label: `${label}: ext. risk, ecorgn`,
+    }));
+    await page.route(
+      `${BUCKET}${ver}/manifest.json`,
+      safeRoute((route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ ver, capabilities: {}, metrics }),
+        }),
+      ),
+    );
   }
 
-  async function gotoScoresFlowerWithMax(page: Page, maxScore: number) {
-    await blockWasm(page);
-    await routeBucket(page, "v7", bootWithComponentMax(maxScore));
-    await routeSession(page, { preview: true, ver: "v7" });
-    await routeSealFixture(page);
-    await routeZones20(page);
-    await routeBasemapStyle(page);
-    await routeTitilerTiles(page);
-    await routeGlyphs(page);
-    await page.goto("/?proj=mercator");
-    await waitForHydration(page);
-    await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
-  }
-
-  test("a release that DOES publish a component rescale (93): the ring moves off the fallback, no petal draws past it -- the seeded fault: pinned at 100 regardless", async ({
+  test("a release that DOES publish per-component manifest metrics (max 93, on 'fish'): the ring moves off the fallback, no petal draws past it -- the seeded fault: pinned at 100 regardless", async ({
     page,
   }) => {
-    await gotoScoresFlowerWithMax(page, 93);
+    await gotoScoresMap(page, "v7");
+    await routeManifestWithComponentMaxima(page, "v7");
+    await page.reload();
+    await waitForHydration(page);
+    await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
     await openFlower(page);
 
     const ring = page.locator("[data-testid='flower-reference-ring']");

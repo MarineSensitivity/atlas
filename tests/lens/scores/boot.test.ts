@@ -224,57 +224,95 @@ describe("metricLabelsFromManifest", () => {
   });
 });
 
-// P round deliverable 2 (Ben, live-review 2026-09-24): the flower panel's reference-ring value --
-// see flowerGeometry.ts's own `computeFlowerReferenceRing` header for why "component" (never
-// "composite"/"raw") is the right category to scan.
+// P round deliverable 2 (Ben, live-review 2026-09-24); coordinator follow-up (2026-09-25): the
+// flower panel's reference-ring value comes from the release MANIFEST's `metrics[]` (one row per
+// `metric_key`×`subregion_key`), never `boot.layers[]` -- boot.json's `by_subregion` exists only on
+// the COMPOSITE row on every real release, so the first version of this function could never return
+// a real number. Verified live against v7's own manifest.json (2026-09-25, `curl
+// .../v7/manifest.json`): every `*_ecoregion_rescaled` row at `subregion_key: "FULL"` --
+// `extrisk_{bird,coral,fish,invertebrate,mammal,other,turtle}_ecoregion_rescaled` and
+// `primprod_ecoregion_rescaled`, the flower's own 8 -- carries `rescale_max: 100`; the COMPOSITE row
+// (`score_extriskspcat_primprod_ecoregionrescaled_equalweights`, which the `_ecoregion_rescaled$`
+// filter does NOT match -- "ecoregionrescaled" is one word there, no underscore) carries
+// `rescale_max: 93`, the same "0-93" the map's own score legend shows.
+function metricRow(
+  metricKey: string,
+  rescaleMax: number,
+  subregionKey = "FULL",
+): { metric_key: string; subregion_key: string; rescale_min: number; rescale_max: number } {
+  return {
+    metric_key: metricKey,
+    subregion_key: subregionKey,
+    rescale_min: 0,
+    rescale_max: rescaleMax,
+  };
+}
+
+/** the release's real 8 `*_ecoregion_rescaled` metric_keys, verified live against v7's manifest. */
+const REAL_COMPONENT_KEYS = [
+  "extrisk_bird_ecoregion_rescaled",
+  "extrisk_coral_ecoregion_rescaled",
+  "extrisk_fish_ecoregion_rescaled",
+  "extrisk_invertebrate_ecoregion_rescaled",
+  "extrisk_mammal_ecoregion_rescaled",
+  "extrisk_other_ecoregion_rescaled",
+  "extrisk_turtle_ecoregion_rescaled",
+  "primprod_ecoregion_rescaled",
+];
+
 describe("flowerMaxComponentScore", () => {
-  it("BOOT_V7's own two component rows both rescale to 100: the max is 100", () => {
-    expect(flowerMaxComponentScore(BOOT_V7)).toBe(100);
+  it("v7's REAL live shape: all 8 components rescale to 100 (ecoregion-rescaling reaches 100 somewhere for each), never confused with the composite's own lower 93", () => {
+    const metrics = [
+      ...REAL_COMPONENT_KEYS.map((k) => metricRow(k, 100)),
+      metricRow("score_extriskspcat_primprod_ecoregionrescaled_equalweights", 93),
+    ];
+    expect(flowerMaxComponentScore({ metrics })).toBe(100);
   });
 
-  it("a release whose component layers publish DIFFERENT maxima: the greatest one wins", () => {
-    const boot = {
-      ...BOOT_V7,
-      layers: BOOT_V7.layers.map((l) =>
-        l.metric_key === "extrisk_bird_ecoregion_rescaled"
-          ? { ...l, by_subregion: { FULL: { ...l.by_subregion.FULL, rescale: [0, 93.456] } } }
-          : l,
-      ),
-    };
-    // "other" is untouched (rescale [0,100]) -- 100 still wins over 93.456, proving this is a real
-    // MAX across rows, not "whichever row happens to be scanned last".
-    expect(flowerMaxComponentScore(boot)).toBe(100);
-    const bootLowered = {
-      ...boot,
-      layers: boot.layers.map((l) =>
-        l.metric_key === "extrisk_other_ecoregion_rescaled"
-          ? { ...l, by_subregion: { FULL: { ...l.by_subregion.FULL, rescale: [0, 80] } } }
-          : l,
-      ),
-    };
-    expect(flowerMaxComponentScore(bootLowered)).toBe(93.456);
+  it("a release whose component metrics publish DIFFERENT maxima: the greatest one wins, not the first/last row", () => {
+    const metrics = [
+      metricRow("extrisk_bird_ecoregion_rescaled", 80),
+      metricRow("extrisk_coral_ecoregion_rescaled", 65),
+      metricRow("extrisk_fish_ecoregion_rescaled", 93.456), // the winner
+      metricRow("extrisk_invertebrate_ecoregion_rescaled", 70),
+      metricRow("extrisk_mammal_ecoregion_rescaled", 88),
+      metricRow("extrisk_other_ecoregion_rescaled", 55),
+      metricRow("extrisk_turtle_ecoregion_rescaled", 60),
+      metricRow("primprod_ecoregion_rescaled", 40),
+    ];
+    expect(flowerMaxComponentScore({ metrics })).toBe(93.456);
   });
 
-  it("no component layer publishes a rescale (every real release TODAY): null, never a guess", () => {
-    // mirrors e2e/scores-hermetic.ts's real `bootFor('v7')`/`bootFor('v9')`: only the COMPOSITE row
-    // carries `by_subregion` there -- component rows have none at all.
-    expect(
-      flowerMaxComponentScore({
-        layers: [
-          { metric_key: "a", category: "component", order: 1 },
-          {
-            metric_key: "score",
-            category: "composite",
-            order: 2,
-            by_subregion: { FULL: { rescale: [0, 96] } },
-          },
-        ],
-      }),
-    ).toBeNull();
+  it("only reads subregion_key FULL -- a higher max at a different subregion never wins", () => {
+    const metrics = [
+      metricRow("extrisk_bird_ecoregion_rescaled", 60, "FULL"),
+      metricRow("extrisk_bird_ecoregion_rescaled", 999, "GA"), // a real per-subregion row, ignored
+      metricRow("extrisk_coral_ecoregion_rescaled", 70, "FULL"),
+    ];
+    expect(flowerMaxComponentScore({ metrics })).toBe(70);
   });
 
-  it("no layers/boot at all: null, never a throw", () => {
+  it("ignores a non-component row (composite/raw) even at FULL, and 'all' (dropped the same way flower.ts#fromMetrics drops it)", () => {
+    const metrics = [
+      metricRow("extrisk_bird_ecoregion_rescaled", 40),
+      metricRow("score_extriskspcat_primprod_ecoregionrescaled_equalweights", 93), // composite
+      metricRow("primprod", 999), // raw, not _ecoregion_rescaled
+      metricRow("extrisk_all_ecoregion_rescaled", 999), // componentLabel(...) === "all"
+    ];
+    expect(flowerMaxComponentScore({ metrics })).toBe(40);
+  });
+
+  it("no metrics array published (has not loaded yet, or a pre-metrics release): null, never a guess", () => {
     expect(flowerMaxComponentScore({})).toBeNull();
     expect(flowerMaxComponentScore(null)).toBeNull();
+    expect(flowerMaxComponentScore(undefined)).toBeNull();
+  });
+
+  it("a metrics array with no matching row (only raw/composite published): null", () => {
+    expect(
+      flowerMaxComponentScore({
+        metrics: [metricRow("score_extriskspcat_primprod_ecoregionrescaled_equalweights", 93)],
+      }),
+    ).toBeNull();
   });
 });
