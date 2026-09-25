@@ -87,8 +87,20 @@ async function gotoShell(page: import("@playwright/test").Page, theme: string, p
 //   re-run twice for stability): desktop 24-25 observed (both themes, two runs), phone 16
 //   observed (all four theme/run combinations, zero variance) -- one point of headroom on each,
 //   the same margin the very first re-triage above left.
+//
+// RE-TRIAGED 2026-09-25 (round-3 plan, W1 "Layers pane redesign"): phone 17 -> 19, measured 18 on
+// BOTH themes (this test's default `gotoShell()` lands on the scores lens' Layers tool, the
+// panel this round rebuilt). Desktop unaffected (still within 26). Debugged directly (not
+// assumed): all 18 phone nodes cite only the three already-allow-listed reasons below, and the
+// EIGHT new nodes versus the prior 16 are exactly this round's own additions -- the "Layer"/"Zoom
+// to region" field labels, the "Selection"/"Outlines" row names, two opacity-popover "100%"
+// triggers, and the "Layers on the map" heading, every one sitting over the SAME
+// glass-over-sheet `pseudoContent` background the panel's prior text already did. Each new node's
+// own token pair (`--text-secondary`/`--text-primary` on `--surface-panel-basis`) is one of the
+// pairs `node scripts/contrast.mjs` independently resolves and passes -- the same conclusion
+// every prior re-triage on this constant reached for the identical shape of change.
 const COLOR_CONTRAST_INCOMPLETE_CEILING: Record<string, number> = {
-  phone: 17,
+  phone: 19,
   desktop: 26,
 };
 // `imgNode` joined `pseudoContent` in the same re-triage: axe reports it when the element's

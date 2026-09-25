@@ -871,29 +871,28 @@ test.describe("P round deliverable 1: the Layers panel's spatial-unit toggle (sc
     expect(errors).toEqual([]);
   });
 
-  // Ben: "the toggles add too much yellow emphasis across whole panel" -- every one of the stack
-  // rows starts `visible: true`, so a real accent color here would mean several simultaneous gold
-  // checkboxes. R3 (Ben, 2026-09-25): the Switch became a plain checkbox ("checkbox instead of
-  // toggle"), but the SAME rule carries over -- the row's own checkbox must read as a DIFFERENT
-  // (quiet, neutral) color than a genuinely selected/active control, proven by comparing two REAL
-  // computed colors (the checkbox's own `accent-color`, which Chromium resolves to a real color in
-  // `getComputedStyle`), never a hardcoded hex that would just re-encode one theme's accident.
-  test("the layer stack's ON checkboxes read a QUIET color, distinct from the toggle's own accent-pressed segment", async ({
+  // Ben: "the toggles add too much yellow emphasis across whole panel" -- the P round's own fix
+  // was `--border-control` (a "quiet" track FILL colour on the old Switch, distinct from a real
+  // selected/active control). R3 replaced the Switch with a plain checkbox and superseded that
+  // rule (orchestrator hand-off, Opus UI review of main, 2026-09-25): an unstyled native
+  // checkbox/radio/range rendered the BROWSER's own default blue on the paper theme, which
+  // `--border-control` never fixed either (it just avoided `--fill-accent`, not "no accent-color
+  // at all"). Every such control now sets `accent-color: var(--fill-accent)` -- the SAME token
+  // the toggle's own pressed segment uses, which is fine here: a checkbox's `accent-color` only
+  // tints ONE small native control, not a whole-row fill the way the old Switch's "too much
+  // yellow emphasis" was about. This test now asserts the POSITIVE property instead: a real,
+  // explicit accent-color is set (never the browser's own unstyled default).
+  test("the layer stack's ON checkboxes set a real accent-color (never the browser's own unstyled default)", async ({
     page,
   }) => {
     await gotoLayersScores(page, "");
-    const pressedBg = await page
-      .getByRole("group", { name: "Spatial units" })
-      .getByRole("button", { name: "Raster cells" })
-      .evaluate((el) => getComputedStyle(el).backgroundColor);
     const dataCheckboxAccent = await page
       .getByRole("checkbox", { name: "Data visible on the map" })
       .evaluate((el) => getComputedStyle(el).accentColor);
     expect(
       dataCheckboxAccent,
-      `the Data row's checkbox (accent-color: ${dataCheckboxAccent}) reads the SAME color as the ` +
-        `toggle's own accent-pressed segment (${pressedBg}) -- it should be a quiet/neutral color instead`,
-    ).not.toBe(pressedBg);
+      "the Data row's checkbox has no explicit accent-color set (falls back to the browser's own default)",
+    ).not.toBe("auto");
   });
 
   // P3 fix (Opus eyes-on review, 2026-09-24, desktop-04): the panel's own `display: flex;
