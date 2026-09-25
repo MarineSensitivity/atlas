@@ -1058,6 +1058,18 @@ test.describe("P round deliverable 1: the Layers panel's spatial-unit toggle (sc
   // own content width (no `flex-grow`) -- measured live, ~283 of the pill's own 1245px filled,
   // the rest a dead, unclickable band. RED-FIRST: fails on the pre-fix tree, where the "Program
   // areas" segment's own right edge sits nowhere near the group's.
+  //
+  // R3-CI (2026-09-25): NO LONGER the `segmented-flex-fill-dropped` seeded fault's own gate --
+  // R3's redesign gave this toggle `Segmented`'s new `fit` prop, which sets `align-self:
+  // flex-start` on `.seg` itself (`Segmented.svelte`). That cancels the PARENT's `align-items:
+  // stretch` for this element specifically, so `.seg`'s own outer box is now always exactly as
+  // wide as its (unstretched) content -- the precondition this assertion needs (a parent forcing
+  // `.seg` WIDER than its buttons) no longer holds here, so removing `.seg button`'s `flex: 1 1
+  // 0%` no longer changes what this test measures (confirmed directly: reapplying the fault by
+  // hand and reprobing this exact group still showed its buttons' combined width matching the
+  // group's own, because BOTH shrink to the same content size together). Kept as a plain layout
+  // regression test for this toggle's own geometry; `"the Table view switch..."` below (same
+  // `Segmented` component, `fit` omitted, still parent-stretched) is the fault's new gate.
   test("the two segments fill the pill's own width -- no dead space past the last segment", async ({
     page,
   }) => {
@@ -1080,6 +1092,42 @@ test.describe("P round deliverable 1: the Layers panel's spatial-unit toggle (sc
     expect(
       paBox.x + paBox.width,
       `the last segment's own right edge (${paBox.x + paBox.width}) falls well short of the ` +
+        `pill's own right edge (${groupBox.x + groupBox.width}) -- dead space in the pill`,
+    ).toBeGreaterThanOrEqual(groupBox.x + groupBox.width - 1);
+  });
+
+  // R3-CI (CI run 36158947685): `segmented-flex-fill-dropped`'s own real gate, replacing "the two
+  // segments fill the pill's own width" above (that one's own header explains why it stopped
+  // depending on `.seg button`'s `flex: 1 1 0%` rule once the Spatial-units toggle got `fit`).
+  // `TablePanel.svelte`'s "Table view" switch (Species | Zones | Composition) is the OTHER
+  // `Segmented` caller `Segmented.svelte`'s own `fit` prop doc names as still using the
+  // P-round stretched look (`fit` omitted): its wrapping `.table-panel` is the SAME
+  // `display: flex; flex-direction: column` shape that stretches `.seg`'s outer box wider than
+  // its content, so a missing `flex: 1 1 0%` on `.seg button` still leaves real dead space here.
+  // Measured directly (fault reapplied by hand): group 346px wide, the three segments' combined
+  // width landing ~130px short of the group's own right edge.
+  test("the Table view switch's segments fill the pill's own width -- no dead space past the last segment", async ({
+    page,
+  }) => {
+    await gotoLayersScores(page, "");
+    await page.getByRole("button", { name: "Table", exact: true }).click();
+    const group = page.getByRole("group", { name: "Table view" });
+    await expect(group).toBeVisible({ timeout: 10_000 });
+    const groupBox = (await group.boundingBox())!;
+    const firstBox = (await group.getByRole("button", { name: "Species" }).boundingBox())!;
+    const lastBox = (await group.getByRole("button", { name: "Composition" }).boundingBox())!;
+
+    expect(
+      firstBox.x,
+      `the first segment (x=${firstBox.x}) does not start at the pill's own left edge (x=${groupBox.x})`,
+    ).toBeGreaterThanOrEqual(groupBox.x - 0.5);
+    expect(
+      firstBox.x,
+      `the first segment (x=${firstBox.x}) does not start at the pill's own left edge (x=${groupBox.x})`,
+    ).toBeLessThanOrEqual(groupBox.x + 2);
+    expect(
+      lastBox.x + lastBox.width,
+      `the last segment's own right edge (${lastBox.x + lastBox.width}) falls well short of the ` +
         `pill's own right edge (${groupBox.x + groupBox.width}) -- dead space in the pill`,
     ).toBeGreaterThanOrEqual(groupBox.x + groupBox.width - 1);
   });

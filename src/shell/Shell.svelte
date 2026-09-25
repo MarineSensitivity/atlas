@@ -552,6 +552,13 @@
     // RIGHT NOW (see currentChromePadding's own header, below) instead of a flat 40px on every
     // edge -- a getter, called fresh on every fit, never a value captured at this line.
     chromePadding: () => currentChromePadding(),
+    // R3-rr fix 1, round 5: a wide-range species' "US waters"/"Whole range" camera needs the
+    // CURRENT viewport dimensions (`phoneAwareWideRangeBounds`/`boundsToCameraView`, both in
+    // `lib/map/camera.ts`) -- read fresh on every call, never a captured snapshot. `isPhone` is
+    // the SAME `matchMedia` breakpoint state this file already tracks (above), never a second
+    // decision.
+    viewport: () => ({ width: window.innerWidth, height: window.innerHeight }),
+    isPhone: () => isPhone,
   });
 
   // --- page title: the ONE writer (spec.md/atlas-3 step 3 deliverable 4; atlas-8 fix) -----------
@@ -1172,12 +1179,18 @@
   // one chapter path swapped -- `src/lib/release/docsUrl.ts#releaseNotesUrl` is the tested,
   // imported-from-a-test-only twin (`tests/release/docsUrl.test.ts`); this hand duplicate is what
   // `TopBarActions.svelte` actually renders.
+  //
+  // R3-rr fix 4 (Opus 5.5 eyes-on review round 3, second pass, 2026-09-25): this pointed at
+  // `release_notes.html`, a 404 -- the docs book's chapter source is `releases.qmd`
+  // (`docs/_quarto.yml`), which quarto renders to `releases.html`
+  // (`docsUrl.ts#RELEASE_NOTES_CHAPTER_PATH`'s own header has the verification); `release_notes`
+  // was the unrelated `data/release_notes.yml` data file's name, not the chapter's own filename.
   const releaseNotesHref = $derived(
     !earlyVersion || !currentVersionRow
       ? "https://marinesensitivity.org/docs/"
       : releaseRestricted
-        ? `https://preview.marinesensitivity.org/docs/${earlyVersion}/release_notes.html`
-        : `https://marinesensitivity.org/docs/${earlyVersion}/release_notes.html`,
+        ? `https://preview.marinesensitivity.org/docs/${earlyVersion}/releases.html`
+        : `https://marinesensitivity.org/docs/${earlyVersion}/releases.html`,
   );
 
   // --- Deliverable 4: "Report a problem" -> a prefilled GitHub issue, zero backend --------------

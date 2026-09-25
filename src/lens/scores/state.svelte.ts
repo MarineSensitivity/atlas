@@ -61,7 +61,8 @@ import {
   layerByKey,
   metricLabelsFromManifest,
   primaryUnitType,
-  zoneBboxFromBoot,
+  zoneCacheKey,
+  zoneKnownBounds,
   zoneRows,
 } from "./boot";
 import { fetchCellValue } from "./cellClick";
@@ -190,10 +191,6 @@ export interface ScoresLens {
  * LATER pick, with no live query needed at all. `zoneBoundsCache` is created once per
  * `createScoresLens()` call (this module's own header: "runs exactly ONCE per page load"), so it is
  * a real, page-lifetime cache, not just relief for the one call that populates it. */
-function zoneCacheKey(unit: string, key: string): string {
-  return `${unit}:${key}`;
-}
-
 function refreshZoneBoundsCache(
   cache: Map<string, [[number, number], [number, number]]>,
   handle: MapHandle,
@@ -445,6 +442,90 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     updatePopup(lngLat, cellPopupText(input), cellPopupAnnounceText(input));
   }
 
+  /** `selectZone`'s own "we have real bounds, go" step -- pulled out so the R3-CI idle retry below
+   * calls the EXACT same fly+popup code the immediate attempt does, never a second hand-written
+   * copy. `bounds` is null only for the "no polygon, but a published label point" branch (still a
+   * real center, no camera-fit box to pad for -- unchanged from before this fix). */
+  function flyToZoneCenter(
+    handle: MapHandle,
+    bounds: readonly [readonly [number, number], readonly [number, number]] | null,
+    center: { lon: number; lat: number },
+    hit: { unit: string; key: string; name: string },
+    zRows: ReturnType<typeof zoneRows>,
+  ): void {
+    // R3-W7: the popup goes through the SAME shared builder (colour swatch + sparkline) a real map
+    // click uses, not the bare `zonePopupText`/`zonePopupAnnounceText` pair this helper called
+    // directly before W7's unified popup template landed.
+    const popup = buildZonePopup(zRows, hit);
+    if (bounds) {
+      // P3 fix (Opus eyes-on review, 2026-09-24): a flat 40px padding ignored the sheet/panel
+      // actually covering the map — a Program Area search pick landed under the phone sheet
+      // (GAA a sliver at its edge, popup on the map showing Arkansas) or a third under the
+      // docked desktop panel. `deps.chromePadding()`, when the shell supplies it, is the SAME
+      // live asymmetric-padding path the species lens' bounds fit already uses (V4 fix,
+      // `src/lens/species/state.svelte.ts`).
+      const padding = deps.chromePadding ? deps.chromePadding() : 40;
+      // `bounds` may be a `readonly` tuple (`zoneKnownBounds`'s own return type); `flyToBounds`
+      // only ever reads it, never mutates in place (it copies into its own mutable local first --
+      // see `map.ts`), so the cast is a type-shape formality, not an escape from that rule.
+      handle.flyToBounds(bounds as [[number, number], [number, number]], { padding });
+    } else {
+      // zoom 6, the SAME literal `Places.svelte#zoomTo`'s own "zone" branch flies a
+      // Program-Area place to — "zoomed out just enough to see a Program Area's own extent".
+      handle.flyTo({ key: "place", lon: center.lon, lat: center.lat, zoom: 6 });
+    }
+    showPopup({ lng: center.lon, lat: center.lat }, popup.html, popup.announceText);
+  }
+
+  /**
+   * R3-CI regression fix (CI run 36158947685, webkit 3/3): `selectZone`'s bounds resolution used to
+   * get exactly one synchronous attempt, at the instant Enter was pressed, with no way to recover
+   * from a live tile query that missed only because the zones PMTiles layer's tiles had not
+   * finished loading/parsing yet (`boot.ts#zoneKnownBounds`'s own header has the full root cause).
+   * This retries that SAME resolution once more, after the map's next `"idle"` (bounded by a
+   * fallback timer so a genuinely stuck/offline tile request cannot hang it forever — the same
+   * shape `report/reportMap.ts#waitForIdle` already uses for the identical class of race, kept as
+   * its own small copy here rather than a cross-import: `places/zoneStats.ts`'s own header already
+   * documents the "never import `src/lens/**` into `places/`" rule, and the inverse — `lens/scores`
+   * reaching into `report/`, a leaf module reached only via a dynamic `import()` from `report.html`
+   * — would be a new, backwards coupling for one four-line wait).
+   *
+   * Guarded so a stale retry can never fly the camera out from under a LATER selection: if the
+   * user has since picked something else (another zone, a cell, a coordinate — `sel.sel` no longer
+   * names this exact zone) by the time the retry resolves, it does nothing.
+   */
+  async function retryZoneFlyAfterIdle(
+    handle: MapHandle,
+    boot: unknown,
+    unit: string,
+    key: string,
+    hit: { unit: string; key: string; name: string },
+    zRows: ReturnType<typeof zoneRows>,
+  ): Promise<void> {
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      handle.map.once("idle", finish);
+      setTimeout(finish, 1500); // a fallback bound, never an unresolved promise
+    });
+    if (deps.selStore.sel.lens !== "scores") return; // navigated away from Scores entirely
+    if (deps.selStore.sel.sel !== formatZoneToken(unit, key)) return; // superseded by a later pick
+    const freshHandle = deps.mapHandle();
+    if (!freshHandle) return;
+    refreshZoneBoundsCache(zoneBoundsCache, freshHandle, boot, unit);
+    const bounds = zoneKnownBounds(boot, unit, key, zoneBoundsCache);
+    if (!bounds) return; // still nothing -- this zone genuinely has no cached/published geometry
+    const center = {
+      lon: (bounds[0][0] + bounds[1][0]) / 2,
+      lat: (bounds[0][1] + bounds[1][1]) / 2,
+    };
+    flyToZoneCenter(freshHandle, bounds, center, hit, zRows);
+  }
+
   return {
     get unit() {
       return unit;
@@ -567,33 +648,31 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       if (!zoneBoundsCache.has(cacheKey) && handle) {
         refreshZoneBoundsCache(zoneBoundsCache, handle, boot, unit);
       }
-      const bounds = zoneBboxFromBoot(boot, unit, key) ?? zoneBoundsCache.get(cacheKey) ?? null;
+      const bounds = zoneKnownBounds(boot, unit, key, zoneBoundsCache);
       const center = bounds
         ? { lon: (bounds[0][0] + bounds[1][0]) / 2, lat: (bounds[0][1] + bounds[1][1]) / 2 }
         : zoneCenterFromBoot(boot, unit, [key]);
       if (handle && center) {
-        if (bounds) {
-          // P3 fix (Opus eyes-on review, 2026-09-24): a flat 40px padding ignored the sheet/panel
-          // actually covering the map — a Program Area search pick landed under the phone sheet
-          // (GAA a sliver at its edge, popup on the map showing Arkansas) or a third under the
-          // docked desktop panel. `deps.chromePadding()`, when the shell supplies it, is the SAME
-          // live asymmetric-padding path the species lens' bounds fit already uses (V4 fix,
-          // `src/lens/species/state.svelte.ts`).
-          const padding = deps.chromePadding ? deps.chromePadding() : 40;
-          handle.flyToBounds(bounds, { padding });
-        } else {
-          // zoom 6, the SAME literal `Places.svelte#zoomTo`'s own "zone" branch flies a
-          // Program-Area place to — "zoomed out just enough to see a Program Area's own extent".
-          handle.flyTo({ key: "place", lon: center.lon, lat: center.lat, zoom: 6 });
-        }
-        const popup = buildZonePopup(zRows, hit);
-        showPopup({ lng: center.lon, lat: center.lat }, popup.html, popup.announceText);
-      } else {
-        // no published label point AND no loaded polygon tile for this zone (or no map yet) — the
-        // selection/URL write above already stands; just announce it rather than silently doing
-        // nothing.
-        announce(zonePopupAnnounceText({ zones: zRows, lyr, zone: hit }));
+        flyToZoneCenter(handle, bounds, center, hit, zRows);
+        return;
       }
+      // no published bbox, no published label point, and NOTHING cached yet from a live tile
+      // query (or no map yet) — announce now (a search pick must never go silently unanswered),
+      // but if a map handle exists, ALSO retry the live query once more after the map settles.
+      //
+      // R3-CI (CI run 36158947685, webkit 3/3, "Enter flies the camera into the Aleutian Arc's own
+      // polygon bbox"): before this retry, the ABOVE was the only attempt, ever — a real,
+      // timing-dependent race, not a geometry bug (`boot.ts#zoneKnownBounds`'s own header has the
+      // full root cause: `querySourceFeatures` only answers from tiles that have already finished
+      // BOTH fetch AND worker-side parse, and this whole method runs the instant Enter is pressed,
+      // with no guarantee the zones layer's tiles are parsed yet). A script pressing Enter
+      // immediately after the map object exists wins that race on a fast, idle machine almost
+      // always — invisible locally and in CI's less-contended jobs — but lost it consistently on
+      // CI's fully-parallel three-engine job. The retry is a SECOND, later attempt at the exact
+      // same resolution (`zoneKnownBounds`), never a different one: `zoneCenterFromBoot` is not
+      // re-tried (it reads only `boot`, which does not change between attempts).
+      announce(zonePopupAnnounceText({ zones: zRows, lyr, zone: hit }));
+      if (handle) void retryZoneFlyAfterIdle(handle, boot, unit, key, hit, zRows);
     },
 
     // Q1 (top-bar search, item 2): `ScoresSearch.svelte`'s "jump to a coordinate" — mirrors

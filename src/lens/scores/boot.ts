@@ -366,6 +366,45 @@ export function zoneBboxFromBoot(
   ];
 }
 
+/** `state.svelte.ts`'s `zoneBoundsCache` key -- exported so both the cache writer
+ * (`refreshZoneBoundsCache`) and this module's own `zoneKnownBounds` (below) use the identical
+ * format; a hand-restated string in either place could silently drift out of sync. */
+export function zoneCacheKey(unit: string, key: string): string {
+  return `${unit}:${key}`;
+}
+
+/**
+ * R3-CI (CI run 36158947685, webkit 3/3 -- "Enter flies the camera into the Aleutian Arc's own
+ * polygon bbox"): the bounds `state.svelte.ts#selectZone` already has WITHOUT firing a fresh live
+ * tile query -- a published `zoneBboxFromBoot`, else an earlier live query's cache hit. Pulled out
+ * as its own pure function (never touching a map) so the RETRY this bug fix adds is exactly the
+ * same call repeated, not a second hand-written copy of the resolution order.
+ *
+ * Root cause: `selectZone` resolved bounds with exactly ONE synchronous attempt, at the instant
+ * Enter is pressed -- published bbox, then this release's `zoneBoundsCache` (state.svelte.ts),
+ * populated by a live, UNFILTERED `querySourceFeatures` over the zones PMTiles source. On a full
+ * miss (no bbox published -- true for every release today -- and nothing cached yet) it fell
+ * straight to the announce-only branch, camera never moving, PERMANENTLY: no retry. That miss is a
+ * real, timing-dependent race, not a geometry bug: MapLibre's `querySourceFeatures` only answers
+ * from tiles that have already finished BOTH their network fetch and their worker-side vector-tile
+ * parse (`report/reportMap.ts#waitForIdle`'s own header documents the identical class of race for
+ * `queryRenderedFeatures` — "idle" itself can fire, or a query can run, before a tile's parse is
+ * done even though the matching data is already in flight). On a fast, idle machine the zones
+ * layer's initial low-zoom tiles are parsed within a few ms of page load, so a script pressing
+ * Enter immediately after `waitForFunction(() => !!window.__atlasMap)` almost always wins the race
+ * -- exactly why this was invisible on a fast local machine and in CI's own less-contended jobs,
+ * but consistently lost it on CI's shared `e2e (chromium, webkit, firefox)` job, which runs all
+ * three engines' full suites fully-parallel on one runner (webkit apparently the slowest to parse
+ * there; firefox flaky, right at the timing boundary; chromium always fast enough). */
+export function zoneKnownBounds(
+  boot: unknown,
+  unit: string,
+  key: string,
+  cache: ReadonlyMap<string, readonly [readonly [number, number], readonly [number, number]]>,
+): readonly [readonly [number, number], readonly [number, number]] | null {
+  return zoneBboxFromBoot(boot, unit, key) ?? cache.get(zoneCacheKey(unit, key)) ?? null;
+}
+
 interface RawManifestZoneRow {
   fld?: unknown;
   pmtiles?: unknown;

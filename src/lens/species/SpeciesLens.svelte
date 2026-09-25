@@ -22,6 +22,7 @@
   } from "../../lib/ui/LayersPanel.svelte";
   import type { LayerStackEntry, Outline, Representation, Sel } from "../../lib/state/types";
   import { isPlacesSelectionEmpty } from "../../lib/state/types";
+  import { placesFromHash } from "../../places/model";
   import type { SelStore } from "../../lib/state/sel.svelte";
   import type { MapHandle } from "../../lib/map/map";
   import type { LayerGroupId } from "../../lib/map/layerStack";
@@ -70,9 +71,14 @@
   });
 
   // Fix round (Ben, 2026-09-25) -- same rule as the scores lens, see that component's own header
-  // on `rowState`/`isPlacesSelectionEmpty`.
+  // on `rowState`/`isPlacesSelectionEmpty`. R3-rr fix 3: a loaded `pl=` places list ALSO counts as
+  // "not empty", even with no `sel.sel` pick — `placesFromHash` is the SAME decoder the Download
+  // menu already reads (`Shell.svelte`'s `downloadPlaces`), never a second parser of the hash.
   const rowState = $derived<Partial<Record<LayerGroupId, LayersRowState>>>({
-    "data-places": { empty: isPlacesSelectionEmpty(sel.sel), hint: "— nothing selected" },
+    "data-places": {
+      empty: isPlacesSelectionEmpty(sel.sel, placesFromHash(sel.pl).length),
+      hint: "— nothing selected",
+    },
   });
 </script>
 

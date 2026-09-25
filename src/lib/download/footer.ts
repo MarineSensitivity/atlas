@@ -51,13 +51,26 @@ export function canonicalShareUrl(url: string): string {
   }
 }
 
+/** R3-rr fix 2 (Opus 5.5 eyes-on review round 3, 2026-09-25): the Scores lens' default layer's
+ * title AND unit are both literally "score" (`Shell.svelte`'s `downloadTitle` falls back to
+ * `phoneLegend?.title`, `downloadUnit` is a flat `"score"` for every scores layer), so the old
+ * unconditional `${title} · ${unit}` join printed "score · score" on the live download, both
+ * themes. A unit that only restates the title adds nothing -- joins it only when the two say
+ * something DIFFERENT, compared case-insensitively and trimmed so "Score"/"score" still count as
+ * the same word (a species title + a "suitability"-style unit, which never matches the title, still
+ * joins exactly as before). */
+export function titleWithUnit(title: string, unit?: string): string {
+  if (!unit) return title;
+  return unit.trim().toLowerCase() === title.trim().toLowerCase() ? title : `${title} · ${unit}`;
+}
+
 /** 2 or 3 lines: title(+unit), an optional long-description line, then
  * "MarineSensitivity Atlas · {ver} · {canonical share URL}" -- CalCOFI's own 3-line stamp minus
  * the per-panel "datasets" line (this app's release already names its own datasets in
  * `boot.json`/the manifest, not per-figure). `ver` is already the `^v[0-9]+[a-z]?$`-shaped label
  * the rest of the app uses (`src/lib/release/version.ts`) -- never prefixed with a second "v" here. */
 export function footerLines(info: FooterInfo): string[] {
-  const first = info.unit ? `${info.title} · ${info.unit}` : info.title;
+  const first = titleWithUnit(info.title, info.unit);
   const last = `MarineSensitivity Atlas · ${info.ver} · ${canonicalShareUrl(info.url)}`;
   return info.description ? [first, info.description, last] : [first, last];
 }

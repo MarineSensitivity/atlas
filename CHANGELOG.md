@@ -1,4 +1,4 @@
-# atlas 0.10.74
+# atlas 0.10.77
 
 Round 3, W7 (consistency + copy, 2026-09-25): Ben's two asks — one colour-coded value popup with a
 distribution sparkline, shared by the scores cell/zone popups and the species popup; and the Legend
@@ -49,6 +49,103 @@ naming which layer is displayed — plus UI-4/5/8/9 from the Opus 5.5 review.
 - **W3 hand-off**: `ZonesTable.svelte` and `Composition.svelte` had the same `max-height: 50vh`
   blank-space defect B9 fixed for `SpeciesTable.svelte` — both now fill whatever height
   `TablePanel.svelte`'s own `height: 100%` hands down, the same fix, applied the same way.
+
+# atlas 0.10.76
+
+Round 3, CI-reds fix (CI run 36158947685). A Program-Area search pick's camera flight could
+silently do nothing under load (webkit 3/3, firefox flaky, chromium fine).
+
+- **Fixed: a Program-Area search pick could fail to fly the camera at all, under load** —
+  `selectZone`'s bounds resolution (`src/lens/scores/state.svelte.ts`) made exactly ONE
+  synchronous attempt, at the instant Enter was pressed: a published `bbox`, else a live,
+  unfiltered `querySourceFeatures` query over the zones PMTiles source. MapLibre only answers
+  that query from tiles that have already finished BOTH their network fetch and their
+  worker-side vector-tile parse — a real race, not a geometry bug (the same class `report/
+reportMap.ts#waitForIdle` already exists to close for `queryRenderedFeatures`) — so a script
+  (or a person) pressing Enter before the zones layer's tiles are parsed could see the URL/
+  selection update with no camera move at all, permanently: no retry. Fixed by retrying the
+  exact same resolution once more after the map's next `"idle"` (bounded by a 1.5s fallback
+  timer), guarded so a stale retry can never override a later selection. New pure helpers
+  `zoneCacheKey`/`zoneKnownBounds` (`src/lens/scores/boot.ts`) factor the resolution out so both
+  the immediate attempt and the retry call the identical logic, and so it is unit-testable
+  without a real map (`tests/lens/scores/boot.test.ts`).
+
+# atlas 0.10.75
+
+Round 3 re-review fix round (Opus 5.5 eyes-on, second pass on `a7ba24a`/0.10.73). Four defects the
+live build still showed after the prior fix rounds.
+
+- **Fixed (BLOCKING): the species "Zoom to: US waters | Whole range" toggle STILL never appeared on
+  v7** (R3-A1, review D1, second time) — real-build eyes-on found FOUR compounding defects on the
+  live leatherback (`?mdl_seq=54241`), fixed together:
+  1. The leatherback's LIVE `/cog/info` bounds are `[-180, -17.7, 180, 60.45]` (the model reaches
+     American Samoa/Guam across the antimeridian); `minimalFrame()` cannot narrow a box that wide,
+     and the caller used to read that as "not a camera at all" and return BEFORE
+     `wideRangeAware()` ever ran. New exported `cogBoundsCamera()` (`src/lens/species/data/camera.ts`)
+     applies the wide-range narrowing rule to the RAW bbox when `minimalFrame()` can't reframe it.
+  2. That fix alone never actually reached the live leatherback: `src/lib/raster/bounds.ts`'s
+     `narrowLongitude()` intercepts the same degenerate bbox FIRST and used to hand back a
+     single-candidate window still 78° tall (under the wide-range threshold, so the toggle stayed
+     hidden) — or, for a genuinely wide-ranging species, the raw box itself, whose `cameraForBounds()`
+     fit for "Whole range" was verified LIVE to land on lng=0 (Africa). `narrowLongitude()` now probes
+     every candidate and, when the real hits are spread across multiple regions, hands back a
+     confirmed-data arc (`hitLonArc()`, dateline-aware) instead.
+  3. A fresh page load could still permanently skip the species' own camera fit: the species-camera
+     `$effect` (`src/lens/species/state.svelte.ts`) can run once before `boot` (the release's study
+     areas) has loaded, get `cam === null`, and used to latch `prevCameraKey` anyway — so a LATER
+     pass, once `boot` arrived, saw "already fitted" and never retried. It now latches only once a
+     camera was actually computed.
+
+  Second re-review pass (orchestrator eyes-on of the merged build) found three MORE problems with
+  the toggle, fixed the same round: 4. **Phone framing (blocking):** the narrowed "US waters" box (~136° wide) still could not fit
+  390px — it settled at zoom 0.78, a tiny globe mostly hidden behind the sheet, empty sky above.
+  New `phoneAwareWideRangeBounds()` (`src/lib/map/camera.ts`) substitutes `PHONE_DEFAULT_BOUNDS`
+  — the app's own known-good phone default view — whenever the narrowed box would zoom out
+  further than that default already does; gated to the phone only (`isPhone`), desktop untouched. 5. **"Whole range" missing the western Pacific hits:** on desktop it read as nearly identical to
+  "US waters" (never showing Guam/CNMI, 145°E); on the phone it centred at lat -56.5, south of
+  the confirmed-data arc's own -17.7° south edge, entirely behind the sheet. Root cause:
+  `boundsToCameraView`'s own asymmetric-padding shift overshoots badly at the near-zero zoom this
+  ~150°-wide arc needs. New `symmetricPadding()` (`src/lib/map/camera.ts`) splits each axis's
+  total chrome reserve evenly (the fitted zoom is unaffected) while zeroing both differentials,
+  so "Whole range" — now computed directly via `boundsToCameraView`, never through MapLibre's own
+  `cameraForBounds()` — always lands on the arc's true geometric midpoint. Verified live: both
+  viewports now settle at the SAME centre (`lng -140.5, lat 28.0`), visibly including the western
+  Pacific data. 6. **Speed:** `narrowLongitude()` probed its ~14 `/cog/point` candidates one at a time, taking
+  11-14s live before the toggle appeared. Now bounded-concurrent (4 in flight, never unbounded —
+  "never hammer titiler"), result order still independent of the real network's own response
+  order. Measured against the real titiler: the probe sweep itself dropped from ~7.0s sequential
+  to ~2.1s concurrent; end-to-end (a real browser run) the toggle now appears in ~3.5-3.7s.
+
+  "Whole range" frames the confirmed-data arc (or the model's own raw bbox, for a bundle-published
+  globe-spanning extent); the walrus (a real, narrowable antimeridian wrap, one compact location) is
+  unaffected throughout. Verified live end-to-end, both viewports, "US waters" and "Whole range".
+
+- **Fixed: the exported map title read "score · score"** for the default Scores layer (Download
+  menu, PNG/SVG, both themes) — `src/lib/download/footer.ts` gains `titleWithUnit()`, which skips
+  the unit when it equals the title (case-insensitive, trimmed); a species title + a distinct unit
+  still joins as before.
+- **Fixed: the Layers "Selection" row read "— nothing selected" while a place was loaded**
+  (`?pl=z.pa.GAA`) — `isPlacesSelectionEmpty()` (`src/lib/state/types.ts`) now also takes the
+  decoded places count, so a loaded `pl=` list (with no `sel.sel` pick yet) counts as "not empty",
+  matching what the Places panel and Download menu already showed.
+- **Fixed: the About modal's "Release notes" link 404'd** — `release_notes.html` was never a real
+  chapter; the docs book's release chapter is `releases.qmd` → `releases.html`.
+  `src/lib/release/docsUrl.ts#RELEASE_NOTES_CHAPTER_PATH` and `Shell.svelte`'s hand-duplicated
+  `releaseNotesHref` both fixed together.
+
+# atlas 0.10.74
+
+Round 3, W3b (accessibility fix, CI run 36158947685). The gallery's axe gate flagged
+`scrollable-region-focusable` on the Flower plot's component table (all 6 theme × width combos).
+
+- **Fixed: the Flower plot's component score table was not reachable by keyboard** — its own
+  independent scroll box (`.flower-table-scroll`, added R3-B10 so the "Mean" row stays reachable
+  when the flower above it is tall) had no `tabindex`, so a keyboard-only user could never scroll
+  it, only a mouse/touch one. It is now a `tabindex="0"` `role="region"`, named via
+  `aria-labelledby` to the table's own `<caption>` (never a second, independently-worded label),
+  with a visible `:focus-visible` ring using the same token/shape `Sheet.svelte`'s `.sheet-body`
+  and `Panel.svelte`'s `.panel-surface` already use (`outline: 2px solid var(--focus-ring);
+outline-offset: -2px;`).
 
 # atlas 0.10.73
 

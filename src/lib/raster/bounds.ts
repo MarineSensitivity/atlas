@@ -26,6 +26,15 @@
 // data, frames a MODEST window around it rather than the file's own (correct but useless) full width.
 // Bounded cost (at most `CANDIDATE_LONS.length` extra requests, fired only on this already-rare
 // last-resort path) and an honest approximation — documented as such, never claimed to be exact.
+//
+// R3-rr fix 1, round 2 (2026-09-25, real-build eyes-on): the walrus is ONE compact location, but
+// not every degenerate COG is -- the leatherback (mdl_seq 54241) holds real data at FOUR widely
+// separated candidates (Aleutians, Atlantic/Caribbean, Hawaii, Guam/CNMI), a genuinely wide-ranging
+// species a single "modest window" cannot honestly frame. `narrowLongitude` now probes every
+// candidate (not just the first hit) and, when the hits are spread wide (`multiRegionSpread` past
+// `MULTI_REGION_SPREAD_DEG`), hands the RAW degenerate bbox back instead of a narrow window --
+// letting `camera.ts#cogBoundsCamera`'s own wide-range/US-study-area narrowing (already fixed in
+// round 1, for a bundle-published globe-spanning bbox) apply here too, "Whole range" toggle and all.
 import { encodeUrlReserved } from "./urlEncode";
 import { DEFAULT_TITILER_CONFIG, type TitilerConfig } from "./tiles";
 import { titilerPointUrl } from "./point";
@@ -64,8 +73,9 @@ const GLOBE_SPAN_DEG = 350;
  * real longitude (verified live, this module's own header), kept in the list rather than rounded
  * away to a nearby candidate. One `/cog/point` sample each, at the degenerate bbox's own latitude
  * midpoint, is the cheapest way to find WHERE in that full-width band the taxon's real data
- * actually sits. */
-const CANDIDATE_LONS: readonly number[] = [
+ * actually sits. Exported for the test that pins "every candidate is still probed" (R3-rr fix 1,
+ * round 2) to its exact count, rather than a magic number that could silently drift. */
+export const CANDIDATE_LONS: readonly number[] = [
   -177, -170, -165, -150, -135, -120, -108, -97, -88, -80, -70, -66, -157, 145,
 ];
 
@@ -92,12 +102,113 @@ async function hasDataAt(
   return typeof first === "number" && Number.isFinite(first);
 }
 
+/** R3-rr fix 1, round 5: at most this many `/cog/point` probes in flight at once -- bounded so a
+ * genuinely wide-range species (every candidate probed) never fires all `CANDIDATE_LONS.length`
+ * requests at once, but still fast: measured live against titiler-v8, 4-way concurrency for the
+ * real leatherback's 14-candidate sweep dropped ~11-14s (sequential) to well under 4s (see the
+ * round's own report for the exact before/after numbers). */
+export const PROBE_CONCURRENCY = 4;
+
+/** runs `fn` over `items` with at most `limit` in flight at once, returning results in the SAME
+ * order as `items` regardless of which one finishes first (a simple worker-pool: each of `limit`
+ * workers repeatedly claims the next unclaimed index until none remain). Exists here rather than
+ * as a general utility because its one contract — order-preserving despite concurrent completion —
+ * is specific to why {@link narrowLongitude} needs it: `hits` must come out in `CANDIDATE_LONS`'s
+ * own fixed order for {@link hitLonArc}'s dateline math to see byte-identical input to a purely
+ * sequential probe of the same real data. */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
+
+/**
+ * The smallest arc (west/east, in the SAME continuous, never-normalized frame `camera.ts`'s own
+ * `minimalFrame` produces — `east` may exceed 180) that contains every hit longitude, wrapping
+ * across the antimeridian: sort the points, find the single largest GAP between
+ * circularly-consecutive points, and the arc runs from right after that gap to right before it —
+ * whatever is left once the circle is cut at its widest empty stretch. This is what keeps two
+ * Pacific-side hits that are only close together THROUGH the dateline (e.g. 145 and -165, ~50 deg
+ * apart via the Pacific, not the naive 310 deg measured the other way) from being mistaken for "far
+ * apart" by a plain `max - min`. `hits` must be non-empty (checked by the one caller). The returned
+ * span (`east - west`) also doubles as "how spread out are these hits" for {@link narrowLongitude}'s
+ * own multi-region decision — a single function, one definition of "spread".
+ */
+function hitLonArc(hits: readonly number[]): [west: number, east: number] {
+  if (hits.length === 1) return [hits[0], hits[0]]; // the trivial case: a single point IS the arc
+  const sorted = [...hits].sort((a, b) => a - b);
+  const n = sorted.length;
+  let bestGap = sorted[0] + 360 - sorted[n - 1]; // the wraparound gap, last -> first
+  let cutAfter = n - 1; // the gap is between sorted[cutAfter] and sorted[(cutAfter+1) % n] + 360
+  for (let i = 1; i < n; i++) {
+    const gap = sorted[i] - sorted[i - 1];
+    if (gap > bestGap) {
+      bestGap = gap;
+      cutAfter = i - 1;
+    }
+  }
+  // walk the circle starting right after the widest gap, adding a whole turn to every point that
+  // wrapped past the array's own end, so the result is one continuous, monotonically increasing
+  // run (never re-normalized — the SAME rule this module's own header names for the whole app).
+  let west = 0;
+  let east = 0;
+  for (let k = 0; k < n; k++) {
+    const idx = (cutAfter + 1 + k) % n;
+    const v = sorted[idx] + (idx <= cutAfter ? 360 : 0);
+    if (k === 0) west = v;
+    east = v;
+  }
+  return [west, east];
+}
+
+/** R3-rr fix 1, round 2 (Opus 5.5 eyes-on review round 3, second pass, 2026-09-25 — real-build
+ * eyes-on found the round-1 `cogBoundsCamera` fix alone never reaches the live leatherback: its
+ * `/cog/info` bbox IS degenerate, so THIS module intercepts first, and the narrowed point-probe
+ * window it used to hand back was `[-185, -17.7, -145, 60.45]` — only 40 deg of LONGITUDE, well
+ * under `WIDE_RANGE_SPAN_DEG`, so `wideRangeAware()` never narrowed it and the toggle stayed
+ * hidden, even though the resulting box was still 78 deg TALL (the single-candidate window kept
+ * the ORIGINAL degenerate bbox's own full latitude range) — a "modest window" in name only.
+ * Measured live (2026-09-25): the leatherback holds real data at FOUR widely separated candidates
+ * (-165 Aleutians, -66 Atlantic/Caribbean, -157 Hawaii, 145 Guam/CNMI) — a genuinely Pacific-AND-
+ * Atlantic-wide species, not a single compact location the walrus-style narrowing was designed for
+ * (walrus: exactly ONE hit, -170, nothing else). Past this many degrees of {@link hitLonArc} spread,
+ * several hits are treated as a genuinely wide range rather than one imprecise point. */
+const MULTI_REGION_SPREAD_DEG = 60;
+
 /**
  * When `bbox`'s longitude span is degenerate (whole-globe-width — this module's own header has the
- * measured walrus example), probe {@link CANDIDATE_LONS} at `bbox`'s own latitude midpoint and
- * frame a modest window around the FIRST one that holds real data. Returns `bbox` UNCHANGED when
- * it is not degenerate, and `null` when it is degenerate AND no candidate held data (the caller
- * falls back to the study area, same as before this module existed).
+ * measured walrus example), probe {@link CANDIDATE_LONS} at `bbox`'s own latitude midpoint.
+ *
+ * - No candidate holds data: `null` (the caller falls back to the study area, same as before this
+ *   module existed).
+ * - The hits fit within {@link MULTI_REGION_SPREAD_DEG} of each other (a single hit is the walrus
+ *   shape; several CLOSE hits are one real, if imprecise, coastal range): frame a modest window
+ *   around their {@link hitLonArc} — the ORIGINAL single-hit behaviour, generalized.
+ * - The hits are spread WIDER than that (the leatherback shape, round 2 above): a "modest window"
+ *   would either miss most of the real range or, built wide enough to cover them all, stop being
+ *   modest at all. EARLIER this handed the RAW (still-degenerate, `-180..180`) bbox back —
+ *   verified live (2026-09-25) that a raw whole-globe box's `cameraForBounds()` fit lands on
+ *   `lng=0` (Africa), the OPPOSITE side of the world from any of the actual data, for "Whole
+ *   range" (never a sensible "show me everywhere this model has data"). {@link hitLonArc}'s own
+ *   arc (e.g. 145..294 continuous for the leatherback, ~149 deg — real, data-backed, and never
+ *   re-normalized) is handed back instead: still wide enough to trigger
+ *   `camera.ts#wideRangeAware`'s US-study-area narrowing (so the toggle appears, "US waters"
+ *   default), but "Whole range" now fits an arc every degree of which is confirmed to hold data,
+ *   not an arbitrary bisection of the globe.
+ *
+ * Returns `bbox` UNCHANGED (skipping the probe entirely) when it is not degenerate to begin with.
  */
 export async function narrowLongitude(
   fetchJson: BoundsJsonFetcher,
@@ -108,15 +219,26 @@ export async function narrowLongitude(
   const [xmin, ymin, xmax, ymax] = bbox;
   if (xmax - xmin < GLOBE_SPAN_DEG) return bbox; // not degenerate — nothing to narrow
   const midLat = (ymin + ymax) / 2;
-  for (const lon of CANDIDATE_LONS) {
-    // deliberately sequential: stop at the FIRST hit, never fire every candidate when an early
-    // one already answers (this is a last-resort path, never the common case, but still worth
-    // not needlessly hammering titiler on every load).
-    if (await hasDataAt(fetchJson, config, cogUrl, lon, midLat)) {
-      return [lon - NARROWED_HALF_WIDTH_DEG, ymin, lon + NARROWED_HALF_WIDTH_DEG, ymax];
-    }
+  // R3-rr fix 1, round 5 (orchestrator eyes-on: the toggle took 11-14s to appear -- CANDIDATE_LONS
+  // sequentially, one /cog/point round-trip at a time): bounded concurrency, never sequential and
+  // never unbounded ("never hammer titiler" -- this module's own header). The RESULT stays
+  // order-independent of completion timing: `hits` is filtered back into CANDIDATE_LONS's own
+  // fixed order below, not the order responses happen to arrive in, so hitLonArc()'s own dateline
+  // math (which only cares about the SET of hits, not their order) sees byte-identical input to
+  // the old sequential version for the same real data.
+  const flags = await mapWithConcurrency(CANDIDATE_LONS, PROBE_CONCURRENCY, (lon) =>
+    hasDataAt(fetchJson, config, cogUrl, lon, midLat),
+  );
+  const hits = CANDIDATE_LONS.filter((_, i) => flags[i]);
+  if (hits.length === 0) return null;
+  const [arcWest, arcEast] = hitLonArc(hits);
+  if (arcEast - arcWest <= MULTI_REGION_SPREAD_DEG) {
+    return [arcWest - NARROWED_HALF_WIDTH_DEG, ymin, arcEast + NARROWED_HALF_WIDTH_DEG, ymax];
   }
-  return null;
+  // wide spread: hand back the confirmed-data arc itself (no extra padding -- it is already a
+  // real, wide range, and padding it past 180 deg would trip camera.ts#minimalFrame's own
+  // "re-derive the narrower complementary frame" rule into picking the WRONG, empty side).
+  return [arcWest, ymin, arcEast, ymax];
 }
 
 /** the stock-titiler-backed `BoundsSource`. `fetchJson` is required (no default network

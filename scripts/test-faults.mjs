@@ -695,6 +695,28 @@ export const FAULTS = [
     env: { PW_PORT: "4373" },
   },
   {
+    // R3-W3b (CI run 36158947685, "e2e (gallery)" job): axe `scrollable-region-focusable` on
+    // `.flower-table-scroll` -- the table's own scroll box (R3-B10) had no way to reach it by
+    // keyboard. This patch reverts the fix's `tabindex="0"`/`role="region"`/`aria-labelledby`.
+    id: "flower-scroll-focusable",
+    patch: "tests/faults/flower-scroll-focusable.patch",
+    describe:
+      'Flower.svelte\'s `.flower-table-scroll` loses its `tabindex="0"`/`role="region"`/' +
+      "`aria-labelledby` -- the scroll region becomes keyboard-unreachable again (axe " +
+      "scrollable-region-focusable)",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/scores.flower.spec.ts",
+      "-g",
+      "the scroll container is a named, tabbable region",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4573" },
+  },
+  {
     id: "legend-chip-modal-blank",
     patch: "tests/faults/legend-chip-modal-blank.patch",
     describe:
@@ -905,21 +927,13 @@ export const FAULTS = [
     id: "species-cogbounds-widerange-skipped",
     patch: "tests/faults/species-cogbounds-widerange-skipped.patch",
     describe:
-      "D1 (Opus 5.5 eyes-on review round 2, 2026-09-25): refineCameraFromCogBounds() (the " +
-      "COG-bounds last resort every v7 species reaches, since v7 publishes no bbox anywhere) " +
-      "stops calling wideRangeAware()/recordWideRangeCamera() -- the leatherback (v7's default " +
-      "landing species) frames its whole Pacific-spanning range again, with no 'Zoom to' toggle",
-    gate: [
-      "npx",
-      "playwright",
-      "test",
-      "--project=chromium",
-      "e2e/species.camera.spec.ts",
-      "-g",
-      "bbox-LESS",
-      "--workers=1",
-    ],
-    env: { PW_PORT: "4443" },
+      "R3-rr fix 1 (Opus 5.5 eyes-on review round 3, second pass, 2026-09-25 -- regenerated from " +
+      "the D1/round-2 fault of the same id, whose target code cogBoundsCamera() superseded): " +
+      "cogBoundsCamera() (data/camera.ts) restores the early `return null` for a globe-spanning " +
+      "frame BEFORE wideRangeAware() ever runs -- the leatherback's REAL live /cog/info bounds " +
+      "([-180,-17.7,180,60.45]) again read as 'not a camera at all', so the whole-Pacific range " +
+      "and no 'Zoom to' toggle are back",
+    gate: ["npx", "vitest", "run", "tests/lens/species/camera.test.ts", "-t", "R3-rr fix 1"],
   },
   // RETIRED (P9, 0.10.49): "phone-zoom-boost-neutered" patched `PHONE_STUDY_AREA_ZOOM_BOOST` to 0,
   // proving the phone's initial camera stayed zoomed in. P9 found the deeper bug that mechanism
@@ -1685,8 +1699,18 @@ export const FAULTS = [
     describe:
       "Segmented.svelte's `.seg button` (W3 item 3: the segments filled only part of the pill, " +
       "~283 of 1245px on desktop) drops `flex: 1 1 0%` -- a caller whose own layout stretches " +
-      "`.seg` (the Layers unit toggle, the Table Species|Zones|Composition switch) leaves dead " +
-      "space past the last segment again",
+      "`.seg` (the Table Species|Zones|Composition switch) leaves dead space past the last " +
+      "segment again",
+    // R3-CI (CI run 36158947685: this gate stayed GREEN with the fault applied -- "it cannot
+    // fail, so it is not a check"). Root cause: R3's redesign gave the Layers unit toggle
+    // `Segmented`'s new `fit` prop, which sets `align-self: flex-start` on `.seg` itself --
+    // that cancels the toggle's own parent's `align-items: stretch`, so `.seg`'s outer box is
+    // now always exactly as wide as its (unstretched) content REGARDLESS of `.seg button`'s own
+    // `flex: 1 1 0%` rule -- the old gate target, "the two segments fill the pill's own width",
+    // no longer depends on the rule it was meant to gate. Retargeted at the Table view switch
+    // (`TablePanel.svelte`, `fit` omitted, still parent-stretched exactly like the pre-R3
+    // toggle) -- confirmed red by hand before this change shipped (see that test's own header
+    // in `e2e/layers.spec.ts`).
     gate: [
       "npx",
       "playwright",
@@ -1694,7 +1718,7 @@ export const FAULTS = [
       "--project=chromium",
       "e2e/layers.spec.ts",
       "-g",
-      "the two segments fill the pill's own width",
+      "the Table view switch's segments fill the pill's own width",
       "--workers=1",
     ],
     env: { PW_PORT: "4533" },
@@ -1919,6 +1943,20 @@ export const FAULTS = [
       "distribution's own [min, max] (a stale/rounding edge case) now places the popup " +
       "sparkline's marker line OFF the visible SVG instead of pinned to the nearest end",
     gate: ["npx", "vitest", "run", "tests/lib/map/density.test.ts"],
+  },
+  // round-3 tooling fix: scripts/gallery-baselines-from-ci-core.mjs's baselineNameFor() reverted to
+  // dropping the "-actual" suffix alone (no "-chromium-linux" added), the same bug commit 6aa87aa
+  // fixed by hand -- a CI actual (e.g. "gallery-navy-desktop-about-actual.png") again maps to a
+  // suffix-less name the gallery spec never reads, instead of the "-chromium-linux.png" baseline it
+  // does.
+  {
+    id: "gallery-baseline-suffix",
+    patch: "tests/faults/gallery-baseline-suffix.patch",
+    describe:
+      "gallery-baselines-from-ci-core.mjs's baselineNameFor() drops the '-actual' suffix alone " +
+      "again, without adding back the '-chromium-linux' platform suffix a real CI actual never " +
+      "carries -- installs suffix-less files the gallery spec never reads",
+    gate: ["npx", "vitest", "run", "tests/scripts/galleryBaselinesFromCi.test.ts"],
   },
 ];
 
