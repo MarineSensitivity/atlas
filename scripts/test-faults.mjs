@@ -901,6 +901,26 @@ export const FAULTS = [
       "130-deg fixture) keeps its whole, un-narrowed range and the 'Zoom to' toggle never appears",
     gate: ["npx", "vitest", "run", "tests/lens/species/camera.test.ts", "-t", "R3-A1"],
   },
+  {
+    id: "species-cogbounds-widerange-skipped",
+    patch: "tests/faults/species-cogbounds-widerange-skipped.patch",
+    describe:
+      "D1 (Opus 5.5 eyes-on review round 2, 2026-09-25): refineCameraFromCogBounds() (the " +
+      "COG-bounds last resort every v7 species reaches, since v7 publishes no bbox anywhere) " +
+      "stops calling wideRangeAware()/recordWideRangeCamera() -- the leatherback (v7's default " +
+      "landing species) frames its whole Pacific-spanning range again, with no 'Zoom to' toggle",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/species.camera.spec.ts",
+      "-g",
+      "bbox-LESS",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4443" },
+  },
   // RETIRED (P9, 0.10.49): "phone-zoom-boost-neutered" patched `PHONE_STUDY_AREA_ZOOM_BOOST` to 0,
   // proving the phone's initial camera stayed zoomed in. P9 found the deeper bug that mechanism
   // never caught: the boosted camera was still centred on `FALLBACK_FULL_STUDY_AREA`'s own
