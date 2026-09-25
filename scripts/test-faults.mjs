@@ -1932,6 +1932,20 @@ export const FAULTS = [
     ],
     env: { PW_PORT: "4471" },
   },
+  // round-3 tooling fix: scripts/gallery-baselines-from-ci-core.mjs's baselineNameFor() reverted to
+  // dropping the "-actual" suffix alone (no "-chromium-linux" added), the same bug commit 6aa87aa
+  // fixed by hand -- a CI actual (e.g. "gallery-navy-desktop-about-actual.png") again maps to a
+  // suffix-less name the gallery spec never reads, instead of the "-chromium-linux.png" baseline it
+  // does.
+  {
+    id: "gallery-baseline-suffix",
+    patch: "tests/faults/gallery-baseline-suffix.patch",
+    describe:
+      "gallery-baselines-from-ci-core.mjs's baselineNameFor() drops the '-actual' suffix alone " +
+      "again, without adding back the '-chromium-linux' platform suffix a real CI actual never " +
+      "carries -- installs suffix-less files the gallery spec never reads",
+    gate: ["npx", "vitest", "run", "tests/scripts/galleryBaselinesFromCi.test.ts"],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
