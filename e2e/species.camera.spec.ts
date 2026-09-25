@@ -875,7 +875,8 @@ test.describe("R3-A1: a wide-range model frames its IN-US portion, with a Zoom-t
     await wholeButton.click();
     await expect(wholeButton).toHaveAttribute("aria-pressed", "true");
     const wholeRange = await waitForCameraStable(page);
-    const wholeContinuous = wholeRange.center.lng < 0 ? wholeRange.center.lng + 360 : wholeRange.center.lng;
+    const wholeContinuous =
+      wholeRange.center.lng < 0 ? wholeRange.center.lng + 360 : wholeRange.center.lng;
     // NOT near lng=0 (continuous 0 or 360) -- the bug this round's own eyes-on caught live.
     expect(
       Math.min(Math.abs(wholeContinuous - 0), Math.abs(wholeContinuous - 360)),
@@ -1030,7 +1031,10 @@ test.describe("R3-rr fix 1, round 5: the phone 'US waters'/'Whole range' framing
     // the live bug: zoom 0.78. PHONE_DEFAULT_BOUNDS's own zoom (at ANY reasonable phone chrome
     // padding) is comfortably above 2 (tests/map/camera.test.ts pins the exact band) -- this is
     // the SAME observable "did the substitution actually happen" signal that test uses.
-    expect(settled.zoom, "phone 'US waters' still settles at the broken near-zero zoom").toBeGreaterThan(2);
+    expect(
+      settled.zoom,
+      "phone 'US waters' still settles at the broken near-zero zoom",
+    ).toBeGreaterThan(2);
     // the settled centre lies inside PHONE_DEFAULT_BOUNDS's own longitude span -- not the
     // leatherback's own ~136deg-wide US-EEZ intersection, which spans well outside it.
     const [[west], [east]] = PHONE_DEFAULT_BOUNDS;

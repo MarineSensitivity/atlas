@@ -584,7 +584,12 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
         const view = boundsToCameraView(wideRangeCamera.wholeRangeBounds, viewport, { padding });
         deps
           .mapHandle()
-          ?.flyTo({ key: "whole-range", lon: view.center[0], lat: view.center[1], zoom: view.zoom });
+          ?.flyTo({
+            key: "whole-range",
+            lon: view.center[0],
+            lat: view.center[1],
+            zoom: view.zoom,
+          });
       } else {
         applyCamera({
           kind: "bounds",
