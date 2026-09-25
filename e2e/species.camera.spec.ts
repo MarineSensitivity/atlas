@@ -104,7 +104,10 @@ test.describe("D8: selecting a model frames its extent, not the default study ar
     const camera = await readCamera(page);
     // the ax sibling's bbox is [-177.7, 60.65, -139.15, 79] -> center (-158.425, 69.825).
     expect(camera.center.lng).toBeGreaterThan(-179);
-    expect(camera.center.lng).toBeLessThan(-135);
+    // W5 (0.10.67): the desktop fit now reserves the docked panel's full footprint (+ inset +
+    // gutter) and only the legend card's height, so the camera centre sits further east than the
+    // bbox centre (-158.4) to keep the whole bbox left of the panel; measured -133.4 at 1280 px.
+    expect(camera.center.lng).toBeLessThan(-125);
     expect(camera.center.lat).toBeGreaterThan(55);
     expect(camera.center.lat).toBeLessThan(85);
   });
