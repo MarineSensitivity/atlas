@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-23T22:18:18.189Z",
+  "generated": "2026-09-25T02:58:43.762Z",
   "viewport": {
     "width": 1280,
     "height": 800
@@ -19,7 +19,7 @@
         "side": "shiny",
         "file": "shots/scores-default-shiny.jpg",
         "url": "https://app.marinesensitivity.org/v7/scores/",
-        "ms": 69409,
+        "ms": 70132,
         "bytes": 82927,
         "ok": true,
         "reason": null
@@ -28,8 +28,8 @@
         "side": "atlas",
         "file": "shots/scores-default-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&theme=dark",
-        "ms": 25807,
-        "bytes": 92656,
+        "ms": 19420,
+        "bytes": 94229,
         "ok": true,
         "reason": null
       }
@@ -45,7 +45,7 @@
         "side": "shiny",
         "file": "shots/scores-programareas-shiny.jpg",
         "url": "https://app.marinesensitivity.org/v7/scores/ (Spatial units → \"Program areas\")",
-        "ms": 72756,
+        "ms": 73130,
         "bytes": 80524,
         "ok": true,
         "reason": null
@@ -54,8 +54,8 @@
         "side": "atlas",
         "file": "shots/scores-programareas-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&unit=programarea&theme=dark",
-        "ms": 33142,
-        "bytes": 85965,
+        "ms": 19469,
+        "bytes": 93239,
         "ok": true,
         "reason": null
       }
@@ -71,7 +71,7 @@
         "side": "shiny",
         "file": "shots/scores-component-layer-shiny.jpg",
         "url": "https://app.marinesensitivity.org/v7/scores/ (Layer → \"fish: ext. risk, ecorgn\")",
-        "ms": 72690,
+        "ms": 73180,
         "bytes": 84728,
         "ok": true,
         "reason": null
@@ -80,8 +80,8 @@
         "side": "atlas",
         "file": "shots/scores-component-layer-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&lyr=extrisk_fish_ecoregion_rescaled&theme=dark",
-        "ms": 31529,
-        "bytes": 90002,
+        "ms": 19371,
+        "bytes": 93697,
         "ok": true,
         "reason": null
       }
@@ -97,7 +97,7 @@
         "side": "shiny",
         "file": "shots/scores-study-area-ak-shiny.jpg",
         "url": "https://app.marinesensitivity.org/v7/scores/ (Study area → \"Alaska\")",
-        "ms": 72727,
+        "ms": 73329,
         "bytes": 90509,
         "ok": true,
         "reason": null
@@ -106,8 +106,8 @@
         "side": "atlas",
         "file": "shots/scores-study-area-ak-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&area=AK&theme=dark",
-        "ms": 41578,
-        "bytes": 92532,
+        "ms": 19789,
+        "bytes": 92764,
         "ok": true,
         "reason": null
       }
@@ -123,7 +123,7 @@
         "side": "shiny",
         "file": "shots/scores-flower-shiny.jpg",
         "url": "https://app.marinesensitivity.org/v7/scores/ (tab \"Plot of Scores\")",
-        "ms": 73298,
+        "ms": 73907,
         "bytes": 55512,
         "ok": true,
         "reason": null
@@ -132,8 +132,8 @@
         "side": "atlas",
         "file": "shots/scores-flower-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&theme=dark",
-        "ms": 27914,
-        "bytes": 95291,
+        "ms": 22426,
+        "bytes": 85429,
         "ok": true,
         "reason": null
       }
@@ -149,7 +149,7 @@
         "side": "shiny",
         "file": "shots/scores-species-table-shiny.jpg",
         "url": "https://app.marinesensitivity.org/v7/scores/ (tab \"Table of Species\")",
-        "ms": 73325,
+        "ms": 73815,
         "bytes": 79406,
         "ok": true,
         "reason": null
@@ -158,8 +158,8 @@
         "side": "atlas",
         "file": "shots/scores-species-table-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&theme=dark",
-        "ms": 30722,
-        "bytes": 108568,
+        "ms": 28611,
+        "bytes": 102885,
         "ok": true,
         "reason": null
       }
@@ -175,7 +175,7 @@
         "side": "shiny",
         "file": "shots/scores-composition-shiny.jpg",
         "url": "https://app.marinesensitivity.org/v7/scores/ (tab \"Table of Species\" → \"Composition\")",
-        "ms": 79358,
+        "ms": 79709,
         "bytes": 97883,
         "ok": true,
         "reason": null
@@ -184,8 +184,8 @@
         "side": "atlas",
         "file": "shots/scores-composition-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&theme=dark",
-        "ms": 27471,
-        "bytes": 100075,
+        "ms": 29948,
+        "bytes": 46275,
         "ok": true,
         "reason": null
       }
@@ -202,8 +202,8 @@
         "side": "atlas",
         "file": "shots/scores-zones-table-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&unit=programarea&theme=dark",
-        "ms": 48620,
-        "bytes": 101185,
+        "ms": 28967,
+        "bytes": 84688,
         "ok": true,
         "reason": null
       }
@@ -219,8 +219,8 @@
         "side": "shiny",
         "file": "shots/species-default-shiny.jpg",
         "url": "https://app.marinesensitivity.org/v7/species/",
-        "ms": 69712,
-        "bytes": 78330,
+        "ms": 70040,
+        "bytes": 76829,
         "ok": true,
         "reason": null
       },
@@ -228,8 +228,8 @@
         "side": "atlas",
         "file": "shots/species-default-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&lens=species&theme=dark",
-        "ms": 51127,
-        "bytes": 88818,
+        "ms": 19384,
+        "bytes": 75925,
         "ok": true,
         "reason": null
       }
@@ -245,7 +245,7 @@
         "side": "shiny",
         "file": "shots/species-deeplink-shiny.jpg",
         "url": "https://app.marinesensitivity.org/v7/species/?mdl_seq=54383",
-        "ms": 69887,
+        "ms": 69986,
         "bytes": 71257,
         "ok": true,
         "reason": null
@@ -254,8 +254,8 @@
         "side": "atlas",
         "file": "shots/species-deeplink-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&lens=species&mdl_seq=54383&theme=dark",
-        "ms": 41946,
-        "bytes": 81383,
+        "ms": 19416,
+        "bytes": 81884,
         "ok": true,
         "reason": null
       }
@@ -271,8 +271,8 @@
         "side": "shiny",
         "file": "shots/species-picker-shiny.jpg",
         "url": "https://app.marinesensitivity.org/v7/species/ (Species picker, open)",
-        "ms": 72258,
-        "bytes": 83602,
+        "ms": 72474,
+        "bytes": 83717,
         "ok": true,
         "reason": null
       },
@@ -280,8 +280,8 @@
         "side": "atlas",
         "file": "shots/species-picker-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&lens=species&theme=dark",
-        "ms": 22117,
-        "bytes": 98417,
+        "ms": 21979,
+        "bytes": 88301,
         "ok": true,
         "reason": null
       }
@@ -297,7 +297,7 @@
         "side": "shiny",
         "file": "shots/report-gaa-shiny.jpg",
         "url": "https://app.marinesensitivity.org/v7/scores/ (tab \"Report\")",
-        "ms": 77412,
+        "ms": 73447,
         "bytes": 100737,
         "ok": true,
         "reason": null
@@ -306,8 +306,8 @@
         "side": "atlas",
         "file": "shots/report-gaa-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/report.html?ver=v7&theme=dark#pl=z.pa.GAA&t=Gulf%20of%20Alaska%20Program%20Area",
-        "ms": 5245,
-        "bytes": 102164,
+        "ms": 4795,
+        "bytes": 105862,
         "ok": true,
         "reason": null
       }
@@ -324,8 +324,8 @@
         "side": "atlas",
         "file": "shots/report-figures-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/report.html?ver=v7&theme=dark#pl=z.pa.GAA&t=Gulf%20of%20Alaska%20Program%20Area",
-        "ms": 7944,
-        "bytes": 57170,
+        "ms": 7905,
+        "bytes": 70687,
         "ok": true,
         "reason": null
       }
@@ -341,7 +341,7 @@
         "side": "shiny",
         "file": "shots/theme-paper-shiny.jpg",
         "url": "https://app.marinesensitivity.org/v7/scores/ (theme toggle → light)",
-        "ms": 73708,
+        "ms": 74998,
         "bytes": 88852,
         "ok": true,
         "reason": null
@@ -350,8 +350,8 @@
         "side": "atlas",
         "file": "shots/theme-paper-atlas.jpg",
         "url": "https://marinesensitivity.org/atlas/?ver=v7&theme=light",
-        "ms": 19521,
-        "bytes": 86523,
+        "ms": 19474,
+        "bytes": 97267,
         "ok": true,
         "reason": null
       }
