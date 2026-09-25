@@ -1,14 +1,13 @@
 diff --git a/src/lens/scores/popup.ts b/src/lens/scores/popup.ts
-index 3eb3668..3853e02 100644
+index 5cb39de..c8e6efc 100644
 --- a/src/lens/scores/popup.ts
 +++ b/src/lens/scores/popup.ts
-@@ -77,14 +77,16 @@ function cellPopupContent(input: CellPopupInput): ValuePopupContent {
-     lat: input.lat,
-   });
+@@ -78,14 +78,15 @@ function cellPopupContent(input: CellPopupInput): ValuePopupContent {
+       ? formatLatLon(input.lat, input.lon)
+       : formatSubject({ kind: "cell", cellId: input.cellId, lon: input.lon, lat: input.lat });
    const swatch = cellSwatch(input.value, input.ramp);
-+  // SEEDED FAULT (tests/faults/popup-no-value-cellid-title.patch): back to the cell id + full
-+  // layer label on a no-value cell -- the owner's ORIGINAL live defect (D3), reproduced by
-+  // dropping the no-value branch entirely. Must turn tests/lens/scores/popup.test.ts red.
++  // SEEDED FAULT (tests/faults/popup-no-value-cellid-title.patch): back to the full layer label +
++  // sparkline on a no-value cell -- must turn tests/lens/scores/popup.test.ts red.
    return {
      subject,
 -    valueLine:

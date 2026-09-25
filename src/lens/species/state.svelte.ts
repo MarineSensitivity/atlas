@@ -204,7 +204,8 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
       rep: selStore.sel.rep,
       boot: deps.boot() as { palettes?: unknown } | null,
       ver,
-      legendTitle: card.sci,
+      scientificName: card.sci,
+      commonName: card.common,
     });
   });
 

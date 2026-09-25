@@ -25,7 +25,7 @@ test.describe("welcome modal (first visit, not suppressed)", () => {
     await expect(dialog).not.toBeVisible();
   });
 
-  test("Take a Tour announces (no real tour this phase); hidden when ?tour=off", async ({
+  test("Take a tour announces (no real tour this phase); hidden when ?tour=off", async ({
     page,
   }) => {
     await routeBucket(page);
@@ -33,6 +33,6 @@ test.describe("welcome modal (first visit, not suppressed)", () => {
     await page.route("**/branding/mma-seal.svg", (route) => route.fulfill({ status: 404 }));
     await page.goto("/?tour=off");
     await waitForHydration(page);
-    await expect(page.getByRole("button", { name: "Take a Tour" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Take a tour" })).toHaveCount(0);
   });
 });

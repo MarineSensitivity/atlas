@@ -523,7 +523,7 @@ export const STATUS = {
       },
       {
         file: "e2e/scores.welcome.spec.ts",
-        name: "Take a Tour announces (no real tour this phase); hidden when ?tour=off",
+        name: "Take a tour announces (no real tour this phase); hidden when ?tour=off",
       },
       {
         file: "e2e/scores.versionPicker.spec.ts",

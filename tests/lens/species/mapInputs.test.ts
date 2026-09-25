@@ -83,7 +83,12 @@ describe("speciesMapInputs — COG branch", () => {
   it("the merged model: titiler tile with its own colormap/rescale, opacity 0.8", () => {
     const card = CARDS.leatherback();
     const bar = layerBar(card, { ver: "v9", selectedInput: MERGED_IN, datasets: v9() });
-    const out = speciesMapInputs(bar, { rep: "native", ver: "v9", legendTitle: card.sci });
+    const out = speciesMapInputs(bar, {
+      rep: "native",
+      ver: "v9",
+      scientificName: card.sci,
+      commonName: card.common,
+    });
     expect(out.notice).toBeNull();
     expect(out.raster?.id).toBe(SPECIES_RASTER_ID);
     expect(out.raster?.opacity).toBe(SPECIES_RASTER_OPACITY);
@@ -95,7 +100,12 @@ describe("speciesMapInputs — COG branch", () => {
   it("AquaX 'Delivered' (native) representation carries rescale=0,1000 — the AquaX gate", () => {
     const card = CARDS.leatherback();
     const bar = layerBar(card, { ver: "v9", selectedInput: "ax", datasets: v9() });
-    const out = speciesMapInputs(bar, { rep: "native", ver: "v9", legendTitle: card.sci });
+    const out = speciesMapInputs(bar, {
+      rep: "native",
+      ver: "v9",
+      scientificName: card.sci,
+      commonName: card.common,
+    });
     expect(out.raster?.tiles[0]).toContain("rescale=0,1000");
     expect(out.asset?.rep).toBe("native");
   });
@@ -103,7 +113,12 @@ describe("speciesMapInputs — COG branch", () => {
   it("AquaX 'As ingested' (model) representation carries rescale=1,100", () => {
     const card = CARDS.leatherback();
     const bar = layerBar(card, { ver: "v9", selectedInput: "ax", datasets: v9() });
-    const out = speciesMapInputs(bar, { rep: "model", ver: "v9", legendTitle: card.sci });
+    const out = speciesMapInputs(bar, {
+      rep: "model",
+      ver: "v9",
+      scientificName: card.sci,
+      commonName: card.common,
+    });
     expect(out.raster?.tiles[0]).toContain("rescale=1,100");
   });
 
@@ -117,7 +132,7 @@ describe("speciesMapInputs — COG branch", () => {
     const withBoot = speciesMapInputs(bar, {
       rep: "native",
       ver: "v9",
-      legendTitle: "x",
+      scientificName: "x",
       boot: {
         palettes: { spectral_r: Array.from({ length: 11 }, (_, i) => `#${i}${i}${i}${i}${i}${i}`) },
       },
@@ -127,7 +142,7 @@ describe("speciesMapInputs — COG branch", () => {
       expect(withBoot.legend.stops[0].value).toBe(1);
       expect(withBoot.legend.stops.at(-1)?.value).toBe(100);
     }
-    const withoutBoot = speciesMapInputs(bar, { rep: "native", ver: "v9", legendTitle: "x" });
+    const withoutBoot = speciesMapInputs(bar, { rep: "native", ver: "v9", scientificName: "x" });
     expect(withoutBoot.legend).toBeNull();
     // the raster STILL draws even with no legend — titiler colors it server-side regardless
     expect(withoutBoot.raster).not.toBeNull();
@@ -140,7 +155,12 @@ describe("speciesMapInputs — COG branch", () => {
       selectedInput: MERGED_IN,
       datasets: datasetsFor("v1"),
     });
-    const out = speciesMapInputs(bar, { rep: "native", ver: "v1", legendTitle: card.sci });
+    const out = speciesMapInputs(bar, {
+      rep: "native",
+      ver: "v1",
+      scientificName: card.sci,
+      commonName: card.common,
+    });
     expect(out.notice).toBe("No surface published for this taxon in v1");
     expect(out.raster).toBeNull();
     expect(out.range).toBeNull();
@@ -151,7 +171,12 @@ describe("speciesMapInputs — PMTiles ranges branch", () => {
   it("fill #3388ff at 0.5, source-layer + mdl_key filter from the asset, categorical legend", () => {
     const card = CARDS.walrus();
     const bar = layerBar(card, { ver: "v9", selectedInput: "rng_iucn", datasets: v9() });
-    const out = speciesMapInputs(bar, { rep: "native", ver: "v9", legendTitle: card.sci });
+    const out = speciesMapInputs(bar, {
+      rep: "native",
+      ver: "v9",
+      scientificName: card.sci,
+      commonName: card.common,
+    });
     expect(out.notice).toBeNull();
     expect(out.raster).toBeNull();
     expect(out.range?.id).toBe(SPECIES_RANGE_ID);
@@ -159,13 +184,22 @@ describe("speciesMapInputs — PMTiles ranges branch", () => {
     expect(out.range?.opacity).toBe(RANGE_FILL_OPACITY);
     expect(out.range?.keyProperty).toBe("mdl_key");
     expect(out.range?.key).toBe(activePill(bar)?.mdlKey);
+    // UI-L2 (Ben's "Legend names the layer" ask): title is "{common} ({sci})", subtitle is
+    // "{input label} · presence" (the brief's own "FWS Range · presence" form) -- built by the
+    // SAME `lib/map/legendTitle.ts#legendTitle()` the scores lens' legend uses, never a second,
+    // species-only title format.
     expect(out.legend).toEqual({
       kind: "categorical",
-      title: card.sci,
+      title: "Walrus (Odobenus rosmarus)",
+      subtitle: "IUCN Range · presence",
       label: "range (presence)",
       color: RANGE_FILL_COLOR,
     });
   });
+
+  // the "{common} ({sci})" title's fallback to the bare scientific name (no common name published)
+  // is `legendTitle()`'s own concern, asserted directly in tests/lib/map/legendTitle.test.ts --
+  // not re-asserted here with a synthetic fixture.
 });
 
 describe("formatSpeciesLegendValue — the species legend's own formatValue (defect fix)", () => {
@@ -184,7 +218,12 @@ describe("speciesMapInputs — the struck-through-pill state", () => {
   it("an input with no published assets: the notice, nothing drawn", () => {
     const card = CARDS.walrusV7();
     const bar = layerBar(card, { ver: "v7", selectedInput: "am_0.05", datasets: v7() });
-    const out = speciesMapInputs(bar, { rep: "native", ver: "v7", legendTitle: card.sci });
+    const out = speciesMapInputs(bar, {
+      rep: "native",
+      ver: "v7",
+      scientificName: card.sci,
+      commonName: card.common,
+    });
     expect(out.notice).toBe(noNativeSurfaceNotice());
     expect(out.raster).toBeNull();
     expect(out.range).toBeNull();

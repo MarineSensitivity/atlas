@@ -28,8 +28,15 @@ naming which layer is displayed — plus UI-4/5/8/9 from the Opus 5.5 review.
   3350704 · 28.625° N, 90.575° W". The no-selection subject is now "All US waters" everywhere
   (UI-5) — the same label the Zoom-to-region select already uses — replacing "Full study area".
 - **New `lib/map/legendTitle.ts`** (Ben's UI-L2 ask): the desktop legend card now shows a subtitle
-  under its title — "Raster cells"/"Program Areas" for the scores lens, the species legend's own
-  unit — so the legend says which layer is on screen, not just a bare ramp.
+  under its title — "Raster cells · All US waters · v7"/"Program Areas · v7" for the scores lens —
+  so the legend says which layer is on screen, not just a bare ramp. **Species wiring completed in
+  this merge-fix round**: `SpeciesMapInputsOptions` took a bare `legendTitle: string` (always the
+  raw scientific name, e.g. "Odobenus rosmarus") that never actually called `legendTitle()` —
+  `speciesMapInputs()` (`lens/species/mapInputs.ts`) now builds the real title
+  ("Walrus (Odobenus rosmarus)") and subtitle ("Merged Model · habitat suitability 1-100" /
+  "IUCN Range · presence" / "AquaMaps · as delivered") for both the COG and PMTiles branches, shown
+  by the desktop legend card, the phone legend chip's short form, and the phone Legend modal (all
+  three share `SpeciesLegend.svelte`, so one fix reaches all three).
 - **`metricKeyLabel()` now sentence-cases every label it returns**, not only an absent/degenerate
   one: a real, published `manifest.metrics` label that is itself lowercase ("score") used to stay
   lowercase forever in the Layer select, legend and phone chip.
@@ -45,10 +52,30 @@ naming which layer is displayed — plus UI-4/5/8/9 from the Opus 5.5 review.
   "29" no longer sits beside a "29.7"); its numeric headers right-align to match their columns; the
   Composition treemap's `valueLabel` is "species" (not "n species", which read as a typo).
 - **UI-12**: the Zones table's header text wraps at word boundaries (`overflow-wrap: normal;
-  hyphens: auto`) instead of splitting a word like "Primary production" mid-letter.
+hyphens: auto`) instead of splitting a word like "Primary production" mid-letter.
 - **W3 hand-off**: `ZonesTable.svelte` and `Composition.svelte` had the same `max-height: 50vh`
   blank-space defect B9 fixed for `SpeciesTable.svelte` — both now fill whatever height
   `TablePanel.svelte`'s own `height: 100%` hands down, the same fix, applied the same way.
+- **Merge-fix round (post-`main` merge, 2026-09-25)**: `selectZone`'s search-pick fly path
+  (`src/lens/scores/state.svelte.ts#flyToZoneCenter`), auto-merged from `main`'s own R3-CI retry
+  fix, still called the OLD positional `zonePopupText(zRows, lyr, hit)` — a real type error against
+  this round's new object-shaped `ZonePopupInput`. Both call sites now go through the SAME
+  `buildZonePopup()` helper a real map click uses, so a Program-Area search pick's popup carries the
+  colour swatch + sparkline too, not just a real click's.
+- **UI-21: basemap labels in English** — `mergeCartoStyle()` (`lib/map/style.ts`) now rewrites a
+  merged CARTO symbol layer's plain `["get","name"]`/legacy `"{name}"` `text-field` to
+  `["coalesce", ["get","name_en"], ["get","name"]]`, falling back to the tile's own local spelling
+  only when it has no English variant; a DIFFERENT field (`water_name`, an already-localized
+  expression) is left exactly as CARTO published it.
+- **UI-15 (welcome modal)**: "Species lens" now switches the lens in place and closes the modal
+  (was a `target="_blank"` link to a second tab); "documentation" links this version's own docs URL
+  (`docsHref`, not a bare, version-less guess); "Take a Tour" → "Take a tour"; the intro now reads
+  "data release {ver}" — dropping "immutable"/"marine atlas" internal-repo wording, also fixed in
+  the report's own intro (`lib/report/model.ts`).
+- **UI-7 (report)**: "Open this release in the Atlas" now carries the report's own place token
+  (`appHref(ver, {pl})`, the SAME `pl=` value the header's permalink already encodes) instead of
+  landing on the bare default view; the empty-report state ("No places in this link") gains an
+  "Open the Atlas" escape hatch.
 
 # atlas 0.10.76
 
