@@ -1,0 +1,17 @@
+diff --git a/src/lib/ui/LayersPanel.svelte b/src/lib/ui/LayersPanel.svelte
+index 45a0a46..2f6afe3 100644
+--- a/src/lib/ui/LayersPanel.svelte
++++ b/src/lib/ui/LayersPanel.svelte
+@@ -75,10 +75,8 @@
+   let { stack, onChange, dataControls, unitToggle }: Props = $props();
+ 
+   function onUnitToggleChange(value: string) {
+-    // a disabled toggle passes no onChange at all (species lens) -- this call would otherwise be a
+-    // silent no-op; the `?.` below is the same defensive style `Segmented.svelte`'s own onclick
+-    // uses, not a special case for the disabled toggle.
+-    unitToggle?.onChange?.(value);
++    // SEEDED FAULT (layers-unit-toggle-write-dropped): the wiring call dropped.
++    void value;
+   }
+ 
+   /** the ONE row this panel expands — "Data", the lens's own layer (round-2 plan: "the data row
