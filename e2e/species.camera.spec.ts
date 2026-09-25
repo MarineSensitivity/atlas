@@ -24,6 +24,7 @@ import {
   gotoSpecies,
   routeSpeciesShards,
 } from "./species-hermetic";
+import { studyAreaBboxFallback, studyAreaView } from "../src/lens/species/data/camera";
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -738,5 +739,76 @@ test.describe("R3-A1: a wide-range model frames its IN-US portion, with a Zoom-t
       continuous,
       "camera centre lands OUTSIDE the US intersection's east edge",
     ).toBeLessThanOrEqual(260);
+  });
+
+  // R3-rr fix 1 (Opus 5.5 eyes-on review round 3, SECOND pass, 2026-09-25): the sibling test above
+  // mocked `/cog/info` with "a real, wide, non-degenerate span" ([130,10,260,65]) -- a shape the
+  // LIVE data never actually returns. Probed live 2026-09-25 against
+  // `https://titiler-v8.marinesensitivity.org/cog/info?url=…/usa05/9fe6f75498affae1.tif` (the
+  // leatherback, `?mdl_seq=54241`), the real body is `[-180, -17.700000000000017, 180,
+  // 60.44999999999999]` -- the model reaches American Samoa/Guam across the antimeridian, so the
+  // raster's OWN bbox is already the full globe in longitude. `minimalFrame()` cannot narrow a box
+  // that wide (its complement is zero-width), and the code used to read that as "not a camera at
+  // all" and return BEFORE `wideRangeAware()` ever ran -- so on the REAL live bounds the toggle
+  // never rendered, even though the sibling test above (with its narrower mocked span) passed.
+  // `cogBoundsCamera()` (`data/camera.ts`) is the fix; this test proves it end-to-end with the
+  // EXACT live bounds shape, not a stand-in.
+  test("v7's OWN COG-bounds path with the EXACT live globe-spanning bounds (the real leatherback shape) also narrows to US waters, and the toggle appears", async ({
+    page,
+  }) => {
+    await blockWasm(page);
+    await routeBucket(page, "v7", bootFor("v7"));
+    await routeSpeciesShards(page); // the REAL, unmodified e1.json: merged.bbox null, assets: []
+    await routeSession(page, null); // v7 is public
+    await routeSealFixture(page);
+    await routeGlyphs(page);
+    await routeTitilerTiles(page);
+    const LIVE_LEATHERBACK_COG_BOUNDS = [-180, -17.700000000000017, 180, 60.44999999999999];
+    await page.route(
+      (url) => url.hostname === "titiler-v8.marinesensitivity.org" && url.pathname === "/cog/info",
+      (route: Route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ bounds: LIVE_LEATHERBACK_COG_BOUNDS }),
+        }),
+    );
+    await page.goto("/?mdl_seq=54241&ver=v7");
+    await waitForHydration(page);
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Dermochelys coriacea");
+
+    // BUG (before this fix): this toggle never rendered at all on the live bounds shape.
+    const toggle = page.getByRole("group", { name: "Zoom to" });
+    await expect(toggle).toBeVisible({ timeout: 15_000 });
+    await expect(toggle.getByRole("button", { name: "US waters" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // the camera centre lies INSIDE the (v7) study-area's own US box -- not on the whole,
+    // Pacific-spanning globe extent the pre-fix camera stayed on.
+    const usBbox = studyAreaBboxFallback(studyAreaView(bootFor("v7"), "FULL")!);
+    const center = await page.evaluate(() =>
+      (
+        window as unknown as {
+          __atlasMap: { handle: { map: { getCenter(): { lng: number; lat: number } } } };
+        }
+      ).__atlasMap.handle.map.getCenter(),
+    );
+    const continuous = center.lng < 0 ? center.lng + 360 : center.lng;
+    const usWest = usBbox[0] < 0 ? usBbox[0] + 360 : usBbox[0];
+    const usEast = usBbox[2] < 0 ? usBbox[2] + 360 : usBbox[2];
+    expect(continuous, "camera centre lands OUTSIDE the US box's west edge").toBeGreaterThanOrEqual(
+      Math.min(usWest, usEast) - 1,
+    );
+    expect(continuous, "camera centre lands OUTSIDE the US box's east edge").toBeLessThanOrEqual(
+      Math.max(usWest, usEast) + 1,
+    );
+
+    // and "Whole range" is available, framing the model's own raw (globe-spanning) extent.
+    const wholeButton = toggle.getByRole("button", { name: "Whole range" });
+    await expect(wholeButton).toHaveAttribute("aria-pressed", "false");
+    await wholeButton.click();
+    await expect(wholeButton).toHaveAttribute("aria-pressed", "true");
   });
 });
