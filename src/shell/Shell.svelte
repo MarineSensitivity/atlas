@@ -91,7 +91,6 @@
   import {
     desktopPanelPadding,
     phonePadding,
-    phonePaddingFromMeasured,
     phoneLiveChromePadding,
   } from "../lib/map/chromePadding";
   import { createAnalytics } from "../lib/analytics/analytics";
@@ -995,16 +994,32 @@
   // P9: uses the SAME `phoneDefaultCamera` bbox fit `initialStudyArea` does above (never the old
   // boost-the-desktop-centroid math -- see that function's own comment for why it was replaced) --
   // just with the sheet's real measured height instead of the pre-mount estimate.
+  //
+  // D5 fix (Opus 5.5 eyes-on review round 2, 2026-09-25): this refit used the SHEET's own measured
+  // height but never the floating legend chip's -- at the default "half" detent the ramp legend
+  // chip (always showing for the default Scores view, `phoneLegend` below) sat on top of the
+  // northern Gulf of Mexico Program Areas, and the sheet's own top edge cut the Florida Keys.
+  // `currentChromePadding()` already computes the SAME `chipShowing` boolean for every LATER
+  // (post-load) re-fit (V1 fix, above) -- this is the one remaining caller still calling
+  // `phonePaddingFromMeasured` bare. Gated additionally on `scoresLens` (the default lens) having
+  // loaded: `phoneLegend` reads `scoresLens?.mapExtra.legend`, and `scoresLens` itself is a
+  // DYNAMIC IMPORT (this file's own "0.10.21 fix 1" comment) -- firing before it resolves would
+  // silently compute `chipShowing: false` and reproduce the exact defect this fixes.
   let refitOnceForMeasuredSheet = false;
   $effect(() => {
     if (refitOnceForMeasuredSheet) return;
     if (!isPhone || !mapHandle || !boot) return;
     if (sheetGeom.height <= 0) return; // Sheet.svelte has not reported a real measurement yet
+    if (sel.lens === "scores" && !scoresLens) return; // the legend chip's own source not loaded yet
     if (sel.map || sel.area !== DEFAULT_SEL.area) return; // not the default padded first view
     refitOnceForMeasuredSheet = true;
     const area = studyAreaFromBoot(boot, sel.area);
     const viewport: Viewport = { width: window.innerWidth, height: window.innerHeight };
-    const fit = phoneDefaultCamera(viewport, phonePaddingFromMeasured(sheetGeom.height));
+    const chipShowing = !!phoneLegend && legendChipMode(sheetGeom.detent) === "floating";
+    const fit = phoneDefaultCamera(
+      viewport,
+      phoneLiveChromePadding(sheetGeom.height, sheetGeom.detent, window.innerHeight, chipShowing),
+    );
     mapHandle.flyTo({ ...area, lon: fit.center[0], lat: fit.center[1], zoom: fit.zoom });
   });
 
