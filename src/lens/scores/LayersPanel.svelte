@@ -14,13 +14,19 @@
   // snippet (`ScoresLens.svelte` wires the two together). The old non-interactive "Layers on the
   // map" bullet list is GONE from here: the shared stack component now IS that list, made real and
   // interactive, so summarizing it a second time here would just repeat it less usefully.
+  //
+  // P round deliverable 1 (Ben, live-review 2026-09-24): the "Spatial units" `<Select>` that used
+  // to live in this file is GONE — promoted to the shared panel's own top-of-panel "Raster cells |
+  // Program Areas" `Segmented` toggle (`LibLayersPanel`'s `unitToggle` prop, wired by
+  // `ScoresLens.svelte`). Two controls setting the SAME `unit` would just be confusing, not
+  // additive, so this is a replacement, not a second control.
   import Select from "../../lib/ui/Select.svelte";
   import Switch from "../../lib/ui/Switch.svelte";
   import { studyAreasFromBoot, type StudyArea } from "../../lib/map/interaction";
   import type { MapHandle } from "../../lib/map/map";
   import type { Sel } from "../../lib/state/types";
   import type { SelStore } from "../../lib/state/sel.svelte";
-  import { layerByKey, layerGroups, primaryUnitNote, unitOptions } from "./boot";
+  import { layerByKey, layerGroups, primaryUnitNote } from "./boot";
   import type { ManifestOverlayRow } from "./raster";
 
   interface Props {
@@ -60,7 +66,6 @@
   }: Props = $props();
 
   const studyAreas = $derived(studyAreasFromBoot(boot));
-  const unitChoices = $derived(unitOptions(boot));
   const note = $derived(primaryUnitNote(boot, ver));
   const groups = $derived(layerGroups(boot));
 
@@ -117,10 +122,6 @@
     selStore.set({ area: value, map: undefined });
   }
 
-  function onUnitChange(value: string) {
-    selStore.set({ unit: value, sel: undefined });
-  }
-
   function onLyrChange(event: Event) {
     selStore.set({ lyr: (event.currentTarget as HTMLSelectElement).value });
   }
@@ -151,11 +152,6 @@
       options={studyAreas.map((a: StudyArea) => ({ value: a.key, label: a.label ?? a.key }))}
       onchange={onAreaChange}
     />
-  </label>
-
-  <label class="field">
-    <span class="field-label">Spatial units</span>
-    <Select label="Spatial units" value={unit} options={unitChoices} onchange={onUnitChange} />
   </label>
 
   {#if note}

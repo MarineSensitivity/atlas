@@ -4,8 +4,11 @@
 // given unequal widths" must each turn one of these tests red if reintroduced.
 import { describe, expect, it } from "vitest";
 import {
+  FLOWER_MAX_FALLBACK,
   computeFlowerGeometry,
+  computeFlowerReferenceRing,
   describeFlowerSummary,
+  flowerReferenceRingLabel,
   flowerViewBox,
   petalLabelText,
   sectorPath,
@@ -298,5 +301,59 @@ describe("petalLabelText (the tap/hover/focus label -- one decimal, the SAME tex
     // not whatever spelling the caller happened to pass in.
     const petal = computeFlowerGeometry([{ key: "primary producer", score: 5 }]).petals[0];
     expect(petalLabelText(petal)).toBe(`${categoryFor("primprod").label}: 5.0`);
+  });
+});
+
+// P round deliverable 2 (Ben, live-review of 0.10.62, 2026-09-24): "needs a reference outer circle
+// ... based on the maximum component score for given version". The seeded fault this guards
+// against: a ring pinned at the fixed outer edge (100) regardless of `maxScore` -- `radius`/`value`
+// below must move with it, not sit at the fallback.
+describe("computeFlowerReferenceRing / flowerReferenceRingLabel", () => {
+  it("no maxScore (null/undefined): falls back to FLOWER_MAX_FALLBACK (100), at the outer edge", () => {
+    for (const maxScore of [null, undefined] as const) {
+      const ring = computeFlowerReferenceRing(maxScore);
+      expect(ring.isFallback).toBe(true);
+      expect(ring.value).toBe(FLOWER_MAX_FALLBACK);
+      expect(ring.value).toBe(100);
+      expect(ring.radius).toBe(100); // innerRadius(24) + 100/100 * (100-24) = 100, the outer edge
+      expect(flowerReferenceRingLabel(ring)).toBe(
+        "max 100 (no published maximum for this release)",
+      );
+    }
+  });
+
+  it("a real maxScore: value/radius move with it (the seeded fault: pinned at 100 regardless)", () => {
+    const ring = computeFlowerReferenceRing(93.456);
+    expect(ring.isFallback).toBe(false);
+    // signif3'd the SAME way the raster legend's own endpoints are (93.456 -> 93.5, 3 sig figs).
+    expect(ring.value).toBe(93.5);
+    expect(ring.radius).toBeCloseTo(24 + (93.5 / 100) * (100 - 24), 10); // 95.06
+    // the property the fault breaks: a REAL, smaller-than-100 max draws a ring strictly INSIDE the
+    // outer edge, never at the fallback's own radius.
+    expect(ring.radius).toBeLessThan(100);
+    expect(flowerReferenceRingLabel(ring)).toBe("max 93.5");
+  });
+
+  it("a non-finite or non-positive maxScore (NaN, 0, negative) also falls back, never a degenerate ring", () => {
+    for (const bad of [NaN, 0, -5]) {
+      expect(computeFlowerReferenceRing(bad).isFallback).toBe(true);
+    }
+  });
+
+  it("respects a custom innerRadius/outerRadius (the SAME options computeFlowerGeometry takes)", () => {
+    const ring = computeFlowerReferenceRing(50, { outerRadius: 50, innerRadius: 10 });
+    expect(ring.radius).toBeCloseTo(10 + (50 / 100) * (50 - 10), 10); // 30
+  });
+
+  it("no petal ever draws past the ring, for a real release max -- equality at the max, strictly less below it", () => {
+    const ring = computeFlowerReferenceRing(70); // EIGHT's own maximum (mammal, 70)
+    const g = computeFlowerGeometry(EIGHT);
+    for (const p of g.petals) expect(p.radius).toBeLessThanOrEqual(ring.radius);
+    // mammal (score 70) is the max: its own petal reaches EXACTLY the ring, never past it.
+    const mammal = g.petals.find((p) => p.key === "mammal")!;
+    expect(mammal.radius).toBeCloseTo(ring.radius, 10);
+    // and the ring itself sits strictly inside the full 100-unit edge (proving it is NOT the
+    // fallback/pinned-at-100 case the seeded fault reverts to).
+    expect(ring.radius).toBeLessThan(100);
   });
 });

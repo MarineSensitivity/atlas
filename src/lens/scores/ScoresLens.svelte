@@ -30,7 +30,8 @@
   // R3 (round-2 plan §5 U4): the lens-independent stack shell — `docs/map.md`'s "the Layers panel
   // IS the stack" (Ben's decision R3). `ScoresLayersPanel` above is now only its "Data" row's
   // content, passed in as the `dataControls` snippet below.
-  import LibLayersPanel from "../../lib/ui/LayersPanel.svelte";
+  import LibLayersPanel, { type LayersUnitToggle } from "../../lib/ui/LayersPanel.svelte";
+  import { unitOptions } from "./boot";
   import FlowerPanel from "./FlowerPanel.svelte";
   import TablePanel from "./TablePanel.svelte";
   import type { LayerStackEntry } from "../../lib/state/types";
@@ -75,6 +76,19 @@
   const unit = $derived(lens.unit);
   const lyr = $derived(lens.lyr);
   const manifestOverlays = $derived(lens.manifestOverlays);
+
+  // P round deliverable 1: the Layers panel's own primary control (the shared `LibLayersPanel`'s
+  // `unitToggle` prop) -- replaces the old "Spatial units" `<Select>` that used to live in
+  // `ScoresLayersPanel` (`./LayersPanel.svelte`, still rendered below for the Data row's OTHER
+  // controls). `onUnitChange` is the SAME body that Select's own `onchange` used to call.
+  function onUnitChange(value: string) {
+    selStore.set({ unit: value, sel: undefined });
+  }
+  const unitToggle = $derived<LayersUnitToggle>({
+    options: unitOptions(boot),
+    value: unit,
+    onChange: onUnitChange,
+  });
 
   // the selection AS THE FLOWER/SPECIES/TABLE PANELS SEE IT (`cell:<id>` keeps the raw cell id —
   // `flower.ts`/`species.ts` need it verbatim for titles and headers).
@@ -159,7 +173,7 @@
 </script>
 
 {#if activeTool === "layers"}
-  <LibLayersPanel stack={layerStack} onChange={onLayerStackChange}>
+  <LibLayersPanel stack={layerStack} onChange={onLayerStackChange} {unitToggle}>
     {#snippet dataControls()}
       <ScoresLayersPanel
         {sel}

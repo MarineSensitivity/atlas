@@ -1714,7 +1714,10 @@
       {:else if sel.lens === "species" && activeTool === "layers"}
         {#if SpeciesLensPanelComp}
           {@const Comp = SpeciesLensPanelComp}
-          <Comp lens={speciesLens} rep={sel.rep} {layerStack} {onLayerStackChange} />
+          <!-- P round deliverable 1: `boot` is new here -- SpeciesLens.svelte reads the SAME
+               `unitOptions(boot)` the scores lens does, so its disabled Raster cells | Program
+               Areas toggle shows the release's real unit label rather than a hand-typed guess. -->
+          <Comp lens={speciesLens} rep={sel.rep} {layerStack} {onLayerStackChange} {boot} />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
         {/if}

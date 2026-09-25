@@ -1,3 +1,27 @@
+<script lang="ts" module>
+  import type { SegmentedOption } from "./Segmented.svelte";
+
+  /** P round deliverable 1 (Ben, live-review 2026-09-24): "emphasize Raster Cells vs Program Areas
+   * as a toggle similar to Scores vs Species at top, but this only applies to Scores (so grayed out
+   * for Species)" — the spatial-unit choice (cell raster vs zone fill), promoted from a `<Select>`
+   * buried inside the Data row's own body (`lens/scores/LayersPanel.svelte`'s old "Spatial units"
+   * field, now removed — this toggle replaces it, not a second control setting the same thing) to
+   * ONE segmented control at the very top of this shared panel, styled like the top bar's own
+   * Scores|Species `Segmented`. */
+  export interface LayersUnitToggle {
+    /** `lens/scores/boot.ts#unitOptions(boot)` — "Raster cells (0.05°)" always first, then the
+     * release's one drawable unit (e.g. "Program areas") when it publishes one. */
+    options: SegmentedOption[];
+    value: string;
+    /** omitted (species lens): the toggle renders disabled, and `disabledReason` (below) must be
+     * set — there is nothing for a click to call. */
+    onChange?: (value: string) => void;
+    /** set ONLY when this toggle is disabled (species lens: "species surfaces are rasters only" —
+     * there is no spatial-unit CHOICE to make there, unlike the scores lens' zone choropleth). */
+    disabledReason?: string;
+  }
+</script>
+
 <script lang="ts">
   // R3 (round-2 plan §5 U4, `docs/usability.md` §7 R3, Ben's decision 2026-09-24): "one Layers panel
   // that IS the stack, the data row expanding into today's controls — PLUS the ability to change
@@ -13,6 +37,7 @@
   import { tick, type Snippet } from "svelte";
   import Switch from "./Switch.svelte";
   import Icon from "./Icon.svelte";
+  import Segmented from "./Segmented.svelte";
   // P5 fix (post-merge finding, e2e/shell.a11y.spec.ts "exactly one live region"): `move()`/
   // `reset()` below used to hold their own local `announce` STATE and render a second, private
   // `<p aria-live>` -- a real SC 4.1.3 regression against this app's own rule (announcer.ts's own
@@ -41,9 +66,20 @@
      * lens that has not resolved yet (boot still loading) can omit it and the row just shows
      * nothing below its header — never a placeholder that looks like a bug. */
     dataControls?: Snippet;
+    /** the panel's own primary control (see {@link LayersUnitToggle}'s header) — optional so a lens
+     * that has not resolved `boot` yet renders the rest of the panel with no toggle at all, never a
+     * disabled-looking placeholder for data that just has not arrived. */
+    unitToggle?: LayersUnitToggle;
   }
 
-  let { stack, onChange, dataControls }: Props = $props();
+  let { stack, onChange, dataControls, unitToggle }: Props = $props();
+
+  function onUnitToggleChange(value: string) {
+    // a disabled toggle passes no onChange at all (species lens) -- this call would otherwise be a
+    // silent no-op; the `?.` below is the same defensive style `Segmented.svelte`'s own onclick
+    // uses, not a special case for the disabled toggle.
+    unitToggle?.onChange?.(value);
+  }
 
   /** the ONE row this panel expands — "Data", the lens's own layer (round-2 plan: "the data row
    * expanding into today's controls"). Every other group is visible/opacity/reorder only. */
@@ -126,6 +162,23 @@
 </script>
 
 <div class="layers-stack" bind:this={panelEl}>
+  {#if unitToggle}
+    <!-- P round deliverable 1: the panel's own primary control, ABOVE the stack list -- styled
+         like the top bar's Scores|Species `Segmented` (same component, reused, not re-styled). -->
+    <div class="unit-toggle" data-control="layers-unit-toggle">
+      <Segmented
+        options={unitToggle.options}
+        value={unitToggle.value}
+        ariaLabel="Spatial units"
+        disabled={!!unitToggle.disabledReason}
+        onchange={onUnitToggleChange}
+      />
+      {#if unitToggle.disabledReason}
+        <p class="unit-toggle-reason">{unitToggle.disabledReason}</p>
+      {/if}
+    </div>
+  {/if}
+
   <!-- fix list #10 (SC 1.3.1, e2e/keyboard-walk.spec.ts): a plain `div` (never a landmark) so this
        never becomes a SECOND `region` nested inside Panel.svelte's own "Layers" region — the same
        fix the pre-R3 non-interactive bullet list carried, kept here now that this IS "what's on the
@@ -162,6 +215,7 @@
             label={`${label} visible on the map`}
             checked={entry.visible}
             disabled={!enabled}
+            variant="quiet"
             onchange={(v) => setVisible(entry.id, v)}
           />
 
@@ -226,6 +280,20 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+  }
+
+  .unit-toggle {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--divider);
+  }
+
+  .unit-toggle-reason {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
   }
 
   .layers-control h3 {

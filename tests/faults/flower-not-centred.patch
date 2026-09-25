@@ -1,12 +1,12 @@
 diff --git a/src/lib/ui/Flower.svelte b/src/lib/ui/Flower.svelte
-index f7dae6d..7eed028 100644
+index 0b3746d..830431f 100644
 --- a/src/lib/ui/Flower.svelte
 +++ b/src/lib/ui/Flower.svelte
-@@ -271,7 +271,6 @@
+@@ -347,7 +347,6 @@
         `align-items: stretch`, which fills up to `max-width` and then sits flush at the cross-axis
         start once the panel is wider than that cap. */
      width: 100%;
 -    margin: 0 auto;
-     max-width: 320px;
-   }
- 
+     /* P round (Ben, live review 2026-09-24): "Flower plot should be bigger... use the panel's free
+        area" -- was a flat 320px regardless of the `size` prop (measured stuck at ~105-130px on a
+        1280px stage), so a caller asking for a bigger flower (the panel's own default, 480 below)

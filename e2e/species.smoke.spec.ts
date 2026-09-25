@@ -648,3 +648,30 @@ test.describe("0.10.22: the species raster's style is issued when its shard land
     ).toBeLessThan(STYLE_FALLBACK_MS);
   });
 });
+
+// P round deliverable 1 (Ben, live-review of 0.10.62, 2026-09-24): "emphasize Raster Cells vs
+// Program Areas as a toggle similar to Scores vs Species at top, but this only applies to Scores
+// (so grayed out for Species)". The scores-lens half (switching units, writing `unit=`) is
+// `e2e/layers.spec.ts`'s own P-round describe block; this is the species half.
+test.describe("P round deliverable 1: the Layers panel's spatial-unit toggle in the Species lens", () => {
+  test("renders disabled, with a short reason, and never writes unit= (species surfaces are rasters only)", async ({
+    page,
+  }) => {
+    await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}`);
+    await page.locator("#rail-region button[aria-label='Layers']").click();
+
+    const group = page.getByRole("group", { name: "Spatial units" });
+    await expect(group).toBeVisible();
+    for (const btn of await group.getByRole("button").all()) await expect(btn).toBeDisabled();
+
+    await expect(page.getByText("Species surfaces are rasters only.")).toBeVisible();
+
+    // force-clicking through `disabled` (Playwright's own escape hatch, same convention as
+    // e2e/layers.spec.ts's "Selection's own move buttons" test) proves the underlying model really
+    // has nothing wired here, not merely that the button LOOKS unclickable.
+    const urlBefore = page.url();
+    await group.getByRole("button").first().click({ force: true });
+    expect(page.url()).toBe(urlBefore);
+    expect(page.url()).not.toContain("unit=");
+  });
+});

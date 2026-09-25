@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   defaultLayerKey,
   ecoregionZoneUnitFromManifest,
+  flowerMaxComponentScore,
   layerByKey,
   layerGroups,
   metricLabelsFromManifest,
@@ -220,5 +221,60 @@ describe("metricLabelsFromManifest", () => {
     expect(
       metricLabelsFromManifest({ metrics: [{ label: "no key" }, { metric_key: "no_label" }] }),
     ).toEqual({});
+  });
+});
+
+// P round deliverable 2 (Ben, live-review 2026-09-24): the flower panel's reference-ring value --
+// see flowerGeometry.ts's own `computeFlowerReferenceRing` header for why "component" (never
+// "composite"/"raw") is the right category to scan.
+describe("flowerMaxComponentScore", () => {
+  it("BOOT_V7's own two component rows both rescale to 100: the max is 100", () => {
+    expect(flowerMaxComponentScore(BOOT_V7)).toBe(100);
+  });
+
+  it("a release whose component layers publish DIFFERENT maxima: the greatest one wins", () => {
+    const boot = {
+      ...BOOT_V7,
+      layers: BOOT_V7.layers.map((l) =>
+        l.metric_key === "extrisk_bird_ecoregion_rescaled"
+          ? { ...l, by_subregion: { FULL: { ...l.by_subregion.FULL, rescale: [0, 93.456] } } }
+          : l,
+      ),
+    };
+    // "other" is untouched (rescale [0,100]) -- 100 still wins over 93.456, proving this is a real
+    // MAX across rows, not "whichever row happens to be scanned last".
+    expect(flowerMaxComponentScore(boot)).toBe(100);
+    const bootLowered = {
+      ...boot,
+      layers: boot.layers.map((l) =>
+        l.metric_key === "extrisk_other_ecoregion_rescaled"
+          ? { ...l, by_subregion: { FULL: { ...l.by_subregion.FULL, rescale: [0, 80] } } }
+          : l,
+      ),
+    };
+    expect(flowerMaxComponentScore(bootLowered)).toBe(93.456);
+  });
+
+  it("no component layer publishes a rescale (every real release TODAY): null, never a guess", () => {
+    // mirrors e2e/scores-hermetic.ts's real `bootFor('v7')`/`bootFor('v9')`: only the COMPOSITE row
+    // carries `by_subregion` there -- component rows have none at all.
+    expect(
+      flowerMaxComponentScore({
+        layers: [
+          { metric_key: "a", category: "component", order: 1 },
+          {
+            metric_key: "score",
+            category: "composite",
+            order: 2,
+            by_subregion: { FULL: { rescale: [0, 96] } },
+          },
+        ],
+      }),
+    ).toBeNull();
+  });
+
+  it("no layers/boot at all: null, never a throw", () => {
+    expect(flowerMaxComponentScore({})).toBeNull();
+    expect(flowerMaxComponentScore(null)).toBeNull();
   });
 });

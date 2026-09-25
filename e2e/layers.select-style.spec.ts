@@ -72,11 +72,15 @@ for (const [name, viewport] of [
   test.describe(`D2/P3 at ${name}`, () => {
     test.use({ viewport });
 
-    test("Study area / Spatial units / Color palette: the box spans to the chevron, never past it", async ({
+    // P round deliverable 1: "Spatial units" dropped out of this loop -- it is no longer a
+    // `Select.svelte` box (promoted to the panel's own top-of-panel `Segmented` toggle, D2/P3's own
+    // fix does not apply to it any more). `e2e/layers.spec.ts`'s own P-round describe block covers
+    // its replacement.
+    test("Study area / Color palette: the box spans to the chevron, never past it", async ({
       page,
     }) => {
       await gotoLayers(page);
-      for (const label of ["Study area", "Spatial units", "Color palette"]) {
+      for (const label of ["Study area", "Color palette"]) {
         await assertSelectSpansChevron(page, label);
       }
     });

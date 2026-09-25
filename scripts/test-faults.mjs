@@ -1523,7 +1523,35 @@ const FAULTS = [
       "not just a real 5xx/network-error/timeout",
     gate: ["npx", "vitest", "run", "tests/health/probe.test.ts"],
   },
-  // --- W1 round (owner review of live 0.10.62, 0.10.63) -------------------------------------------
+  // --- P round, W2 (Ben's live-review of 0.10.62, 2026-09-24): the Layers panel's spatial-unit
+  // toggle and the flower plot's reference ring. Two faults, one per deliverable.
+  {
+    id: "layers-unit-toggle-write-dropped",
+    patch: "tests/faults/layers-unit-toggle-write-dropped.patch",
+    describe:
+      "src/lib/ui/LayersPanel.svelte's onUnitToggleChange() no longer calls unitToggle.onChange -- " +
+      "pressing 'Program areas' moves the pressed segment visually but never writes unit= to the URL",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/layers.spec.ts",
+      "-g",
+      "switching Raster cells -> Program areas writes unit=",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4521" },
+  },
+  {
+    id: "flower-ring-fixed-at-100",
+    patch: "tests/faults/flower-ring-fixed-at-100.patch",
+    describe:
+      "flowerGeometry.ts's computeFlowerReferenceRing() ignores maxScore and always returns the " +
+      "FLOWER_MAX_FALLBACK (100) ring -- a release with a real, smaller published maximum still " +
+      "draws its reference ring at the fixed outer edge",
+    gate: ["npx", "vitest", "run", "tests/ui/flowerGeometry.test.ts", "-t", "a real maxScore"],
+  },
   {
     id: "zonebbox-rings-dropped",
     patch: "tests/faults/zonebbox-rings-dropped.patch",

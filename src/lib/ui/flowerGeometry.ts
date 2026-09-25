@@ -33,6 +33,7 @@
 // the same "real but invisible" contract `sectorPath`'s `radius <= 0` case already had.
 import { categoryFor, categoryKeyFor, categoryLabel, type Category } from "./categories";
 import { formatScore } from "../format";
+import { signif3 } from "../geo/round";
 
 /** the hub's radius as a fraction of `outerRadius` (24 of 100 in the default/only configuration
  * this app ever uses) -- the single source both `computeFlowerGeometry`'s default `innerRadius`
@@ -189,6 +190,54 @@ export function petalCentroid(
  * on click (and for desktop on hover)"). */
 export function petalLabelText(petal: Pick<FlowerPetal, "category" | "score">): string {
   return `${petal.category.label}: ${formatScore(petal.score)}`;
+}
+
+/** the reference ring's fallback value (P round, Ben's live review 2026-09-24: "Flower plot...
+ * needs a reference outer circle... based on the maximum component score for given version") — used
+ * whenever the caller has no real release maximum to hand (`boot.ts#flowerMaxComponentScore`
+ * returns `null` for every real release TODAY, since none yet publish a per-component rescale). */
+export const FLOWER_MAX_FALLBACK = 100;
+
+export interface FlowerReferenceRing {
+  /** the value this ring represents, `signif3`'d the SAME way the raster legend's own endpoints are
+   * (`lens/scores/raster.ts#rasterLegend`) — either the release's real published maximum component
+   * score, or {@link FLOWER_MAX_FALLBACK} when none exists. */
+  value: number;
+  /** true when `value` is the FALLBACK, not a real release maximum -- the caller's label must say
+   * so (Ben: "if no published maximum exists for a release, fall back to 100 and say so"). */
+  isFallback: boolean;
+  /** this ring's own radius, in the SAME viewBox units `computeFlowerGeometry` scores petals in
+   * (`innerRadius` + `value/100 * (outerRadius - innerRadius)`) -- a petal's own radius can never
+   * exceed this as long as its score never exceeds `value`, which is exactly what "the maximum
+   * component score for this version" means. */
+  radius: number;
+}
+
+/**
+ * PURE: the flower's reference ring for `maxScore` (`boot.ts#flowerMaxComponentScore`'s result, or
+ * `null`/`undefined` when the caller has none). The seeded fault this guards against: a ring drawn
+ * at the fixed outer edge (100) regardless of what the release actually published as its ceiling —
+ * `value`/`radius` below must move with `maxScore`, not sit pinned at the fallback.
+ */
+export function computeFlowerReferenceRing(
+  maxScore: number | null | undefined,
+  options: FlowerGeometryOptions = {},
+): FlowerReferenceRing {
+  const outerRadius = options.outerRadius ?? 100;
+  const innerRadius = options.innerRadius ?? outerRadius * FLOWER_HUB_RADIUS_RATIO;
+  const isFallback =
+    maxScore === null || maxScore === undefined || !Number.isFinite(maxScore) || maxScore <= 0;
+  const value = isFallback ? FLOWER_MAX_FALLBACK : signif3(clamp(maxScore as number, 0, 100));
+  const radius = innerRadius + (value / 100) * (outerRadius - innerRadius);
+  return { value, isFallback, radius };
+}
+
+/** the ring's own small "contour label" text — "max 93", or "max 100 (no published maximum for
+ * this release)" for the fallback case, per Ben's own wording ("stated with a small label"). */
+export function flowerReferenceRingLabel(ring: FlowerReferenceRing): string {
+  return ring.isFallback
+    ? `max ${ring.value} (no published maximum for this release)`
+    : `max ${ring.value}`;
 }
 
 /**
