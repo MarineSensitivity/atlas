@@ -1589,6 +1589,53 @@ const FAULTS = [
       "back to bare categoryFor(c.key) -- any unrecognized-but-real category is 'No data' again",
     gate: ["npx", "vitest", "run", "tests/lens/scores/flower.test.ts"],
   },
+  // W4 (Ben, phone, live 0.10.64): the Report map painted every Program Area the same flat
+  // grey-blue, no colour at all, even though the caption/legend showed the real ramp and scores.
+  // Root cause: Report.svelte's map-mount effect fired the instant `model` turned non-null --
+  // synchronously, before ANY place's score had landed -- so `mountMap()`'s ONE-SHOT style build
+  // always painted `REPORT_NODATA_COLOR` and never repainted. This patch reverts the fix (drops
+  // the `progressDone`/`stubs.length` readiness gate) and must turn the new pixel-proof red.
+  {
+    id: "report-map-color-stale-mount",
+    patch: "tests/faults/report-map-color-stale-mount.patch",
+    describe:
+      "Report.svelte's map-mount effect drops the `mapDataReady` gate (stubs.length === 0 || " +
+      "progressDone >= stubs.length) and reverts to firing the instant `model` turns non-null -- " +
+      "every place's score is still null at that point, so the map's one-shot colour build reads " +
+      "REPORT_NODATA_COLOR for every place and never repaints once the real scores land",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.map.zonecolor.spec.ts",
+      "-g",
+      "two Program Areas",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4541" },
+  },
+  // W4, part 2 (design call noted twice by reviewers, then Ben's phone report): a lone place's map
+  // caption/legend showed a fabricated "ramp 33 to 34" (a two-ended gradient for a single value).
+  {
+    id: "report-map-single-place-degenerate-ramp",
+    patch: "tests/faults/report-map-single-place-degenerate-ramp.patch",
+    describe:
+      "model.ts's describeMap() drops its one-place branch -- a lone scored place goes back to " +
+      "the generic 'ramp X to Y (red = high); highest NAME V, lowest NAME V' caption, the same " +
+      "value stated twice around a fabricated ±0.5-wide range",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.map.zonecolor.spec.ts",
+      "-g",
+      "one place",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4541" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
