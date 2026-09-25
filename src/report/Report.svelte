@@ -223,7 +223,23 @@
     // report fits the study area") used to leave `mapEl` permanently unmounted, an inert empty box
     // forever. `mountMap()` itself now branches on an empty `stubs` to fly to the full study area
     // with no place layers, rather than this effect silently skipping the section altogether.
-    if (mapStarted || !mapEl || !model) return;
+    //
+    // W4 fix (Ben, phone, live 0.10.64: two Program Areas both filled the same neutral grey-blue,
+    // no colour at all): `model` turns non-null the INSTANT `run()` sets `placeInputs` --
+    // SYNCHRONOUSLY, with every place's `score` still `null`, before `run()` even awaits
+    // `bootEngine()` (let alone the per-place scoring loop, which is sequenced AFTER that await).
+    // This effect used to fire right then, so `mountMap()` (a deliberate ONE-SHOT build --
+    // reportMap.ts's own header: "never a reactive re-compose") always painted every place -- the
+    // zone `match` (zoneKeyColors) AND the drawn-place `interpolate` (scoreColorExpression) alike --
+    // with `REPORT_NODATA_COLOR`, and NEVER repainted once the real scores landed: the caption/
+    // legend are reactive template bindings that kept tracking `model`, but the imperative map
+    // style built once and never again. Every hermetic gate missed it because `blockWasm()` makes
+    // `bootEngine()` REJECT before `mountMap()`'s own dynamic imports resolve, so in every test the
+    // race quietly ran the other way. Wait for every place's data to have actually landed (or for
+    // there to be no place to score at all) before the one-shot build runs, so it captures the same
+    // model the caption/legend already show.
+    const mapDataReady = stubs.length === 0 || progressDone >= stubs.length;
+    if (mapStarted || !mapEl || !model || !mapDataReady) return;
     mapStarted = true;
     void mountMap();
   });
@@ -596,7 +612,20 @@
           <p>Map rendering…</p>
         {/if}
       </div>
-      {#if model.map.domain}
+      {#if model.map.single}
+        <!-- W4 fix (design call noted twice by reviewers, then Ben's phone report): ONE place has
+             no range to show a two-ended gradient for -- "ramp 33 to 34" around a single value is
+             fake precision. A single swatch + its own value, not `<Legend>`'s gradient. -->
+        {@const single = model.map.single}
+        <div
+          class="legend-single"
+          role="img"
+          aria-label={`${model.map.legendTitle}: ${single.name} ${formatScore0(single.score)}`}
+        >
+          <span class="legend-single-swatch" style={`background-color:${single.color}`}></span>
+          <span>{model.map.legendTitle}: {formatScore0(single.score)}</span>
+        </div>
+      {:else if model.map.domain}
         {@const stops = paletteStopsFromBoot(boot as { palettes?: unknown }, "spectral_r")}
         {#if stops}
           <Legend

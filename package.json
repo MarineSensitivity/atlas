@@ -1,7 +1,7 @@
 {
   "name": "atlas",
   "private": true,
-  "version": "0.10.64",
+  "version": "0.10.66",
   "description": "MarineSensitivity Atlas: scores, species, places and reports for U.S. marine areas.",
   "license": "MIT",
   "type": "module",

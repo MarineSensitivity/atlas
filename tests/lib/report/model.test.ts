@@ -333,6 +333,73 @@ describe("map", () => {
       expect(build().map.narrative).toContain("colored by mean sensitivity score");
     },
   );
+
+  // W4 fix (design call noted twice by reviewers, then Ben's phone report, "ramp 33 to 34"): a
+  // lone place has no "highest"/"lowest" to contrast and the ±0.5 widened domain is fake precision
+  // for a single value -- the caption states the place's own value instead of a degenerate ramp.
+  it("a lone place's summary states its own score, not a fabricated 'ramp X to Y'", () => {
+    expect(build().map.summary).toBe("Map: 1 place colored by mean score; My box scored 42.");
+    expect(build().map.summary).not.toContain("ramp");
+    expect(build().map.summary).not.toContain("highest");
+  });
+
+  it("two (or more) places keep the ramp/highest/lowest phrasing -- no regression from the one-place fix", () => {
+    const m = build({
+      places: [
+        {
+          place: SQUARE,
+          token: "t1",
+          name: "P",
+          scores: { components: [comp("bird", 80)], nCells: 1, areaKm2: 1 },
+          species: null,
+        },
+        {
+          place: SQUARE,
+          token: "t2",
+          name: "Q",
+          scores: { components: [comp("bird", 20)], nCells: 1, areaKm2: 1 },
+          species: null,
+        },
+      ],
+    });
+    expect(m.map.domain).toEqual([20, 80]);
+    expect(m.map.summary).toBe(
+      "Map: 2 places colored by mean score, ramp 20 to 80 (red = high); highest P 80, lowest Q 20.",
+    );
+    expect(m.map.single).toBeNull();
+  });
+
+  // spectral_r's REAL production order (tests/lens/scores/fixtures.ts's own BOOT_V7, fetched from a
+  // live v7 bundle): index 0 = LOW (blue/purple), index 10 = HIGH (red) -- "red = high" (the
+  // caption's own claim). A lone place's `single.color` must land on the EXACT middle stop, the
+  // same math `colorForValue` always gives a value sitting dead-centre in a ±0.5 widened domain --
+  // proving the "sensible mid colour" the fix promises, not merely "some non-nodata colour".
+  const SPECTRAL_R = [
+    "#5E4EA1",
+    "#3287BD",
+    "#66C1A5",
+    "#ABDDA4",
+    "#E5F498",
+    "#FFFFBF",
+    "#FEDF8B",
+    "#FDAD60",
+    "#F36C43",
+    "#D43E4E",
+    "#9E0041",
+  ] as const;
+
+  it("a lone place resolves `map.single` to the exact middle ramp stop, never null/nodata", () => {
+    const m = build({ boot: { ...BOOT, palettes: { spectral_r: SPECTRAL_R } } });
+    // colorForValue() round-trips hex through its own rgbToHex (lowercase) -- SPECTRAL_R[5] itself
+    // is the same value, just uppercase, so lowercase it here rather than assert on case.
+    expect(m.map.single).toEqual({ name: "My box", score: 42, color: SPECTRAL_R[5].toLowerCase() });
+  });
+
+  it("`map.single` is null when the release publishes no spectral_r stops (no boot.palettes)", () => {
+    // BOOT (this file's default fixture) carries no `palettes` key at all -- `single` must degrade
+    // to null, never throw, matching `paletteStopsFromBoot`'s own "fail closed" contract.
+    expect(build().map.single).toBeNull();
+  });
 });
 
 describe("flowers", () => {

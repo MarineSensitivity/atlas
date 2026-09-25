@@ -1,3 +1,18 @@
+# atlas 0.10.66
+
+P round, W4 (Ben, phone, live 0.10.64, with a screenshot): the Report's map colour.
+
+- **Fixed: a Report with two (or more) Program Areas painted every place the SAME flat grey-blue —
+  no colour at all**, even though the caption and legend both showed the real ramp and scores
+  ("ramp 22 to 30 (red = high); highest Southern California (SOC) 30, lowest Central California
+  (CEC) 22"). The map's colours were built once, before any place's score had actually loaded, and
+  never repainted once the real numbers landed — the caption/legend kept tracking the real data
+  because they render reactively, the map did not. The map now waits for every place's data before
+  drawing.
+- **Fixed: a report with a single place showed a fabricated "ramp 33 to 34" legend and caption**,
+  implying a range that never existed for one value. A single place now shows its own score next to
+  one swatch, not a two-ended gradient.
+
 # atlas 0.10.64
 
 P round, W2 (Ben, live-review of the LIVE 0.10.62 app, 2026-09-24): the Layers panel's spatial-unit

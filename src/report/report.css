@@ -157,6 +157,24 @@ figure {
   display: none;
 }
 
+/* W4 fix: the one-place map legend -- a single swatch + its value, standing in for `<Legend>`'s
+   two-ended gradient (Report.svelte's own `{#if model.map.single}` branch, model.ts's own
+   `ReportMap.single` doc explains why a lone place gets no gradient at all). */
+.legend-single {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.legend-single-swatch {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--border-control, #c9d2dc);
+}
+
 .progress-line {
   font-size: 0.9rem;
   color: var(--text-secondary, #55606f);
