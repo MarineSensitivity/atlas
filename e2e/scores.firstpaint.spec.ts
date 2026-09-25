@@ -143,7 +143,9 @@ for (const ver of ["v7", "v9"] as const) {
       await gotoScoresMap(page, ver);
       await page.getByRole("button", { name: "Flower plot" }).click();
       const flower = page.locator(".flower-title");
-      await expect(flower).toHaveText("Full study area", { timeout: 10_000 });
+      // UI-4/UI-5 (round-3 review): "All US waters" -- the SAME no-selection subject the
+      // Zoom-to-region select uses, replacing this panel's own "Full study area" wording.
+      await expect(flower).toHaveText("All US waters", { timeout: 10_000 });
       // v7: mean of the real 8 fixture components (`flower_default.FULL`). v9:
       // `flower_default.AK`'s real 8 entries, de-duplicated to 7 (the "primprod"/"primary
       // producer" collision `dedupeFlowerComponents` resolves) — proving the fix end-to-end, not

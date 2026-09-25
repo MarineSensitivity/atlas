@@ -20,6 +20,7 @@
 // composition treemap and the composite score itself are untouched and keep using both.
 import { categoryKeyFor } from "../../lib/ui/categories";
 import type { FlowerComponentInput } from "../../lib/ui/flowerGeometry";
+import { formatSubject } from "../../lib/format";
 import type { ZoneRow } from "./boot";
 
 /** `metric_key` -> component label: `extrisk_bird_ecoregion_rescaled` -> `"bird"`,
@@ -170,17 +171,17 @@ export function flowerEmptyText(errorMessage?: string | null): string {
   return "Click a scored cell on the map to see its flower.";
 }
 
-/** `flower_panel_title` (parity doc §7.1), verbatim: a clicked cell names its id + coords; a
- * clicked zone names itself; nothing selected says "Full study area". */
+/** `flower_panel_title` (parity doc §7.1), now UI-4's one shared subject line: a clicked cell reads
+ * "Cell {id} · {lat}° N, {lon}° W"; a clicked zone names itself; nothing selected reads "All US
+ * waters" (UI-5 — the SAME no-selection label the Zoom-to-region select already uses, replacing
+ * this panel's own "Full study area" wording). `formatSubject()` (`lib/format.ts`) is the ONE place
+ * this text is built now — the map popup and the species table header route through it too, so a
+ * clicked cell can never read differently across the three panels again. */
 export function flowerTitle(
   selection:
     | { kind: "cell"; cellId: number; lon: number; lat: number }
     | { kind: "zone"; name: string }
     | null,
 ): string {
-  if (!selection) return "Full study area";
-  if (selection.kind === "cell") {
-    return `Cell ID: ${selection.cellId} (x: ${selection.lon.toFixed(3)}, y: ${selection.lat.toFixed(3)})`;
-  }
-  return selection.name;
+  return formatSubject(selection);
 }

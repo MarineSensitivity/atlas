@@ -60,9 +60,13 @@
     unit: string;
     lyr: string | null;
     selection: ScoresSelection;
+    /** UI-4: the clicked cell's own centre (`ScoresLens.svelte`'s `cellCoords`, the SAME prop
+     * `FlowerPanel` already receives), so this panel's header can print "Species in Cell {id} ·
+     * {lat}° N, {lon}° W" through the shared `formatSubject()` rather than the id alone. */
+    cellCoords?: { lon: number; lat: number };
   }
 
-  let { sel, selStore, boot, manifest, ver, unit, lyr, selection }: Props = $props();
+  let { sel, selStore, boot, manifest, ver, unit, lyr, selection, cellCoords }: Props = $props();
 
   let subTab = $state<"species" | "zones" | "composition">("species");
   let glossaryOpen = $state(false);
@@ -95,6 +99,7 @@
       unit: selection?.kind === "zone" ? selection.unit : unit,
       unitLabel: unitLabel ?? null,
       zoneAllKey: allKey,
+      cellCoords,
     }),
   );
   const filenameStem = $derived(

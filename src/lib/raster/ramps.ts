@@ -165,6 +165,33 @@ export function colorForValue(
   return rgbToHex(mixed);
 }
 
+// --- swatch text contrast: shared by every value-popup swatch (round-3 review, Ben's "colour
+// coding" ask) --------------------------------------------------------------------------------
+//
+// Moved here from `lens/species/popup.ts` (which now re-exports both, unchanged, for its own
+// existing tests/callers) so `lens/scores/popup.ts` can compute the SAME contrast rule for its own
+// swatch without importing across lenses — a ramp-adjacent color utility belongs beside the ramp.
+
+/** relative luminance, R's own weights (species-lens parity reference §6.5 step 5:
+ * `0.299R + 0.587G + 0.114B`, NOT the WCAG formula) — kept byte-for-byte rather than "improved" to
+ * sRGB-linear luminance, which would pick a different color on some swatches. */
+export function luminance(hex: string): number {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex);
+  if (!m) return 1; // an unreadable color reads as "light" -> black text, the safer default
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
+/** black on a light swatch, white on a dark one — the exact 0.5 threshold (species-lens parity
+ * reference §6.5 step 5). CSS named colors, not hex, matching the R source's own literal
+ * `"black"`/`"white"`. */
+export function textColorFor(hexBg: string): "black" | "white" {
+  return luminance(hexBg) > 0.5 ? "black" : "white";
+}
+
 // --- M2 fix: a fallback ramp for a palette the release has not published stops for ---------------
 //
 // docs/usability.md M2: every release today publishes `boot.palettes` for `spectral_r` ONLY

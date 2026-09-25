@@ -71,3 +71,72 @@
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+/* Ben's ask (round-3 review, 2026-09-25): ONE colour-coded value popup template, shared by the
+   scores cell/zone popups and the species popup (`map/popup.ts#valuePopupHtml`). */
+
+.atlas-popup .atlas-popup-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.atlas-popup .atlas-popup-subject {
+  font-weight: 600;
+}
+
+.atlas-popup .atlas-popup-value-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.atlas-popup .atlas-popup-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-control, 3px);
+  flex: none;
+  border: 1px solid var(--border-control);
+}
+
+.atlas-popup .atlas-popup-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.atlas-popup .atlas-popup-unit {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+/* the sparkline: a smooth density curve filled with the legend's own ramp, a thin marker line at
+   the clicked value, and the two end labels — module header ("render the popup immediately, then
+   fill the sparkline when its promise resolves"). */
+.atlas-popup .atlas-popup-sparkline {
+  margin-top: var(--space-1);
+}
+
+.atlas-popup .atlas-popup-sparkline-svg {
+  display: block;
+}
+
+.atlas-popup .atlas-popup-sparkline-labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* the loading skeleton — a flat bar the same footprint as the resolved sparkline, so the popup
+   does not visibly resize once the distribution fetch settles. No animation (module header:
+   keeping `popup.css`'s "every rule scoped under .atlas-popup" invariant simple — a `@keyframes`
+   block's own inner percentage selectors are not, and are not worth a second gate exception for a
+   loading placeholder this brief). */
+.atlas-popup .atlas-popup-sparkline--loading {
+  width: 120px;
+  height: 28px;
+  border-radius: var(--radius-control, 3px);
+  background: var(--fill-control);
+  opacity: 0.6;
+}

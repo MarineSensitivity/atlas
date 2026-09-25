@@ -1844,6 +1844,16 @@ export const FAULTS = [
     env: { PW_PORT: "4437" },
     duckdbExt: true,
   },
+  // --- round 3, W7 (consistency + copy, Ben's popup-sparkline ask) --------------------------------
+  {
+    id: "sparkline-marker-unclamped",
+    patch: "tests/faults/sparkline-marker-unclamped.patch",
+    describe:
+      "density.ts's markerX() drops its clamp to [0, 1] -- a clicked value outside the " +
+      "distribution's own [min, max] (a stale/rounding edge case) now places the popup " +
+      "sparkline's marker line OFF the visible SVG instead of pinned to the nearest end",
+    gate: ["npx", "vitest", "run", "tests/lib/map/density.test.ts"],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

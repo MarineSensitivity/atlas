@@ -7,6 +7,7 @@
 // Nothing here is in `index.html`'s static import graph: the whole analysis layer is reached only
 // through a dynamic `import()` from a lens, like `duckdb` itself (CLAUDE.md's budget rules).
 import cell_components from "../../../sql/cell_components.sql?raw";
+import cell_histogram from "../../../sql/cell_histogram.sql?raw";
 import cell_model_key from "../../../sql/cell_model_key.sql?raw";
 import cell_model_seq from "../../../sql/cell_model_seq.sql?raw";
 import cell_value from "../../../sql/cell_value.sql?raw";
@@ -20,6 +21,7 @@ import type { Templates } from "./queries";
 
 export const TEMPLATES: Templates = {
   cell_components,
+  cell_histogram,
   cell_model_key,
   cell_model_seq,
   cell_value,

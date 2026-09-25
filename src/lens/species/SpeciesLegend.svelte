@@ -36,6 +36,7 @@
   <div class="species-legend" data-testid="species-legend">
     <Legend
       title={legend.title}
+      subtitle={legend.unit}
       stops={legend.stops}
       unit={legend.unit}
       formatValue={formatSpeciesLegendValue}

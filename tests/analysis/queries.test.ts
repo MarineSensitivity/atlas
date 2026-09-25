@@ -4,7 +4,7 @@
 // file covers the one new query that test does not (it is not a "twin" of any msens function — see
 // that file's TWINS exclusion comment).
 import { describe, expect, it } from "vitest";
-import { cellValue, type SqlRunner } from "../../src/lib/analysis/queries";
+import { cellHistogramValues, cellValue, type SqlRunner } from "../../src/lib/analysis/queries";
 import { TEMPLATES } from "../../src/lib/analysis/templates";
 
 /** answers a fixed row set, and records every statement it is handed. */
@@ -52,6 +52,35 @@ describe("cellValue", () => {
     const db = fakeDb([]);
     expect(() =>
       cellValue(db, TEMPLATES, { cellId: 1, metricKey: 'x"; DROP TABLE cell; --' }),
+    ).toThrow(/not a valid SQL identifier/);
+    expect(db.sql).toEqual([]);
+  });
+});
+
+// Ben's ask (round-3 review): the popup's distribution sparkline, scores/Raster-cells branch.
+describe("cellHistogramValues", () => {
+  it("renders the requested metric_key as an ident()-validated column, no cell_id filter", async () => {
+    const db = fakeDb([{ val: 10 }, { val: 20 }, { val: 30 }]);
+    const got = await cellHistogramValues(db, TEMPLATES, { metricKey: "score" });
+    expect(got).toEqual([10, 20, 30]);
+    expect(db.sql[0]).toContain('"score" AS val');
+    expect(db.sql[0]).not.toContain("cell_id");
+  });
+
+  it("drops non-finite/non-numeric values rather than passing them through", async () => {
+    const db = fakeDb([{ val: 10 }, { val: null }, { val: "not a number" }, { val: NaN }]);
+    expect(await cellHistogramValues(db, TEMPLATES, { metricKey: "score" })).toEqual([10]);
+  });
+
+  it("no mounted tiles -> an empty array, never a throw", async () => {
+    const db = fakeDb([]);
+    expect(await cellHistogramValues(db, TEMPLATES, { metricKey: "score" })).toEqual([]);
+  });
+
+  it("a metric_key that is not a plain identifier is refused before any statement is built", () => {
+    const db = fakeDb([]);
+    expect(() =>
+      cellHistogramValues(db, TEMPLATES, { metricKey: 'x"; DROP TABLE cell; --' }),
     ).toThrow(/not a valid SQL identifier/);
     expect(db.sql).toEqual([]);
   });

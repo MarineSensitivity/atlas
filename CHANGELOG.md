@@ -1,3 +1,55 @@
+# atlas 0.10.74
+
+Round 3, W7 (consistency + copy, 2026-09-25): Ben's two asks — one colour-coded value popup with a
+distribution sparkline, shared by the scores cell/zone popups and the species popup; and the Legend
+naming which layer is displayed — plus UI-4/5/8/9 from the Opus 5.5 review.
+
+- **One colour-coded popup template, everywhere a cell/zone/species value is shown** (Ben, 2026-09-25).
+  `lib/map/popup.ts#valuePopupHtml` is now the ONE template the scores lens' cell popup AND its
+  Program-Area popup AND the species popup all render through: a shared subject line
+  (`lib/format.ts#formatSubject`, UI-4 — "Cell 3350704 · 28.625° N, 90.575° W" / a Program Area's
+  own name), a shared value line (`formatValueLine`, "Score 44" / "Suitability 71"), and a
+  ramp-colour swatch (`raster/ramps.ts#colorForValue`/`textColorFor`) that the scores lens never
+  had before this round. The scores click popup and the Program-Area popup previously used three
+  different, uncoloured text formats; they now look like the SAME kind of thing.
+- **A distribution sparkline in the popup** (Ben, 2026-09-25): a smooth, kernel-smoothed density
+  curve (`lib/map/density.ts`) filled with the legend's own ramp gradient, with a marker at the
+  clicked value — scores/Raster-cells reads a histogram over the mounted `cell` Parquet tile
+  (`sql/cell_histogram.sql` + `lib/analysis/queries.ts#cellHistogramValues`, never a tile pixel);
+  scores/Program-areas bins the unit's own already-in-memory `zone_metric` values
+  (`lib/map/distribution.ts#valueListDistribution`, no engine/network call); species reads titiler's
+  `/cog/statistics` (`raster/histogram.ts`, the second sanctioned tile-server read beside
+  `/cog/point`, plan D4). The popup always renders immediately; the sparkline fills in once its
+  fetch resolves (a skeleton meanwhile), never delaying the popup itself.
+- **UI-4: one `formatSubject()`/`formatValueLine()`** (`lib/format.ts`), used by the map popup, the
+  flower panel's title and the species table's header — the same clicked cell used to read "Cell
+  3350704 · lon -90.550, lat 28.601 · score: 44" in the popup, "Cell ID: 3350704 (x: -90.575, y:
+  28.625)" in the flower, and "Species for Cell ID: 3350704" in the table. All three now read "Cell
+  3350704 · 28.625° N, 90.575° W". The no-selection subject is now "All US waters" everywhere
+  (UI-5) — the same label the Zoom-to-region select already uses — replacing "Full study area".
+- **New `lib/map/legendTitle.ts`** (Ben's UI-L2 ask): the desktop legend card now shows a subtitle
+  under its title — "Raster cells"/"Program Areas" for the scores lens, the species legend's own
+  unit — so the legend says which layer is on screen, not just a bare ramp.
+- **`metricKeyLabel()` now sentence-cases every label it returns**, not only an absent/degenerate
+  one: a real, published `manifest.metrics` label that is itself lowercase ("score") used to stay
+  lowercase forever in the Layer select, legend and phone chip.
+- **UI-9 (species copy)**: ESA status codes are mapped for display (EN → Endangered, TN →
+  Threatened, LC → "Not listed"), with the code kept in parentheses and the source named once, in
+  the fact's own label ("Listed under the ESA (NMFS)") — a real, non-null source used to be named
+  TWICE ("NMFS:EN (NMFS)"). "IUCN RedList: VU" is now "IUCN Red List: Vulnerable (VU)". The
+  species-lens inputs table shows each dataset's own NAME, never the raw `ds_key`
+  ("ms_merge"/"am_0.05"/"rng_iucn"). A species card that fails to load now reads "This species
+  isn't in release {ver}. Search for another above." for a genuine not-found, instead of the raw
+  error code ("Couldn't load this species (not-found).").
+- **UI-8 (number formatting)**: the Zones table's score column is `minimumFractionDigits: 1` (a
+  "29" no longer sits beside a "29.7"); its numeric headers right-align to match their columns; the
+  Composition treemap's `valueLabel` is "species" (not "n species", which read as a typo).
+- **UI-12**: the Zones table's header text wraps at word boundaries (`overflow-wrap: normal;
+  hyphens: auto`) instead of splitting a word like "Primary production" mid-letter.
+- **W3 hand-off**: `ZonesTable.svelte` and `Composition.svelte` had the same `max-height: 50vh`
+  blank-space defect B9 fixed for `SpeciesTable.svelte` — both now fill whatever height
+  `TablePanel.svelte`'s own `height: 100%` hands down, the same fix, applied the same way.
+
 # atlas 0.10.72
 
 Round 3, W5 (process and tooling debt): gallery screenshot stability, seeded-fault patch hygiene,

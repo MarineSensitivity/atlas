@@ -99,6 +99,9 @@ export interface SpeciesLens {
   readonly popup: { lngLat: LngLat; content: PopupContent } | null;
   readonly taxaIndex: TaxaIndex | null;
   readonly datasets: DatasetIndex;
+  /** UI-9 (round-3 review): the resolved release id, for the not-found/error copy ("This species
+   * isn't in release v7…") -- `null` before `deps.ver()` has settled. */
+  readonly ver: string | null;
 
   dismissNotFound(): void;
   closePopup(): void;
@@ -405,6 +408,9 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     },
     get datasets() {
       return datasets;
+    },
+    get ver() {
+      return deps.ver();
     },
 
     dismissNotFound() {

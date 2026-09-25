@@ -308,7 +308,7 @@
     {compactFlower}
   />
 {:else if activeTool === "table"}
-  <TablePanel {sel} {selStore} {boot} {manifest} {ver} {unit} {lyr} {selection} />
+  <TablePanel {sel} {selStore} {boot} {manifest} {ver} {unit} {lyr} {selection} {cellCoords} />
 {:else}
   <p>{fallbackBody}</p>
 {/if}

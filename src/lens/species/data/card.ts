@@ -60,18 +60,60 @@ export function noSurfaceNotice(ver: string): string {
   return `No surface published for this taxon in ${ver}`;
 }
 
+/** ESA status codes, mapped to a reviewer-legible label -- UI-9 (round-3 review): "ESA Listing:
+ * FWS:LC" read as if LC were an ESA status (it is not one; the species is simply not listed), and
+ * a non-null `esa.source` named the source TWICE ("NMFS:EN (NMFS)" -- once via the code's own
+ * `{SOURCE}:{STATUS}` prefix, again via the appended source). Unrecognized codes fall back to the
+ * bare code, never a blank label. */
+const ESA_STATUS_LABELS: Readonly<Record<string, string>> = {
+  EN: "Endangered",
+  TN: "Threatened",
+  LC: "Not listed",
+};
+
+export interface EsaListing {
+  /** "Listed under the ESA" (+ the source, once, in parentheses, when the code carries one). */
+  label: string;
+  /** "{status label} ({code})" -- the code always kept, in parentheses, beside its label. */
+  value: string;
+}
+
 /**
- * `ESA Listing`: `{code} ({SOURCE})` with the `ch_` prefix dropped and the source upper-cased
- * (app.R:1683-1687). Two deliberate differences from R, both because the R form leaks an R literal
- * into the UI:
- *   - no code at all -> `"NA"` in R; here the row is simply omitted (see {@link speciesCard}).
- *   - a code with NO source -> `"FWS:EN (NA)"` in R (every v8/v9 taxon has a null `esa_source`);
- *     here the parenthetical is dropped. Pinned by a named test.
+ * `card.esa.code` is `"{SOURCE}:{STATUS}"` (e.g. `"NMFS:EN"`, `"FWS:LC"`) -- the source lives in
+ * the code ITSELF, so this reads it from there (never from the separate `esa.source` field, which
+ * is the same source a second time on every taxon that has one -- the reported "names the source
+ * twice" bug). `null` for no code at all (the row is simply omitted, see {@link speciesCard}).
  */
-export function esaListing(code: string | null, source: string | null): string | null {
+export function esaListing(code: string | null): EsaListing | null {
   if (!code) return null;
-  if (!source) return code;
-  return `${code} (${source.replace(/^ch_/, "").toUpperCase()})`;
+  const i = code.indexOf(":");
+  const source = i === -1 ? null : code.slice(0, i);
+  const status = i === -1 ? code : code.slice(i + 1);
+  const statusLabel = ESA_STATUS_LABELS[status] ?? status;
+  const value = statusLabel === status ? status : `${statusLabel} (${status})`;
+  const label = source ? `Listed under the ESA (${source})` : "Listed under the ESA";
+  return { label, value };
+}
+
+/** IUCN Red List categories, mapped to a reviewer-legible name -- UI-9: "IUCN RedList: VU" ->
+ * "IUCN Red List: Vulnerable (VU)". Unrecognized codes (e.g. the data-level `IUCN:TN` bug tracked
+ * separately, UI-L9) fall back to the bare code. */
+const IUCN_CATEGORY_LABELS: Readonly<Record<string, string>> = {
+  EX: "Extinct",
+  EW: "Extinct in the Wild",
+  CR: "Critically Endangered",
+  EN: "Endangered",
+  VU: "Vulnerable",
+  NT: "Near Threatened",
+  LC: "Least Concern",
+  DD: "Data Deficient",
+  NE: "Not Evaluated",
+};
+
+/** "{category name} ({code})", or the bare code for one this module does not recognize. */
+export function iucnRedListLabel(code: string): string {
+  const name = IUCN_CATEGORY_LABELS[code];
+  return name ? `${name} (${code})` : code;
 }
 
 /** the WoRMS taxon page, or null when the authority is not WoRMS (§7.3). */
@@ -115,9 +157,10 @@ export function speciesCard(card: TaxonCard, opts: CardOptions): SpeciesCard {
   // species lens sidebar) -- the DISPLAY value goes through categoryLabel(); card.spCat itself
   // (used elsewhere for filtering/matching) stays the raw taxonomy string.
   facts.push({ label: "Category", value: categoryLabel(card.spCat) });
-  const esa = esaListing(card.esa?.code ?? null, card.esa?.source ?? null);
-  if (esa) facts.push({ label: "ESA Listing", value: esa });
-  if (card.rl) facts.push({ label: "IUCN RedList", value: card.rl });
+  const esa = esaListing(card.esa?.code ?? null);
+  if (esa) facts.push({ label: esa.label, value: esa.value });
+  // UI-9: "IUCN Red List" (not "IUCN RedList") with the category NAME, not the bare code.
+  if (card.rl) facts.push({ label: "IUCN Red List", value: iucnRedListLabel(card.rl) });
   const worms = wormsUrl(card.taxonAuthority, card.taxonId);
   if (worms && card.taxonId) facts.push({ label: "WoRMS", value: card.taxonId, href: worms });
   if (card.mmpa === true) facts.push({ label: "MMPA", value: "Protected (20)" });
@@ -175,4 +218,20 @@ export function documentTitle(
   const layer = datasetLabel(opts.datasets, merged ? MERGED_DS_KEY : opts.selectedInput);
   const cat = card.common ? `${card.spCat}: ${card.common}` : card.spCat;
   return `${card.sci} distribution (${cat}; ${key}) from ${layer} | Marine Sensitivity`;
+}
+
+/**
+ * UI-9 (round-3 review): the species-lens card's load-error copy — it used to print the raw error
+ * `kind` code verbatim ("Couldn't load this species (not-found)."), which offers no next step. A
+ * `"not-found"` (the release's shard genuinely has no such key) now names the release and points
+ * back at search; every other kind (network/http/parse/schema — all transient/infra failures) gets
+ * a plain, non-technical retry hint instead of the raw code.
+ */
+export function speciesCardErrorText(kind: string, ver: string | null): string {
+  if (kind === "not-found") {
+    return ver
+      ? `This species isn't in release ${ver}. Search for another above.`
+      : "This species isn't in this release. Search for another above.";
+  }
+  return "Couldn't load this species. Please try again.";
 }

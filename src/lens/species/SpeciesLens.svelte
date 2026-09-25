@@ -25,6 +25,7 @@
   import type { SelStore } from "../../lib/state/sel.svelte";
   import type { MapHandle } from "../../lib/map/map";
   import type { LayerGroupId } from "../../lib/map/layerStack";
+  import { speciesCardErrorText } from "./data/card";
 
   interface Props {
     lens: SpeciesLens;
@@ -77,7 +78,10 @@
   {#snippet dataControls()}
     <div class="species-panel" data-testid="species-panel">
       {#if lens.cardError}
-        <p class="error" role="alert">Couldn't load this species ({lens.cardError.kind}).</p>
+        <!-- UI-9 (round-3 review): "Couldn't load this species (not-found)." printed the raw error
+             code -- a genuine not-found now names the release and points back at search; every
+             other (transient/infra) failure gets a plain retry hint. -->
+        <p class="error" role="alert">{speciesCardErrorText(lens.cardError.kind, lens.ver)}</p>
       {:else if lens.card}
         <SpeciesTitle sci={lens.card.sci} common={lens.card.common} />
         {#if lens.bar}
