@@ -14,6 +14,8 @@
 // this module stays Node-testable by taking that query as an INJECTED function rather than a real
 // MapLibre instance.
 import type { Feature, FeatureCollection, Geometry, Polygon } from "geojson";
+import type { MapHandle } from "../lib/map/map";
+import { zoneKeyProperty, zoneSourceId, zoneUnitsFromBoot } from "../lib/map/layers/zones";
 import type { Place, ZonePlace } from "../lib/geo/placeCodec";
 import { unitForZoneSet } from "./model";
 import { ringsFromFeatures, zoneCenterFromBoot, zoneDisplayName, zoneStatsFor } from "./zoneStats";
@@ -125,6 +127,34 @@ export function placesToGeoJson(
     return zoneFeature(p, boot, polygons);
   });
   return { type: "FeatureCollection", features };
+}
+
+/** R3-W2: a `ZonePolygonSource` off a real, live `MapHandle` -- extracted so the Download menu
+ * (`src/shell/DownloadMenu.svelte`) can build one without duplicating `Places.svelte`'s own
+ * identical inline `zonePolygonSource()` a third time. Additive: `Places.svelte` keeps its own copy
+ * unchanged (round-3's file-ownership rule -- a file another slice may be mid-edit on is left
+ * alone; this is the same logic, exported once, so a FUTURE change only has one place to make). */
+export function zonePolygonSourceFromMap(
+  mapHandle: MapHandle | undefined,
+  boot: unknown,
+): ZonePolygonSource | undefined {
+  if (!mapHandle) return undefined;
+  const handle = mapHandle;
+  return {
+    queryZonePolygons(unit, keys) {
+      const spec = zoneUnitsFromBoot(boot).find((u) => u.unit === unit);
+      if (!spec) return [];
+      const wanted = new Set(keys.map(String));
+      try {
+        return handle.map.querySourceFeatures(zoneSourceId(unit), {
+          sourceLayer: spec.sourceLayer,
+          filter: ["in", ["get", zoneKeyProperty(unit)], ["literal", [...wanted]]] as never,
+        }) as never;
+      } catch {
+        return []; // source not added/loaded yet — never a throw for a download click
+      }
+    },
+  };
 }
 
 /** browser-only side effect (an anchor click); kept separate from the pure builder above so

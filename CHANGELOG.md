@@ -1,3 +1,29 @@
+# atlas 0.10.69
+
+Round 3, W2: a Download menu (PNG/SVG of the map view, GeoTIFF/GeoJSON of the current data layer),
+plus the theme toggle's gear-like icon (R3-B12).
+
+- **New: a Download menu** — desktop, a top-bar icon button beside Share; phone, a "Download…" entry
+  in the ⋯ menu opening the same item list in a Modal. Items: **Map view · PNG** (the current map,
+  composited with a theme background, a footer stamp — title/unit · app · version · share URL — and
+  the legend gradient bottom-left, never transparent), **Map view · SVG** (the same figure as a
+  vector-wrapped raster: the footer and legend are real SVG text/gradient elements, the map imagery
+  stays a raster — the menu says so), **Data layer · GeoTIFF** (fetches the current view's own COG —
+  the scores lens' current metric × subregion, or the species lens' currently drawn surface — and
+  saves it; disabled with the reason as its hint when no COG is published for the view), and
+  **Selected places · GeoJSON** (the current places, reusing `places/download.ts`'s existing
+  resolved-geometry export) when there is a selection. "Program areas · GeoJSON" is deliberately
+  NOT offered: no published release carries a complete Program-Area geometry asset today (see this
+  round's report for what publishing `app/zones/programarea.geojson` would take). New reusable
+  `src/lib/ui/Menu.svelte` (a `role="menu"` dropdown — trigger, roving-tabindex list, Esc/outside-
+  click/item-click close, left/right align) backs the desktop button; a gallery section demonstrates
+  it. One `download_export` analytics event fires per download kind.
+- **Fixed (R3-B12): the theme toggle read as a settings gear**, not a sun/moon — `mdiBrightness7`/
+  `mdiBrightness4`'s shared castellated ring (the same pair CalCOFI explore also uses) reads as a
+  gear frame at 18px. Swapped for `mdiWhiteBalanceSunny`/`mdiMoonWaningCrescent` — unambiguous
+  sun/moon glyphs with no gear-like border, on both the desktop button and the phone ⋯ menu's
+  "Switch to light/dark theme" item.
+
 # atlas 0.10.67
 
 P round, W5 (Opus 5.5 eyes-on review 5 of 0.10.66, 2026-09-25): two zone-fit framing gutters, a

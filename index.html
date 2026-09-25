@@ -470,6 +470,17 @@
           data-control="share"
           ><span class="sk-icon-tool"></span
         ></span>
+        <!-- R3-W2: Download -- same skeleton convention as Share/Help just above; the hydrated
+             control lives in DownloadMenu.svelte (Shell.svelte's own mount line carries the
+             matching literal `data-tour="download"`/`data-control="download"`, per
+             tests/shell/shell-invariants.test.ts's round-trip check). -->
+        <span
+          class="tool topbar-desktop-only"
+          aria-hidden="true"
+          data-tour="download"
+          data-control="download"
+          ><span class="sk-icon-tool"></span
+        ></span>
         <span
           class="tool topbar-desktop-only"
           aria-hidden="true"

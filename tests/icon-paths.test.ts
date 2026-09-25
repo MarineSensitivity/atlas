@@ -60,6 +60,13 @@ const SPEC_ICON_NAMES = [
   "more",
   "feedback",
   "tour",
+  // R3-W2 (Download menu items): a raster PNG, an SVG wrapper, a GeoTIFF data layer, a GeoJSON
+  // vector export -- distinct from "download" (the trigger button itself) and "draw" (the
+  // upload/draw tool, an unrelated feature).
+  "image",
+  "vectorFile",
+  "geoRaster",
+  "geoVector",
 ];
 
 // SVG path command characters and allowed symbols (see tests/glyphs.test.ts for a real parser;
