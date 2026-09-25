@@ -79,8 +79,9 @@ test.describe("R3-W8 item 3: Share reproduces the UI arrangement", () => {
 
     const shared = await clickShareAndCapture(page);
     // R3-W8 item 4 bumped the `ui=` token to version 2 (a 7th `tab` field for the Layers pane's
-    // own two tabs) -- see uiState.ts's own header.
-    expect(shared).toMatch(/[?&]ui=2\./);
+    // own two tabs); item 5 bumped it again to version 3 (an 8th `reportTab` field for the Report
+    // pane's own two tabs) -- see uiState.ts's own header.
+    expect(shared).toMatch(/[?&]ui=3\./);
     expect(shared).toMatch(/[?&]in=rng_fws(&|$)/);
     expect(shared).toMatch(/[?&]zl=0(&|$)/);
 

@@ -439,8 +439,8 @@ test.describe("keyboard", () => {
     await page.locator('[data-control="theme"]').click();
     await page.locator('[data-control="help"]').click();
     const rail = page.locator("#rail-region [role='toolbar']");
-    // R3-W8 item 4: the rail is now four tools -- the Flower plot moved into the Layers pane's
-    // own second tab.
+    // R3-W8 item 4/5: the rail is now three tools -- the Flower plot moved into the Layers pane's
+    // own second tab, and Places moved into the Report pane's own first tab.
     for (const label of ["Layers", "Table", "Report"]) {
       await rail.locator(`button[aria-label="${label}"]`).click();
     }
