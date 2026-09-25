@@ -226,25 +226,45 @@ export function paddedStudyAreaCenter(
  * recognisable U.S. coast. No shift or boost of that SAME point fixes it, because the point itself,
  * not the zoom, is wrong.
  *
- * The fix is a DIFFERENT anchor: fit a real, hand-picked bbox over the northern Gulf of Mexico /
- * south-east U.S. shelf (Louisiana through the Florida Panhandle/Georgia coast -- real geography,
- * not invented, the same "pick a genuine, densely-scored region" approach `raster/bounds.ts`'s
- * `CANDIDATE_LONS` already takes for the same reason) into the free area with {@link
- * boundsToCameraView}, which chooses whatever zoom actually fills the free area's width -- measured
- * ~4.9-5.2 on a typical phone detent, comfortably above the ~3 floor where MapLibre's globe
- * projection stops rendering the whole sphere (so this never reintroduces the "empty sky" gap P6
- * fixed). Verified live (production build, same method): the free area shows real coloured scored
- * cells across the Gulf shelf with "New Orleans"/"Mississippi"/"Alabama" labelled on the coastline
- * -- both "contains scored cells" and "a recognisable piece of the U.S. coast" (the rule this
- * function exists to satisfy), where the boosted-centroid approach had neither.
+ * P9's own fix (a tight northern-Gulf-of-Mexico/south-east-coast bbox, `[[-92,24],[-84,31]]`,
+ * zoom ~4.9-5.2) traded too much away: it read as "one region of four" (Reviewers, round-3 plan
+ * R3-A2) -- correct and recognisable, but Pacific/Atlantic/Alaska were nowhere in the first view at
+ * all.
  *
- * Deliberately NOT the whole study area's own bbox (Alaska through the Caribbean, ~114 degrees of
- * longitude): fit into a phone's free area, that bbox's own width-limited zoom computes to ~1.27 --
- * back in the globe-renders-the-whole-sphere regime this function exists to stay out of. A small
- * globe that "fills the free area's width" only in FLAT Mercator math would still show mostly empty
- * sky in MapLibre's actual (spherical) render, the same gap P6 already fixed once. A tighter,
- * genuinely representative slice of the study area is the honest trade: less of the country in
- * frame, but everything in frame is real, scored, and recognisable.
+ * **R3-A2 (Ben, 2026-09-25): "find an extent that includes at least the waters of the lower 48 and
+ * ideally a sliver of Alaska (hinting at extent coverage there)."** Chosen BY LOOKING (bounded
+ * iteration, real builds, `scripts/eyes-shots.mjs`'s `map`/`layers` phone states), starting from the
+ * plan's own `[[-135,20],[-60,52]]` and narrowing:
+ *   1. `[[-135,20],[-60,52]]` (zoom ~1.7 at the half-detent padding): framed CONUS + a real
+ *      south-east-Alaska/Gulf-of-Alaska sliver at the top-left edge, but wasted roughly the bottom
+ *      half of the free area on Mexico/Central America/northern South America with no scored
+ *      content in frame.
+ *   2. Narrowing the south edge alone (`south: 20 -> 26/28`) does NOT help: this bbox is
+ *      WIDTH-bound (63-75 deg of longitude vs. a 390px-wide phone), so `boundsToCameraView`'s zoom
+ *      is set entirely by the east-west span -- moving the south/north edges only re-centers the
+ *      same zoom, it never tightens it.
+ *   3. **`PHONE_DEFAULT_BOUNDS = [[-128,24],[-65,52]]`** (this constant): trimming the WIDTH (west
+ *      -135 -> -128, east -60 -> -65) raises the zoom to ~2.1 at the half-detent padding, while
+ *      -128 W still carries the south-east-Alaska panhandle/Gulf-of-Alaska edge into frame and -65
+ *      W keeps the whole Atlantic seaboard + Florida in. Verified live (real build screenshot,
+ *      `phone-02-map`/`phone-03-layers-half`): the free area shows real coloured scored cells along
+ *      the Pacific coast, the Gulf of Mexico, and the Atlantic/Florida shelf, WITH a visible tan/
+ *      green sliver of Alaska hugging the top-left edge of the globe -- exactly the "lower 48 +
+ *      Alaska hint" the decision asks for. Some empty ocean south of CONUS remains (an unavoidable
+ *      trade at this aspect ratio on a portrait phone), but it no longer dominates the frame the way
+ *      step 1 did.
+ *
+ * This DELIBERATELY does not chase the old "~3 floor" zoom heuristic P9's header below still
+ * documents for the ORIGINAL bug (a near-whole-study-area bbox at zoom ~1.27 showing empty sky):
+ * that floor was specific to a THIN default (a thin bbox or a boosted point) whose own frame
+ * carries little real vertical content at low zoom. This bbox is wide AND tall on purpose (63 deg
+ * lon x 28 deg lat) -- at its own low zoom (~2.1) the box's real geography already fills the free
+ * area's vertical extent, so the empty-sky failure mode this function exists to avoid does not
+ * recur; the live screenshot is the proof, not a zoom number in isolation.
+ *
+ * Never the whole study area's own bbox (Alaska through the Caribbean, ~114 degrees of longitude,
+ * zoom ~1.27): even wider than this constant, and its own north-south span is dominated by open
+ * ocean between the mainland and the Aleutians rather than a coherent coastline.
  *
  * Scoped to the DEFAULT first view only (`Shell.svelte`'s two call sites already gate on
  * `sel.area === DEFAULT_SEL.area`/no `sel.map`) -- an explicit `?area=`/`?map=` is never
@@ -252,8 +272,8 @@ export function paddedStudyAreaCenter(
  * centroid already keeps real coastline in frame at the study-area preset's own zoom).
  */
 export const PHONE_DEFAULT_BOUNDS: CameraBoundsInput = [
-  [-92, 24],
-  [-84, 31],
+  [-128, 24],
+  [-65, 52],
 ];
 
 /** the phone's DEFAULT first-view camera -- see {@link PHONE_DEFAULT_BOUNDS}'s own header. */

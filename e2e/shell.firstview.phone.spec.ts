@@ -32,9 +32,19 @@
 // test 1/2/3 below all passing (none of them ever asked WHAT was on screen, only "is it zoomed in"
 // and "is the sky gap small"). `camera.ts#phoneDefaultCamera`'s own header has the full
 // measurement, both broken and fixed, and why a real Gulf-of-Mexico/south-east-coast bbox fit
-// replaces the boost-the-same-point approach. Test 1 and 2 below are rewritten for the new
-// mechanism (they could not stay green under it — see each one's own comment); test 3 is
-// unchanged and still passes (the new zoom, ~4.9, is comfortably above the sky-gap floor too).
+// replaces the boost-the-same-point approach.
+//
+// R3-A2 (Ben, 2026-09-25): P9's tight single-region box (~4.9-5.2 zoom, comfortably clear of the
+// sky-gap floor) read as "one region of four" to reviewers. `PHONE_DEFAULT_BOUNDS` now covers the
+// lower 48's waters + a south-east-Alaska/Gulf-of-Alaska hint (camera.ts's own header has the full
+// iteration log), and that WIDER bbox is width-bound on a 390px phone -- its own zoom (measured
+// ~1.97 on this fixture) is BELOW the old ~3 sky-gap floor, and the empty-space gap this file's own
+// two-colour probe measures grows accordingly (~141 CSS px here, vs. the ~80px ceiling the tight
+// box kept it under). This is an ACCEPTED, DELIBERATE trade of this round's decision -- a wider
+// first view costs some empty space above the globe -- not a regression to chase back to zero;
+// tests 1 and 4 below are updated to the new measured baseline, with a ceiling that still catches a
+// real regression (e.g. back toward the whole-study-area bbox, which is wider still and would
+// measure worse on both). Test 2 and 3 are unchanged and still pass under the new bbox.
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -138,11 +148,14 @@ async function gotoPhone(page: Page, path = "/") {
 }
 
 test.describe("P2: the phone first view frames the study area, not empty sky", () => {
-  // P9 rewrite (this file's own header): the invariant that survives is still true (the phone's
-  // initial zoom is well above the FALLBACK preset's own low zoom), but it no longer proves the
-  // MECHANISM that made it true -- `PHONE_STUDY_AREA_ZOOM_BOOST` is retired. What actually matters,
-  // and what test 2 below checks, is WHERE the camera ends up, not merely how zoomed in it is.
-  test("the initial camera zoom is well above the study-area preset's own zoom (escapes the globe-sphere regime)", async ({
+  // P9 rewrite (this file's own header): what actually matters, and what test 2 below checks, is
+  // WHERE the camera ends up, not merely how zoomed in it is. R3-A2 update: the wider
+  // lower-48+Alaska-hint bbox is width-bound and its own zoom (~1.97 measured) sits BELOW the
+  // FALLBACK preset's zoom (2.16) and well below the old ~3.5 floor -- both by design (camera.ts's
+  // own header). This test now pins the zoom to a band that still distinguishes it from the two
+  // real failure modes: the whole-study-area bbox (~1.27, even wider, the ORIGINAL empty-sky bug)
+  // and a collapse back to a near-zero/degenerate fit.
+  test("the initial camera zoom sits in the wide-bbox band, clear of the whole-study-area floor (~1.27)", async ({
     page,
   }) => {
     await gotoPhone(page);
@@ -151,8 +164,8 @@ test.describe("P2: the phone first view frames the study area, not empty sky", (
         window as unknown as { __atlasMap: { handle: { map: { getZoom(): number } } } }
       ).__atlasMap.handle.map.getZoom(),
     );
-    expect(zoom).toBeGreaterThan(FALLBACK.zoom);
-    expect(zoom).toBeGreaterThan(3.5); // the ~3 floor `camera.ts#phoneDefaultCamera`'s header names
+    expect(zoom).toBeGreaterThan(1.5); // clear of the whole-study-area bbox's own ~1.27
+    expect(zoom).toBeLessThan(3); // R3-A2's wider bbox is deliberately below the old sky-gap floor
   });
 
   // P9 rewrite: the OLD version of this test checked the `FALLBACK_FULL_STUDY_AREA` centroid
@@ -248,10 +261,13 @@ test.describe("P2: the phone first view frames the study area, not empty sky", (
     }, topbarBox!.y + topbarBox!.height);
 
     expect(gapPx, "gap between the top bar and the globe, in CSS px").toBeGreaterThanOrEqual(0);
-    // measured on this exact fixture: 102px uncapped (MAX_STUDY_AREA_SHIFT_PX raised past any real
-    // padding — the review's own "~100 CSS px", reproduced), 62px capped at 200. 80 sits between
-    // the two with margin on both sides — comfortably below the red baseline (catches a regression
-    // back toward it) and comfortably above the green measurement (not flaky on render jitter).
-    expect(gapPx).toBeLessThan(80);
+    // R3-A2 (Ben, 2026-09-25): the wider lower-48+Alaska-hint bbox is width-bound at a LOWER zoom
+    // than the tight single-region box this ceiling used to guard (~1.97 vs ~4.9 — camera.ts's own
+    // header), so the empty-space gap above the globe grows too: measured ~141 CSS px on this exact
+    // fixture, an ACCEPTED cost of this round's decision (a wider first view over a tighter,
+    // sky-gap-free one), not a regression. 180 sits comfortably above the measured value (not flaky
+    // on render jitter) and still well below what the whole-study-area bbox (wider still, zoom
+    // ~1.27) would measure — a real regression toward that stays caught.
+    expect(gapPx).toBeLessThan(180);
   });
 });
