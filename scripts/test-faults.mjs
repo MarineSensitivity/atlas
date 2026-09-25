@@ -949,6 +949,25 @@ export const FAULTS = [
     env: { PW_PORT: "4412" },
   },
   {
+    id: "phone-default-chip-padding-dropped",
+    patch: "tests/faults/phone-default-chip-padding-dropped.patch",
+    describe:
+      "D5 (Opus 5.5 eyes-on review round 2, 2026-09-25): the phone default fit's measured-sheet " +
+      "refit drops the legend chip's own height from its padding again -- the Gulf of " +
+      "Mexico/Florida Program Areas sit back under the chip at the default 'half' detent",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.firstview.phone.spec.ts",
+      "-g",
+      "legend chip",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4444" },
+  },
+  {
     id: "bounds-narrow-longitude-skipped",
     patch: "tests/faults/bounds-narrow-longitude-skipped.patch",
     describe:
