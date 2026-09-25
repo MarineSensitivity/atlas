@@ -603,9 +603,15 @@ test.describe("R3-W3b fix: the flower's component table scroll region is keyboar
     const captionText = await page.locator(".flower-table caption").innerText();
     expect(captionText).toContain("Component scores for");
 
-    // real keyboard focus, and a visible focus ring (the same token/shape Sheet.svelte's
-    // .sheet-body and Panel.svelte's .panel-surface already use).
-    await scrollRegion.focus();
+    // real keyboard focus (a real Tab press, not `.focus()` -- browsers do not treat a scripted
+    // `.focus()` call as a keyboard interaction, so `:focus-visible` never fires for it, same
+    // reasoning as e2e/gallery.spec.ts's "real focus ring" describe block above this one's
+    // sibling), and a visible focus ring (the same token/shape Sheet.svelte's .sheet-body and
+    // Panel.svelte's .panel-surface already use). The last petal is the previous tab stop in DOM
+    // order, so one real Tab from it lands on the scroll region.
+    const lastPetal = page.locator(".flower-svg .petal").last();
+    await lastPetal.click();
+    await page.keyboard.press("Tab");
     await expect(scrollRegion).toBeFocused();
     const outline = await scrollRegion.evaluate((el) => getComputedStyle(el).outlineStyle);
     expect(outline, "a focused scroll region must draw a visible focus ring").toBe("solid");
