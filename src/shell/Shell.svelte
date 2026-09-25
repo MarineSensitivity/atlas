@@ -610,10 +610,16 @@
   // `sel.lyr`) is the SAME fallback `state.svelte.ts#lyr` applies -- an unset/unknown `?lyr=` still
   // resolves to the release's own composite default, matching what the raster ACTUALLY paints.
   const downloadLyr = $derived(effectiveLyr(sel.lyr, boot));
+  // Fix round (Opus 5.5 eyes-on review, D3): this used to read `layerByKey(...)?.label` directly
+  // -- `boot.layers[].label` is the layer's LONG description (~190 chars for `primprod`), not a
+  // title. `phoneLegend.title` (below) is the SAME short label the Layer select and the legend
+  // chip already show (`mapInputs.ts`'s own `title`, `metricKeyLabel()`/the manifest's short
+  // `metricLabels` preferred over the long `layer.label`) -- reused here, never re-derived, so the
+  // download title can never drift from what the app is already displaying.
   const downloadTitle = $derived(
     sel.lens === "species"
       ? (speciesLens.card?.sci ?? "Species")
-      : (layerByKey(boot, downloadLyr)?.label ?? downloadLyr ?? "Score"),
+      : (phoneLegend?.title ?? downloadLyr ?? "Score"),
   );
   const downloadLegendStops = $derived(
     phoneLegend && "stops" in phoneLegend ? phoneLegend.stops : [],
@@ -646,7 +652,6 @@
       : downloadLyr,
   );
   const downloadPlaces = $derived(placesFromHash(sel.pl));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   // `typeof DownloadMenu` (not `Component<any>`, unlike the other lazy chunks below) -- this is the
   // ONE lazy chunk in this file `bind:this` calls a method on (`downloadMenuRef?.openPhoneModal()`);
   // `Component<any>`'s implicit empty Exports would make `bind:this` yield a shape lacking
@@ -686,6 +691,17 @@
     if (desc === null) return null;
     return desc === (phoneLegend?.title ?? null) ? null : desc;
   });
+
+  // R3-W2 fix round (Opus 5.5 eyes-on review, D3): the Download menu's footer, optional second
+  // line -- reuses `phoneLegendDescription` verbatim (declared just above; it is ALREADY deduped
+  // against `phoneLegend.title` there -- `null` when the description would just repeat the title,
+  // the release publishes none, or the lens is species). Never a second, independent read of
+  // `layer?.label` here -- one place decides "is this description worth showing at all". Declared
+  // AFTER `phoneLegendDescription` on purpose: `npm run check` (svelte-aware, unlike plain `tsc`)
+  // flags a `const` referenced before its OWN declaration even when the read only happens inside a
+  // closure Svelte invokes later (a `$derived` callback) -- the runtime would have been fine, but
+  // the static check is not, so source order here matters.
+  const downloadDescription = $derived(sel.lens === "scores" ? phoneLegendDescription : null);
 
   // G-25 fix: `Sel.out`'s ONE effect on the map, applied to whichever `zones` array (the shell's
   // own outline-only `zoneUnits`, or the scores lens' richer `scoresLens.mapExtra.zones`) is about
@@ -1581,6 +1597,7 @@
       {mapHandle}
       {boot}
       title={downloadTitle}
+      description={downloadDescription}
       unit={downloadUnit}
       metricOrMdlKey={downloadMetricOrMdlKey}
       cogUrl={downloadCogUrl}

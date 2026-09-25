@@ -5,7 +5,7 @@
 // (the brief: "raster map in an SVG wrapper -- nobody expects vector coastlines", stated as this
 // item's own menu hint in `items.ts`). Pure string-building, no DOM (CLAUDE.md) -- `mapSvgExport.ts`
 // is the thin DOM-touching caller that captures the PNG and hands this module plain data.
-import { footerLines, shareUrlWithoutOrigin, type FooterInfo } from "./footer";
+import { footerLines, canonicalShareUrl, type FooterInfo } from "./footer";
 import { legendLayout } from "./legendLayout";
 
 export interface LegendStopLike {
@@ -51,13 +51,28 @@ export function escapeXml(s: string): string {
 export function buildMapSvg(opts: MapSvgOptions): string {
   const font = (opts.fontFamily ?? "sans-serif").replace(/"/g, "'");
   const totalHeight = opts.mapHeight + opts.footerHeight;
-  const [line1, line2] = footerLines(opts.footer);
+  const lines = footerLines(opts.footer);
   const footerY = opts.mapHeight;
   const pad = 12;
 
   const legend = opts.legendStops?.length
     ? renderLegend(opts.legendStops, opts, opts.mapWidth, opts.mapHeight, opts.footerHeight)
     : "";
+
+  // evenly spaced within the footer band, the SAME `(i+1)/(n+1)` split `mapCapture.ts`'s canvas
+  // draw uses, so the PNG and SVG footers read identically: title (primary, 12px), an optional
+  // description line (muted, 10px -- matches `mapCapture.ts#FOOTER_DESCRIPTION_FONT`), then the
+  // app/version/URL line (muted, 11px).
+  const textEls = lines
+    .map((line, i) => {
+      const y = footerY + (opts.footerHeight * (i + 1)) / (lines.length + 1);
+      const isFirst = i === 0;
+      const isLast = i === lines.length - 1;
+      const fill = isFirst ? opts.footerFg : opts.footerMuted;
+      const size = isFirst ? 12 : isLast ? 11 : 10;
+      return `<text x="${pad}" y="${y}" font-family="${font}" font-size="${size}" fill="${fill}">${escapeXml(line)}</text>`;
+    })
+    .join("");
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${opts.mapWidth}" height="${totalHeight}" viewBox="0 0 ${opts.mapWidth} ${totalHeight}">`,
@@ -66,8 +81,7 @@ export function buildMapSvg(opts: MapSvgOptions): string {
     legend,
     `<rect x="0" y="${footerY}" width="${opts.mapWidth}" height="${opts.footerHeight}" fill="${opts.footerBg}"/>`,
     `<rect x="0" y="${footerY}" width="${opts.mapWidth}" height="1" fill="${opts.footerBorder}"/>`,
-    `<text x="${pad}" y="${footerY + 20}" font-family="${font}" font-size="12" fill="${opts.footerFg}">${escapeXml(line1)}</text>`,
-    `<text x="${pad}" y="${footerY + 36}" font-family="${font}" font-size="11" fill="${opts.footerMuted}">${escapeXml(line2)}</text>`,
+    textEls,
     `</svg>`,
   ].join("");
 }
@@ -104,5 +118,5 @@ function renderLegend(
 }
 
 // re-exported so a caller building only the footer (no legend) never has to reach into footer.ts
-// separately just to strip the share URL's origin for its own toast/label text.
-export { shareUrlWithoutOrigin };
+// separately just to build the canonical share URL for its own toast/label text.
+export { canonicalShareUrl };

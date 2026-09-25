@@ -182,6 +182,21 @@
     display: inline-block;
   }
 
+  /* Fix round (Opus 5.5 eyes-on review): shell.css's global `.tool[data-tooltip]:hover::after`
+     tooltip drew OVER the open menu's own top-right corner -- the pointer is still resting on the
+     trigger (from the click that opened it) so `:hover` stays true after the click. A general
+     "suppress tooltip while ITS OWN popover/menu is open" utility is being added elsewhere; this
+     local override is enough for the one trigger this component renders, and does not assume any
+     particular `triggerClass` (matches on the element/attributes this component itself controls,
+     not the caller's own class name). Specificity: `button[aria-expanded][data-tooltip]::after`
+     (2 attrs + 1 type + 1 pseudo-element) ties shell.css's `.tool[data-tooltip]:hover::after` (1
+     class + 1 attr + 1 pseudo-class + 1 pseudo-element) on the class/attribute count, so the extra
+     `.menu-wrap` ancestor here is load-bearing -- without it, which rule wins would depend on
+     unrelated stylesheet load order, not this selector's own intent. */
+  .menu-wrap button[aria-expanded="true"][data-tooltip]::after {
+    content: none;
+  }
+
   .menu[hidden] {
     display: none;
   }

@@ -77,4 +77,34 @@ describe("buildMapSvg", () => {
     expect(svg.endsWith("</svg>")).toBe(true);
     expect(svg.match(/<svg /g)?.length).toBe(1);
   });
+
+  it("D3 fix: the footer URL is absolute (never origin-stripped) and theme= is dropped", () => {
+    const svg = buildMapSvg({
+      ...BASE,
+      footer: { ...BASE.footer, url: "https://marinesensitivity.org/atlas/?ver=v7&theme=dark" },
+    });
+    expect(svg).toContain("https://marinesensitivity.org/atlas/?ver=v7");
+    expect(svg).not.toContain("theme=dark");
+    expect(svg).not.toContain('">/atlas/'); // never the bare relative path as a text node
+  });
+
+  it("draws a THIRD, smaller <text> line for a description, between the title and the URL line", () => {
+    const svg = buildMapSvg({
+      ...BASE,
+      footerHeight: 62,
+      footer: { ...BASE.footer, description: "A longer explanation of the metric" },
+    });
+    const texts = [...svg.matchAll(/<text[^>]*font-size="(\d+)"[^>]*>([^<]*)<\/text>/g)];
+    expect(texts).toHaveLength(3);
+    expect(texts[0][2]).toBe("Sensitivity · score");
+    expect(texts[1][2]).toBe("A longer explanation of the metric");
+    expect(Number(texts[1][1])).toBeLessThan(Number(texts[0][1])); // description is the SMALLER font
+    expect(texts[2][2]).toContain("MarineSensitivity Atlas");
+  });
+
+  it("draws only 2 <text> lines when there is no description", () => {
+    const svg = buildMapSvg(BASE);
+    const texts = [...svg.matchAll(/<text[^>]*>[^<]*<\/text>/g)];
+    expect(texts).toHaveLength(2);
+  });
 });

@@ -83,6 +83,13 @@ e2e/feedback.spec.ts`).
   anchor point on the fallback camera path).
 - `docs/status.md`'s Decisions table (R1–R6) now shows the correct landed version and "shipped"
   instead of a stale "building"/scheduling note for work that has been live since round 2.
+- **Fixed (D3, Download menu): the map-view export's title/filename used the layer's LONG
+  description** (~190 characters for `primprod`), not the short label the Layer select and legend
+  chip already show — the download title/filename now match what is on screen; the long
+  description can still appear as an optional, smaller second footer line when it fits. **The
+  footer's "share URL" was relative and carried `theme=`** — it is now the same absolute URL
+  Share copies, with `theme` dropped. **Nit:** the Download tooltip no longer draws over its own
+  open menu.
 
 # atlas 0.10.71
 

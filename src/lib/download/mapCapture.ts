@@ -7,7 +7,7 @@
 // which this feature does not need -- it reads the shell's own, already-live map). Pure geometry
 // (`footer.ts`/`legendLayout.ts`) stays unit-tested without a DOM; this file is exercised by
 // `e2e/download.spec.ts` (a real browser, a real canvas).
-import { footerLines, type FooterInfo } from "./footer";
+import { fitsWidth, footerLines, type FooterInfo } from "./footer";
 import { legendLayout, type LegendLayout } from "./legendLayout";
 import {
   DOWNLOAD_BG_FALLBACK,
@@ -40,7 +40,23 @@ export interface LegendStopLike {
   value: number;
 }
 
-export const FOOTER_HEIGHT_PX = 46;
+/** 2-line footer (title, app·ver·url): unchanged from before this round. 3-line (+ the layer's
+ * long description, `footer.ts#FooterInfo.description`) adds one more line's worth of height. Kept
+ * as one function (not two constants) so `mapSvgExport.ts`'s own footer height -- which must equal
+ * this exactly, or the map image and the footer band disagree on where one ends and the other
+ * starts -- can never drift to a different number by hand. */
+export function footerHeightPx(lineCount: number): number {
+  const FOOTER_BASE_PX = 14;
+  const FOOTER_LINE_PX = 16;
+  return FOOTER_BASE_PX + lineCount * FOOTER_LINE_PX;
+}
+/** @deprecated kept only as the pre-description-line constant -- `footerHeightPx(2)`. */
+export const FOOTER_HEIGHT_PX = footerHeightPx(2);
+/** the description line's own font, smaller than the title -- `mapSvgExport.ts` measures with the
+ * SAME font (never a second guess) so both exports agree on whether a description "fits". */
+export const FOOTER_DESCRIPTION_FONT = "10px sans-serif";
+// exported so `mapSvgExport.ts`'s own fit-check uses the identical padding -- never a second guess.
+export const FOOTER_DESCRIPTION_SIDE_PADDING_PX = 24; // 12px left + 12px right, matching fillText's x=12
 
 function cssVar(name: string, fallback: string): string {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -94,7 +110,25 @@ export async function compositeMapFigure(
   const scale = opts.scale ?? 1;
   const width = mapCanvas.width;
   const height = mapCanvas.height;
-  const footerHeight = Math.round(FOOTER_HEIGHT_PX * (width / (mapCanvas.clientWidth || width)));
+
+  // measure the (optional) description line BEFORE sizing the canvas -- a scratch 2D context is
+  // enough for `measureText`, no need for the real (not-yet-created) output canvas.
+  const measureCtx = document.createElement("canvas").getContext("2d");
+  measureCtx!.font = FOOTER_DESCRIPTION_FONT;
+  const description =
+    opts.footer.description &&
+    fitsWidth(
+      opts.footer.description,
+      (t) => measureCtx!.measureText(t).width,
+      width - FOOTER_DESCRIPTION_SIDE_PADDING_PX,
+    )
+      ? opts.footer.description
+      : null;
+  const lines = footerLines({ ...opts.footer, description });
+  const footerHeight = Math.round(
+    footerHeightPx(lines.length) * (width / (mapCanvas.clientWidth || width)),
+  );
+
   const out = document.createElement("canvas");
   out.width = width;
   out.height = height + footerHeight;
@@ -115,15 +149,25 @@ export async function compositeMapFigure(
   ctx.fillStyle = footerBorder;
   ctx.fillRect(0, height, out.width, Math.max(1, scale));
 
-  const [line1, line2] = footerLines(opts.footer);
-  ctx.font = "12px sans-serif";
+  // evenly spaced lines within the footer band -- title first (primary colour, slightly larger),
+  // an optional description (muted, smaller -- FOOTER_DESCRIPTION_FONT, the SAME font just
+  // measured against), then the app/version/URL line (muted).
   ctx.textBaseline = "middle";
   ctx.textAlign = "left";
-  ctx.fillStyle = footerFg;
-  ctx.fillText(line1, 12, height + footerHeight * 0.32);
-  ctx.fillStyle = footerMuted;
-  ctx.font = "11px sans-serif";
-  ctx.fillText(line2, 12, height + footerHeight * 0.72);
+  lines.forEach((line, i) => {
+    const y = height + (footerHeight * (i + 1)) / (lines.length + 1);
+    if (i === 0) {
+      ctx.fillStyle = footerFg;
+      ctx.font = "12px sans-serif";
+    } else if (i === lines.length - 1) {
+      ctx.fillStyle = footerMuted;
+      ctx.font = "11px sans-serif";
+    } else {
+      ctx.fillStyle = footerMuted;
+      ctx.font = FOOTER_DESCRIPTION_FONT;
+    }
+    ctx.fillText(line, 12, y);
+  });
 
   if (opts.legendStops?.length) {
     const layout = legendLayout({ canvasWidth: out.width, canvasHeight: out.height, footerHeight });

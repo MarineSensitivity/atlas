@@ -4,9 +4,16 @@
 // `mapCapture.ts#compositeMapFigure`'s OUTPUT canvas (that canvas has already rasterized the
 // footer/legend into pixels) -- it reuses only `settleMapCanvas`, the shared repaint-and-wait step,
 // so the two exports never race each other's `triggerRepaint()`.
-import { settleMapCanvas, FOOTER_HEIGHT_PX, type MapLike, type LegendStopLike } from "./mapCapture";
+import {
+  settleMapCanvas,
+  footerHeightPx,
+  FOOTER_DESCRIPTION_FONT,
+  FOOTER_DESCRIPTION_SIDE_PADDING_PX,
+  type MapLike,
+  type LegendStopLike,
+} from "./mapCapture";
 import { buildMapSvg, type MapSvgOptions } from "./svgWrapper";
-import type { FooterInfo } from "./footer";
+import { fitsWidth, type FooterInfo } from "./footer";
 import {
   DOWNLOAD_BG_FALLBACK,
   DOWNLOAD_FOOTER_BG_FALLBACK,
@@ -36,14 +43,31 @@ export async function buildMapSvgFromMap(
   const pngDataUrl = canvas.toDataURL("image/png");
   const width = canvas.width;
   const height = canvas.height;
-  const footerHeight = Math.round(FOOTER_HEIGHT_PX * (width / (canvas.clientWidth || width)));
+
+  // the SAME fit-check `mapCapture.ts#compositeMapFigure` runs, against a scratch (never rendered)
+  // canvas purely for `measureText` -- an SVG document has no canvas of its own to measure with.
+  const measureCtx = document.createElement("canvas").getContext("2d");
+  measureCtx!.font = FOOTER_DESCRIPTION_FONT;
+  const description =
+    opts.footer.description &&
+    fitsWidth(
+      opts.footer.description,
+      (t) => measureCtx!.measureText(t).width,
+      width - FOOTER_DESCRIPTION_SIDE_PADDING_PX,
+    )
+      ? opts.footer.description
+      : null;
+  const footer: FooterInfo = { ...opts.footer, description };
+  const footerHeight = Math.round(
+    footerHeightPx(description ? 3 : 2) * (width / (canvas.clientWidth || width)),
+  );
 
   const svgOpts: MapSvgOptions = {
     pngDataUrl,
     mapWidth: width,
     mapHeight: height,
     footerHeight,
-    footer: opts.footer,
+    footer,
     legendStops: opts.legendStops,
     formatValue: opts.formatValue,
     backgroundColor: cssVar("--surface-map", DOWNLOAD_BG_FALLBACK),
