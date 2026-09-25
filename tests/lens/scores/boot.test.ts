@@ -5,6 +5,7 @@ import {
   flowerMaxComponentScore,
   layerByKey,
   layerGroups,
+  metricKeyLabel,
   metricLabelsFromManifest,
   primaryUnitLabel,
   primaryUnitNote,
@@ -35,13 +36,20 @@ describe("primaryUnitType / primaryUnitLabel (D17: exactly one boot.units row)",
 describe("unitOptions", () => {
   it("cell first, then the release's one unit", () => {
     expect(unitOptions(BOOT_V7)).toEqual([
-      { value: "cell", label: "Raster cells (0.05°)" },
+      { value: "cell", label: "Raster cells" },
       { value: "programarea", label: "Program areas" },
     ]);
   });
 
   it("cell only when no unit is published", () => {
-    expect(unitOptions({})).toEqual([{ value: "cell", label: "Raster cells (0.05°)" }]);
+    expect(unitOptions({})).toEqual([{ value: "cell", label: "Raster cells" }]);
+  });
+
+  // R3 (Ben, live-review 2026-09-25): "drop clunky '(0.05°)'" -- a permanent regression fixture,
+  // not just an incidental string match above.
+  it("R3: the resolution note is gone from the label", () => {
+    expect(unitOptions(BOOT_V7)[0].label).toBe("Raster cells");
+    expect(unitOptions(BOOT_V7)[0].label).not.toContain("0.05");
   });
 });
 
@@ -315,6 +323,66 @@ describe("flowerMaxComponentScore", () => {
         metrics: [metricRow("score_extriskspcat_primprod_ecoregionrescaled_equalweights", 93)],
       }),
     ).toBeNull();
+  });
+});
+
+// R3-B1 (round-3 plan): the ONE title-casing fallback for a bare metric_key -- the Layer <select>
+// (LayersPanel.svelte), the legend title (mapInputs.ts), and LegendChip.svelte's chip text (which
+// reads the SAME legend.title) all fall back to this when a release publishes no label at all.
+describe("metricKeyLabel (R3-B1: title-case a bare metric_key)", () => {
+  it("'score' -> 'Score' -- the reported bug", () => {
+    expect(metricKeyLabel("score")).toBe("Score");
+  });
+
+  it("underscores become spaces, only the first letter capitalizes (sentence case, not Title Case)", () => {
+    expect(metricKeyLabel("some_metric_key")).toBe("Some metric key");
+  });
+
+  it("already-capitalized/mixed-case input is not re-cased past the first letter", () => {
+    expect(metricKeyLabel("primProd")).toBe("PrimProd");
+  });
+
+  it("whitespace is trimmed; an empty/blank key returns as-is (no crash on [0])", () => {
+    expect(metricKeyLabel("  score  ")).toBe("Score");
+    expect(metricKeyLabel("")).toBe("");
+    expect(metricKeyLabel("   ")).toBe("");
+  });
+
+  // Fix round (orchestrator, 2026-09-25): a curated label that is ITSELF just the bare key is a
+  // second way the raw string reaches the UI -- a release publishing `manifest.metrics: [{
+  // metric_key: "score", label: "score" }]` used to defeat every caller's own `metricLabels[key]
+  // ?? ... ?? metricKeyLabel(key)` chain on the FIRST `??` (a truthy "score" string), never
+  // reaching this function at all.
+  describe("a `label` argument: title-cases when absent OR identical to the key (case-insensitive)", () => {
+    it("no label at all: same as before, title-cases the key", () => {
+      expect(metricKeyLabel("score")).toBe("Score");
+      expect(metricKeyLabel("score", undefined)).toBe("Score");
+      expect(metricKeyLabel("score", null)).toBe("Score");
+    });
+
+    it("a REAL, different label wins verbatim -- the common case, unaffected", () => {
+      expect(metricKeyLabel("primprod", "prim prod, 2014-2023 avg (mg C/m^2/day)")).toBe(
+        "prim prod, 2014-2023 avg (mg C/m^2/day)",
+      );
+    });
+
+    it("the reported bug: a curated label equal to the key (same case) is NOT treated as real", () => {
+      expect(metricKeyLabel("score", "score")).toBe("Score");
+    });
+
+    it("case-insensitive: 'Score'/'SCORE' as the label are equally degenerate", () => {
+      expect(metricKeyLabel("score", "Score")).toBe("Score");
+      expect(metricKeyLabel("score", "SCORE")).toBe("Score");
+    });
+
+    it("a blank/whitespace-only label is treated the same as absent", () => {
+      expect(metricKeyLabel("score", "")).toBe("Score");
+      expect(metricKeyLabel("score", "   ")).toBe("Score");
+    });
+
+    it("whitespace around an otherwise-real label does not make it 'identical to the key'", () => {
+      expect(metricKeyLabel("score", "  Overall score  ")).toBe("Overall score");
+    });
   });
 });
 

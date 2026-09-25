@@ -444,7 +444,7 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
     // M5 decision (review round 2's "new observation"): role "zone-fill" is, by construction,
     // ALWAYS the invisible B3 query-fill placeholder now (`composeStyle`'s own zone loop below
     // gives a REAL choropleth role "choropleth" -> group `data-raster` instead) -- so toggling
-    // "Zone outlines" (data-zones) invisible must not ALSO make this layer un-queryable
+    // "Outlines" (data-zones) invisible must not ALSO make this layer un-queryable
     // (MapLibre excludes `visibility: "none"` layers from `queryRenderedFeatures`), or zone
     // click/pick silently stops working the moment a viewer hides the outline row. It stays
     // COMPOSED and hit-testable regardless of the group's own visibility; `fill-opacity: 0`

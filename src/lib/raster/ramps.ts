@@ -41,6 +41,16 @@ export function paletteStopsFromBoot(
   return stops as PaletteStops;
 }
 
+/** R3 (round-3 plan, W1 "actual color ramps visualized for given options" -- CalCOFI explore's own
+ * `rampCss()`, `atlas-refs/"calcofi explore review.md"`): a flat CSS `linear-gradient` string over
+ * `stops`, left to right -- the ramp-picker's strip preview (`lens/scores/LayersPanel.svelte`) and
+ * ANY future caller needing the same "just show me this palette" strip. Pure string composition,
+ * no new colors defined here -- `stops` still comes from `paletteStopsFromBoot`/
+ * `paletteStopsWithFallback` above, never a second array. */
+export function rampCss(stops: PaletteStops): string {
+  return `linear-gradient(to right, ${stops.join(", ")})`;
+}
+
 export interface LegendStop {
   /** the hex color at this stop, straight from `boot.palettes` — never recomputed. */
   color: string;

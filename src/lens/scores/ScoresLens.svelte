@@ -30,11 +30,21 @@
   // R3 (round-2 plan §5 U4): the lens-independent stack shell — `docs/map.md`'s "the Layers panel
   // IS the stack" (Ben's decision R3). `ScoresLayersPanel` above is now only its "Data" row's
   // content, passed in as the `dataControls` snippet below.
-  import LibLayersPanel, { type LayersUnitToggle } from "../../lib/ui/LayersPanel.svelte";
-  import { unitOptions } from "./boot";
+  import LibLayersPanel, {
+    type LayersLayerField,
+    type LayersOutlineChoice,
+    type LayersProjectionControl,
+    type LayersRowState,
+    type LayersUnitToggle,
+    type LayersZoomField,
+  } from "../../lib/ui/LayersPanel.svelte";
+  import { layerByKey, layerGroups, metricKeyLabel, primaryUnitNote, unitOptions } from "./boot";
+  import { isPlacesSelectionEmpty } from "../../lib/state/types";
+  import { studyAreasFromBoot, type StudyArea } from "../../lib/map/interaction";
   import FlowerPanel from "./FlowerPanel.svelte";
   import TablePanel from "./TablePanel.svelte";
-  import type { LayerStackEntry } from "../../lib/state/types";
+  import type { LayerStackEntry, Outline } from "../../lib/state/types";
+  import type { LayerGroupId } from "../../lib/map/layerStack";
 
   interface Props {
     sel: Sel;
@@ -92,6 +102,94 @@
     options: unitOptions(boot),
     value: unit,
     onChange: onUnitChange,
+  });
+
+  // Fix round (Ben, 2026-09-25): "dim Selection if there is none to display, otherwise its
+  // presence can cause confusion." `sel.sel` is the ONE field every kind of selection (a clicked
+  // cell, a zone, a drawn/uploaded place) writes -- `isPlacesSelectionEmpty` is the shared pure
+  // predicate (`lib/state/types.ts`, tested in `tests/state/codec.test.ts`) both lenses read so
+  // "empty" can never mean something different in scores vs species.
+  const rowState = $derived<Partial<Record<LayerGroupId, LayersRowState>>>({
+    "data-places": { empty: isPlacesSelectionEmpty(sel.sel), hint: "— nothing selected" },
+  });
+
+  // R3 deliverable 3 (Ben, 2026-09-25): "Move Layer selector to top... Rename 'Study area' to
+  // 'Zoom to region'" -- both promoted from `ScoresLayersPanel`'s own body to the shared panel's
+  // panel-level fields, built here from the SAME pure boot readers that component used to call
+  // directly (`layerGroups`/`layerByKey`/`studyAreasFromBoot`), so the move changes nothing about
+  // what each control reads or writes, only where it renders.
+  const studyAreas = $derived(studyAreasFromBoot(boot));
+  const groups = $derived(layerGroups(boot));
+
+  // Fix round (orchestrator, 2026-09-25, R3-B1): the WHOLE `metricLabels ?? layer.label` chain
+  // now routes through `metricKeyLabel()` as its `label` argument -- a curated label that is
+  // itself just the bare key ("score") is caught there too, not only an ABSENT one (see that
+  // function's own header for why the old `?? metricKeyLabel(key)` tail never saw that case).
+  function metricLabel(l: { metric_key: string; label?: string }): string {
+    return metricKeyLabel(l.metric_key, lens.metricLabels[l.metric_key] ?? l.label);
+  }
+
+  function onLyrChange(value: string) {
+    selStore.set({ lyr: value });
+  }
+
+  // v1's own note ("predates the BOEM Program Areas") used to render under "Study area" -- kept,
+  // now folded into the same description slot under the Layer/Zoom-to-region row (`unitNote` is
+  // `null` on every release since v1, so this is a no-op change for every current release).
+  const unitNote = $derived(primaryUnitNote(boot, ver));
+
+  const layerField = $derived<LayersLayerField>({
+    label: "Layer",
+    value: lyr ?? "",
+    groups: groups.map((g) => ({
+      label: g.label,
+      options: g.layers.map((l) => ({ value: l.metric_key, label: metricLabel(l) })),
+    })),
+    onChange: onLyrChange,
+    description: (() => {
+      const l = layerByKey(boot, lyr);
+      const desc = l?.label ?? null;
+      // M6 (review round 1): a release that publishes no SHORT label for this layer falls back to
+      // the SAME `label` text `metricLabel()` already used for the option -- repeating it verbatim
+      // as a description is redundant, not informative.
+      const layerDesc = desc === null || !l ? null : desc === metricLabel(l) ? null : desc;
+      if (unitNote && layerDesc) return `${unitNote} ${layerDesc}`;
+      return unitNote ?? layerDesc;
+    })(),
+  });
+
+  function onAreaChange(value: string) {
+    // atlas-8 defect fix (owner report, 2026-09-24): the camera used to fly from HERE, the panel
+    // BODY — which never runs for a `sel.area` arriving from the URL on load (a collapsed/unmounted
+    // panel means it never runs at all). `Shell.svelte`'s own `$effect` (camera.ts's
+    // `shouldFlyToArea`) now owns the fly, for both load and change; clearing `map` here is what
+    // lets it (its own guard skips while an explicit `sel.map` camera is set).
+    selStore.set({ area: value, map: undefined });
+  }
+
+  const zoomField = $derived<LayersZoomField>({
+    label: "Zoom to region",
+    value: sel.area,
+    options: studyAreas.map((a: StudyArea) => ({ value: a.key, label: a.label ?? a.key })),
+    onChange: onAreaChange,
+  });
+
+  // R3 deliverable 6: the "Outlines" row's outline CHOICE, bound to `Sel.out`.
+  function onOutlineChange(value: "programarea" | "ecoregion") {
+    selStore.set({ out: value as Outline });
+  }
+  const outline = $derived<LayersOutlineChoice>({ value: sel.out, onChange: onOutlineChange });
+
+  // R3 deliverable 7: Sphere moved to the bottom of the shared panel -- SAME body the old switch in
+  // `ScoresLayersPanel` called.
+  function onProjChange(checked: boolean) {
+    const proj = checked ? "globe" : "mercator";
+    selStore.set({ proj });
+    mapHandle?.setProjection(proj);
+  }
+  const projection = $derived<LayersProjectionControl>({
+    checked: sel.proj === "globe",
+    onChange: onProjChange,
   });
 
   // the selection AS THE FLOWER/SPECIES/TABLE PANELS SEE IT (`cell:<id>` keeps the raw cell id —
@@ -177,20 +275,25 @@
 </script>
 
 {#if activeTool === "layers"}
-  <LibLayersPanel stack={layerStack} onChange={onLayerStackChange} {unitToggle}>
+  <LibLayersPanel
+    stack={layerStack}
+    onChange={onLayerStackChange}
+    {unitToggle}
+    {layerField}
+    {zoomField}
+    {outline}
+    {projection}
+    {rowState}
+  >
     {#snippet dataControls()}
       <ScoresLayersPanel
         {sel}
         {selStore}
         {boot}
         {manifestOverlays}
-        metricLabels={lens.metricLabels}
-        {ver}
-        {mapHandle}
         showOutsidePra={lens.showOutsidePra}
         onShowOutsidePraChange={(v) => lens.setShowOutsidePra(v)}
         {unit}
-        {lyr}
       />
     {/snippet}
   </LibLayersPanel>

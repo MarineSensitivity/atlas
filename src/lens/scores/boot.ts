@@ -55,10 +55,14 @@ export function primaryUnitType(boot: unknown): string | null {
   return row && typeof row.fld === "string" ? unitFromFld(row.fld) : null;
 }
 
-/** the Spatial units `<select>`'s options: `Raster cells (0.05°)` always first, then the release's
- * one drawable unit (derived from `boot.units[0]`, never hardcoded) when it publishes one. */
+/** the Spatial units toggle's options: `Raster cells` always first, then the release's one
+ * drawable unit (derived from `boot.units[0]`, never hardcoded) when it publishes one.
+ *
+ * R3 (Ben, live-review 2026-09-25): "drop clunky '(0.05°)'" -- the resolution note is not load-
+ * bearing on the toggle itself; a caller that still wants it available can read the grid's own
+ * resolution from elsewhere (it was never sourced from THIS string in the first place). */
 export function unitOptions(boot: unknown): { value: string; label: string }[] {
-  const options = [{ value: "cell", label: "Raster cells (0.05°)" }];
+  const options = [{ value: "cell", label: "Raster cells" }];
   const type = primaryUnitType(boot);
   const label = primaryUnitLabel(boot);
   if (type && label) options.push({ value: type, label });
@@ -149,6 +153,41 @@ export function defaultLayerKey(boot: unknown): string | null {
 export function layerByKey(boot: unknown, key: string | undefined | null): BootLayerRow | null {
   if (!key) return null;
   return layerRows(boot).find((r) => r.metric_key === key) ?? null;
+}
+
+/**
+ * R3-B1 (round-3 plan): the ONE place a bare `metric_key` becomes display text when the release
+ * publishes no USEFUL label for it — a release's composite row is sometimes literally `metric_key:
+ * "score"` with no `label` and no `manifest.metrics` entry, and every caller's own fallback chain
+ * used to end on that raw key verbatim ("score", lowercase) instead of title-casing it, the same
+ * class of bug `lib/ui/categories.ts#categoryLabel` already fixes for a raw sp_cat/component key
+ * ("primprod" -> "Primary producer" there; this is the metric_key/layer-picker equivalent).
+ * Underscores become spaces first (a real key can be `no_data` etc.), then only the FIRST letter is
+ * capitalized — "score" -> "Score", "some_key" -> "Some key" — matching `categoryLabel`'s own
+ * "sentence case, not Title Case" convention so the two never read inconsistently side by side.
+ *
+ * Fix round (orchestrator, 2026-09-25): "the select/legend/chip still show 'score' — the
+ * manifest's curated label EQUALS the key." A release can publish a real, non-blank
+ * `manifest.metrics` row whose `label` is ALSO just the bare key verbatim ("score") — a degenerate
+ * curated label, not an absent one, so the OLD `metricLabels[key] ?? layer?.label ??
+ * metricKeyLabel(key)` chain found a truthy value on the first `??` and never reached this
+ * function at all. `label` is now this function's OWN second argument: title-casing fires when
+ * the resolved label is absent/blank OR case-insensitively IDENTICAL to `key` — a real, DIFFERENT
+ * curated label (however it was spelled) is returned unchanged either way. Every caller now routes
+ * its whole `metricLabels[key] ?? layer?.label` chain through here as `label`, rather than calling
+ * this only as the final `??` link.
+ *
+ * `ScoresLens.svelte`'s `metricLabel()` (the Layer `<select>`), `mapInputs.ts`'s legend `title`
+ * (which `ScoresLegend.svelte`'s `<h2>` AND `LegendChip.svelte`'s chip text both read verbatim —
+ * one fix covers all three surfaces the plan names) both call this now.
+ */
+export function metricKeyLabel(key: string, label?: string | null): string {
+  const trimmedKey = key.trim();
+  const trimmedLabel = typeof label === "string" ? label.trim() : "";
+  const isUseful = trimmedLabel !== "" && trimmedLabel.toLowerCase() !== trimmedKey.toLowerCase();
+  if (isUseful) return trimmedLabel;
+  const spaced = trimmedKey.replace(/_/g, " ");
+  return spaced ? spaced[0].toUpperCase() + spaced.slice(1) : spaced;
 }
 
 /** `layer.by_subregion.FULL` — the raster is ALWAYS the FULL COG (D7: "the study area is a camera,

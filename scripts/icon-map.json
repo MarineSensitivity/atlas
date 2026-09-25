@@ -38,5 +38,9 @@
   "image": "mdiFileImageOutline",
   "vectorFile": "mdiSvg",
   "geoRaster": "mdiFileCad",
-  "geoVector": "mdiMapOutline"
+  "geoVector": "mdiMapOutline",
+  "opacity": "mdiOpacity",
+  "chevronRight": "mdiChevronRight",
+  "arrowUp": "mdiArrowUp",
+  "arrowDown": "mdiArrowDown"
 }

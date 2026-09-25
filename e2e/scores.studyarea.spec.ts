@@ -215,7 +215,7 @@ test.describe("S-01: the study area is a CAMERA — sel.area drives it on load a
     expect(errors).toEqual([]);
   });
 
-  test("changing the Study area select FULL -> AK flies there (real moveend) and writes area=AK to the URL", async ({
+  test("changing the Zoom to region select FULL -> AK flies there (real moveend) and writes area=AK to the URL", async ({
     page,
   }) => {
     await gotoScoresArea(page, "");
@@ -234,7 +234,7 @@ test.describe("S-01: the study area is a CAMERA — sel.area drives it on load a
     );
     await waitForCameraNear(page, paddedFull);
 
-    await flyAndWaitForMoveEnd(page, () => page.getByLabel("Study area").selectOption(AK.key));
+    await flyAndWaitForMoveEnd(page, () => page.getByLabel("Zoom to region").selectOption(AK.key));
 
     const camera = await getCamera(page);
     expect(camera.lng).toBeCloseTo(AK.lon, 0);
@@ -249,7 +249,9 @@ test.describe("S-01: the study area is a CAMERA — sel.area drives it on load a
     await gotoScoresArea(page, `&area=${AK.key}`);
     await waitForCameraNear(page, { lon: AK.lon, lat: AK.lat });
 
-    await flyAndWaitForMoveEnd(page, () => page.getByLabel("Study area").selectOption(FULL.key));
+    await flyAndWaitForMoveEnd(page, () =>
+      page.getByLabel("Zoom to region").selectOption(FULL.key),
+    );
     // WebKit-only flake, found under repeat: a native <select> change can fire the `flyTo`
     // animation's OWN moveend more than once before the camera has actually finished travelling
     // (e.g. an intermediate easing tick), so `flyAndWaitForMoveEnd`'s "count went up once" check
@@ -310,8 +312,9 @@ test.describe("S-01: the study area is a CAMERA — sel.area drives it on load a
     await gotoScoresArea(page, "&area=AK");
     await waitForCameraNear(page, { lon: AK.lon, lat: AK.lat });
 
-    // the panel body really is absent — the Study area <select> is not in the DOM at all — so this
-    // also proves the assertion above did not accidentally exercise the panel's own onchange path.
-    await expect(page.getByLabel("Study area")).toHaveCount(0);
+    // the panel body really is absent — the Zoom to region <select> is not in the DOM at all — so
+    // this also proves the assertion above did not accidentally exercise the panel's own onchange
+    // path.
+    await expect(page.getByLabel("Zoom to region")).toHaveCount(0);
   });
 });

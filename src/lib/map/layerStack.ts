@@ -65,13 +65,15 @@ export const LAYER_GROUP_LABEL: Record<LayerGroupId, string> = {
   "basemap-roads": "Roads & buildings",
   "basemap-labels": "Place labels",
   "data-raster": "Data",
-  // "Zone outlines," not "Program Areas" (M5 fix, Opus 5.5 review): a REAL choropleth (computed
+  // "Outlines," not "Program Areas" (M5 fix, Opus 5.5 review): a REAL choropleth (computed
   // values) now classifies as role "choropleth" -> group `data-raster` (`style.ts`'s own M5
   // comment) — this group only ever holds the OUTLINE (`zone-line`) + the invisible B3 query-fill
   // placeholder + the zone name labels, never the visible data itself, so a label naming the one
   // release-specific unit ("Program Areas") would be wrong the moment a release publishes a
-  // DIFFERENT outline-only unit.
-  "data-zones": "Zone outlines",
+  // DIFFERENT outline-only unit. Orchestrator hand-off (Opus UI review of main, 2026-09-25): "the
+  // word 'zone' must not leak into the UI" -- was "Zone outlines"; the model's own id (`data-zones`)
+  // is unaffected, this is display text only.
+  "data-zones": "Outlines",
   // "Selection", never a label containing the word "Places" -- the tool rail already has a
   // button named exactly "Places" (`src/shell/tools.ts`), and this row's own move buttons carry
   // its label INSIDE their aria-label ("Move {label} up/down…"); a label containing "Places" made
@@ -88,6 +90,35 @@ export const LAYER_GROUP_ENABLED: Record<LayerGroupId, boolean> = {
   "basemap-bathymetry": false,
   "basemap-boundaries": true,
   "basemap-roads": true,
+  "basemap-labels": true,
+  "data-raster": true,
+  "data-zones": true,
+  "data-places": true,
+};
+
+/**
+ * R3 (Ben, live-review 2026-09-25): "clean up the Layers pane... drop [Roads & buildings,
+ * Boundaries, Land & water] that are fine to leave on as default basemap without worrying about
+ * layer ordering." These three groups stay FULL model citizens — present in
+ * {@link DEFAULT_LAYER_STACK}, still classified by {@link classifyBasemapLayer}, still round-trip
+ * through the `layers=` codec ({@link parseLayerStack}/{@link formatLayerStack}), still restored by
+ * "Reset layers" — this table ONLY says whether `src/lib/ui/LayersPanel.svelte` lists the group as
+ * a row. A `layers=` link naming a hidden group (e.g. `basemap-roads:h`) still parses and still
+ * applies; the viewer just has no panel row to change it from again short of Reset or a new link.
+ *
+ * `basemap-bathymetry` ALSO hidden (orchestrator hand-off, Opus UI review of main, 2026-09-25):
+ * "do NOT ship the 'Bathymetry — coming soon' stub row to reviewers." An unbuilt, permanently
+ * disabled row with no working control is not a feature to preview — same "keep it in the model,
+ * not in front of a reviewer" rule the three basemap rows above already follow, just for a
+ * different reason (unbuilt vs. "fine as a fixed default"). Still full model citizen; still
+ * classified disabled via {@link LAYER_GROUP_ENABLED}, so nothing about the STACK changes, only
+ * what the panel lists.
+ */
+export const LAYER_GROUP_IN_PANEL: Record<LayerGroupId, boolean> = {
+  "basemap-land": false,
+  "basemap-bathymetry": false,
+  "basemap-boundaries": false,
+  "basemap-roads": false,
   "basemap-labels": true,
   "data-raster": true,
   "data-zones": true,

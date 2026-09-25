@@ -76,11 +76,18 @@ for (const [name, viewport] of [
     // `Select.svelte` box (promoted to the panel's own top-of-panel `Segmented` toggle, D2/P3's own
     // fix does not apply to it any more). `e2e/layers.spec.ts`'s own P-round describe block covers
     // its replacement.
-    test("Study area / Color palette: the box spans to the chevron, never past it", async ({
+    //
+    // R3 (Ben's Layers-pane redesign, 2026-09-25): "Study area" renamed "Zoom to region" (still the
+    // SAME `Select.svelte`); "Color palette" is no longer a `Select.svelte` box at all -- it is now
+    // the ramp-picker's own Popover trigger button (a gradient strip + name, R3-B2's sibling
+    // deliverable), which has no chevron to span in the first place. The Layer picker joins this
+    // loop instead: R3-B2 made it a real `Select.svelte` too (it used to be a bespoke native
+    // `<select>` with no `.select-wrap`/chevron at all, covered separately below).
+    test("Zoom to region / Layer: the box spans to the chevron, never past it", async ({
       page,
     }) => {
       await gotoLayers(page);
-      for (const label of ["Study area", "Color palette"]) {
+      for (const label of ["Zoom to region", "Layer"]) {
         await assertSelectSpansChevron(page, label);
       }
     });
@@ -97,16 +104,18 @@ for (const [name, viewport] of [
     // Chromium (and Firefox, unaffected by this CI run) DO honor it, visually and in the
     // computed style, so the strict rule still holds -- and still gets the strict test -- there.
     // The portable half of the rule -- the full text is never SILENTLY lost, only visually
-    // clipped where the platform allows nothing else -- is `title` (LayersPanel.svelte's own
-    // `currentLayerLabel`), which every engine supports via its native tooltip regardless of
-    // whether the visual ellipsis does; this is exactly what the original eyes-on assessment's own
-    // "what right looks like" named alongside the ellipsis ("...plus the full name as `title`").
+    // clipped where the platform allows nothing else -- is `title` (R3-B2: now `Select.svelte`'s
+    // own default `title={selectedLabel}`, moved here from the old bespoke select's
+    // `currentLayerLabel` when the Layer picker became this shared component), which every engine
+    // supports via its native tooltip regardless of whether the visual ellipsis does; this is
+    // exactly what the original eyes-on assessment's own "what right looks like" named alongside
+    // the ellipsis ("...plus the full name as `title`").
     test("the Layer select never clips its rendered value without an ellipsis", async ({
       page,
       browserName,
     }) => {
       await gotoLayers(page);
-      const layerSelect = page.locator("select.select[aria-labelledby='scores-lyr-label']");
+      const layerSelect = page.getByLabel("Layer", { exact: true });
       await expect(layerSelect).toHaveValue("long");
       // every engine: the full, un-clipped label is discoverable via the native tooltip, so the
       // ellipsis (wherever the platform draws one) never means the text is gone, only hidden.

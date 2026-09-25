@@ -21,12 +21,19 @@
      * `false`, unchanged. A disabled segment shows neither segment as "pressed" in accent (native
      * `disabled` also drops it from the Tab order, same convention as `Switch.svelte`'s `disabled`). */
     disabled?: boolean;
+    /** R3 (round-2 plan §5 U4 / Ben's Layers-pane redesign, 2026-09-25): the Layers pane's "Raster
+     * cells | Program areas" toggle must read like the top bar's own Scores|Species switch --
+     * content-sized and left-aligned, not stretched to fill its row (the P-round fix above made
+     * EVERY caller's segments share the row's full width via `flex: 1 1 0%`). `true` sets
+     * `flex: 0 0 auto` on the segments and `align-self: flex-start` on the group itself; the top
+     * bar's switch and the Table sub-tab both omit this and keep the P-round stretched look. */
+    fit?: boolean;
   }
 
-  let { options, value, ariaLabel, onchange, disabled = false }: Props = $props();
+  let { options, value, ariaLabel, onchange, disabled = false, fit = false }: Props = $props();
 </script>
 
-<div class="seg" role="group" aria-label={ariaLabel}>
+<div class="seg" class:seg--fit={fit} role="group" aria-label={ariaLabel}>
   {#each options as opt (opt.value)}
     <button
       type="button"
@@ -45,6 +52,14 @@
     border: 1px solid var(--border-control);
     border-radius: var(--radius-pill);
     overflow: hidden;
+  }
+
+  .seg--fit {
+    align-self: flex-start;
+  }
+
+  .seg--fit button {
+    flex: 0 0 auto;
   }
 
   .seg button {

@@ -110,6 +110,55 @@ plus the theme toggle's gear-like icon (R3-B12).
   sun/moon glyphs with no gear-like border, on both the desktop button and the phone ⋯ menu's
   "Switch to light/dark theme" item.
 
+# atlas 0.10.68
+
+Round 3, W1: the Layers pane redesign (Ben, live-review 2026-09-25) — "clean up the Layers pane to
+something more minimalist and compact," plus the hexagon pip removal and two labeling fixes
+(R3-B1, R3-B2).
+
+- **Removed the active-tool hexagon pip** from the rail (`RailButton.svelte`) — "excessive and
+  distracting." The active tool is now marked by the accent fill + ring alone.
+- **The "Raster cells | Program areas" toggle is now content-sized** (`Segmented`'s new `fit`
+  prop), left-aligned like the top bar's own Scores|Species switch, instead of stretched to the
+  full row width — no longer reads as a mystery third, uncolored option.
+- **The Layer picker and a renamed "Zoom to region" (was "Study area") moved to the top of the
+  pane**, directly below the unit toggle, side by side on desktop and stacked on the phone — out of
+  the Data row's own body. The Layer picker is now a real, grouped `Select.svelte` (R3-B2) instead
+  of a second, bespoke native `<select>`; the "(0.05°)" resolution note was dropped from "Raster
+  cells" (it was never load-bearing there).
+- **Every stack row's `Switch` became a plain checkbox**, and the inline opacity slider moved into
+  a small per-row "opacity" popover button — the row itself is one compact line: name, checkbox,
+  opacity, move buttons (now 32px, quieter).
+- **Four rows are hidden from the pane** — Land & water, Boundaries, Roads & buildings (fine to
+  leave on as default basemap without worrying about layer ordering) and Bathymetry (an unbuilt
+  "coming soon" stub, not a feature to preview). All four stay full model citizens
+  (`layerStack.ts`'s new `LAYER_GROUP_IN_PANEL`) — still in the default stack, the `layers=` URL
+  codec, and Reset, just with no row to change them from in the panel.
+- **The Data row's body is now just the color palette and "Cells outside Program Areas."** Color
+  palette is a real visual ramp picker — a button showing the current palette's own gradient strip
+  - name, opening a listbox of every palette (strip + name, arrow keys + Enter/Esc) — instead of a
+    plain `<select>` of palette names.
+- **The "Zone outlines" row is renamed "Outlines"** ("zone" does not otherwise appear anywhere in
+  this app's UI) and gained an expander: a two-option radio choice (Program Areas / Ecoregions)
+  bound to the existing `out=` URL key, each with a one-line explanation. "None" is reached via the
+  row's own visible checkbox, not a third radio.
+- **"Sphere" moved to the bottom of the pane**, below the stack — both lenses now share one
+  projection control there (previously scores-only).
+- **The species lens no longer shows the "Raster cells | Program areas" toggle at all** — species
+  has no spatial-unit choice to make (unlike scores' zone choropleth), so the toggle is omitted
+  entirely instead of rendered disabled with a reason.
+- **Every checkbox/radio/range this pane renders now sets `accent-color: var(--fill-accent)`** —
+  an unstyled native control rendered the browser's own default blue on the paper theme.
+- **Fixed (R3-B1): a release whose composite layer is literally `metric_key: "score"` with no
+  label anywhere showed the raw lowercase key** in the Layer picker, the floating legend, and the
+  phone legend chip. All three now title-case a bare metric key via one shared helper
+  (`boot.ts#metricKeyLabel`, "score" → "Score").
+- `Popover.svelte` gained an optional custom `trigger` snippet, `triggerClass`, `align`, and a
+  bindable `open` — used by the new opacity and ramp popovers; every existing caller is unchanged.
+- `Select.svelte` gained optional `groups` (`<optgroup>`s) and a default `title` (the selected
+  option's own label) — the ellipsis/ "never silently clip text" fix that used to live only in the
+  scores lens' bespoke Layer `<select>` now covers every `Select.svelte` caller.
+
 # atlas 0.10.67
 
 P round, W5 (Opus 5.5 eyes-on review 5 of 0.10.66, 2026-09-25): two zone-fit framing gutters, a

@@ -1876,10 +1876,24 @@
       {:else if sel.lens === "species" && activeTool === "layers"}
         {#if SpeciesLensPanelComp}
           {@const Comp = SpeciesLensPanelComp}
-          <!-- P round deliverable 1: `boot` is new here -- SpeciesLens.svelte reads the SAME
-               `unitOptions(boot)` the scores lens does, so its disabled Raster cells | Program
-               Areas toggle shows the release's real unit label rather than a hand-typed guess. -->
-          <Comp lens={speciesLens} rep={sel.rep} {layerStack} {onLayerStackChange} {boot} />
+          <!-- P round deliverable 1 / orchestrator hand-off (2026-09-25): `boot` used to feed
+               SpeciesLens.svelte's own disabled "Raster cells | Program Areas" toggle -- that
+               toggle is now HIDDEN for species entirely (there is no spatial-unit CHOICE to make
+               in this lens), so `boot` is unused there today; kept as a prop rather than a second
+               Shell.svelte branch dropping it (SpeciesLens.svelte's own header explains why).
+               R3 deliverable 6/7: `sel`/`selStore`/`mapHandle` are new here -- the shared panel's
+               "Outlines" and "Sphere" rows are lens-independent (`Sel.out`/`Sel.proj`), and this
+               lens previously had no reason to read either. -->
+          <Comp
+            lens={speciesLens}
+            rep={sel.rep}
+            {layerStack}
+            {onLayerStackChange}
+            {boot}
+            {sel}
+            {selStore}
+            {mapHandle}
+          />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
         {/if}

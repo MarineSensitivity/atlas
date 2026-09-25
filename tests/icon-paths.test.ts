@@ -67,6 +67,13 @@ const SPEC_ICON_NAMES = [
   "vectorFile",
   "geoRaster",
   "geoVector",
+  "opacity",
+  // Layers pane R3-W1 fix round (Ben): the row expander (disclosure caret) and the reorder
+  // buttons must differ by GLYPH, not only placement -- chevronRight (rotates open) for the
+  // former, arrowUp/arrowDown for the latter.
+  "chevronRight",
+  "arrowUp",
+  "arrowDown",
 ];
 
 // SVG path command characters and allowed symbols (see tests/glyphs.test.ts for a real parser;

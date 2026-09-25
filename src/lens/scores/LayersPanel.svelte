@@ -1,32 +1,28 @@
 <script lang="ts">
-  // atlas-4 step 1 — the scores lens' DATA-row content: study area, spatial unit, layer (grouped),
-  // palette, globe/mercator, and the "cells outside Program Areas" overlay switch. Every control
-  // writes through `selStore.set()` (URL-is-the-view) except the overlay switch, which is ephemeral
-  // chrome (never a shared-link concern — parity doc §6.2 leaves it unchecked by default on every
-  // load, so there is nothing for a link to reproduce). The legend used to render IN this panel
-  // (only visible while the Layers tool was open, and never for the zone-choropleth branch) --
-  // atlas-4 defect fix moved it to the shell's floating "lens legend" region (ScoresLegend.svelte),
-  // the same slot the species lens' legend already used, per spec.md's "one legend on screen at a
-  // time".
+  // atlas-4 step 1 — the scores lens' DATA-row content. R3 (Ben's Layers-pane redesign,
+  // 2026-09-25) shrank this down to what only the SCORES lens has: the color-palette ramp picker
+  // and the "Cells outside Program Areas" overlay checkbox. Everything else that used to live here
+  // (Study area, the Layer <select>, Sphere) moved to the shared `lib/ui/LayersPanel.svelte`'s own
+  // panel-level fields/rows -- `ScoresLens.svelte` now builds those from the SAME pure boot readers
+  // this file used to call directly (`studyAreasFromBoot`, `layerGroups`, `layerByKey`), so nothing
+  // here duplicates them.
   //
-  // R3 (round-2 plan §5 U4): this component is no longer the WHOLE "Layers" tool body — it renders
-  // inside the shared `src/lib/ui/LayersPanel.svelte`'s "Data" row, as that row's `dataControls`
-  // snippet (`ScoresLens.svelte` wires the two together). The old non-interactive "Layers on the
-  // map" bullet list is GONE from here: the shared stack component now IS that list, made real and
-  // interactive, so summarizing it a second time here would just repeat it less usefully.
-  //
-  // P round deliverable 1 (Ben, live-review 2026-09-24): the "Spatial units" `<Select>` that used
-  // to live in this file is GONE — promoted to the shared panel's own top-of-panel "Raster cells |
-  // Program Areas" `Segmented` toggle (`LibLayersPanel`'s `unitToggle` prop, wired by
-  // `ScoresLens.svelte`). Two controls setting the SAME `unit` would just be confusing, not
-  // additive, so this is a replacement, not a second control.
-  import Select from "../../lib/ui/Select.svelte";
-  import Switch from "../../lib/ui/Switch.svelte";
-  import { studyAreasFromBoot, type StudyArea } from "../../lib/map/interaction";
-  import type { MapHandle } from "../../lib/map/map";
+  // The overlay control writes through a plain callback (never `selStore.set()`): ephemeral chrome
+  // (parity doc §6.2 leaves it unchecked by default on every load, so there is nothing for a shared
+  // link to reproduce). Fix round (orchestrator, 2026-09-25): "still a Switch -- make it a
+  // checkbox row like the stack rows (same class, same accent)" -- a plain native checkbox, the
+  // same visual rule `lib/ui/LayersPanel.svelte`'s own `.visible-check` uses (that exact scoped
+  // class cannot be imported across components, so this is a byte-for-byte visual match, not a
+  // shared stylesheet rule). Round 2 (Ben): the shared accent moved gold -> `--border-control`
+  // ("a more muted non-yellow checkbox") -- see `.outside-pra-check` below for the current rule.
+  import { tick } from "svelte";
+  import Popover from "../../lib/ui/Popover.svelte";
+  import Icon from "../../lib/ui/Icon.svelte";
+  import { paletteStopsWithFallback, rampCss } from "../../lib/raster/ramps";
+  import type { PaletteName } from "../../lib/raster/ramps";
+  import { nextRovingIndex } from "../../lib/ui/roving";
   import type { Sel } from "../../lib/state/types";
   import type { SelStore } from "../../lib/state/sel.svelte";
-  import { layerByKey, layerGroups, primaryUnitNote } from "./boot";
   import type { ManifestOverlayRow } from "./raster";
 
   interface Props {
@@ -34,21 +30,11 @@
     selStore: SelStore;
     boot: unknown;
     manifestOverlays: readonly ManifestOverlayRow[] | null;
-    /** R3 orchestrator audit item 3: `metric_key` -> the manifest's own SHORT label
-     * (`boot.ts#metricLabelsFromManifest`, `ScoresLens#metricLabels`) — the ported Shiny app's
-     * short names ("bird: ext. risk"), not `boot.layers[].label`'s long description text. */
-    metricLabels: Record<string, string>;
-    ver: string | null;
-    mapHandle: MapHandle | undefined;
     showOutsidePra: boolean;
     onShowOutsidePraChange: (v: boolean) => void;
-    /** the release's own unit type (`fallback.ts`'s `effectiveUnit`) — an unrecognized `sel.unit`
-     * has already fallen back to `"cell"` by the time it reaches here. */
+    /** the release's own unit type (`fallback.ts`'s `effectiveUnit`) -- the outside-PRA switch is
+     * only meaningful (and only shown) on the raster/cell branch. */
     unit: string;
-    /** the resolved layer key (`fallback.ts`'s `effectiveLyr`) — NOT `sel.lyr` directly: on first
-     * paint (no `?lyr=` yet) `sel.lyr` is `undefined`, and the panel must still show/legend the
-     * release's own composite default, exactly what the map already renders. */
-    lyr: string | null;
   }
 
   let {
@@ -56,84 +42,64 @@
     selStore,
     boot,
     manifestOverlays,
-    metricLabels,
-    ver,
-    mapHandle,
     showOutsidePra,
     onShowOutsidePraChange,
     unit,
-    lyr,
   }: Props = $props();
 
-  const studyAreas = $derived(studyAreasFromBoot(boot));
-  const note = $derived(primaryUnitNote(boot, ver));
-  const groups = $derived(layerGroups(boot));
-
-  function layerOptionLabel(l: { metric_key: string; label?: string }): string {
-    return metricLabels[l.metric_key] ?? l.label ?? l.metric_key;
-  }
-
-  /** the CURRENT layer's long description (`boot.layers[].label`) — "What is this layer?"
-   * (docs/usability.md §7 R3's own recommendation for the expanded Data row). `null` before a
-   * layer has resolved, for a `metric_key` the release does not publish, OR (M6, review round 1)
-   * when the manifest publishes no SHORT label of its own — `layerOptionLabel()` then falls back
-   * to this SAME `label` text for the option, and repeating it verbatim as a description under
-   * the dropdown is redundant, not informative (e.g. a release with no `manifest.metrics` row for
-   * a layer at all: both texts are `boot.layers[].label`). */
-  const currentLayerDescription = $derived.by(() => {
-    const l = layerByKey(boot, lyr);
-    const desc = l?.label ?? null;
-    if (desc === null) return null;
-    return desc === layerOptionLabel({ metric_key: l!.metric_key, label: l!.label }) ? null : desc;
-  });
-
-  // D2 fix round 2 (CI: [webkit] gate, three-engine run 35971206753): a native <select>'s own
-  // CLOSED-box value text is UA-internal rendering that CSS cannot reliably style everywhere --
-  // measured directly (a real WebKit build, both locally and on CI's linux runner): the computed
-  // `text-overflow`/`overflow` values differ BETWEEN THE TWO WEBKIT BUILDS THEMSELVES (hidden
-  // locally, visible on CI), and even where the computed style claims "ellipsis", the control
-  // visually hard-clips mid-word with no "…" glyph either way -- text-overflow simply never
-  // reaches a <select>'s internal text layout on this engine, so no CSS fix "closes" it there (a
-  // custom combobox would, at the cost of reimplementing native keyboard/ARIA select behaviour --
-  // out of this round's scope). `title` is the portable fallback the original eyes-on assessment's
-  // own "what right looks like" named alongside the ellipsis ("...plus the full name as `title`"):
-  // works via native tooltip on every engine regardless of whether the visual ellipsis does, so
-  // the full text is never SILENTLY lost, only visually clipped where the platform allows nothing
-  // else. `layerOptionLabel`, not `currentLayerDescription`, above -- the ellipsis clips the
-  // OPTION text you'd read in the closed box, not the description note.
-  const currentLayerLabel = $derived.by(() => {
-    const l = layerByKey(boot, lyr);
-    return l ? layerOptionLabel({ metric_key: l.metric_key, label: l.label }) : null;
-  });
-
-  const PALETTE_OPTIONS = [
+  // R3 (Ben, 2026-09-25): "actual color ramps visualized for given options (see CalCOFI explore
+  // for ideas)" -- a button showing the CURRENT palette's own gradient strip + name, opening a
+  // Popover `role="listbox"` with one `role="option"` per palette (strip + name, `aria-selected`).
+  const PALETTE_OPTIONS: { value: PaletteName; label: string }[] = [
     { value: "spectral_r", label: "Spectral" },
     { value: "viridis", label: "Viridis" },
     { value: "cividis", label: "Cividis" },
     { value: "magma", label: "Magma" },
   ];
 
-  function onAreaChange(value: string) {
-    // atlas-8 defect fix (owner report, 2026-09-24): the camera used to fly from HERE, the panel
-    // BODY — which never runs for a `sel.area` arriving from the URL on load (a collapsed/unmounted
-    // panel means it never runs at all). `Shell.svelte`'s own `$effect` (camera.ts's
-    // `shouldFlyToArea`) now owns the fly, for both load and change; clearing `map` here is what
-    // lets it (its own guard skips while an explicit `sel.map` camera is set).
-    selStore.set({ area: value, map: undefined });
+  function paletteRampCss(name: PaletteName): string {
+    const stops = paletteStopsWithFallback(boot as { palettes?: unknown } | null | undefined, name);
+    return stops ? rampCss(stops) : "none";
   }
 
-  function onLyrChange(event: Event) {
-    selStore.set({ lyr: (event.currentTarget as HTMLSelectElement).value });
+  function paletteLabel(name: string): string {
+    return PALETTE_OPTIONS.find((o) => o.value === name)?.label ?? name;
   }
 
-  function onPalChange(value: string) {
+  let paletteOpen = $state(false);
+  let focusIdx = $state(0);
+  let optionEls: (HTMLButtonElement | undefined)[] = [];
+
+  // Popover's `open` is `$bindable` (R3 fix, `ui/Popover.svelte`'s own header) -- watched here
+  // rather than a prop callback so opening resets the roving-focus index to the CURRENT palette and
+  // moves real DOM focus onto it (spec: "arrow keys + Enter/Esc").
+  $effect(() => {
+    if (!paletteOpen) return;
+    focusIdx = Math.max(
+      0,
+      PALETTE_OPTIONS.findIndex((o) => o.value === sel.pal),
+    );
+    tick().then(() => optionEls[focusIdx]?.focus());
+  });
+
+  // the listbox's own arrow-key roving -- reuses the SAME pure `nextRovingIndex` (`ui/roving.ts`)
+  // the tool rail already uses (vertical orientation: ArrowUp/ArrowDown, Home/End), rather than a
+  // second hand-rolled index walk.
+  function onListboxKeydown(event: KeyboardEvent) {
+    const next = nextRovingIndex(focusIdx, PALETTE_OPTIONS.length, event.key, "vertical");
+    if (next === null) return;
+    event.preventDefault();
+    focusIdx = next;
+    optionEls[next]?.focus();
+  }
+
+  function selectPalette(value: string) {
     selStore.set({ pal: value as Sel["pal"] });
+    paletteOpen = false; // Popover's own bindable `open` -- refocuses the trigger (see its header)
   }
 
-  function onProjChange(checked: boolean) {
-    const proj = checked ? "globe" : "mercator";
-    selStore.set({ proj });
-    mapHandle?.setProjection(proj);
+  function onShowOutsidePraCheckbox(checked: boolean) {
+    onShowOutsidePraChange(checked);
   }
 
   const hasOutsidePra = $derived(
@@ -145,77 +111,55 @@
 
 <div class="layers-panel">
   <label class="field">
-    <span class="field-label">Study area</span>
-    <Select
-      label="Study area"
-      value={sel.area}
-      options={studyAreas.map((a: StudyArea) => ({ value: a.key, label: a.label ?? a.key }))}
-      onchange={onAreaChange}
-    />
-  </label>
-
-  {#if note}
-    <p class="note">{note}</p>
-  {/if}
-
-  <label class="field">
-    <span class="field-label" id="scores-lyr-label">Layer</span>
-    <span class="select-wrap">
-      <select
-        class="select"
-        aria-labelledby="scores-lyr-label"
-        title={currentLayerLabel ?? undefined}
-        value={lyr ?? ""}
-        onchange={onLyrChange}
-      >
-        {#each groups as group (group.category)}
-          <optgroup label={group.label}>
-            {#each group.layers as l (l.metric_key)}
-              <option value={l.metric_key}>{layerOptionLabel(l)}</option>
-            {/each}
-          </optgroup>
-        {/each}
-      </select>
-    </span>
-  </label>
-
-  {#if currentLayerDescription}
-    <p class="note" data-testid="layer-description">{currentLayerDescription}</p>
-  {/if}
-
-  <label class="field">
     <span class="field-label">Color palette</span>
-    <Select
-      label="Color palette"
-      value={sel.pal}
-      options={PALETTE_OPTIONS}
-      onchange={onPalChange}
-    />
+    <Popover
+      label={`Color palette: ${paletteLabel(sel.pal)}`}
+      triggerClass="ramp-trigger"
+      bind:open={paletteOpen}
+      matchTriggerWidth
+    >
+      {#snippet trigger()}
+        <span class="ramp-strip ramp-trigger-strip" style="background: {paletteRampCss(sel.pal)}"
+        ></span>
+        <span class="ramp-trigger-name">{paletteLabel(sel.pal)}</span>
+        <Icon name="chevronDown" size={14} />
+      {/snippet}
+      <div
+        class="ramp-listbox"
+        role="listbox"
+        aria-label="Color palette"
+        tabindex="-1"
+        onkeydown={onListboxKeydown}
+      >
+        {#each PALETTE_OPTIONS as opt, i (opt.value)}
+          <button
+            type="button"
+            role="option"
+            aria-selected={sel.pal === opt.value}
+            tabindex={i === focusIdx ? 0 : -1}
+            class="ramp-option"
+            bind:this={optionEls[i]}
+            onclick={() => selectPalette(opt.value)}
+          >
+            <span class="ramp-strip" style="background: {paletteRampCss(opt.value)}"></span>
+            <span class="ramp-option-name">{opt.label}</span>
+            {#if sel.pal === opt.value}<Icon name="check" size={14} />{/if}
+          </button>
+        {/each}
+      </div>
+    </Popover>
   </label>
-
-  <div class="switch-row">
-    <!-- P round follow-up (coordinator, 2026-09-25): "make every switch in that panel the quiet
-         variant (accent stays only on the segmented toggle)" -- this one was still accent, same
-         reason the layer stack's own switches were before the first round's fix. -->
-    <Switch
-      label="Sphere (globe projection)"
-      checked={sel.proj === "globe"}
-      variant="quiet"
-      onchange={onProjChange}
-    />
-    <span>Sphere</span>
-  </div>
 
   {#if unit === "cell" && hasOutsidePra}
-    <div class="switch-row">
-      <Switch
-        label="Cells outside Program Areas"
+    <label class="checkbox-row">
+      <input
+        type="checkbox"
+        class="outside-pra-check"
         checked={showOutsidePra}
-        variant="quiet"
-        onchange={onShowOutsidePraChange}
+        onchange={(e) => onShowOutsidePraCheckbox(e.currentTarget.checked)}
       />
       <span>Cells outside Program Areas</span>
-    </div>
+    </label>
   {/if}
 </div>
 
@@ -237,47 +181,104 @@
     color: var(--text-secondary);
   }
 
-  .note {
-    margin: 0;
-    font-size: var(--text-xs);
-    color: var(--text-secondary);
-  }
-
-  .switch-row {
+  /* Fix round (orchestrator, 2026-09-25): "make it a checkbox row like the stack rows (same
+     class, same accent)" -- same 20x20 native checkbox as `lib/ui/LayersPanel.svelte`'s own
+     `.visible-check` (that scoped class cannot cross a component boundary, so this duplicates its
+     exact rule rather than importing it). Round 2 (Ben, 2026-09-25): "use a more muted non-yellow
+     checkbox" -- `accent-color` moved from `--fill-accent` (gold) to `--border-control` (the same
+     "steel" token `.visible-check` also moved to), kept in lockstep with that rule again. */
+  .checkbox-row {
     display: flex;
     align-items: center;
     gap: var(--space-2);
     font-size: var(--text-sm);
+    cursor: pointer;
   }
 
-  .select-wrap {
-    position: relative;
-    display: inline-flex;
+  .outside-pra-check {
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    accent-color: var(--border-control);
+    cursor: pointer;
+  }
+
+  .outside-pra-check:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  :global(.ramp-trigger) {
+    display: flex;
     align-items: center;
-  }
-
-  .select {
+    gap: var(--space-2);
+    width: 100%;
     height: var(--size-touch);
     padding: 0 var(--space-3);
     border: 1px solid var(--border-control);
     border-radius: var(--radius-control);
     background: var(--surface-sunken);
     color: var(--text-primary);
-    font: inherit;
     font-size: var(--text-sm);
-    width: 100%;
-    /* D2 (Opus eyes-on assessment, 2026-09-24): this native <select> was already full-width, but
-       its own rendered value text was CLIPPED mid-word ("...category and primar") with no
-       ellipsis -- the one control in the first panel every visitor sees. Chromium (the one engine
-       this app's own gate tests, and the only one with reliable support) honors text-overflow on
-       a closed <select>'s value once it is forced single-line/non-overflowing like this. */
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
   }
 
-  .select:focus-visible {
+  .ramp-trigger-name {
+    flex: 1 1 auto;
+    text-align: left;
+  }
+
+  .ramp-strip {
+    display: inline-block;
+    width: 40px;
+    height: 10px;
+    border-radius: var(--radius-pill);
+    flex: none;
+  }
+
+  /* Fix round (orchestrator, 2026-09-25): "the gradient strip (~56x14) at the left" -- bigger than
+     the listbox OPTIONS' own strip (kept at 40x10, unchanged: "options = strip + name as now"),
+     since the trigger is now a full Select-shaped row with real room for a larger swatch. */
+  .ramp-trigger-strip {
+    width: 56px;
+    height: 14px;
+  }
+
+  /* Fix round: the popover itself now matches the trigger's own full row width
+     (Popover.svelte's `matchTriggerWidth`) instead of a fixed 220px, so the listbox fills it. */
+  .ramp-listbox {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+  }
+
+  .ramp-option {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-1) var(--space-2);
+    border: 0;
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .ramp-option:hover,
+  .ramp-option[aria-selected="true"] {
+    background: var(--fill-control);
+  }
+
+  .ramp-option:focus-visible {
     outline: 2px solid var(--focus-ring);
-    outline-offset: 2px;
+    outline-offset: -2px;
+  }
+
+  .ramp-option-name {
+    flex: 1 1 auto;
   }
 </style>

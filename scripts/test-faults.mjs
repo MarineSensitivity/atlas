@@ -1776,6 +1776,19 @@ export const FAULTS = [
     ],
   },
   {
+    id: "metric-key-label-reverted",
+    patch: "tests/faults/metric-key-label-reverted.patch",
+    describe:
+      "R3-W1 (round-3 plan, R3-B1, fix round): boot.ts's metricKeyLabel() drops its `label` " +
+      "argument entirely (back to a bare 'title-case the key' pass-through) -- a REAL, curated " +
+      "label (e.g. primprod's real manifest.metrics text) is no longer returned verbatim, " +
+      "overwritten by the title-cased key instead; the degenerate-label case ('score' curated as " +
+      "'score') keeps working by coincidence (title-casing the key either way), so this exercises " +
+      "the OTHER half of the same function -- a real label must win over the key, not just an " +
+      "absent one must fall back to it.",
+    gate: ["npx", "vitest", "run", "tests/lens/scores/boot.test.ts", "-t", "metricKeyLabel"],
+  },
+  {
     id: "svgwrapper-footer-text-dropped",
     patch: "tests/faults/svgwrapper-footer-text-dropped.patch",
     describe:

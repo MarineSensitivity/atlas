@@ -5,7 +5,7 @@
 //   1. every tool's label is VISIBLE text on desktop (not tooltip-only -- the usability finding
 //      this decision answers: "meaning only in tooltips ... a first-timer has to hover each").
 //   2. the phone rail is a labelled ROW (tab bar), same five tools, at every sheet detent.
-//   3. the active tool's marker (`aria-current`, plus the hex pip CSS) follows clicks.
+//   3. the active tool's marker (`aria-current`, plus the accent fill/ring CSS) follows clicks.
 //   4. arrow keys (+ Home/End) move the roving-tabindex focus stop, per roving.ts.
 import { expect, test, type Page } from "@playwright/test";
 import { gotoPublicShell, waitForHydration } from "./hermetic";
@@ -53,11 +53,15 @@ test.describe("R4: desktop -- a vertical labelled stack", () => {
     await expect(places).toHaveAttribute("aria-current", "true");
     await expect(layers).not.toHaveAttribute("aria-current", /.*/);
 
-    // the hex pip marker (RailButton.svelte's `.is-on::before`) actually paints something, not
-    // just a class name with no visible effect -- a `content: ""` pseudo-element with a real
-    // background is what "marked by a hexagon marker" means.
+    // R3 (Ben, 2026-09-25): the hexagon pip is gone ("excessive and distracting") -- the active
+    // marker is now the accent fill alone (RailButton.svelte's `.is-on` background), asserted here
+    // as a real paint, not just a class name with no visible effect.
+    const bg = await places.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(bg, "the active item has no accent background paint").not.toBe("rgba(0, 0, 0, 0)");
+    // and the removed pip pseudo-element paints nothing (content: "" was the only thing that made
+    // it visible at all -- a stray leftover rule would still show as a background here).
     const pipBg = await places.evaluate((el) => getComputedStyle(el, "::before").backgroundColor);
-    expect(pipBg, "the active item's hex pip has no background paint").not.toBe("rgba(0, 0, 0, 0)");
+    expect(pipBg, "the hexagon pip must be gone (R3)").toBe("rgba(0, 0, 0, 0)");
   });
 
   test("arrow keys and Home/End move the roving-tabindex stop (roving.ts)", async ({ page }) => {

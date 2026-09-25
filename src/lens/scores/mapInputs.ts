@@ -7,7 +7,7 @@ import { rasterBoundsForGrid } from "../../lib/map/layers/raster";
 import type { RasterLayerSpec, SelectionSpec, ZoneUnitSpec } from "../../lib/map/types";
 import { SELECTION_COLOR } from "../../lib/map/colors";
 import { gridFromBoot } from "../../lib/grid/grid";
-import { layerByKey, zoneRows, type BootLayerRow } from "./boot";
+import { layerByKey, metricKeyLabel, zoneRows, type BootLayerRow } from "./boot";
 import {
   outsidePraOverlaySpec,
   rasterLegend,
@@ -175,7 +175,21 @@ export function scoresMapInputs(state: ScoresMapState): ScoresMapInputs {
   // `state.metricLabels`, built from `manifest.metrics[]`) -- `layer?.label` (boot.json's LONG
   // description) is now only the fallback for a manifest that has not loaded yet or omits this
   // key, never the first choice.
-  const title = (state.metricLabels ?? {})[state.lyr ?? ""] ?? layer?.label ?? state.lyr ?? "Score";
+  //
+  // R3-B1: the LAST resort used to be the raw `state.lyr` string verbatim -- a release whose
+  // composite row really is `metric_key: "score"` with no label anywhere painted the lowercase raw
+  // key into this legend's `<h2>` (and, via the SAME `legend.title`, `LegendChip.svelte`'s phone
+  // chip text) instead of "Score". `metricKeyLabel()` is the ONE title-casing fallback the Layer
+  // `<select>` (`ScoresLens.svelte`'s `metricLabel()`) uses too, so all three surfaces agree.
+  //
+  // Fix round (orchestrator, 2026-09-25): the WHOLE `metricLabels ?? layer.label` chain now routes
+  // through `metricKeyLabel()` as its `label` argument -- a curated label that is itself just the
+  // bare key ("score") is caught there too, not only an absent one (see that function's own
+  // header). `state.lyr` still gets the hardcoded "Score" fallback when it is null/undefined
+  // (nothing to even title-case), unchanged.
+  const title = state.lyr
+    ? metricKeyLabel(state.lyr, (state.metricLabels ?? {})[state.lyr] ?? layer?.label)
+    : "Score";
   const legend: ScoresLegend = isCellBranch
     ? (() => {
         const rl = rasterLegend(

@@ -66,6 +66,18 @@ const BLENDED_RASTER_RGB = [0, 1, 2].map((i) =>
   Math.round(RASTER_RGB[i] * SCORE_RASTER_OPACITY + BASEMAP_RGB[i] * (1 - SCORE_RASTER_OPACITY)),
 );
 
+/** R3: the raster blended over the theme's bare BACKGROUND colour instead of `BASEMAP_RGB` --
+ * WebGL alpha-blends a layer against whatever already painted beneath it, so once `basemap-land`
+ * itself is hidden (`layers=basemap-land:h`) the raster's own semi-transparent 60% opacity
+ * composites against the canvas background, not the (now invisible) water fill. Measured directly
+ * (247,171,122), not assumed -- hiding land is NOT a no-op for the raster's own blended pixel, it
+ * only means "the raster is still the topmost VISIBLE thing," never "nothing behind it changed." */
+const BLENDED_RASTER_OVER_BACKGROUND_RGB = [0, 1, 2].map((i) =>
+  Math.round(
+    RASTER_RGB[i] * SCORE_RASTER_OPACITY + MAP_BACKGROUND_PAPER_RGB[i] * (1 - SCORE_RASTER_OPACITY),
+  ),
+);
+
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -257,7 +269,7 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
   // (Gulf of America, Eastern) -- its CENTRE, -157/27, is far enough from the 1px boundary line
   // that a probe there can only ever read the invisible query fill (or the raster through it),
   // never the line. In cell mode (the default unit here) there is no visible zone FILL at all, so
-  // dimming "Zone outlines" (data-zones) to 50% must leave the plain raster blend untouched --
+  // dimming "Outlines" (data-zones) to 50% must leave the plain raster blend untouched --
   // exactly what a REPLACING implementation would break (0 x 0.5 stays 0 either way for a NUMBER,
   // but a replacing bug turns the invisible placeholder's `fill-opacity: 0` paint key into the
   // stack's own 0.5, painting the near-black QUERY_FILL_COLOR visibly over this pixel instead).
@@ -326,14 +338,20 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
   // `LayersPanel.svelte#move` now refocuses a real button in the SAME row after the DOM settles
   // (`tick()`): the SAME direction's button when it is still enabled, the OPPOSITE direction's
   // once the row hits the edge. Walks BOTH paths with `.press("Enter")` (a real keyboard
-  // activation, not `.click()`) on "Move Boundaries down" -- `basemap-boundaries` starts at
-  // arrIndex 2 (DEFAULT_LAYER_STACK), two presses from the very BOTTOM (arrIndex 0), where
+  // activation, not `.click()`) on "Move Place labels down" -- `basemap-labels` starts at
+  // arrIndex 4 (DEFAULT_LAYER_STACK), several presses from the very BOTTOM (arrIndex 0), where
   // "down" becomes html-disabled (`arrIndex === 0`). Land & water (arrIndex 0) or Selection
-  // (pinned at the top, M7) would each only ever exercise ONE of the two paths -- Boundaries'
-  // own two-step trip to the floor exercises "still enabled, same button" on the first press and
-  // "now disabled, refocus the other direction" on the second, and checks all three signals the
-  // review named: the URL (`layers=` changes), the live region (announces each move), and
-  // `document.activeElement` (never reverts to <body>).
+  // (pinned at the top, M7) would each only ever exercise ONE of the two paths -- Place labels'
+  // own multi-step trip to the floor exercises "still enabled, same button" on every press but
+  // the last and "now disabled, refocus the other direction" on the last, and checks all three
+  // signals the review named: the URL (`layers=` changes), the live region (announces each
+  // move), and `document.activeElement` (never reverts to <body>).
+  //
+  // R3 (round-3 plan, W1 "Layers pane redesign"): this test used to drive "Boundaries" --
+  // `LAYER_GROUP_IN_PANEL` now hides that row from the panel entirely (still a full model
+  // citizen, just with no row here), so "Place labels" (still listed) replaces it. Driven as a
+  // bounded LOOP (never a hand-simulated position count) so the exact arrIndex a future
+  // `DEFAULT_LAYER_STACK` reorder gives "Place labels" can never desync this test from reality.
   //
   // P5 fix (post-merge finding): `LayersPanel.svelte` used to render its own private
   // `.layers-stack [aria-live]` region -- a real SC 4.1.3 regression (the shell's own rule is
@@ -348,35 +366,47 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
   }) => {
     const errors = collectConsoleErrors(page);
     await gotoLayersScores(page, "");
+    const label = "Place labels";
     const downBtn = page.getByRole("button", {
-      name: "Move Boundaries down (toward the bottom of the map)",
+      name: `Move ${label} down (toward the bottom of the map)`,
     });
     const upBtn = page.getByRole("button", {
-      name: "Move Boundaries up (toward the top of the map)",
+      name: `Move ${label} up (toward the top of the map)`,
     });
     const liveRegion = page.locator('[role="status"]').first();
     const activeElementLabel = () =>
       page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? null);
 
-    // arrIndex 2 -> position 6 of 8 initially ("1 = top of the list", LayersPanel.svelte's own
-    // convention: displayPosition = stack.length - arrIndex).
     await downBtn.focus();
-    await downBtn.press("Enter"); // arrIndex 2 -> 1, position 6 -> 7; "down" still enabled
+    // first press: still enabled (Place labels starts several rows above the bottom) -- the
+    // "same button keeps focus while it stays enabled" half of the property.
+    await downBtn.press("Enter");
     await expect.poll(() => page.url(), { timeout: 10_000 }).toContain("layers=");
-    await expect(liveRegion).toContainText("Boundaries moved to position 7 of 8");
+    await expect(liveRegion).toContainText(`${label} moved to position`);
     await expect(downBtn).toBeEnabled();
     await expect
       .poll(activeElementLabel, { timeout: 10_000 })
-      .toBe("Move Boundaries down (toward the bottom of the map)");
+      .toBe(`Move ${label} down (toward the bottom of the map)`);
 
-    await downBtn.press("Enter"); // arrIndex 1 -> 0, position 7 -> 8 (the very bottom)
-    await expect(liveRegion).toContainText("Boundaries moved to position 8 of 8");
+    // keep pressing "down" until the row itself reaches the very bottom of the stack and its
+    // OWN button disables -- bounded at the stack's own size (8) so a real regression (the
+    // button never disabling at all) fails loudly instead of looping forever. Never a
+    // hand-simulated position count: robust to wherever "Place labels" sits in
+    // DEFAULT_LAYER_STACK, unlike the fixed arrIndex this test used to assume.
+    let presses = 1;
+    while ((await downBtn.isEnabled()) && presses < 8) {
+      await downBtn.press("Enter");
+      presses++;
+      await expect.poll(() => page.url(), { timeout: 10_000 }).toContain("layers=");
+      await expect(liveRegion).toContainText(`${label} moved to position`);
+    }
+    expect(presses, "the row never reached the bottom of the stack").toBeLessThan(8);
     // ITS OWN "down" button is now disabled (nothing left below it) -- focus must have moved to
     // "up" instead of silently reverting to <body>.
     await expect(downBtn).toBeDisabled();
     await expect
       .poll(activeElementLabel, { timeout: 10_000 })
-      .toBe("Move Boundaries up (toward the top of the map)");
+      .toBe(`Move ${label} up (toward the top of the map)`);
     expect(await upBtn.evaluate((el) => el === document.activeElement)).toBe(true);
     expect(errors).toEqual([]);
   });
@@ -425,13 +455,14 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
   });
 
   // orchestrator audit item 1: "each row's eye toggle must be gated by an e2e where toggling makes
-  // that layer's rendered features disappear" -- the REAL `Switch` control (not a `layers=` URL
-  // shortcut), proving the panel's own accessible name wires through to `onChange` -> `composeStyle`
-  // -> the map. A PIXEL probe, not `queryRenderedFeatures`: MapLibre's rendered-feature query only
-  // returns vector-tile features (fill/line/circle/symbol) -- a `raster` layer has no per-feature
-  // geometry to query, so `queryRenderedFeatures({layers:["r_lyr"]})` is always `[]` regardless of
-  // whether the raster is painting (measured: the assertion never passed, even generously timed).
-  // A blended-vs-basemap-only pixel is the real, visible proof; `getLayer("r_lyr")` staying defined
+  // that layer's rendered features disappear" -- the REAL checkbox control (R3: a native checkbox
+  // replaced the `Switch`, Ben's "checkbox instead of toggle" -- not a `layers=` URL shortcut),
+  // proving the panel's own accessible name wires through to `onChange` -> `composeStyle` -> the
+  // map. A PIXEL probe, not `queryRenderedFeatures`: MapLibre's rendered-feature query only returns
+  // vector-tile features (fill/line/circle/symbol) -- a `raster` layer has no per-feature geometry
+  // to query, so `queryRenderedFeatures({layers:["r_lyr"]})` is always `[]` regardless of whether
+  // the raster is painting (measured: the assertion never passed, even generously timed). A
+  // blended-vs-basemap-only pixel is the real, visible proof; `getLayer("r_lyr")` staying defined
   // is the CLAUDE.md "never removed" proof.
   test("the Data row's eye toggle hides the raster's PAINTED pixel without removing the layer", async ({
     page,
@@ -445,7 +476,7 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
       })
       .toBe(BLENDED_RASTER_RGB.join(","));
 
-    await page.getByRole("switch", { name: "Data visible on the map" }).click();
+    await page.getByRole("checkbox", { name: "Data visible on the map" }).click();
 
     await expect
       .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
@@ -467,7 +498,7 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     );
   }
 
-  test("M3: the Zone outlines row's eye hides programarea_ln's rendered features (>0 -> 0), never removes the layer", async ({
+  test("M3: the Outlines row's eye hides programarea_ln's rendered features (>0 -> 0), never removes the layer", async ({
     page,
   }) => {
     // deliberately the DEFAULT `unit=cell` (never `unit=programarea`): `zoneUnitsFromBoot` always
@@ -478,7 +509,7 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     await gotoLayersScores(page, "");
     await expect.poll(() => zoneFeatureCount(page), { timeout: 20_000 }).toBeGreaterThan(0);
 
-    await page.getByRole("switch", { name: "Zone outlines visible on the map" }).click();
+    await page.getByRole("checkbox", { name: "Outlines visible on the map" }).click();
 
     await expect.poll(() => zoneFeatureCount(page), { timeout: 20_000 }).toBe(0);
     expect(
@@ -510,7 +541,7 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
       );
     await expect.poll(() => ringCount("selection-line"), { timeout: 20_000 }).toBeGreaterThan(0);
 
-    await page.getByRole("switch", { name: "Selection visible on the map" }).click();
+    await page.getByRole("checkbox", { name: "Selection visible on the map" }).click();
 
     await expect.poll(() => ringCount("selection-line"), { timeout: 20_000 }).toBe(0);
     expect(
@@ -518,28 +549,36 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     ).toBe(true);
   });
 
-  test("M3: the Land & water row's eye hides the basemap fill, showing the theme's plain background colour through", async ({
+  // R3 (Ben, 2026-09-25): "Land & water" no longer has a panel ROW (`layerStack.ts`'s
+  // `LAYER_GROUP_IN_PANEL` -- "fine to leave on as default basemap without worrying about layer
+  // ordering") -- the group is still a full model citizen (`DEFAULT_LAYER_STACK`, the classifier,
+  // `layers=` codec, Reset), so this now drives it the ONE other real way a viewer still can, a
+  // `layers=` link, rather than losing the pixel-level proof that hiding basemap-land actually
+  // paints through to the theme's plain background. `Data`'s own row IS still in the panel, so that
+  // half still uses the real checkbox click (never weakening BOTH halves to a URL shortcut).
+  test("M3: hiding basemap-land (layers=) shows the theme's plain background colour through", async ({
     page,
   }) => {
     const errors = collectConsoleErrors(page);
-    await gotoLayersScores(page, "");
+    await gotoLayersScores(page, "&layers=basemap-land:h,data-raster,data-zones,data-places");
     const [lon, lat] = OCEAN_PROBES[0];
+    // the raster still paints on TOP of the hidden basemap fill (proving basemap-land's own hidden
+    // state did not accidentally hide anything else) -- but BLENDED against the bare background
+    // now, not the water fill (`BLENDED_RASTER_OVER_BACKGROUND_RGB`'s own header: WebGL blends
+    // against whatever painted underneath, and land no longer does).
     await expect
       .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
         timeout: 20_000,
       })
-      .toBe(BLENDED_RASTER_RGB.join(","));
+      .toBe(BLENDED_RASTER_OVER_BACKGROUND_RGB.join(","));
 
-    // hide BOTH the raster (so the basemap fill would otherwise be the topmost visible thing) AND
-    // basemap-land, via the panel's own switches -- proving the BACKGROUND shows through once
-    // nothing else paints, not merely "the pixel changed to something."
-    await page.getByRole("switch", { name: "Data visible on the map" }).click();
-    await page.getByRole("switch", { name: "Land & water visible on the map" }).click();
+    // now also hide the raster, via the real panel checkbox (the Data row IS still in the panel) --
+    // with BOTH the raster and the basemap fill hidden, the background shows through.
+    await page.getByRole("checkbox", { name: "Data visible on the map" }).click();
 
     await expect
       .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
-        message:
-          "expected the theme's plain background colour once both Data and Land & water were hidden",
+        message: "expected the theme's plain background colour once Data was also hidden",
         timeout: 20_000,
       })
       .toBe(MAP_BACKGROUND_PAPER_RGB.join(","));
@@ -548,13 +587,74 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     ).toBe(true);
     expect(errors).toEqual([]);
   });
+
+  // Fix round (Ben, 2026-09-25): "dim Selection if there is none to display, otherwise its
+  // presence can cause confusion" -- `LayersPanel.svelte`'s `rowState` prop, fed by
+  // `isPlacesSelectionEmpty(sel.sel)` (`lib/state/types.ts`, unit-tested in
+  // `tests/state/codec.test.ts`). Bare load (no `sel=`) = dimmed; the SAME real
+  // `sel=cell:1500000` deep link the row above already proves paints a real selection-line ring =
+  // not dimmed. The checkbox itself stays checked/enabled either way (never forced off by
+  // emptiness).
+  test("R3 fix round: the Selection row is dimmed when nothing is selected, and un-dims once a cell is", async ({
+    page,
+  }) => {
+    await gotoLayersScores(page, "");
+    const emptyRow = page.locator('[data-row-id="data-places"]');
+    await expect(emptyRow).toHaveClass(/stack-row--dim/);
+    await expect(emptyRow).toContainText("nothing selected");
+    const emptyCheckbox = page.getByRole("checkbox", { name: "Selection visible on the map" });
+    await expect(emptyCheckbox).toBeChecked();
+    await expect(emptyCheckbox).toBeEnabled();
+
+    await gotoLayersScores(page, "&sel=cell:1500000&map=-156.375,50.575,8");
+    const filledRow = page.locator('[data-row-id="data-places"]');
+    await expect(filledRow).not.toHaveClass(/stack-row--dim/);
+    await expect(filledRow).not.toContainText("nothing selected");
+    await expect(
+      page.getByRole("checkbox", { name: "Selection visible on the map" }),
+    ).toBeChecked();
+  });
+
+  // Fix round (Ben, 2026-09-25): "some extra visual differentiation" between the row expander and
+  // the reorder buttons -- proven two ways: the expander's icon path is `chevronRight`'s, never
+  // `chevronUp`/`chevronDown` (the reorder buttons' own family), and the reorder buttons carry a
+  // hover/focus tooltip the expander does not.
+  test("R3 fix round: the Data row's expander and its reorder buttons use DIFFERENT icon glyph families", async ({
+    page,
+  }) => {
+    await gotoLayersScores(page, "");
+    const expanderPath = await page
+      .getByRole("button", { name: "Data", exact: true })
+      .locator("svg path")
+      .getAttribute("d");
+    const upPath = await page
+      .getByRole("button", { name: "Move Data up (toward the top of the map)" })
+      .locator("svg path")
+      .getAttribute("d");
+    const downPath = await page
+      .getByRole("button", { name: "Move Data down (toward the bottom of the map)" })
+      .locator("svg path")
+      .getAttribute("d");
+    expect(expanderPath).not.toBe(upPath);
+    expect(expanderPath).not.toBe(downPath);
+    expect(upPath).not.toBe(downPath);
+
+    const moveUp = page.getByRole("button", {
+      name: "Move Data up (toward the top of the map)",
+    });
+    await expect(moveUp).toHaveAttribute("data-tooltip", "Move up (draw above)");
+    await moveUp.focus();
+    await expect(moveUp).toHaveCSS("position", "relative");
+  });
 });
 
 // M6 (review round 1, "short-label test missing"): the manifest's own SHORT metric label
 // (`manifest.metrics[]`, `boot.ts#metricLabelsFromManifest`) wins over `boot.layers[].label`'s
-// LONG description for the Data row's <select> OPTION text (`LayersPanel.svelte#layerOptionLabel`)
-// -- unit-tested at the `scoresMapInputs` level in `tests/lens/scores/mapInputs.test.ts`; this is
-// the end-to-end proof that the real DOM shows the short text in the dropdown and the long text
+// LONG description for the Layer <select>'s OPTION text (R3: `ScoresLens.svelte`'s own
+// `metricLabel()`, moved here from `LayersPanel.svelte#layerOptionLabel` when the Layer field
+// became a panel-level field) -- unit-tested at the `scoresMapInputs` level in
+// `tests/lens/scores/mapInputs.test.ts`; this is the end-to-end proof that the real DOM shows the
+// short text in the dropdown and the long text
 // as the description underneath, ONCE, never duplicated, and that the description disappears
 // entirely when the release publishes no short label of its own (both texts would otherwise be
 // identical). `bootFor("v7")`'s own one-layer fixture has no `primprod` row at all, so this block
@@ -620,9 +720,10 @@ test.describe("M6: the Data row's short label wins over the long description, wh
     await page.goto("/?proj=mercator&theme=light&lyr=primprod");
     await waitForHydration(page);
     await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
-    // no "open the Layers tool" click here -- the shared LayersPanel's Data row starts EXPANDED
-    // (`src/lib/ui/LayersPanel.svelte`'s `expandedId = $state(DATA_ROW_ID)`), same as every other
-    // test in this file that finds a row's switch with no preceding click.
+    // no "open the Layers tool" click here -- the "Layer" <select> is now a panel-LEVEL field
+    // (R3: promoted out of the Data row's own body, `src/lib/ui/LayersPanel.svelte`'s
+    // `layerField`), always visible whenever the Layers tool is open, regardless of the Data row's
+    // own expanded/collapsed state.
   }
 
   test("no manifest.metrics published: the option text falls back to the long label, and the description is HIDDEN (identical text, not repeated)", async ({
@@ -815,7 +916,7 @@ test.describe("P round deliverable 1: the Layers panel's spatial-unit toggle (sc
     const errors = collectConsoleErrors(page);
     await gotoLayersScores(page, "");
     const group = page.getByRole("group", { name: "Spatial units" });
-    const cellBtn = group.getByRole("button", { name: "Raster cells (0.05°)" });
+    const cellBtn = group.getByRole("button", { name: "Raster cells" });
     const paBtn = group.getByRole("button", { name: "Program areas" });
     await expect(cellBtn).toHaveAttribute("aria-pressed", "true");
     await expect(paBtn).toHaveAttribute("aria-pressed", "false");
@@ -829,28 +930,43 @@ test.describe("P round deliverable 1: the Layers panel's spatial-unit toggle (sc
     expect(errors).toEqual([]);
   });
 
-  // Ben: "the toggles add too much yellow emphasis across whole panel" -- every one of the 8 stack
-  // rows starts `visible: true`, so a real accent color here would mean 8 simultaneous gold
-  // switches. The stack's own ON switches must read as a DIFFERENT (quiet, neutral) color than a
-  // genuinely selected/active control -- proven by comparing two REAL computed colors, never a
-  // hardcoded hex that would just re-encode one theme's accident.
-  test("the layer stack's ON switches read a QUIET color, distinct from the toggle's own accent-pressed segment", async ({
+  // Ben: "the toggles add too much yellow emphasis across whole panel" -- the P round's own fix
+  // was `--border-control` (a "quiet" track FILL colour on the old Switch, distinct from a real
+  // selected/active control). R3 replaced the Switch with a plain checkbox; the first fix round
+  // (orchestrator hand-off, Opus UI review of main, 2026-09-25) had moved every such control to
+  // `accent-color: var(--fill-accent)` (gold, matching the toggle's own pressed segment) so an
+  // unstyled native checkbox/radio/range would never fall back to the browser's own default blue
+  // on the paper theme. Round 2 (Ben, same day, live review of THAT fix): "use a more muted
+  // non-yellow checkbox" -- gold read as 5 simultaneous "selected/important" rows in a stack list,
+  // which is exactly the "too much yellow emphasis" complaint this whole rule exists to avoid; the
+  // stack-row/Sphere/"Cells outside Program Areas" checkboxes moved to `--border-control` (the
+  // SAME muted "steel" token the row's own border already uses), while a real selected/active
+  // control (the toggle's pressed segment, the Outline radios) keeps the gold accent. This test
+  // asserts BOTH halves of that rule: a real, explicit accent-color is set (never the browser's
+  // own unstyled default), and it is the MUTED token, not gold.
+  test("the layer stack's ON checkboxes set a real, MUTED accent-color (never the browser's own unstyled default, never gold)", async ({
     page,
   }) => {
     await gotoLayersScores(page, "");
-    const pressedBg = await page
-      .getByRole("group", { name: "Spatial units" })
-      .getByRole("button", { name: "Raster cells (0.05°)" })
-      .evaluate((el) => getComputedStyle(el).backgroundColor);
-    const dataSwitchTrackBg = await page
-      .getByRole("switch", { name: "Data visible on the map" })
-      .locator(".switch-track")
-      .evaluate((el) => getComputedStyle(el).backgroundColor);
+    const dataCheckbox = page.getByRole("checkbox", { name: "Data visible on the map" });
+    const dataCheckboxAccent = await dataCheckbox.evaluate(
+      (el) => getComputedStyle(el).accentColor,
+    );
     expect(
-      dataSwitchTrackBg,
-      `the Data row's ON switch (${dataSwitchTrackBg}) reads the SAME color as the toggle's own ` +
-        `accent-pressed segment (${pressedBg}) -- it should be a quiet/neutral color instead`,
-    ).not.toBe(pressedBg);
+      dataCheckboxAccent,
+      "the Data row's checkbox has no explicit accent-color set (falls back to the browser's own default)",
+    ).not.toBe("auto");
+    // a direct token-value comparison is brittle across themes; instead assert against the
+    // BORDER color, which this same rule ties the checkbox's accent to 1:1 ("the SAME token the
+    // row's own border already uses" -- see the fix round's own comment on `.visible-check`) --
+    // and is, by construction, never the gold `--fill-accent` the toggle's active segment uses.
+    const rowBorder = await page
+      .locator('[data-row-id="data-raster"]')
+      .evaluate((el) => getComputedStyle(el).borderColor);
+    expect(
+      dataCheckboxAccent,
+      `checkbox accent-color (${dataCheckboxAccent}) does not match the row's own muted border color (${rowBorder}) -- expected the same --border-control token`,
+    ).toBe(rowBorder);
   });
 
   // P3 fix (Opus eyes-on review, 2026-09-24, desktop-04): the panel's own `display: flex;
@@ -865,9 +981,7 @@ test.describe("P round deliverable 1: the Layers panel's spatial-unit toggle (sc
     await gotoLayersScores(page, "");
     const group = page.getByRole("group", { name: "Spatial units" });
     const groupBox = (await group.boundingBox())!;
-    const cellBox = (await group
-      .getByRole("button", { name: "Raster cells (0.05°)" })
-      .boundingBox())!;
+    const cellBox = (await group.getByRole("button", { name: "Raster cells" }).boundingBox())!;
     const paBox = (await group.getByRole("button", { name: "Program areas" }).boundingBox())!;
 
     // within 2px of the pill's own left edge -- `.seg`'s own 1px border sits between the group's
@@ -885,5 +999,116 @@ test.describe("P round deliverable 1: the Layers panel's spatial-unit toggle (sc
       `the last segment's own right edge (${paBox.x + paBox.width}) falls well short of the ` +
         `pill's own right edge (${groupBox.x + groupBox.width}) -- dead space in the pill`,
     ).toBeGreaterThanOrEqual(groupBox.x + groupBox.width - 1);
+  });
+});
+
+// R3 (round-3 plan, W1 "Layers pane redesign", Ben 2026-09-25): the new controls the redesign
+// added -- the per-row opacity popover, the ramp picker, the Zone-outlines radio -- and the one
+// invariant hiding three basemap rows from the pane must not break (a `layers=` token naming one
+// still parses and applies).
+test.describe("R3: Layers-pane redesign", () => {
+  test("hidden rows (Land & water, Boundaries, Roads & buildings, Bathymetry) are absent from the pane, but a layers= token naming one still parses and applies", async ({
+    page,
+  }) => {
+    const errors = collectConsoleErrors(page);
+    await gotoLayersScores(page, "&layers=basemap-land:h,data-raster,data-zones,data-places");
+    // absent from the pane -- no row, no checkbox, whatever the URL says. Bathymetry too
+    // (orchestrator hand-off, 2026-09-25: "do NOT ship the 'Bathymetry — coming soon' stub row").
+    for (const label of ["Land & water", "Boundaries", "Roads & buildings", "Bathymetry"]) {
+      await expect(page.getByRole("checkbox", { name: `${label} visible on the map` })).toHaveCount(
+        0,
+      );
+      await expect(page.locator(".stack-list")).not.toContainText(label);
+    }
+    // and the token still APPLIED (basemap-land really is hidden, not silently ignored) -- the
+    // raster still paints on top of it, blended against the bare background (same proof
+    // `M3: hiding basemap-land` above uses, and the same reason its own constant exists).
+    const [lon, lat] = OCEAN_PROBES[0];
+    await expect
+      .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
+        timeout: 20_000,
+      })
+      .toBe(BLENDED_RASTER_OVER_BACKGROUND_RGB.join(","));
+    // the still-listed rows are unaffected.
+    for (const label of ["Data", "Outlines", "Selection", "Place labels"]) {
+      await expect(page.getByRole("checkbox", { name: `${label} visible on the map` })).toHaveCount(
+        1,
+      );
+    }
+    expect(errors).toEqual([]);
+  });
+
+  test("the Outlines row's outline radio writes out= to the URL", async ({ page }) => {
+    const errors = collectConsoleErrors(page);
+    await gotoLayersScores(page, "");
+    expect(page.url()).not.toContain("out=");
+
+    await page.getByRole("button", { name: "Outlines", exact: true }).click();
+    const ecoregionRadio = page.getByRole("radio", { name: "Ecoregions" });
+    await expect(ecoregionRadio).toBeVisible();
+    await ecoregionRadio.click();
+
+    await expect.poll(() => page.url(), { timeout: 10_000 }).toContain("out=ecoregion");
+    await expect(ecoregionRadio).toBeChecked();
+    const programAreaRadio = page.getByRole("radio", { name: "Program Areas" });
+    await expect(programAreaRadio).not.toBeChecked();
+    expect(errors).toEqual([]);
+  });
+
+  test("the ramp picker changes pal= (and the trigger's own strip updates)", async ({ page }) => {
+    const errors = collectConsoleErrors(page);
+    await gotoLayersScores(page, "");
+    expect(page.url()).not.toContain("pal=");
+
+    await page.getByRole("button", { name: /^Color palette:/ }).click();
+    const listbox = page.getByRole("listbox", { name: "Color palette" });
+    await expect(listbox).toBeVisible();
+    const viridisOption = page.getByRole("option", { name: "Viridis" });
+    await viridisOption.click();
+
+    await expect.poll(() => page.url(), { timeout: 10_000 }).toContain("pal=viridis");
+    // the popover closes on selection, and the trigger's own accessible name now names Viridis.
+    await expect(listbox).toBeHidden();
+    await expect(page.getByRole("button", { name: "Color palette: Viridis" })).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
+  // CLAUDE.md's pixel rule (Round-2 lesson): "Pixel gates must first prove the layer painted" --
+  // this reads the UNCHANGED 60%-default blend FIRST (the control point), then drives the real
+  // popover UI (not a `layers=` URL shortcut) and re-reads the SAME pixel, proving the slider's
+  // own `oninput` wiring reaches `composeStyle` -> the map, the same property
+  // `e2e/layers.spec.ts`'s own B1 test proves for the `layers=` shortcut.
+  test("the Data row's opacity popover scales the raster's painted pixel (SCALED, not replaced)", async ({
+    page,
+  }) => {
+    const errors = collectConsoleErrors(page);
+    await gotoLayersScores(page, "");
+    const [lon, lat] = OCEAN_PROBES[0];
+    await expect
+      .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
+        timeout: 20_000,
+      })
+      .toBe(BLENDED_RASTER_RGB.join(","));
+
+    await page.getByRole("button", { name: "Data opacity" }).click();
+    const range = page.getByRole("slider", { name: "Data opacity" });
+    await expect(range).toBeVisible();
+    await range.evaluate((el: HTMLInputElement) => {
+      el.value = "0.35";
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const scaledOpacity = SCORE_RASTER_OPACITY * 0.35;
+    const expected = [0, 1, 2].map(
+      (i) => RASTER_RGB[i] * scaledOpacity + BASEMAP_RGB[i] * (1 - scaledOpacity),
+    );
+    await expect
+      .poll(async () => isCloseRgb(await readPixel(page, lon, lat), expected), {
+        message: `expected a pixel near [${expected.join(",")}] (±2/channel)`,
+        timeout: 20_000,
+      })
+      .toBe(true);
+    expect(isCloseRgb(expected, BLENDED_RASTER_RGB, 2)).toBe(false);
+    expect(errors).toEqual([]);
   });
 });

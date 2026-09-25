@@ -11,10 +11,43 @@
     /** the trigger's accessible name, e.g. "About the ER-score rule" */
     label: string;
     children: Snippet;
+    /** R3 (Layers-pane redesign, 2026-09-25): the default trigger is a bare (i) icon in an 18px
+     * round button -- fine for a "more info" aside, too small/opaque for a control that opens a
+     * WORKING input (the per-row opacity slider, the color-ramp picker). When given, this renders
+     * INSIDE the trigger button instead of the (i) icon; every other part of the trigger (the real
+     * `<button>`, its `aria-expanded`/`aria-controls`/`aria-label`, open/close, outside-click, Esc)
+     * is unchanged, so a caller only ever customizes what the button shows, never how it behaves. */
+    trigger?: Snippet;
+    /** an extra class on the trigger `<button>` -- the default 18px round shape is wrong for a
+     * content-sized trigger like "gradient strip + palette name" or "icon + 62%". Ignored when
+     * `trigger` is omitted (the default (i) button keeps its own fixed size regardless). */
+    triggerClass?: string;
+    /** which edge the popover opens from -- `"left"` (default, unchanged) or `"right"`, for a
+     * trigger near the panel's own right edge where a left-opening popover would overflow it. */
+    align?: "left" | "right";
+    /** R3 (ramp picker, `lens/scores/LayersPanel.svelte`): `$bindable` so a caller can close the
+     * popover itself after a selection (a listbox's own "pick an option" gesture, distinct from
+     * Esc/outside-click, which this component already owned). Every existing caller omits it and
+     * keeps the original self-contained open/close it always had. */
+    open?: boolean;
+    /** Fix round (orchestrator, 2026-09-25): "the popover as wide as the trigger" -- the default
+     * popover is a fixed 240px (right for a short prose aside); a full-row trigger like the ramp
+     * picker's own `Select`-shaped button wants its dropdown to match. `.popover-wrap` (the
+     * positioned ancestor `width: 100%` resolves against) already stretches to the trigger's own
+     * width when the caller's trigger itself is `width: 100%` of ITS OWN container (true for
+     * `.ramp-trigger`) -- so this is just "opt into that," never a caller-supplied pixel value. */
+    matchTriggerWidth?: boolean;
   }
 
-  let { label, children }: Props = $props();
-  let open = $state(false);
+  let {
+    label,
+    children,
+    trigger,
+    triggerClass,
+    align = "left",
+    open = $bindable(false),
+    matchTriggerWidth = false,
+  }: Props = $props();
   let wrapEl: HTMLSpanElement | undefined;
   let triggerEl: HTMLButtonElement | undefined;
   let popoverEl: HTMLDivElement | undefined = $state();
@@ -24,8 +57,17 @@
   function close() {
     if (!open) return;
     open = false;
-    triggerEl?.focus();
   }
+
+  // "focus returns to the trigger on close" (this component's own header) -- tracked here, not
+  // inline in `close()`, so a caller closing the (now bindable) `open` prop directly from OUTSIDE
+  // (the ramp picker's own "select an option" click) gets the identical refocus, not just Esc/
+  // outside-click. `wasOpen` starts false (matching `open`'s own default), so mount fires no focus.
+  let wasOpen = false;
+  $effect(() => {
+    if (wasOpen && !open) triggerEl?.focus();
+    wasOpen = open;
+  });
 
   function handleDocumentPointerdown(event: PointerEvent) {
     if (!open) return;
@@ -65,19 +107,31 @@
 <span class="popover-wrap" bind:this={wrapEl}>
   <button
     type="button"
-    class="popover-trigger"
+    class="popover-trigger {triggerClass ?? ''}"
+    class:popover-trigger--icon={!trigger}
     bind:this={triggerEl}
     aria-expanded={open}
     aria-controls={popoverId}
     aria-label={label}
     onclick={() => (open = !open)}
   >
-    <Icon name="info" size={16} />
+    {#if trigger}
+      {@render trigger()}
+    {:else}
+      <Icon name="info" size={16} />
+    {/if}
   </button>
   <!-- always rendered (never {#if open}), toggled with `hidden` -- aria-controls (on the trigger
        above) must reference an element that actually EXISTS in the DOM (SC 4.1.2); see
        Accordion.svelte's identical fix for the same reason. -->
-  <div class="popover" id={popoverId} bind:this={popoverEl} hidden={!open}>
+  <div
+    class="popover"
+    class:popover--right={align === "right"}
+    class:popover--match-trigger={matchTriggerWidth}
+    id={popoverId}
+    bind:this={popoverEl}
+    hidden={!open}
+  >
     {@render children()}
   </div>
 </span>
@@ -88,17 +142,31 @@
     display: inline-block;
   }
 
+  /* Fix round (orchestrator, 2026-09-25, desktop-04/phone-04): the base rule used to carry the
+     default (i)-icon button's own fixed 18x18 round `inline-grid; place-items: center` shape, and
+     a `.popover-trigger--custom` modifier tried to override just width/height/display for a
+     custom trigger (opacity %, ramp strip + name) -- but BOTH classes live in this SAME component,
+     so Svelte's CSS scoping gives them equal specificity, and the two rules' properties fought
+     (e.g. `.popover-trigger`'s `display: inline-grid` was never actually overridden, silently
+     stacking a custom trigger's icon/text on top of each other in one grid cell). The fixed-icon
+     shape now lives ENTIRELY on its own `--icon` modifier instead: the base carries only what
+     EVERY trigger shares (border, cursor, color, focus/pressed state), so a custom trigger's own
+     `triggerClass` (the caller's `:global(...)` rules, e.g. `.opacity-btn`/`.ramp-trigger`) is the
+     ONLY thing ever setting layout/size for it -- no cross-component specificity fight possible. */
   .popover-trigger {
-    display: inline-grid;
-    place-items: center;
-    width: 18px;
-    height: 18px;
     border: 1px solid var(--border-control);
-    border-radius: var(--radius-pill);
     background: none;
     color: var(--text-secondary);
     cursor: pointer;
     padding: 0;
+  }
+
+  .popover-trigger--icon {
+    display: inline-grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: var(--radius-pill);
   }
 
   .popover-trigger:focus-visible {
@@ -124,5 +192,19 @@
     color: var(--text-primary);
     font-size: var(--text-sm);
     box-shadow: var(--elev-3);
+  }
+
+  .popover--right {
+    left: auto;
+    right: 0;
+  }
+
+  /* Fix round (orchestrator, 2026-09-25): "the popover as wide as the trigger" -- `.popover-wrap`
+     is a flex ITEM of the caller's own column-flex field, so it already stretches to the trigger's
+     own full width (align-items: stretch, the flex default) when the trigger itself is width:
+     100% of its container (true for `.ramp-trigger`); `width: 100%` here just opts THIS popover
+     into matching that, instead of the default fixed 240px sized for a short prose aside. */
+  .popover--match-trigger {
+    width: 100%;
   }
 </style>
