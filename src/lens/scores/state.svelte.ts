@@ -76,8 +76,9 @@ import {
 // the SAME point `places/zoneStats.ts#zoneCenterFromBoot` already computes for a zone Place's own
 // "Zoom to place" (`Places.svelte`) — one reader for "where does this zone's label sit", never a
 // second bbox/centroid computation invented here.
-import { zoneBboxFromFeatures, zoneCenterFromBoot } from "../../places/zoneStats";
+import { zoneBboxesByKeyFromFeatures, zoneCenterFromBoot } from "../../places/zoneStats";
 import { zoneKeyProperty, zoneSourceId, zoneUnitsFromBoot } from "../../lib/map/layers/zones";
+import { studyAreaFromBoot } from "../../lib/map/interaction";
 
 /** the map ring's own shape — a cell's centre + half-extents (pure arithmetic on the release's
  * grid) or a zone key to outline; `ScoresMapState["selection"]`'s own type, named here so
@@ -148,35 +149,67 @@ export interface ScoresLens {
    * release's grid (no boot yet, or genuinely off-grid) — the caller reports "no match", never a
    * throw. */
   selectCoordinate(lon: number, lat: number): Promise<boolean>;
+  /** W6 ("Regions move into the Search bar", Ben 2026-09-25): select a whole-study-area REGION
+   * found by `search.ts#matchRegions`/`defaultRegions` — exactly what the (now-removed) Layers
+   * pane "Zoom to region" select did: `selStore.set({area: key, map: undefined})`, and Shell.svelte's
+   * own `sel.area` effect (`camera.ts#shouldFlyToArea`) owns the fly, never this method directly —
+   * D7's own rule ("the study area is a camera, never a filter") stands: this never touches `sel.sel`
+   * or any raster/legend input. */
+  selectRegion(key: string): void;
 }
 
 /** owner review item 1 (live 0.10.62): `selectZone`'s real bbox fallback -- queries the zone's OWN
  * polygon off the SAME PMTiles vector-tile source `map/layers/zones.ts` already composes into the
  * style for every unit (never a second geometry fetch), so a Program-Area search pick can fly to
  * its true extent even though no published release carries `label_pt` (`zoneCenterFromBoot`'s own
- * header). `querySourceFeatures` reads already-loaded tiles only -- `null` (never a throw) when the
- * unit is unpublished or its covering tile has not loaded, so the caller degrades to the label_pt
- * centroid and then to an announcement, exactly as before this fix. R3-B14/C3: `selectZone` tries
- * `zoneBboxFromBoot` (`./boot.ts`, a PUBLISHED bbox, needs no map handle or loaded tile) first --
- * this stays the fallback for a release that does not publish one, which is every release today. */
-function zoneBoundsFromMap(
+ * header). R3-B14/C3: `selectZone` tries `zoneBboxFromBoot` (`./boot.ts`, a PUBLISHED bbox, needs
+ * no map handle or loaded tile) first -- this stays the fallback for a release that does not
+ * publish one, which is every release today.
+ *
+ * W6 fix (Ben's live-site report, 2026-09-25): "a SECOND Program-Area search pick does not zoom."
+ * This USED to query `querySourceFeatures` FILTERED to the one key just asked for -- MapLibre only
+ * answers that from tiles loaded for the CURRENT viewport, and the first pick's own `flyToBounds`
+ * had already zoomed the camera in tight on the first zone, so the second zone's tile (elsewhere on
+ * the map, never visited) was never requested and the filtered query came back empty every time
+ * after the first — reproduced exactly with the e2e fixture (two far-apart Program Areas): pick 1
+ * zooms, pick 2 does not, matching the live report. The first pick only ever "worked" because the
+ * app's initial wide default camera happens to have every Program Area's outline already loaded
+ * (`layerStack.ts`'s "Outlines" group is always-on chrome).
+ *
+ * The fix: query UNFILTERED (`zoneBboxesByKeyFromFeatures`, `places/zoneStats.ts`) and cache EVERY
+ * key the query happens to see, not just the one asked for -- so whichever zones were loaded at the
+ * moment of the FIRST query (normally all of them, at the initial wide camera) are cached for every
+ * LATER pick, with no live query needed at all. `zoneBoundsCache` is created once per
+ * `createScoresLens()` call (this module's own header: "runs exactly ONCE per page load"), so it is
+ * a real, page-lifetime cache, not just relief for the one call that populates it. */
+function zoneCacheKey(unit: string, key: string): string {
+  return `${unit}:${key}`;
+}
+
+function refreshZoneBoundsCache(
+  cache: Map<string, [[number, number], [number, number]]>,
   handle: MapHandle,
   boot: unknown,
   unit: string,
-  key: string,
-): [[number, number], [number, number]] | null {
+): void {
   const spec = zoneUnitsFromBoot(boot).find((u) => u.unit === unit);
-  if (!spec) return null;
-  let features: { geometry: { type: string; coordinates: unknown } }[];
+  if (!spec) return;
+  let features: { properties?: Record<string, unknown> | null; geometry: never }[];
   try {
+    // UNFILTERED: every feature of this unit's source-layer currently loaded, whichever zones
+    // that happens to include — never a second geometry fetch, and never a throw when the source
+    // is not added/loaded yet (a search pick before the map/style has finished loading).
     features = handle.map.querySourceFeatures(zoneSourceId(unit), {
       sourceLayer: spec.sourceLayer,
-      filter: ["==", ["get", zoneKeyProperty(unit)], key] as never,
     }) as never;
   } catch {
-    return null; // source not added/loaded yet — never a throw for a search pick
+    return;
   }
-  return zoneBboxFromFeatures(features);
+  const found = zoneBboxesByKeyFromFeatures(features, zoneKeyProperty(unit));
+  for (const [key, bounds] of found) {
+    const cacheKey = zoneCacheKey(unit, key);
+    if (!cache.has(cacheKey)) cache.set(cacheKey, bounds);
+  }
 }
 
 export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
@@ -220,6 +253,13 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
   // something a template reads; mirrors species' `state.svelte.ts` own `mapLibrePopup`).
   let mapLibrePopup: Popup | null = null;
   let popupToken = 0;
+
+  // W6 fix: `selectZone`'s persistent, page-lifetime bbox cache (see `refreshZoneBoundsCache`'s
+  // own header above for the bug this closes) — a plain Map, not SvelteMap: internal bookkeeping
+  // only, never read from a template/`$derived`, so nothing needs Svelte's reactive wrapper to
+  // track mutations to it (`Toast.svelte`'s own `timers` map follows the same rule).
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  const zoneBoundsCache = new Map<string, [[number, number], [number, number]]>();
 
   function clearPopup(): void {
     mapLibrePopup?.remove();
@@ -439,14 +479,20 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       // stays as the last-resort fallback for the day a release does publish `label_pt`.
       //
       // R3-B14/C3: a PUBLISHED `boot.zones[unit][*].bbox` (`zoneBboxFromBoot`) is tried FIRST,
-      // ahead of `zoneBoundsFromMap` -- it needs no map handle and no already-loaded tile, so a
-      // Program-Area search pick zooms correctly even far outside the current view (the gap
+      // ahead of the cache/live map query -- it needs no map handle and no already-loaded tile, so
+      // a Program-Area search pick zooms correctly even far outside the current view (the gap
       // V1/owner review item 1's own header names: "a zone far outside the current view can fall
       // back to the announce-only path"). No published release carries `bbox` yet (msens will,
-      // R3-C3), so `zoneBoundsFromMap` stays the effective path until then.
-      const bounds =
-        zoneBboxFromBoot(boot, unit, key) ??
-        (handle ? zoneBoundsFromMap(handle, boot, unit, key) : null);
+      // R3-C3), so the cache/live-query path stays the effective one until then.
+      //
+      // W6 fix: the CACHE (`zoneBoundsCache`, populated by any earlier `refreshZoneBoundsCache`
+      // call — including this one, below, on a miss) is tried next, ahead of a fresh live query --
+      // this is what makes a SECOND pick zoom (see `refreshZoneBoundsCache`'s own header).
+      const cacheKey = zoneCacheKey(unit, key);
+      if (!zoneBoundsCache.has(cacheKey) && handle) {
+        refreshZoneBoundsCache(zoneBoundsCache, handle, boot, unit);
+      }
+      const bounds = zoneBboxFromBoot(boot, unit, key) ?? zoneBoundsCache.get(cacheKey) ?? null;
       const center = bounds
         ? { lon: (bounds[0][0] + bounds[1][0]) / 2, lat: (bounds[0][1] + bounds[1][1]) / 2 }
         : zoneCenterFromBoot(boot, unit, [key]);
@@ -512,6 +558,20 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       );
       void showCellPopup(cellId, lngLat, center, token, prevSel);
       return true;
+    },
+
+    // W6 ("Regions move into the Search bar"): the SAME write `LayersPanel.svelte`'s (now-removed)
+    // "Zoom to region" select made (`ScoresLens.svelte`'s old `onAreaChange`) — `sel.area` is the
+    // one field the shell-level camera effect (`Shell.svelte`, `camera.ts#shouldFlyToArea`) reads,
+    // so the fly happens there, not here (D7: a study area is a camera, never a data filter — see
+    // this method's own interface doc). A key the release does not publish still resolves (falls
+    // back to `FULL`, `studyAreaFromBoot`'s own rule) rather than writing a URL that later 404s.
+    selectRegion(key: string): void {
+      if (deps.selStore.sel.lens !== "scores") return;
+      const boot = deps.boot();
+      const area = studyAreaFromBoot(boot, key);
+      deps.selStore.set({ area: area.key, map: undefined });
+      announce(`Zoomed to ${area.label ?? area.key}.`);
     },
   };
 }

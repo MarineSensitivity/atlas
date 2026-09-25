@@ -8,16 +8,18 @@
   //
   // Every place mutation goes through `selStore.set({ pl: hashFromPlaces(next) })` -- NEVER a local
   // copy of the list -- so `#pl=` and what's rendered can never disagree (CLAUDE.md
-  // "URL-is-the-view"). Status text goes through the shell's ONE shared `announce()`; this
-  // component renders no live region of its own (e2e/shell.a11y.spec.ts's "exactly one live region"
-  // walk clicks through every rail tool, including this one).
+  // "URL-is-the-view"). Status text goes through the shell's ONE shared live region
+  // (e2e/shell.a11y.spec.ts's "exactly one live region" walk clicks through every rail tool,
+  // including this one) -- UI-1 (round 3): every message here is USER-INITIATED (a pick, an add,
+  // a remove, a download, a draw hint, an error), so every one now goes through `notify()`
+  // (announces AND shows a visible toast) rather than the screen-reader-only `announce()`.
   import { onDestroy, onMount } from "svelte";
   import Icon from "../lib/ui/Icon.svelte";
   import Pill from "../lib/ui/Pill.svelte";
   import Chip from "../lib/ui/Chip.svelte";
   import Accordion from "../lib/ui/Accordion.svelte";
   import Select from "../lib/ui/Select.svelte";
-  import { announce } from "../lib/ui/announcer";
+  import { notify } from "../lib/ui/announcer";
   import { encodePlace, type Place } from "../lib/geo/placeCodec";
   import type { Sel } from "../lib/state/types";
   import type { SelStore } from "../lib/state/sel.svelte";
@@ -186,12 +188,12 @@
   function togglePickMode() {
     if (pickOn) {
       stopPickMode();
-      announce("Pick mode off.");
+      notify("Pick mode off.");
       return;
     }
     const map = rawMap();
     if (!map) {
-      announce("The map isn't ready yet.");
+      notify("The map isn't ready yet.");
       return;
     }
     // pick mode and drawing both use map clicks for different purposes -- never both at once.
@@ -205,7 +207,7 @@
       pickState = next;
       refreshOutline();
     });
-    announce(
+    notify(
       "Pick mode on. Click a Program Area to select it; Ctrl-click, Cmd-click or long-press to add more.",
     );
   }
@@ -224,12 +226,12 @@
     if (!pickState.unit || !pickState.keys.length) return;
     const set = zoneSetForUnit(pickState.unit);
     if (!set) {
-      announce(`"${pickState.unit}" isn't a place-able zone unit.`);
+      notify(`"${pickState.unit}" isn't a place-able zone unit.`);
       return;
     }
     const result = addZonePlace(places, set, pickState.keys);
     if (!result.ok) {
-      announce(result.reason ?? "Couldn't add that selection.");
+      notify(result.reason ?? "Couldn't add that selection.");
       return;
     }
     const added = result.places[result.places.length - 1];
@@ -237,7 +239,7 @@
     writePlaces(result.places, result.places.length - 1);
     pickState = clearPick();
     mapStore.setOutline(null);
-    announce("Added to places.");
+    notify("Added to places.");
   }
 
   // --- "Add a Program Area" (orchestrator-directed, 2026-09-24: Places had NO Program Area list
@@ -257,14 +259,14 @@
     if (!set) return; // structurally unreachable (programarea always maps to "pa"); never a throw
     const result = addZonePlace(places, set, [key]);
     if (!result.ok) {
-      announce(result.reason ?? "Couldn't add that Program Area.");
+      notify(result.reason ?? "Couldn't add that Program Area.");
       return;
     }
     const added = result.places[result.places.length - 1];
     remember(added);
     writePlaces(result.places, result.places.length - 1);
     paPickValue = "";
-    announce("Added to places.");
+    notify("Added to places.");
   }
 
   // --- draw (Deliverable 3): terra-draw is a LAZY chunk, loaded once per panel lifetime ----------
@@ -305,7 +307,7 @@
     next[index] = place;
     writePlaces(next, index);
     mapStore.setOutline(featureCollectionOf(densifyGeometry(place.geometry)));
-    announce("Place updated.");
+    notify("Place updated.");
   }
 
   function onDrawFinish(featureId: FeatureId, rawGeometry: AreaGeometry, isNewFeature: boolean) {
@@ -317,7 +319,7 @@
     const place = geomPlaceFrom(rawGeometry, `Drawn place ${places.length + 1}`);
     const result = addPlace(places, place);
     if (!result.ok) {
-      announce(result.reason ?? "Couldn't add that shape.");
+      notify(result.reason ?? "Couldn't add that shape.");
       return;
     }
     const index = result.places.length - 1;
@@ -334,7 +336,7 @@
     mapStore.setOutline(featureCollectionOf(densifyGeometry(place.geometry)));
     drawSession?.setMode("select"); // straight into edit, so the just-drawn shape can be adjusted
     drawMode = "select";
-    announce(
+    notify(
       "Place drawn. Drag its corners to adjust, or turn on Pick mode / Enter coordinates for another.",
     );
   }
@@ -342,7 +344,7 @@
   async function ensureDrawSession(): Promise<DrawSession | undefined> {
     const map = rawMap();
     if (!map) {
-      announce("The map isn't ready yet.");
+      notify("The map isn't ready yet.");
       return undefined;
     }
     if (drawSession) return drawSession;
@@ -353,7 +355,7 @@
       drawFeatures = emptyDrawFeatureIndex(); // a fresh TerraDraw instance -> a fresh id namespace
       return drawSession;
     } catch {
-      announce("Couldn't load the drawing tools — try Enter coordinates instead.");
+      notify("Couldn't load the drawing tools — try Enter coordinates instead.");
       return undefined;
     } finally {
       drawBusy = false;
@@ -395,7 +397,7 @@
       const place = geomPlaceFrom(e.geometry, e.name);
       const result = addPlace(current, place);
       if (!result.ok) {
-        announce(result.reason ?? "Couldn't add every place — the 20-place cap was reached.");
+        notify(result.reason ?? "Couldn't add every place — the 20-place cap was reached.");
         break;
       }
       current = result.places;
@@ -404,7 +406,7 @@
     }
     if (lastIndex >= 0) {
       writePlaces(current, lastIndex);
-      announce(entered.length > 1 ? `Added ${entered.length} places.` : "Place added.");
+      notify(entered.length > 1 ? `Added ${entered.length} places.` : "Place added.");
     }
   }
 
@@ -517,16 +519,16 @@
     }
     const p = selectedIndex !== null ? places[selectedIndex] : null;
     if (!p || p.kind !== "geom") {
-      announce("Select a drawn or uploaded place first.");
+      notify("Select a drawn or uploaded place first.");
       return;
     }
     const grid = gridOrNull();
     if (!grid) {
-      announce("No release grid loaded yet.");
+      notify("No release grid loaded yet.");
       return;
     }
     if (!dataEngineFn) {
-      announce("No release is resolved yet.");
+      notify("No release is resolved yet.");
       return;
     }
     // an upper bound BEFORE the engine round trip, from the UNCLIPPED count -- clipping can only
@@ -534,7 +536,7 @@
     // engine at all, and never itself decides what gets painted.
     const unclipped = cellsInPolygon(p.geometry, grid);
     if (unclipped.length > MAX_ANALYSIS_CELLS) {
-      announce(
+      notify(
         `This place covers ${unclipped.length.toLocaleString("en-US")} cells — too many to paint (limit ${MAX_ANALYSIS_CELLS.toLocaleString("en-US")}).`,
       );
       return;
@@ -562,7 +564,7 @@
     } catch (err) {
       // P7: same honest-sentence helper the score/species panels use -- this reads `app/cell`
       // tiles too, so the SAME missing-release-object class can fail it.
-      if (token === cellsToken) announce(describeAnalysisError(err));
+      if (token === cellsToken) notify(describeAnalysisError(err));
     } finally {
       if (token === cellsToken) loadingCells = false;
     }
@@ -649,19 +651,19 @@
     if (p.kind === "zone") {
       const c = zoneCenterFromBoot(boot, unitForZoneSet(p.set), p.keys);
       if (!c) {
-        announce("No location known for this selection yet.");
+        notify("No location known for this selection yet.");
         return;
       }
       mapHandle.flyTo({ key: "place", lon: c.lon, lat: c.lat, zoom: 6 });
       return;
     }
-    announce("This place's geometry isn't in this session — ask for the GeoJSON to zoom to it.");
+    notify("This place's geometry isn't in this session — ask for the GeoJSON to zoom to it.");
   }
 
   function rename(i: number, name: string) {
     const result = renamePlaceAt(places, i, name);
     if (!result.ok) {
-      if (result.reason) announce(result.reason);
+      if (result.reason) notify(result.reason);
       return;
     }
     remember(result.places[i]);
@@ -671,7 +673,7 @@
   function duplicate(i: number) {
     const result = duplicatePlaceAt(places, i);
     if (!result.ok) {
-      announce(result.reason ?? "Couldn't duplicate that place.");
+      notify(result.reason ?? "Couldn't duplicate that place.");
       return;
     }
     remember(result.places[result.places.length - 1]);
@@ -689,7 +691,7 @@
       pl: hashFromPlaces(next),
       sel: sel.sel === `place:${i}` ? undefined : sel.sel,
     });
-    announce("Place removed.");
+    notify("Place removed.");
   }
 
   // "Open in report" (Deliverable 1's stub link): a plain <a href> to the report.html entry
@@ -753,11 +755,11 @@
 
   function onDownload() {
     if (!places.length) {
-      announce("No places to download yet.");
+      notify("No places to download yet.");
       return;
     }
     downloadGeoJson(placesToGeoJson(places, boot, zonePolygonSource()));
-    announce(`Downloaded ${places.length} place${places.length === 1 ? "" : "s"} as GeoJSON.`);
+    notify(`Downloaded ${places.length} place${places.length === 1 ? "" : "s"} as GeoJSON.`);
   }
 
   // atlas-7 step 4: "Report" opens report.html for every place currently in the panel.
@@ -772,7 +774,7 @@
   // exact release even if `latest.txt` changes between the click and report.html's own load.
   function onReport() {
     if (!places.length) {
-      announce("No places to report on yet.");
+      notify("No places to report on yet.");
       return;
     }
     // B2 fix: build the hash with the SAME encoder `reportHref()` (above) and `formatSel`
@@ -796,16 +798,16 @@
   function addBackRecent(token: string) {
     const p = recentPlace(token);
     if (!p) {
-      announce("That recent place can no longer be read.");
+      notify("That recent place can no longer be read.");
       return;
     }
     if (places.length >= MAX_PLACES) {
-      announce(`Up to ${MAX_PLACES} places at a time — remove one to add another.`);
+      notify(`Up to ${MAX_PLACES} places at a time — remove one to add another.`);
       return;
     }
     const next = [...places, p];
     writePlaces(next, next.length - 1);
-    announce("Added back from Recent.");
+    notify("Added back from Recent.");
   }
 
   function onClearRecents() {

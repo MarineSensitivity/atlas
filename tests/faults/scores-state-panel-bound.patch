@@ -1,8 +1,8 @@
 diff --git a/src/lens/scores/ScoresLens.svelte b/src/lens/scores/ScoresLens.svelte
-index 90495bb..84a2c2f 100644
+index e36bb9b..63916ea 100644
 --- a/src/lens/scores/ScoresLens.svelte
 +++ b/src/lens/scores/ScoresLens.svelte
-@@ -57,6 +57,10 @@
+@@ -65,6 +65,10 @@
       * and the map can never disagree about what the current stack is. */
      layerStack: readonly LayerStackEntry[];
      onLayerStackChange: (next: readonly LayerStackEntry[]) => void;
@@ -13,7 +13,7 @@ index 90495bb..84a2c2f 100644
      /** P3 fix (Opus eyes-on review, 2026-09-24): passed straight through to `FlowerPanel`'s own
       * prop of the same name -- see that component's header for why. */
      compactFlower?: boolean;
-@@ -75,12 +79,20 @@
+@@ -83,12 +87,20 @@
      layerStack,
      onLayerStackChange,
      compactFlower = false,
@@ -35,10 +35,10 @@ index 90495bb..84a2c2f 100644
    // `unitToggle` prop) -- replaces the old "Spatial units" `<Select>` that used to live in
    // `ScoresLayersPanel` (`./LayersPanel.svelte`, still rendered below for the Data row's OTHER
 diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
-index 9375f3b..ddd69af 100644
+index 7635b16..3df5af8 100644
 --- a/src/shell/Shell.svelte
 +++ b/src/shell/Shell.svelte
-@@ -583,12 +583,17 @@
+@@ -583,12 +583,19 @@
    // every read of it below is null-safe and falls back to "the shell's own base view", same as
    // the old `{}` default did.
    let scoresLens = $state<ScoresLensState | null>(null);
@@ -46,7 +46,9 @@ index 9375f3b..ddd69af 100644
 +  // purpose -- a bucket only ScoresLens.svelte (the PANEL body) ever writes, via bind:mapExtra,
 +  // instead of reading scoresLens.mapExtra directly. A collapsed desktop panel never mounts that
 +  // component, so this stays null forever.
-+  let scoresPanelMapExtra = $state<import("../lens/scores/mapInputs").ScoresMapInputs | null>(null);
++  let scoresPanelMapExtra = $state<import("../lens/scores/mapInputs").ScoresMapInputs | null>(
++    null,
++  );
  
    // P1 fix: hoisted out of the template (it used to be a `{@const}` inline where the legend chip
    // rendered) so BOTH the floating placement and the "full" detent's inline-in-sheet placement can
@@ -56,8 +58,8 @@ index 9375f3b..ddd69af 100644
 +    sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresPanelMapExtra?.legend ?? null),
    );
  
-   // R3-W2: the Download menu's per-lens context -- built from data every lens ALREADY resolves
-@@ -665,7 +670,7 @@
+   // UI-1 (round 3): `<Toast>`'s own phone bottom-offset PROP -- see its mount point (below) for why
+@@ -698,7 +705,7 @@
    // never mounted on a species view in the first place.
    const zonesForStyle = $derived<ZoneUnitSpec[]>(
      zoneUnitsWithOutline(
@@ -66,7 +68,7 @@ index 9375f3b..ddd69af 100644
        sel.out,
      ),
    );
-@@ -1058,11 +1063,11 @@
+@@ -1091,11 +1098,11 @@
      projection: sel.proj,
      zones: ecoregionUnit ? [...zonesForStyle, ecoregionUnit] : zonesForStyle,
      raster:
@@ -81,7 +83,7 @@ index 9375f3b..ddd69af 100644
      layerStack,
    });
  
-@@ -1881,6 +1886,7 @@
+@@ -1965,6 +1972,7 @@
              lens={scoresLens}
              {layerStack}
              {onLayerStackChange}
@@ -89,7 +91,7 @@ index 9375f3b..ddd69af 100644
              compactFlower={isPhone && sheetGeom.detent === "half"}
            />
          {:else}
-@@ -1945,7 +1951,7 @@
+@@ -2029,7 +2037,7 @@
    {:else if sel.lens === "scores" && ScoresLegendComp}
      {@const Comp = ScoresLegendComp}
      <div class="lens-legend-region">

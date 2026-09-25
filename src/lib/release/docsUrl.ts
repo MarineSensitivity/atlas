@@ -36,6 +36,16 @@ export const DOCS_ROOT = "https://marinesensitivity.org/docs/";
 /** the Atlas chapter's path within a release's own book directory. */
 export const ATLAS_CHAPTER_PATH = "apps/atlas.html";
 
+/** UI-16 (Opus 5.5 eyes-on review, round 3): the DATA release's own notes chapter -- what "What
+ * changed" should link, distinct from `ATLAS_CHAPTER_PATH` (the APP's own guide) and from the
+ * app's CHANGELOG.md (the About modal used to link that instead, which describes the ATLAS CODE's
+ * history, not the data RELEASE the person is looking at -- workflows' own `data/release_notes.yml`
+ * publishes per-version entries into the SAME versioned docs book `atlasDocsUrl` reads, by the SAME
+ * "quarto preserves a chapter source's own subdirectory 1:1" rule that file's header documents; no
+ * `apps/` prefix, since `release_notes.qmd` is a top-level chapter of the book, not under
+ * "Applications"). */
+export const RELEASE_NOTES_CHAPTER_PATH = "release_notes.html";
+
 /**
  * URL of `ver`'s Atlas chapter, or the book root when `ver`/`access` is not known.
  *
@@ -50,7 +60,30 @@ export function atlasDocsUrl(
   access: AccessLevel,
   previewBase: string = PREVIEW_HOST,
 ): string {
+  return versionedDocsUrl(ver, access, ATLAS_CHAPTER_PATH, previewBase);
+}
+
+/**
+ * URL of `ver`'s release-notes chapter ("What changed" in the About modal) -- the SAME
+ * public/restricted/unknown resolution `atlasDocsUrl` uses, just a different chapter path. See
+ * `RELEASE_NOTES_CHAPTER_PATH`'s own header for why this is a distinct link from both
+ * `atlasDocsUrl` (the app's guide) and the app's own CHANGELOG.md.
+ */
+export function releaseNotesUrl(
+  ver: string | null | undefined,
+  access: AccessLevel,
+  previewBase: string = PREVIEW_HOST,
+): string {
+  return versionedDocsUrl(ver, access, RELEASE_NOTES_CHAPTER_PATH, previewBase);
+}
+
+function versionedDocsUrl(
+  ver: string | null | undefined,
+  access: AccessLevel,
+  chapterPath: string,
+  previewBase: string,
+): string {
   if (!ver || access === "unknown") return DOCS_ROOT;
-  if (access === "restricted") return `${previewBase}/docs/${ver}/${ATLAS_CHAPTER_PATH}`;
-  return `${DOCS_ROOT}${ver}/${ATLAS_CHAPTER_PATH}`;
+  if (access === "restricted") return `${previewBase}/docs/${ver}/${chapterPath}`;
+  return `${DOCS_ROOT}${ver}/${chapterPath}`;
 }

@@ -74,6 +74,37 @@ function urlSel(page: Page): string | null {
   return new URL(page.url()).searchParams.get("sel");
 }
 
+/** W6 fix (Ben's live-site report, 2026-09-25): "a second Program-Area pick does not zoom." A
+ * plain `getCenter()` read, reused by the regression test below and by the existing single-pick
+ * bbox tests' own inline `page.evaluate` (kept as-is there — this helper is new, for the new
+ * two-picks-in-a-row test only, so it does not touch tests already proven passing). */
+function mapCenter(page: Page): Promise<{ lng: number; lat: number }> {
+  return page.evaluate(() =>
+    (
+      window as unknown as {
+        __atlasMap: { handle: { map: { getCenter(): { lng: number; lat: number } } } };
+      }
+    ).__atlasMap.handle.map.getCenter(),
+  );
+}
+
+async function expectCameraSettlesIn(
+  page: Page,
+  bbox: readonly [number, number, number, number],
+  message: string,
+): Promise<void> {
+  const [xmin, ymin, xmax, ymax] = bbox;
+  await expect
+    .poll(
+      async () => {
+        const c = await mapCenter(page);
+        return c.lng >= xmin && c.lng <= xmax && c.lat >= ymin && c.lat <= ymax;
+      },
+      { message, timeout: 10_000 },
+    )
+    .toBe(true);
+}
+
 async function openFlower(page: Page) {
   await page.getByRole("button", { name: "Flower plot" }).click();
   const flower = page.locator(".flower-title");
@@ -190,6 +221,46 @@ test.describe("Q1: Scores-lens top-bar search (desktop, 1280x800)", () => {
         { timeout: 10_000 },
       )
       .toBe(true);
+  });
+
+  // W6 fix (Ben's live-site report, 2026-09-25): "typing and selecting a Program Area from the
+  // Search bar zooms to it, but selecting a SECOND one afterwards does not." Root cause:
+  // `zoneBoundsFromMap` (state.svelte.ts) used to query `querySourceFeatures` FILTERED to one key,
+  // which only answers from tiles loaded for the viewport NOW — the first pick's own `flyToBounds`
+  // zooms in tight on the FIRST zone, so the second zone's tile (elsewhere on the map) is never
+  // loaded and the query comes back empty on every later pick. Fixed by querying UNFILTERED and
+  // caching every key seen (`places/zoneStats.ts#zoneBboxesByKeyFromFeatures`), so the SECOND pick
+  // is a cache hit from the first query's own by-product. GAA and ALA are genuinely far apart in
+  // this suite's real PMTiles fixture (`e2e/fixtures/scores/zones20.geojson`) — GAA lon
+  // [-158,-156] lat [26,28], ALA lon [-170,-168] lat [20,22] — reproducing the live report exactly:
+  // pick 1 (GAA) zoomed even on the pre-fix tree, pick 2 (ALA) did not.
+  test("a SECOND Program-Area search pick also flies the camera (not just the first)", async ({
+    page,
+  }) => {
+    await gotoScoresSearch(page);
+    await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
+
+    const input = page.getByRole("combobox", { name: "Search Program Areas or coordinates" });
+
+    await input.fill("GAA");
+    await expect(page.getByRole("option", { name: "GOA Program Area A (GAA)" })).toBeVisible();
+    await input.press("Enter");
+    await expect.poll(() => urlSel(page)).toBe("zone:programarea:GAA");
+    await expectCameraSettlesIn(
+      page,
+      [-158, 26, -156, 28],
+      "the FIRST pick (GAA) did not zoom -- test setup is broken, not just the regression",
+    );
+
+    await input.fill("ALA");
+    await expect(page.getByRole("option", { name: "Aleutian Arc (ALA)" })).toBeVisible();
+    await input.press("Enter");
+    await expect.poll(() => urlSel(page)).toBe("zone:programarea:ALA");
+    await expectCameraSettlesIn(
+      page,
+      [-170, 20, -168, 22],
+      "the SECOND pick (ALA) did not zoom -- this is the live-site regression",
+    );
   });
 
   test("typing '-140, 57' selects a cell -- URL carries sel=cell:", async ({ page }) => {

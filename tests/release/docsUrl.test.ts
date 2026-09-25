@@ -3,7 +3,13 @@
 // (root branch only) and fails again under the seeded fault "docsurl-always-root"
 // (scripts/test-faults.mjs), which reverts the function to `return DOCS_ROOT` unconditionally.
 import { describe, expect, it } from "vitest";
-import { ATLAS_CHAPTER_PATH, DOCS_ROOT, atlasDocsUrl } from "../../src/lib/release/docsUrl";
+import {
+  ATLAS_CHAPTER_PATH,
+  DOCS_ROOT,
+  RELEASE_NOTES_CHAPTER_PATH,
+  atlasDocsUrl,
+  releaseNotesUrl,
+} from "../../src/lib/release/docsUrl";
 
 describe("atlasDocsUrl (P10)", () => {
   it("public release: the version's own Atlas chapter on the public book", () => {
@@ -35,5 +41,39 @@ describe("atlasDocsUrl (P10)", () => {
 
   it("the chapter path is exactly what the docs book publishes for apps/atlas.qmd", () => {
     expect(ATLAS_CHAPTER_PATH).toBe("apps/atlas.html");
+  });
+});
+
+// UI-16 (round 3): the About modal's "What changed" -- the DATA release's own notes chapter, not
+// the app's CHANGELOG.md (the atlas CODE's history) and not `atlasDocsUrl` (the app's own guide).
+// Mirrors `atlasDocsUrl`'s own public/restricted/unknown resolution exactly (shared internal
+// helper) -- these tests are the same shape as that describe block's, one chapter path swapped.
+describe("releaseNotesUrl (UI-16)", () => {
+  it("public release: the version's own release-notes chapter on the public book", () => {
+    expect(releaseNotesUrl("v7", "public")).toBe(
+      "https://marinesensitivity.org/docs/v7/release_notes.html",
+    );
+  });
+
+  it("restricted release: the chapter on the signed-in preview host, not the public book", () => {
+    expect(releaseNotesUrl("v9", "restricted")).toBe(
+      "https://preview.marinesensitivity.org/docs/v9/release_notes.html",
+    );
+  });
+
+  it("restricted release honours an overridden preview base (test seam)", () => {
+    expect(releaseNotesUrl("v9", "restricted", "https://preview.example.org")).toBe(
+      "https://preview.example.org/docs/v9/release_notes.html",
+    );
+  });
+
+  it("unknown access / no version yet resolved: the book root, never a guessed chapter path", () => {
+    expect(releaseNotesUrl("v99", "unknown")).toBe(DOCS_ROOT);
+    expect(releaseNotesUrl(null, "public")).toBe(DOCS_ROOT);
+    expect(releaseNotesUrl(undefined, "restricted")).toBe(DOCS_ROOT);
+  });
+
+  it("the chapter path", () => {
+    expect(RELEASE_NOTES_CHAPTER_PATH).toBe("release_notes.html");
   });
 });

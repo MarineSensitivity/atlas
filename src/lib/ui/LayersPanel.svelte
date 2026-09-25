@@ -1,6 +1,6 @@
 <script lang="ts" module>
   import type { SegmentedOption } from "./Segmented.svelte";
-  import type { SelectOption, SelectOptionGroup } from "./Select.svelte";
+  import type { SelectOptionGroup } from "./Select.svelte";
   import type { Outline } from "../state/types";
 
   /** P round deliverable 1 (Ben, live-review 2026-09-24): "emphasize Raster Cells vs Program Areas
@@ -33,9 +33,11 @@
 
   /** R3 deliverable 3: the Layer (metric) picker, promoted from inside the Data row's own body
    * (`lens/scores/LayersPanel.svelte`'s old bespoke native `<select>`) to panel-level, directly
-   * below the unit toggle — paired with {@link LayersZoomField} in one row (desktop) / stacked
-   * (phone). `groups` is `Select.svelte`'s new `<optgroup>` support (R3-B2) — this component no
-   * longer hand-rolls its own grouped `<select>`. Species has no metric-layer choice of its own (it
+   * below the unit toggle — full width (W6, 2026-09-25: the field it used to sit beside, "Zoom to
+   * region", moved into the Search bar's Regions group — `search.ts#matchRegions`/`selectRegion`
+   * — since the search field was already "a zoom to this place"). `groups` is `Select.svelte`'s new
+   * `<optgroup>` support (R3-B2) — this component no longer hand-rolls its own grouped `<select>`.
+   * Species has no metric-layer choice of its own (it
    * picks a SPECIES, a different mechanism entirely, via its own `LayerBarView` inside
    * `dataControls`) — `SpeciesLens.svelte` omits this prop and that row simply does not render. */
   export interface LayersLayerField {
@@ -46,16 +48,6 @@
     /** the current layer's own one-line description — rendered under the field,
      * `data-testid="layer-description"`, unchanged from where it lived before this move. */
     description?: string | null;
-  }
-
-  /** R3 deliverable 3: "Study area" renamed "Zoom to region" and promoted to sit beside
-   * {@link LayersLayerField} (desktop) / below it (phone) — same `Select.svelte`, same
-   * `selStore.set({area, map: undefined})` behaviour, only the label and position changed. */
-  export interface LayersZoomField {
-    label: string;
-    value: string;
-    options: SelectOption[];
-    onChange: (value: string) => void;
   }
 
   /** R3 deliverable 6, reshaped by the fix round (Opus 5.5 review, D7): the "Outlines" row's
@@ -157,8 +149,6 @@
     /** R3 deliverable 3 — see {@link LayersLayerField}. Omitted by the species lens (no metric
      * layer choice there). */
     layerField?: LayersLayerField;
-    /** R3 deliverable 3 — see {@link LayersZoomField}. */
-    zoomField?: LayersZoomField;
     /** R3 deliverable 6 — see {@link LayersOutlineChoice}. Omitted while a lens has not resolved
      * `sel`/`boot` yet; the "Outlines" row then still expands but shows no radio body,
      * matching `dataControls`' own "nothing to render yet" convention. */
@@ -177,7 +167,6 @@
     dataControls,
     unitToggle,
     layerField,
-    zoomField,
     outline,
     projection,
     rowState,
@@ -297,30 +286,17 @@
     </div>
   {/if}
 
-  {#if layerField || zoomField}
+  {#if layerField}
     <div class="fields-row">
-      {#if layerField}
-        <label class="field field-layer">
-          <span class="field-label">{layerField.label}</span>
-          <Select
-            label={layerField.label}
-            value={layerField.value}
-            groups={layerField.groups}
-            onchange={layerField.onChange}
-          />
-        </label>
-      {/if}
-      {#if zoomField}
-        <label class="field field-zoom">
-          <span class="field-label">{zoomField.label}</span>
-          <Select
-            label={zoomField.label}
-            value={zoomField.value}
-            options={zoomField.options}
-            onchange={zoomField.onChange}
-          />
-        </label>
-      {/if}
+      <label class="field field-layer">
+        <span class="field-label">{layerField.label}</span>
+        <Select
+          label={layerField.label}
+          value={layerField.value}
+          groups={layerField.groups}
+          onchange={layerField.onChange}
+        />
+      </label>
     </div>
     {#if layerField?.description}
       <p class="note" data-testid="layer-description">{layerField.description}</p>
@@ -824,27 +800,9 @@
     outline-offset: -2px;
   }
 
-  /* CSS-only hover/focus tooltip, the SAME `content: attr(data-tooltip)` convention as the top
-     bar's own `.tool[data-tooltip]` (shell.css) -- scoped locally here since `.move-btn` is a
-     component-scoped class, not `.tool`. `aria-label` above already carries the accessible name;
-     this pseudo-element is decorative only. */
-  .move-btn[data-tooltip]:hover::after,
-  .move-btn[data-tooltip]:focus-visible::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    top: calc(100% + var(--space-1));
-    right: 0;
-    z-index: 30;
-    padding: var(--space-1) var(--space-2);
-    border: 1px solid var(--border-control);
-    border-radius: var(--radius-control);
-    background: var(--surface-raised);
-    color: var(--text-primary);
-    font-size: var(--text-xs);
-    white-space: nowrap;
-    box-shadow: var(--elev-2);
-    pointer-events: none;
-  }
+  /* UI-11 (round 3): the CSS-only `[data-tooltip]` hover/focus tooltip is now ONE global utility
+     (`src/lib/ui/tooltip.css`, imported once at the app root) -- this was a second, `.move-btn`-
+     scoped copy of the identical rule `shell.css`'s own `.tool[data-tooltip]` also carried. */
 
   .row-body {
     padding: 0 var(--space-2) var(--space-2);
@@ -958,14 +916,11 @@
     outline-offset: 2px;
   }
 
-  /* phone: the Layer + Zoom-to-region fields stack (Ben: "below it" on the phone, vs "to its
-     RIGHT" on desktop) -- `.fields-row`'s `flex-wrap: wrap` already does this once each field's
-     basis (160px) no longer fits two abreast; this just forces it unconditionally below the panel
-     max-width the phone sheet gives it. `.field`'s own `flex: 1 1 160px` MUST be reset here too --
-     once `flex-direction` turns column, a 160px flex-BASIS applies along the (now vertical) main
-     axis, i.e. a 160px-tall field with a huge empty gap under its own (much shorter) content. This
-     was a real bug, caught by eyes-on (phone-04-layers-full): a ~200px blank gap sat between the
-     Layer select and "Zoom to region". */
+  /* phone: `.field`'s own `flex: 1 1 160px` still applies inside `.fields-row` (now one field, the
+     Layer select, full width since W6 moved "Zoom to region" into the Search bar) -- kept `flex:
+     none` here so a future SECOND field added to this row cannot silently reproduce the ~200px
+     blank-gap bug eyes-on once caught (phone-04-layers-full): a 160px flex-BASIS applying along a
+     column `flex-direction`'s now-vertical main axis. */
   @media (max-width: 480px) {
     .fields-row {
       flex-direction: column;

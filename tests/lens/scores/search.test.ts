@@ -5,12 +5,29 @@
 // (no unit test for the wiring itself, only for the pure logic it calls).
 import { describe, expect, it } from "vitest";
 import {
+  defaultRegions,
+  defaultZones,
   formatCoordLabel,
+  matchRegions,
   matchZones,
   parseCoordinateQuery,
   scoresSearch,
+  scoresSearchDefault,
 } from "../../../src/lens/scores/search";
 import { BOOT_V1_PLANAREA, BOOT_V7 } from "./fixtures";
+
+/** BOOT_V7 with a `study_areas` fixture, real, that carries more than the one `FULL` row --
+ * W6's own "Regions move into the Search bar" fields. */
+const BOOT_V7_REGIONS = {
+  ...BOOT_V7,
+  study_areas: [
+    { key: "FULL", label: "All US waters", lon: -101.304, lat: 46.9, zoom: 2.16 },
+    { key: "AK", label: "Alaska", lon: -164.654, lat: 63.327, zoom: 2.35 },
+    { key: "AT", label: "Atlantic", lon: -67.627, lat: 29.862, zoom: 2.71 },
+    { key: "GA", label: "Gulf of America", lon: -89.089, lat: 26.251, zoom: 3.74 },
+    { key: "PA", label: "Pacific", lon: -171.57, lat: 28.541, zoom: 1.7 },
+  ],
+};
 
 describe("matchZones", () => {
   it("exact key match (case-insensitive)", () => {
@@ -207,6 +224,86 @@ describe("parseCoordinateQuery", () => {
   });
 });
 
+// W6 (Ben, 2026-09-25): "Regions move into the Search bar" -- the Layers pane's own "Zoom to
+// region" select is removed; `studyAreasFromBoot(boot)` rows are now searched/listed here instead.
+describe("matchRegions", () => {
+  it("exact key match (case-insensitive)", () => {
+    expect(matchRegions(BOOT_V7_REGIONS, "AK")).toEqual([
+      { kind: "region", key: "AK", label: "Alaska" },
+    ]);
+    expect(matchRegions(BOOT_V7_REGIONS, "ak")).toEqual(matchRegions(BOOT_V7_REGIONS, "AK"));
+  });
+
+  it("label substring match", () => {
+    expect(matchRegions(BOOT_V7_REGIONS, "gulf")).toEqual([
+      { kind: "region", key: "GA", label: "Gulf of America" },
+    ]);
+  });
+
+  it("an unpublished region / no match: [], never a throw", () => {
+    expect(matchRegions(BOOT_V7_REGIONS, "nonexistent")).toEqual([]);
+    expect(matchRegions(null, "AK")).toEqual([]);
+  });
+
+  it("a blank query matches nothing, never 'everything' -- same rule matchZones follows", () => {
+    expect(matchRegions(BOOT_V7_REGIONS, "")).toEqual([]);
+    expect(matchRegions(BOOT_V7_REGIONS, "   ")).toEqual([]);
+  });
+
+  it("caps at `limit`", () => {
+    expect(matchRegions(BOOT_V7_REGIONS, "a", 2)).toHaveLength(2);
+  });
+});
+
+describe("defaultRegions / defaultZones (the blank-query 'open on focus' listing)", () => {
+  it("defaultRegions lists every published study area, unranked, in boot order", () => {
+    expect(defaultRegions(BOOT_V7_REGIONS)).toEqual([
+      { kind: "region", key: "FULL", label: "All US waters" },
+      { kind: "region", key: "AK", label: "Alaska" },
+      { kind: "region", key: "AT", label: "Atlantic" },
+      { kind: "region", key: "GA", label: "Gulf of America" },
+      { kind: "region", key: "PA", label: "Pacific" },
+    ]);
+  });
+
+  it("defaultRegions caps at `limit`", () => {
+    expect(defaultRegions(BOOT_V7_REGIONS, 2)).toHaveLength(2);
+  });
+
+  it("defaultZones lists every published Program Area, sorted by its resolved label", () => {
+    const boot = {
+      zones: {
+        programarea: [
+          { key: "WGA", name: "Western Gulf of Alaska", metrics: {} },
+          { key: "GAA", name: "St. George Basin", metrics: {} },
+        ],
+      },
+      units: [{ fld: "programarea_key", pmtiles: "x", source_layer: "programarea" }],
+    };
+    expect(defaultZones(boot)).toEqual([
+      { kind: "zone", unit: "programarea", key: "GAA", label: "St. George Basin (GAA)" },
+      { kind: "zone", unit: "programarea", key: "WGA", label: "Western Gulf of Alaska (WGA)" },
+    ]);
+  });
+
+  it("defaultZones is [] for a release with no selectable unit", () => {
+    expect(defaultZones({})).toEqual([]);
+  });
+
+  it("scoresSearchDefault combines regions first, then zones", () => {
+    const boot = {
+      ...BOOT_V7_REGIONS,
+      zones: { ...BOOT_V7_REGIONS.zones, programarea: [{ key: "GAA", metrics: {} }] },
+    };
+    const results = scoresSearchDefault(boot);
+    expect(results[0]).toEqual({ kind: "region", key: "FULL", label: "All US waters" });
+    expect(results.some((r) => r.kind === "zone" && r.key === "GAA")).toBe(true);
+    expect(results.findIndex((r) => r.kind === "region")).toBeLessThan(
+      results.findIndex((r) => r.kind === "zone"),
+    );
+  });
+});
+
 describe("formatCoordLabel", () => {
   it("default order reads 'lon, lat'", () => {
     expect(formatCoordLabel({ lon: -140, lat: 57, swapped: false })).toBe(
@@ -251,5 +348,27 @@ describe("scoresSearch", () => {
       units: [{ fld: "programarea_key", pmtiles: "x", source_layer: "programarea" }],
     };
     expect(scoresSearch(boot, "zone", 5)).toHaveLength(5);
+  });
+
+  // W6: a region match now falls in ahead of a zone match, behind a coordinate.
+  it("a region match sorts ahead of a zone match", () => {
+    const boot = {
+      ...BOOT_V7_REGIONS,
+      zones: {
+        ...BOOT_V7_REGIONS.zones,
+        programarea: [{ key: "GAA", name: "Gulf Area", metrics: {} }],
+      },
+    };
+    const results = scoresSearch(boot, "gulf");
+    expect(results[0]).toEqual({ kind: "region", key: "GA", label: "Gulf of America" });
+    expect(results).toContainEqual({
+      kind: "zone",
+      unit: "programarea",
+      key: "GAA",
+      label: "Gulf Area (GAA)",
+    });
+    expect(results.findIndex((r) => r.kind === "region")).toBeLessThan(
+      results.findIndex((r) => r.kind === "zone"),
+    );
   });
 });

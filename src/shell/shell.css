@@ -37,6 +37,8 @@
    the real Segmented component both carry, so both the skeleton and the hydrated frame pick up
    the SAME floor symmetrically (never a skeleton/hydrated mismatch). */
 @import "../lib/ui/touch-targets.css";
+/* UI-11: the ONE `[data-tooltip]` hover/focus tooltip mechanism -- see that file's own header. */
+@import "../lib/ui/tooltip.css";
 
 *,
 *::before,
@@ -193,11 +195,23 @@ a {
 
 /* phone: compact -- BOTH credits (MapLibre + CARTO/OSM) stay, only smaller and tighter (the parity
    audit's own ask: "both credits visible... at 390x844"), and it sits above the rail row instead
-   of under it. */
+   of under it.
+
+   UI-2 fix (Opus 5.5 eyes-on review, round 3): the sheet sits ON TOP of this element at both
+   "peek" and "half" (`elementFromPoint` at the attribution returned the sheet at both detents,
+   `harness/probe7.mjs`) -- the credit showed only faintly THROUGH the translucent sheet, which
+   fails OSM's ODbL requirement that the credit stay visible. `--legend-chip-sheet-height` is the
+   SAME variable the legend chip already uses (`.legend-chip-region`, above) -- Shell.svelte sets it
+   inline on THIS element too, to the sheet's real measured height while `legendChipMode` reports
+   "floating" (peek/half), 0 otherwise (at "full" the sheet covers nearly the whole viewport, so
+   stacking the full height here would push the credit off-screen -- unchanged "above the rail row"
+   there, same as before this fix). */
 @media (max-width: 899px) {
   .map-attribution {
     left: var(--space-1);
-    bottom: calc(var(--size-rail-row, 64px) + var(--space-1));
+    bottom: calc(
+      var(--size-rail-row, 64px) + var(--legend-chip-sheet-height, 0px) + var(--space-1)
+    );
     max-width: calc(100vw - var(--space-4));
     padding: 1px var(--space-1);
     font-size: 9px;
@@ -431,33 +445,14 @@ button.chip {
 }
 
 /* owner review item 5 (live 0.10.62, "let's drop words but add tooltip on hover: Share, Help,
-   Feedback, Info"): a CSS-only hover/focus tooltip, `content: attr(data-tooltip)` -- no JS state,
-   so the SAME label a screenshot needs to prove ("the utility menu with tooltips") is a real
-   painted element on `:hover`, not a native browser tooltip a headless capture cannot show.
-   `aria-label` (Shell.svelte/TopBarActions.svelte) carries the accessible name; this pseudo-element
-   is decorative only (generated content is not exposed to the accessibility tree), so nothing is
-   announced twice. `.tool` already scopes both a real `<button>` and the one real `<a>` (Feedback) --
-   see that rule's own header. */
-.tool[data-tooltip] {
-  position: relative;
-}
-.tool[data-tooltip]:hover::after,
-.tool[data-tooltip]:focus-visible::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  top: calc(100% + var(--space-2));
-  right: 0;
-  z-index: 30;
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-control);
-  background: var(--surface-raised);
-  color: var(--text-primary);
-  font-size: var(--text-xs);
-  white-space: nowrap;
-  box-shadow: var(--elev-2);
-  pointer-events: none;
-}
+   Feedback, Info"): icon-only + a hover/focus tooltip. `aria-label` (Shell.svelte/
+   TopBarActions.svelte) carries the accessible name; the tooltip itself is decorative only
+   (generated content is not exposed to the accessibility tree), so nothing is announced twice.
+   UI-11 (round 3): the actual `[data-tooltip]` mechanism moved to `src/lib/ui/tooltip.css` (a
+   global utility, imported once above) -- this WAS a second, `.tool`-scoped copy of the identical
+   rule `LayersPanel.svelte`'s `.move-btn[data-tooltip]` also carried, and every OTHER icon-only
+   button in the app (Panel/Sheet's dock/detent controls, Table's info/download buttons, a popup's
+   close button) had no tooltip mechanism to opt into at all -- see that file's own header. */
 
 /* R2: the inverse of `.topbar-desktop-only` (below, in the phone media query) -- the ⋯ overflow
    trigger (TopBarActions.svelte) is the one topbar control that exists ONLY on the phone. P1

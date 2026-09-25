@@ -332,10 +332,13 @@
       <div class="panel-head">
         <h2 class="panel-title" id={titleId}>{title}</h2>
         <div class="panel-controls" role="group" aria-label="Panel position and size">
+          <!-- UI-11 (round 3): `data-tooltip` equal to `aria-label` -- these five icon-only
+               controls had no tooltip mechanism at all before this round. -->
           <button
             type="button"
             aria-pressed={geometry.dock === "left"}
             aria-label="Dock left"
+            data-tooltip="Dock left"
             disabled={geometry.maximized}
             onclick={() => setDock("left")}
           >
@@ -345,6 +348,7 @@
             type="button"
             aria-pressed={geometry.dock === "bottom"}
             aria-label="Dock bottom"
+            data-tooltip="Dock bottom"
             disabled={geometry.maximized}
             onclick={() => setDock("bottom")}
           >
@@ -354,6 +358,7 @@
             type="button"
             aria-pressed={geometry.dock === "right"}
             aria-label="Dock right"
+            data-tooltip="Dock right"
             disabled={geometry.maximized}
             onclick={() => setDock("right")}
           >
@@ -364,6 +369,7 @@
             data-panel-control="maximize"
             aria-pressed={geometry.maximized}
             aria-label={geometry.maximized ? "Restore" : "Full screen"}
+            data-tooltip={geometry.maximized ? "Restore" : "Full screen"}
             onclick={toggleMaximize}
           >
             <Icon name={geometry.maximized ? "restore" : "maximize"} size={18} />
@@ -374,6 +380,7 @@
             aria-expanded="true"
             aria-controls={bodyId}
             aria-label="Collapse to a pill"
+            data-tooltip="Collapse to a pill"
             onclick={collapse}
           >
             <Icon name="collapseSide" size={18} />

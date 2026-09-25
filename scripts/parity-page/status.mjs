@@ -59,7 +59,7 @@ export const STATUS = {
       },
       {
         file: "e2e/scores.studyarea.spec.ts",
-        name: "changing the Zoom to region select FULL -> AK flies there (real moveend) and writes area=AK to the URL",
+        name: "picking Alaska from the Search bar's Regions group flies there (real moveend) and writes area=AK to the URL",
       },
       {
         file: "e2e/scores.studyarea.spec.ts",

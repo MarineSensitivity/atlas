@@ -108,8 +108,14 @@
     border-color: var(--border-control);
   }
 
+  /* UI-10 fix (round 3, Opus 5.5 eyes-on review): "quiet" ON read as lavender on navy and
+     olive-brown on paper -- neither is the gold 'selected' colour every other on-state uses, so
+     ON did not read the SAME between themes. Decision (this round): keep the TRACK neutral --
+     that is the whole point of "quiet" (P round deliverable 1, above: avoid 8 rows glowing gold
+     at once) -- but give the THUMB `--fill-accent`, so there is still one consistent gold cue for
+     "on" in both themes, just a small dot rather than the whole track. */
   .switch--quiet.switch--on .switch-thumb {
-    background: var(--text-primary);
+    background: var(--fill-accent);
   }
 
   /* SC 1.4.1/1.4.11: forced-colors mode strips the track/thumb backgrounds to nothing distinct,

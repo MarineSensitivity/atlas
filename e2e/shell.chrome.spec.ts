@@ -140,7 +140,7 @@ test.describe("R2: Send feedback", () => {
 });
 
 test.describe("R2: phone ⋯ overflow menu", () => {
-  test("at 390x844, the ⋯ trigger opens a role=menu with Share/Download/Report/Feedback/About/Take a tour/Docs/Theme", async ({
+  test("at 390x844, the ⋯ trigger opens a role=menu with Share/Download/Feedback/About/Take a tour/Docs/Theme", async ({
     page,
   }) => {
     await gotoShell(page, PHONE);
@@ -159,12 +159,15 @@ test.describe("R2: phone ⋯ overflow menu", () => {
     // fit once the P1 search button was added beside ⋯ -- it moved here, last (mirroring its own
     // rightmost position in the desktop topbar). `gotoShell` loads `?theme=navy`, so the
     // DESTINATION theme reads "light" (this file's own vocabulary note, U2a).
-    await expect(items).toHaveCount(8);
+    //
+    // UI-16 (round 3, Opus 5.5 eyes-on review): "Report" DROPPED -- desktop's top bar has never
+    // had a Report quick-action (only the rail's "Report" tool, present on both viewports), so
+    // this item was the one thing that did NOT match the desktop equivalent.
+    await expect(items).toHaveCount(7);
     const labels = await items.evaluateAll((els) => els.map((e) => e.textContent?.trim()));
     expect(labels).toEqual([
       "Share",
       "Download…",
-      "Report",
       "Feedback",
       "About this release",
       "Take a tour",
