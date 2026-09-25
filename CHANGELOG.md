@@ -43,9 +43,33 @@ live build still showed after the prior fix rounds.
      areas) has loaded, get `cam === null`, and used to latch `prevCameraKey` anyway — so a LATER
      pass, once `boot` arrived, saw "already fitted" and never retried. It now latches only once a
      camera was actually computed.
-     "Whole range" frames the confirmed-data arc (or the model's own raw bbox, for a bundle-published
-     globe-spanning extent); the walrus (a real, narrowable antimeridian wrap, one compact location) is
-     unaffected throughout. Verified live end-to-end, both viewports, "US waters" and "Whole range".
+
+  Second re-review pass (orchestrator eyes-on of the merged build) found three MORE problems with
+  the toggle, fixed the same round:
+  4. **Phone framing (blocking):** the narrowed "US waters" box (~136° wide) still could not fit
+     390px — it settled at zoom 0.78, a tiny globe mostly hidden behind the sheet, empty sky above.
+     New `phoneAwareWideRangeBounds()` (`src/lib/map/camera.ts`) substitutes `PHONE_DEFAULT_BOUNDS`
+     — the app's own known-good phone default view — whenever the narrowed box would zoom out
+     further than that default already does; gated to the phone only (`isPhone`), desktop untouched.
+  5. **"Whole range" missing the western Pacific hits:** on desktop it read as nearly identical to
+     "US waters" (never showing Guam/CNMI, 145°E); on the phone it centred at lat -56.5, south of
+     the confirmed-data arc's own -17.7° south edge, entirely behind the sheet. Root cause:
+     `boundsToCameraView`'s own asymmetric-padding shift overshoots badly at the near-zero zoom this
+     ~150°-wide arc needs. New `symmetricPadding()` (`src/lib/map/camera.ts`) splits each axis's
+     total chrome reserve evenly (the fitted zoom is unaffected) while zeroing both differentials,
+     so "Whole range" — now computed directly via `boundsToCameraView`, never through MapLibre's own
+     `cameraForBounds()` — always lands on the arc's true geometric midpoint. Verified live: both
+     viewports now settle at the SAME centre (`lng -140.5, lat 28.0`), visibly including the western
+     Pacific data.
+  6. **Speed:** `narrowLongitude()` probed its ~14 `/cog/point` candidates one at a time, taking
+     11-14s live before the toggle appeared. Now bounded-concurrent (4 in flight, never unbounded —
+     "never hammer titiler"), result order still independent of the real network's own response
+     order. Measured against the real titiler: the probe sweep itself dropped from ~7.0s sequential
+     to ~2.1s concurrent; end-to-end (a real browser run) the toggle now appears in ~3.5-3.7s.
+
+  "Whole range" frames the confirmed-data arc (or the model's own raw bbox, for a bundle-published
+  globe-spanning extent); the walrus (a real, narrowable antimeridian wrap, one compact location) is
+  unaffected throughout. Verified live end-to-end, both viewports, "US waters" and "Whole range".
 - **Fixed: the exported map title read "score · score"** for the default Scores layer (Download
   menu, PNG/SVG, both themes) — `src/lib/download/footer.ts` gains `titleWithUnit()`, which skips
   the unit when it equals the title (case-insensitive, trimmed); a species title + a distinct unit
