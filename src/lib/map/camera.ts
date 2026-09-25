@@ -287,24 +287,55 @@ export function paddedStudyAreaCenter(
  *      WIDTH-bound (63-75 deg of longitude vs. a 390px-wide phone), so `boundsToCameraView`'s zoom
  *      is set entirely by the east-west span -- moving the south/north edges only re-centers the
  *      same zoom, it never tightens it.
- *   3. **`PHONE_DEFAULT_BOUNDS = [[-128,24],[-65,52]]`** (this constant): trimming the WIDTH (west
- *      -135 -> -128, east -60 -> -65) raises the zoom to ~2.1 at the half-detent padding, while
- *      -128 W still carries the south-east-Alaska panhandle/Gulf-of-Alaska edge into frame and -65
- *      W keeps the whole Atlantic seaboard + Florida in. Verified live (real build screenshot,
- *      `phone-02-map`/`phone-03-layers-half`): the free area shows real coloured scored cells along
- *      the Pacific coast, the Gulf of Mexico, and the Atlantic/Florida shelf, WITH a visible tan/
- *      green sliver of Alaska hugging the top-left edge of the globe -- exactly the "lower 48 +
- *      Alaska hint" the decision asks for. Some empty ocean south of CONUS remains (an unavoidable
- *      trade at this aspect ratio on a portrait phone), but it no longer dominates the frame the way
- *      step 1 did.
+ *   3. `[[-128,24],[-65,52]]`: trimming the WIDTH (west -135 -> -128, east -60 -> -65) raised the
+ *      zoom to ~2.0 at the half-detent padding, while -128 W still carried the south-east-Alaska
+ *      panhandle/Gulf-of-Alaska edge into frame and -65 W kept the whole Atlantic seaboard +
+ *      Florida in. Verified live: the free area showed real coloured scored cells along the
+ *      Pacific coast, the Gulf of Mexico, and the Atlantic/Florida shelf, WITH a visible tan/green
+ *      sliver of Alaska hugging the top-left edge of the globe. This landed the first pass.
+ *
+ * SECOND PASS (orchestrator, 2026-09-25, after reading a real `phone-02-map.png` screenshot of step
+ * 3 above): coverage was right, but roughly the TOP THIRD of the free area was empty navy "sky"
+ * above the globe's own rendered rim -- step 3's own "the box's real geography already fills the
+ * free area" reasoning undersold how much of that vertical space the globe's disk itself was NOT
+ * covering at zoom ~2.0. Measured directly with `e2e/shell.firstview.phone.spec.ts`'s two-colour
+ * (black space / white water) probe, as a PERCENT of the free area (not raw px against the whole
+ * canvas, which extends behind the sheet): 43.0% sky at the default "half" sheet detent, 22.7% at
+ * "peek" -- confirming the screenshot's own "roughly a third" read.
+ *
+ * Two things this pass established, both by direct measurement rather than the zoom formula alone
+ * (`e2e/shell.firstview.phone.spec.ts`'s own header has the exact numbers):
+ *   - The sheet's bottom padding has ZERO effect on the initial zoom here: this bbox is
+ *     WIDTH-bound (its longitude span exceeds what a 390px phone can show without shrinking, well
+ *     before the north-south span becomes the binding dimension), so `half` and `peek` measured
+ *     IDENTICAL zoom and IDENTICAL absolute gapPx -- only the free area's own height (hence the
+ *     gap's PERCENT of it) differs between them. Narrowing the bbox's own longitude span is the
+ *     only lever that raises zoom and shrinks the sky band.
+ *   - The relationship between span and the measured gap is NOT smoothly proportional to the zoom
+ *     formula: span 43 measured 11.6% (half) / 6.1% (peek); span 40 measured 4.6% / 2.4% -- a
+ *     "cliff", because the exact pixel the probe first hits depends on where land vs. open ocean
+ *     sits at that specific latitude/longitude, not on zoom in the abstract.
+ *
+ * **`PHONE_DEFAULT_BOUNDS = [[-119,25],[-78,51]]`** (this constant, span 41, zoom ~2.59): narrowed
+ * further than step 3, keeping the Pacific coast and Florida/the Gulf in frame (both explicitly
+ * required) -- but a span this narrow cannot ALSO carry the Alaska hint (needs west out to ~-130)
+ * or the Atlantic seaboard north of roughly the Carolinas (needs east out to ~-65) within the same
+ * 10%-sky budget: narrowing FROM EITHER EDGE is the same lever (less width, more zoom, less sky),
+ * so keeping all of "Alaska + Pacific + the whole Atlantic + Florida" was never possible once the
+ * sky-band target is taken as a hard constraint. Per the explicit instruction ("if the Alaska
+ * sliver cannot survive that, keep the full lower 48 with minimal sky and say so with the shot"):
+ * the Alaska hint is dropped, and the Atlantic is ALSO trimmed north of the Carolinas -- a
+ * corollary of the identical physical constraint, not a separate concession. Measured on the real
+ * fixture: 7.0% sky at half detent, 3.7% at peek, both comfortably under the 10% target (live
+ * screenshots: `phone-02-map`/`phone-03-layers-half`, round-3 W4 report).
  *
  * This DELIBERATELY does not chase the old "~3 floor" zoom heuristic P9's header below still
  * documents for the ORIGINAL bug (a near-whole-study-area bbox at zoom ~1.27 showing empty sky):
  * that floor was specific to a THIN default (a thin bbox or a boosted point) whose own frame
- * carries little real vertical content at low zoom. This bbox is wide AND tall on purpose (63 deg
- * lon x 28 deg lat) -- at its own low zoom (~2.1) the box's real geography already fills the free
- * area's vertical extent, so the empty-sky failure mode this function exists to avoid does not
- * recur; the live screenshot is the proof, not a zoom number in isolation.
+ * carries little real vertical content at low zoom. This bbox's own zoom (~2.59) happens to land
+ * close to that old floor now, but that is a coincidence of what the sky-band target required here,
+ * not a reason to treat "~3" as a rule -- the live screenshot is the proof, not a zoom number in
+ * isolation (unchanged from the first pass's own reasoning).
  *
  * Never the whole study area's own bbox (Alaska through the Caribbean, ~114 degrees of longitude,
  * zoom ~1.27): even wider than this constant, and its own north-south span is dominated by open
@@ -316,8 +347,8 @@ export function paddedStudyAreaCenter(
  * centroid already keeps real coastline in frame at the study-area preset's own zoom).
  */
 export const PHONE_DEFAULT_BOUNDS: CameraBoundsInput = [
-  [-128, 24],
-  [-65, 52],
+  [-119, 25],
+  [-78, 51],
 ];
 
 /** the phone's DEFAULT first-view camera -- see {@link PHONE_DEFAULT_BOUNDS}'s own header. */

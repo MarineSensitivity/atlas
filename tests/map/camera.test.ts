@@ -382,20 +382,21 @@ describe("phoneDefaultCamera / PHONE_DEFAULT_BOUNDS — the phone's DEFAULT firs
   const PHONE_VIEWPORT = { width: 390, height: 844 };
   const PHONE_HALF_PADDING = { top: 48, right: 0, bottom: 452, left: 0 };
 
-  it("PHONE_DEFAULT_BOUNDS covers the lower 48's waters with a south-east-Alaska/GOA sliver, not the whole study area", () => {
+  it("PHONE_DEFAULT_BOUNDS covers the Pacific coast and Florida/the Gulf, not the whole study area", () => {
     const [[west, south], [east, north]] = PHONE_DEFAULT_BOUNDS;
-    // west edge reaches into the Gulf of Alaska/AK panhandle (west of Washington, east of the
-    // Aleutians); east edge keeps the whole Atlantic seaboard + Florida; south/north bracket the
-    // Gulf of Mexico/Caribbean up to just north of the AK panhandle -- a regression here (e.g.
-    // narrowed back to a single-region box, or widened back to the full Alaska-Caribbean extent)
-    // is caught by these bounds together with the region-content shot in the round-3 report.
-    expect(west).toBeLessThan(-115); // reaches west of the lower 48 into the GOA/AK hint
-    expect(west).toBeGreaterThan(-150); // but stops well short of the whole Bering Sea/Aleutians
-    expect(east).toBeLessThan(-55);
-    expect(east).toBeGreaterThan(-75); // keeps Florida/the Atlantic seaboard in frame
+    // R3-A2 SECOND PASS (camera.ts's own header has the full measurement): west edge reaches the
+    // Pacific coast (California/Oregon); east edge keeps Florida/the Gulf coast in frame but stops
+    // short of the Northeast Atlantic (needed to clear the 10%-sky-band target); south/north
+    // bracket the Gulf of Mexico up to the Pacific Northwest -- a regression here (e.g. narrowed
+    // back to a single-region box, or widened back toward the full Alaska-Caribbean extent) is
+    // caught by these bounds together with the region-content shot in the round-3 report.
+    expect(west).toBeLessThan(-110); // reaches the Pacific coast
+    expect(west).toBeGreaterThan(-135); // but well short of the Alaska hint (dropped this pass)
+    expect(east).toBeLessThan(-70); // keeps Florida/the Gulf coast in frame
+    expect(east).toBeGreaterThan(-85); // but well short of the whole Atlantic seaboard (also dropped)
     expect(south).toBeGreaterThan(15);
-    expect(south).toBeLessThan(30);
-    expect(north).toBeGreaterThan(45); // reaches up toward the AK panhandle/GOA
+    expect(south).toBeLessThan(35);
+    expect(north).toBeGreaterThan(40);
     expect(north).toBeLessThan(60);
   });
 
@@ -412,21 +413,26 @@ describe("phoneDefaultCamera / PHONE_DEFAULT_BOUNDS — the phone's DEFAULT firs
     // south edge. A generous band, not the bbox's own bounds, is the honest invariant here.
     expect(fit.center[1]).toBeGreaterThan(south - 20);
     expect(fit.center[1]).toBeLessThan(north);
-    // the OLD (broken) mechanism's own center, for contrast -- this must not be anywhere close.
-    expect(Math.abs(fit.center[0] - -101.304)).toBeGreaterThan(3);
+    // the OLD (broken) mechanism's own center, for contrast -- this must not be anywhere close (the
+    // narrower R3-A2 second-pass bbox centres closer to it in longitude than the first pass did, so
+    // this checks BOTH axes together rather than longitude alone, the same OR-of-two-axes shape
+    // e2e/shell.firstview.phone.spec.ts's own "not the FALLBACK centroid" test uses).
+    const dLon = Math.abs(fit.center[0] - -101.304);
+    const dLat = Math.abs(fit.center[1] - 46.9);
+    expect(dLon > 2 || dLat > 5).toBe(true);
   });
 
-  // R3-A2: this wide bbox (63 deg lon x 28 deg lat) is WIDTH-bound on a 390px phone, so its own
-  // zoom is intentionally LOWER than P9's tight single-region box (~4.9) -- camera.ts's own header
-  // explains why the old "~3 empty-sky floor" heuristic does not apply here (a wide/tall bbox's
-  // real geography already fills the free area at a low zoom; live screenshots are the proof, not
-  // a zoom number in isolation). This pins the computed zoom to the measured range instead, so a
-  // regression toward the old whole-study-area bbox (zoom ~1.27) or a narrowing back to a tiny
-  // single-region box (zoom ~4.9+) both go red.
-  it("computes a zoom between the whole-study-area floor (~1.27) and the old tight single-region fit (~4.9)", () => {
+  // R3-A2 SECOND PASS: this narrower bbox (41 deg lon x 26 deg lat) is WIDTH-bound on a 390px
+  // phone, and was deliberately narrowed further than the first pass to bring the sky band under a
+  // 10% target (camera.ts's own header has the full measurement + the live screenshots). Its own
+  // zoom is HIGHER than the first pass's ~1.97 but still clearly below a collapse toward P9's tight
+  // single-region box (~4.9) -- this pins the computed zoom to the measured range, so a regression
+  // toward the old whole-study-area bbox (zoom ~1.27), back toward the first-pass bbox (~1.97, too
+  // much sky), or over-narrowed toward a tight single region (~4.9+) all go red.
+  it("computes a zoom in the SECOND-PASS band, clear of both the first-pass bbox and a tight single-region collapse", () => {
     const fit = phoneDefaultCamera(PHONE_VIEWPORT, PHONE_HALF_PADDING);
-    expect(fit.zoom).toBeGreaterThan(1.5);
-    expect(fit.zoom).toBeLessThan(3);
+    expect(fit.zoom).toBeGreaterThan(2.2);
+    expect(fit.zoom).toBeLessThan(3.5);
   });
 
   it("is just boundsToCameraView(PHONE_DEFAULT_BOUNDS, ...) -- no separate math to drift out of sync", () => {
