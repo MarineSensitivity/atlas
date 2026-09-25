@@ -240,6 +240,24 @@ describe("isPlacesSelectionEmpty: the Layers pane's Selection row dims when Sel.
   it("a drawn/uploaded place selection is NOT empty", () => {
     expect(isPlacesSelectionEmpty("place:0")).toBe(false);
   });
+
+  // R3-rr fix 3 (Opus 5.5 eyes-on review round 3, 2026-09-25): `?pl=z.pa.GAA` loads one place
+  // (Places panel: "1 / 20 places", Download menu offers "Selected places · GeoJSON") with NO
+  // `sel.sel` pick at all — the row used to stay dimmed for want of a SECOND thing this predicate
+  // never checked.
+  it("BUG: places present (placeCount > 0), no sel pick — NOT empty", () => {
+    expect(isPlacesSelectionEmpty(undefined, 1)).toBe(false);
+    expect(isPlacesSelectionEmpty("", 20)).toBe(false);
+  });
+
+  it("no sel pick and no places (placeCount 0, the default) — still empty", () => {
+    expect(isPlacesSelectionEmpty(undefined, 0)).toBe(true);
+    expect(isPlacesSelectionEmpty(undefined)).toBe(true);
+  });
+
+  it("a sel pick with zero places is still NOT empty (sel alone is enough, as before)", () => {
+    expect(isPlacesSelectionEmpty("cell:12345", 0)).toBe(false);
+  });
 });
 
 describe("us: default true (US-only); only us=0 turns it off", () => {

@@ -573,3 +573,47 @@ test.describe("P3 fix: the flower is capped at the half detent so the table stay
     ).toBeGreaterThan(300);
   });
 });
+
+// R3-W3b (CI run 36158947685, "e2e (gallery)" job, axe scrollable-region-focusable): the
+// `.flower-table-scroll` box scrolls independently of the panel (Flower.svelte's own R3-B10
+// comment) but had no way to reach it by keyboard -- a mouse/touch user could scroll it, a
+// keyboard-only or screen-reader user could not. Named after the bug so it can never silently
+// return: a seeded-fault patch (tests/faults/flower-scroll-focusable.patch) removes the
+// tabindex/role/aria-labelledby this test asserts, proven red/green via
+// `node scripts/test-faults.mjs --only flower-scroll-focusable`.
+test.describe("R3-W3b fix: the flower's component table scroll region is keyboard-focusable", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test("the scroll container is a named, tabbable region (tabindex 0 + role region + an accessible name)", async ({
+    page,
+  }) => {
+    await gotoScoresMap(page, "v7");
+    await openFlower(page);
+
+    const scrollRegion = page.locator(".flower-table-scroll");
+    await expect(scrollRegion).toHaveAttribute("tabindex", "0");
+    await expect(scrollRegion).toHaveAttribute("role", "region");
+
+    // accessible name comes from the SAME <caption> the visible table already carries (never a
+    // second, independently-worded label that could drift from it).
+    const ariaLabelledby = await scrollRegion.getAttribute("aria-labelledby");
+    expect(ariaLabelledby, "the scroll region must be named via aria-labelledby").not.toBeNull();
+    const captionId = await page.locator(".flower-table caption").getAttribute("id");
+    expect(ariaLabelledby).toBe(captionId);
+    const captionText = await page.locator(".flower-table caption").innerText();
+    expect(captionText).toContain("Component scores for");
+
+    // real keyboard focus (a real Tab press, not `.focus()` -- browsers do not treat a scripted
+    // `.focus()` call as a keyboard interaction, so `:focus-visible` never fires for it, same
+    // reasoning as e2e/gallery.spec.ts's "real focus ring" describe block above this one's
+    // sibling), and a visible focus ring (the same token/shape Sheet.svelte's .sheet-body and
+    // Panel.svelte's .panel-surface already use). The last petal is the previous tab stop in DOM
+    // order, so one real Tab from it lands on the scroll region.
+    const lastPetal = page.locator(".flower-svg .petal").last();
+    await lastPetal.click();
+    await page.keyboard.press("Tab");
+    await expect(scrollRegion).toBeFocused();
+    const outline = await scrollRegion.evaluate((el) => getComputedStyle(el).outlineStyle);
+    expect(outline, "a focused scroll region must draw a visible focus ring").toBe("solid");
+  });
+});

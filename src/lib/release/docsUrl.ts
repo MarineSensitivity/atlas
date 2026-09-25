@@ -42,9 +42,17 @@ export const ATLAS_CHAPTER_PATH = "apps/atlas.html";
  * history, not the data RELEASE the person is looking at -- workflows' own `data/release_notes.yml`
  * publishes per-version entries into the SAME versioned docs book `atlasDocsUrl` reads, by the SAME
  * "quarto preserves a chapter source's own subdirectory 1:1" rule that file's header documents; no
- * `apps/` prefix, since `release_notes.qmd` is a top-level chapter of the book, not under
- * "Applications"). */
-export const RELEASE_NOTES_CHAPTER_PATH = "release_notes.html";
+ * `apps/` prefix, since the chapter is top-level in the book, not under "Applications").
+ *
+ * R3-rr fix 4 (Opus 5.5 eyes-on review round 3, second pass, 2026-09-25): the chapter's QMD source
+ * is `docs/releases.qmd` (verified: `docs/_quarto.yml` lists `releases.qmd` under its top-level
+ * chapters; there is no `release_notes.qmd` in that repo) — quarto's own "a chapter source renders
+ * to the SAME basename" rule (this file's own header) means the rendered chapter is
+ * `releases.html`, not `release_notes.html`. The live link 404s
+ * (`https://marinesensitivity.org/docs/v7/release_notes.html`); `releases.html` is 200, verified
+ * live 2026-09-25. This constant was simply named after the UNRELATED `data/release_notes.yml` data
+ * file the chapter is built FROM, not after the chapter's own QMD filename. */
+export const RELEASE_NOTES_CHAPTER_PATH = "releases.html";
 
 /**
  * URL of `ver`'s Atlas chapter, or the book root when `ver`/`access` is not known.

@@ -167,9 +167,18 @@ describe("header", () => {
 });
 
 describe("intro and in-app links are RELATIVE (CLAUDE.md's relative-base rule)", () => {
-  it("the intro links to ./index.html at this release", () => {
-    expect(build().intro.appHref).toBe("./index.html?ver=v9");
+  it("the intro links to ./index.html at this release, carrying the report's OWN place token (UI-7)", () => {
+    const href = build().intro.appHref;
+    expect(href.startsWith("./index.html?ver=v9")).toBe(true);
+    // same `pl=` value the header's own permalink hash carries (UI-7: "Open this release in the
+    // Atlas" must not drop the report's places) -- asserted via `toContain` for the same reason
+    // the permalink hash assertion above is: `formatSel`'s own percent-encoding, not re-derived.
+    expect(href).toContain("pl=g1.My%2520box.AAAA");
     expect(build().intro.text).toContain("release v9");
+  });
+
+  it("an empty report (no places) links to the plain release, with no `pl=` at all", () => {
+    expect(build({ places: [] }).intro.appHref).toBe("./index.html?ver=v9");
   });
 
   it("a top-20 row links to the Species lens in this release, relatively", () => {

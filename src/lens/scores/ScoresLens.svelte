@@ -39,6 +39,7 @@
   } from "../../lib/ui/LayersPanel.svelte";
   import { layerByKey, layerGroups, metricKeyLabel, primaryUnitNote, unitOptions } from "./boot";
   import { isPlacesSelectionEmpty } from "../../lib/state/types";
+  import { placesFromHash } from "../../places/model";
   import FlowerPanel from "./FlowerPanel.svelte";
   import TablePanel from "./TablePanel.svelte";
   import type { LayerStackEntry, Outline } from "../../lib/state/types";
@@ -113,8 +114,17 @@
   // cell, a zone, a drawn/uploaded place) writes -- `isPlacesSelectionEmpty` is the shared pure
   // predicate (`lib/state/types.ts`, tested in `tests/state/codec.test.ts`) both lenses read so
   // "empty" can never mean something different in scores vs species.
+  //
+  // R3-rr fix 3 (Opus 5.5 eyes-on review round 3, 2026-09-25): a loaded `pl=` places list ALSO
+  // counts as "not empty", even with no `sel.sel` pick (`?pl=z.pa.GAA` loads one place with nothing
+  // selected — the Places panel + Download menu both already treat that as "places present").
+  // `placesFromHash` is the SAME decoder the Download menu reads (`Shell.svelte`'s
+  // `downloadPlaces`), never a second parser of the hash.
   const rowState = $derived<Partial<Record<LayerGroupId, LayersRowState>>>({
-    "data-places": { empty: isPlacesSelectionEmpty(sel.sel), hint: "— nothing selected" },
+    "data-places": {
+      empty: isPlacesSelectionEmpty(sel.sel, placesFromHash(sel.pl).length),
+      hint: "— nothing selected",
+    },
   });
 
   // R3 deliverable 3 (Ben, 2026-09-25): "Move Layer selector to top" -- promoted from
@@ -303,7 +313,7 @@
     {compactFlower}
   />
 {:else if activeTool === "table"}
-  <TablePanel {sel} {selStore} {boot} {manifest} {ver} {unit} {lyr} {selection} />
+  <TablePanel {sel} {selStore} {boot} {manifest} {ver} {unit} {lyr} {selection} {cellCoords} />
 {:else}
   <p>{fallbackBody}</p>
 {/if}

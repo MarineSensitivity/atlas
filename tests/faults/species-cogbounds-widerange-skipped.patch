@@ -1,40 +1,26 @@
-diff --git a/src/lens/species/state.svelte.ts b/src/lens/species/state.svelte.ts
-index bd94a4e..3fae503 100644
---- a/src/lens/species/state.svelte.ts
-+++ b/src/lens/species/state.svelte.ts
-@@ -269,21 +269,20 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
-     const frame = minimalFrame(bbox);
-     if (bboxSpansGlobe(frame, GLOBE_SPAN_DEG)) return;
-     if (cameraKeyOf(selStore.sel).sp !== key.sp) return; // the species itself changed meanwhile
--    // D1 fix (Opus 5.5 eyes-on review round 2, 2026-09-25): this is v7's OWN path -- every v7
--    // taxon (including the leatherback, the lens' default landing species) publishes no bbox
--    // anywhere, so `cameraFor()`'s own wide-range step (`wideRangeAware`, called from ITS
--    // `input`/`merged` branches) never ran for any of them. Running the SAME rule here, on the
--    // COG's own real extent, is what makes the leatherback's whole-Pacific span narrow to its US
--    // portion and the "Zoom to" toggle appear on v7 at all -- `recordWideRangeCamera` (not just
--    // `applyCamera`) is what the toggle's own `wideRange` getter reads.
--    const cam = wideRangeAware(
--      frame,
--      DEFAULT_CAMERA_PADDING,
--      "cog-bounds",
--      studyAreaView(deps.boot(), FULL_STUDY_AREA),
--    );
--    applyCamera(cam);
--    recordWideRangeCamera(cam);
-+    // SEEDED FAULT (tests/faults/species-cogbounds-widerange-skipped.patch): the COG-bounds last
-+    // resort never runs the wide-range check -- v7's leatherback (and every other v7 species,
-+    // since NONE publish a bbox anywhere) goes back to framing its whole Pacific-spanning extent,
-+    // with no "Zoom to" toggle. Must turn e2e/species.camera.spec.ts's "v7's OWN COG-bounds path"
-+    // test red.
-+    applyCamera({
-+      kind: "bounds",
-+      bounds: [
-+        [frame[0], frame[1]],
-+        [frame[2], frame[3]],
-+      ],
-+      padding: DEFAULT_CAMERA_PADDING,
-+      source: "cog-bounds",
-+    });
-   }
+diff --git a/src/lens/species/data/camera.ts b/src/lens/species/data/camera.ts
+index 634a461..5f7b13c 100644
+--- a/src/lens/species/data/camera.ts
++++ b/src/lens/species/data/camera.ts
+@@ -259,15 +259,12 @@ export function cogBoundsCamera(
+   studyArea: StudyAreaView | null | undefined,
+ ): BoundsCamera | null {
+   const frame = minimalFrame(bbox);
+-  const spansGlobe = bboxSpansGlobe(frame, GLOBE_SPAN_DEG);
+-  // globe-spanning: `frame === bbox` here (minimalFrame's complement was degenerate) — narrow
+-  // against the RAW bbox rather than declaring "no camera"; a non-globe-spanning frame keeps going
+-  // through the ordinary re-framed `frame`, exactly as every other camera source does.
+-  const cam = wideRangeAware(spansGlobe ? bbox : frame, padding, "cog-bounds", studyArea);
+-  // a globe-spanning source with no real narrowing (no study area, or intersectBbox found nothing)
+-  // is not a usable camera at all — `wideRangeAware` would otherwise hand back the raw -180..180
+-  // box as `bounds` itself, which is what the caller used to (correctly) refuse to apply.
+-  if (spansGlobe && !cam.wholeRangeBounds) return null;
++  // SEEDED FAULT (tests/faults/species-cogbounds-widerange-skipped.patch): restores the early
++  // return for a globe-spanning frame BEFORE wideRangeAware() ever runs -- the exact R3-rr fix 1
++  // bug (a globe-spanning COG extent read as "not a camera at all"). Must turn
++  // tests/lens/species/camera.test.ts's "BUG:" test red.
++  if (bboxSpansGlobe(frame, GLOBE_SPAN_DEG)) return null;
++  const cam = wideRangeAware(frame, padding, "cog-bounds", studyArea);
+   return cam;
+ }
  
-   async function bootstrap(ver: string): Promise<void> {

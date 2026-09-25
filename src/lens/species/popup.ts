@@ -14,29 +14,13 @@
 // real value into the bottom two stops.
 import { roundHalfEven } from "../../lib/geo/round";
 import { RANGE_FILL_COLOR } from "../../lib/map/colors";
-import { binColor, type PaletteStops } from "../../lib/raster/ramps";
+import { binColor, luminance, textColorFor, type PaletteStops } from "../../lib/raster/ramps";
+import { sparklineBlock, type SparklineSlot } from "../../lib/map/popup";
 
-/** relative luminance, R's own weights (§6.5 step 5: `0.299R + 0.587G + 0.114B`, NOT the WCAG
- * formula) — the exact threshold the parity reference gives, kept byte-for-byte rather than
- * "improved" to sRGB-linear luminance, which would pick a different color on some swatches. */
-export function luminance(hex: string): number {
-  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex);
-  if (!m) return 1; // an unreadable color reads as "light" -> black text, the safer default
-  const n = parseInt(m[1], 16);
-  const r = (n >> 16) & 255;
-  const g = (n >> 8) & 255;
-  const b = n & 255;
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-}
-
-/** black on a light swatch, white on a dark one — the exact 0.5 threshold (§6.5 step 5). CSS named
- * colors, matching the R source's own literal `"black"`/`"white"` (`txt_color <- if (luminance >
- * 0.5) "black" else "white"`) — not hex, which would also trip
- * `tests/raster/ramps.wiring.test.ts`'s "no hex literal outside ramps.ts/colors.ts" scan for a
- * color this module does not own. */
-export function textColorFor(hexBg: string): "black" | "white" {
-  return luminance(hexBg) > 0.5 ? "black" : "white";
-}
+// R3-W7 (round-3 review, Ben's "colour coding" ask): `luminance`/`textColorFor` moved to
+// `raster/ramps.ts` (a ramp-adjacent color utility, shared with `lens/scores/popup.ts`'s own
+// swatch) — re-exported here, unchanged, so this module's existing callers/tests need no update.
+export { luminance, textColorFor };
 
 /** R's `round(val, 3)` (half-to-even, same convention as `geo/round.ts` elsewhere in this repo). */
 export function roundValue(value: number, decimals = 3): number {
@@ -178,8 +162,15 @@ function escapeHtml(s: string): string {
  * entirely, even when `content.cellId` resolved to a real grid cell — showing an internal id next
  * to "no value" reads as a data/lookup bug, not as "this model has no data here" (the scores lens'
  * `noScoredCellText` fix, same rule).
+ *
+ * Ben's ask (round-3 review, 2026-09-25): `sparkline`, when given, appends the SAME distribution
+ * sparkline markup the scores lens' popup renders (`lib/map/popup.ts#sparklineBlock` — one shared
+ * skeleton/SVG builder, never a second one here). Only meaningful for `kind === "value"`: a
+ * presence/no-value popup has no numeric value to plot a marker against, so a caller should not
+ * pass one for those kinds (this function does not itself gate on `kind` — the caller already
+ * knows whether it fetched a distribution for this click at all).
  */
-export function popupHtml(content: PopupContent): string {
+export function popupHtml(content: PopupContent, sparkline?: SparklineSlot): string {
   const lon = content.lon.toFixed(3);
   const lat = content.lat.toFixed(3);
   const swatchStyle =
@@ -197,6 +188,7 @@ export function popupHtml(content: PopupContent): string {
     `Lon: ${lon}<br>` +
     `Lat: ${lat}<br>` +
     `<span class="species-popup-swatch" style="${swatchStyle}">${escapeHtml(content.text)}</span>` +
+    sparklineBlock(sparkline) +
     `</div>`
   );
 }

@@ -17,6 +17,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession, waitForHydration, BUCKET } from "./hermetic";
 import { routeBasemapStyle, routeGlyphs } from "./map-hermetic";
 import { cellLonLat, type GridSpec } from "../src/lib/grid/grid";
+import { formatLatLon } from "../src/lib/format";
 
 test.skip(({ browserName }) => browserName !== "chromium", "WebGL gate: chromium only (S2)");
 test.describe.configure({ mode: "serial" });
@@ -134,13 +135,12 @@ test.describe("scores lens — click popup (fix round 3, real engine)", () => {
     // usability M9: the popup opens AT ONCE with "Loading value…", then is replaced in place once
     // the engine answers -- wait for the FINAL text (the fixture's real engine round trip is fast
     // but not synchronous) rather than reading whatever is on screen the instant it appears.
-    await expect.poll(() => popupText(page), { timeout: 15_000 }).toContain("Overall score: 50");
+    await expect.poll(() => popupText(page), { timeout: 15_000 }).toContain("Overall score 50");
     const text = await popupText(page);
     expect(text).toContain("Cell 1");
-    expect(text).toContain(`lon ${CELL_1.lon.toFixed(3)}`);
-    expect(text).toContain(`lat ${CELL_1.lat.toFixed(3)}`);
-    // the exact fault this popup must never regress to: 2 dp instead of 3.
-    expect(text).not.toContain(`lon ${CELL_1.lon.toFixed(2)},`);
+    // R3-W7 (round-3 review, Ben's colour-coding ask): the popup's subject line is now the SHARED
+    // `formatSubject()`/`formatLatLon()` form ("28.625° N, 90.575° W", 3 dp, never "lon x, lat y").
+    expect(text).toContain(formatLatLon(CELL_1.lat, CELL_1.lon));
   });
 
   // R3-B3 (Opus eyes-on review, 2026-09-25, phone-06-flower-half): the popup used to print the
@@ -158,14 +158,12 @@ test.describe("scores lens — click popup (fix round 3, real engine)", () => {
     await fireMapClick(page, offClick);
 
     await expect(page.locator(".atlas-popup")).toBeVisible({ timeout: 15_000 });
-    await expect.poll(() => popupText(page), { timeout: 15_000 }).toContain("Overall score: 50");
+    await expect.poll(() => popupText(page), { timeout: 15_000 }).toContain("Overall score 50");
     const text = await popupText(page);
     expect(text).toContain("Cell 1");
-    expect(text).toContain(`lon ${CELL_1.lon.toFixed(3)}`);
-    expect(text).toContain(`lat ${CELL_1.lat.toFixed(3)}`);
+    expect(text).toContain(formatLatLon(CELL_1.lat, CELL_1.lon));
     // the exact fault this must never regress to: the click point's own coordinates.
-    expect(text).not.toContain(`lon ${offClick.lng.toFixed(3)}`);
-    expect(text).not.toContain(`lat ${offClick.lat.toFixed(3)}`);
+    expect(text).not.toContain(formatLatLon(offClick.lat, offClick.lng));
   });
 
   // fix list #12 (SC 4.1.3): the popup used to be a plain MapLibre div, never announced -- a
@@ -180,8 +178,8 @@ test.describe("scores lens — click popup (fix round 3, real engine)", () => {
     await fireMapClick(page, { lng: CELL_1.lon, lat: CELL_1.lat });
     await expect(page.locator(".atlas-popup")).toBeVisible({ timeout: 15_000 });
     await expect(live).toContainText("Cell 1", { timeout: 15_000 });
-    await expect(live).toContainText(`lon ${CELL_1.lon.toFixed(3)}`);
-    await expect(live).toContainText("Overall score: 50");
+    await expect(live).toContainText(formatLatLon(CELL_1.lat, CELL_1.lon));
+    await expect(live).toContainText("Overall score 50");
   });
 
   test("Esc closes the popup", async ({ page }) => {
@@ -232,6 +230,6 @@ test.describe("scores lens — click popup (fix round 3, real engine)", () => {
     await expect(page.locator(".atlas-popup")).toContainText("Loading value…");
 
     // and it DOES fill in, once the delayed fetch finally answers.
-    await expect.poll(() => popupText(page), { timeout: 10_000 }).toContain("Overall score: 50");
+    await expect.poll(() => popupText(page), { timeout: 10_000 }).toContain("Overall score 50");
   });
 });

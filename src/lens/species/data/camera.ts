@@ -217,6 +217,60 @@ export function wideRangeAware(
   return { kind: "bounds", bounds: boundsOf(bbox), padding, source };
 }
 
+/**
+ * R3-rr fix 1 (Opus 5.5 eyes-on review round 3, second pass, 2026-09-25): the COG-bounds camera
+ * `state.svelte.ts#refineCameraFromCogBounds` fetches, extracted here so it is unit-testable
+ * without a network call. THE BUG (R3-A1's own fix, `65878fe`, still failed live): v7's leatherback
+ * (`?mdl_seq=54241`, the Species lens' DEFAULT landing species) has a real, live `/cog/info` bbox of
+ * `[-180, -17.700000000000017, 180, 60.44999999999999]` — the model reaches American Samoa/Guam
+ * across the antimeridian, so the raster's OWN bbox is the full globe in longitude, not merely
+ * "wide". `minimalFrame()` cannot narrow a box whose naive span is already exactly 360 (its
+ * complement is zero-width, {@link minimalFrame}'s own degenerate-guard), so it hands the box back
+ * UNCHANGED, and the caller used to read `bboxSpansGlobe(frame, GLOBE_SPAN_DEG)` on that unchanged
+ * box as "not a usable camera at all" and return BEFORE ever calling `wideRangeAware()` — so the
+ * toggle never rendered and the camera stayed on the whole-Pacific study-area centre.
+ *
+ * That early return was wrong: a globe-spanning COG extent is not an EXCEPTION to the wide-range
+ * rule, it is the WIDEST case that rule exists to handle. Calling `wideRangeAware()` on the RAW
+ * (pre-`minimalFrame`) bbox still narrows correctly, because {@link intersectBbox} already does its
+ * own dateline-shift search: a box that already covers the whole -180..180 span simply contains the
+ * study area outright at shift 0, so the intersection comes back as the study area's own bbox
+ * (clipped to the model's own latitude band when that is narrower) — exactly "US waters".
+ *
+ * A model whose `minimalFrame()` reframing succeeds (a real antimeridian wrap, not a degenerate
+ * one) is UNAFFECTED — it still goes through `frame` first, exactly as before; the walrus
+ * (`mdl_seq=54383`) never reaches the globe-spanning branch at all.
+ *
+ * "Whole range" for a globe-spanning extent frames the model's own RAW bbox (`wholeRangeBounds` is
+ * the untouched `-180..180` box, same as any other wide model's `wholeRangeBounds` is its own
+ * untouched extent) — MapLibre's `cameraForBounds()` is projection-aware and centres a full-width
+ * box on the current view rather than distorting it, which is the only rendering that makes sense
+ * for "show me literally everywhere this model has data" (verified in the eyes-on shots: the globe
+ * draws centred on the Pacific, the model's own natural centre, not stretched or degenerate).
+ *
+ * Returns `null` when there is no usable narrowed camera (no study area supplied, or the
+ * dateline-shift search genuinely finds no overlap) — the caller's existing fallback (keep whatever
+ * camera is already on screen, usually the whole-Pacific study-area centre) is unchanged in that
+ * case, matching the pre-fix behaviour for a taxon this rule cannot help.
+ */
+export function cogBoundsCamera(
+  bbox: Bbox,
+  padding: number,
+  studyArea: StudyAreaView | null | undefined,
+): BoundsCamera | null {
+  const frame = minimalFrame(bbox);
+  const spansGlobe = bboxSpansGlobe(frame, GLOBE_SPAN_DEG);
+  // globe-spanning: `frame === bbox` here (minimalFrame's complement was degenerate) — narrow
+  // against the RAW bbox rather than declaring "no camera"; a non-globe-spanning frame keeps going
+  // through the ordinary re-framed `frame`, exactly as every other camera source does.
+  const cam = wideRangeAware(spansGlobe ? bbox : frame, padding, "cog-bounds", studyArea);
+  // a globe-spanning source with no real narrowing (no study area, or intersectBbox found nothing)
+  // is not a usable camera at all — `wideRangeAware` would otherwise hand back the raw -180..180
+  // box as `bounds` itself, which is what the caller used to (correctly) refuse to apply.
+  if (spansGlobe && !cam.wholeRangeBounds) return null;
+  return cam;
+}
+
 export interface CameraOptions {
   /** representation to prefer when an input publishes more than one asset. */
   rep?: string;

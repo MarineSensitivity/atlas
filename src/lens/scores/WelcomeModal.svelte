@@ -33,9 +33,29 @@
      * lens. Optional so this component still renders (with the modal's plain "Explore" flow) in
      * a context that has not wired it, e.g. an isolated component test. */
     onTakeTour?: () => void;
+    /** UI-15 (round-3 review): switches to the Species lens IN PLACE and closes the modal --
+     * `Shell.svelte`'s own `onLensChange`, the SAME handler the top-bar lens switch calls, never a
+     * second lens-switch path. Optional so this component still renders standalone (component
+     * test) without it wired. */
+    onSwitchToSpecies?: () => void;
+    /** UI-15: this version's own docs URL (`Shell.svelte`'s `docsHref`, `src/lib/release/
+     * docsUrl.ts#atlasDocsUrl`'s hand-duplicate) -- never a bare, version-less docs-root guess. */
+    docsHref?: string;
+    /** UI-15: the resolved release label ("v7"), named in reader copy as "data release {ver}" --
+     * replaces the old "published marine-atlas release" wording, which named an internal data-repo
+     * concept ("marine-atlas") a reader has no reason to know. `null`/omitted before it resolves. */
+    ver?: string | null;
   }
 
-  let { tour, onTakeTour }: Props = $props();
+  let { tour, onTakeTour, onSwitchToSpecies, docsHref, ver }: Props = $props();
+
+  function handleSpeciesLens(event: MouseEvent) {
+    if (!onSwitchToSpecies) return; // no handler wired (e.g. an isolated component test) -- let
+    // the plain href navigate as a fallback rather than doing nothing.
+    event.preventDefault();
+    close();
+    onSwitchToSpecies();
+  }
 
   let open = $state(false);
   let dontShowAgain = $state(false);
@@ -84,12 +104,16 @@
 
 <Modal {open} title="Welcome to the Marine Sensitivity Atlas" onclose={close}>
   <p>
-    Explore composite marine-sensitivity scores for U.S. federal waters, drawn from the published
-    marine-atlas release — by Program Area, or by clicking any 0.05° cell.
+    Explore composite marine-sensitivity scores for U.S. federal waters, drawn from data release
+    {ver ?? "the current release"} — by Program Area, or by clicking any 0.05° cell.
   </p>
   <p>
-    See also the <a href="?lens=species" target="_blank" rel="noopener">Species lens</a> and the project
-    documentation.
+    See also the
+    <a href="?lens=species" onclick={handleSpeciesLens}>Species lens</a>
+    and the
+    <a href={docsHref ?? "https://marinesensitivity.org/docs/"} target="_blank" rel="noopener"
+      >documentation</a
+    >.
   </p>
   <label class="dont-show">
     <input type="checkbox" bind:checked={dontShowAgain} />
@@ -97,7 +121,7 @@
   </label>
   <div class="actions">
     {#if tour !== "off"}
-      <button type="button" class="tour-btn" onclick={handleTakeTour}>Take a Tour</button>
+      <button type="button" class="tour-btn" onclick={handleTakeTour}>Take a tour</button>
     {/if}
     <button type="button" class="explore-btn" onclick={close}>Explore</button>
   </div>

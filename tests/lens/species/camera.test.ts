@@ -3,10 +3,12 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CAMERA_PADDING,
+  GLOBE_SPAN_DEG,
   WIDE_RANGE_SPAN_DEG,
   anyInputBbox,
   cameraFor,
   centerLon,
+  cogBoundsCamera,
   cogUrlForBoundsFallback,
   inputBbox,
   intersectBbox,
@@ -510,6 +512,62 @@ describe("R3-A1: the threshold and the fallback chain, through cameraFor", () =>
     // fit" as this feature's own regression case.
     const cam = bounds(cameraFor(CARDS.dateline(), "am", { studyArea: FULL }));
     expect(lonSpanOf(cam)).toBeLessThan(WIDE_RANGE_SPAN_DEG);
+    expect(cam.wholeRangeBounds).toBeUndefined();
+  });
+});
+
+// R3-rr fix 1 (Opus 5.5 eyes-on review round 3, second pass, 2026-09-25): the D1 fix (65878fe)
+// still never appeared live for the leatherback -- see cogBoundsCamera's own header in
+// data/camera.ts for the full story. This is the "bug" case named after that gap.
+describe("R3-rr fix 1: cogBoundsCamera — a globe-spanning live /cog/info bbox (the leatherback, ?mdl_seq=54241)", () => {
+  // the EXACT live titiler-v8 /cog/info body (probed 2026-09-25 against
+  // https://titiler-v8.marinesensitivity.org/cog/info?url=…/usa05/9fe6f75498affae1.tif): the
+  // leatherback reaches American Samoa/Guam across the antimeridian, so the raster's own bbox is
+  // already the full globe in longitude.
+  const LIVE_LEATHERBACK_COG_BOUNDS: Bbox = [-180, -17.700000000000017, 180, 60.44999999999999];
+
+  it("BUG: used to return null (no camera, toggle never renders) — now narrows to US waters", () => {
+    const studyArea = studyAreaFor("v7");
+    const cam = cogBoundsCamera(LIVE_LEATHERBACK_COG_BOUNDS, DEFAULT_CAMERA_PADDING, studyArea);
+    expect(cam).not.toBeNull();
+    if (!cam) throw new Error("expected a bounds camera");
+    expect(cam.source).toBe("cog-bounds");
+    expect(cam.kind).toBe("bounds");
+    // the toggle renders: "Whole range" is available, and frames the model's OWN raw bbox.
+    expect(cam.wholeRangeBounds).toEqual([
+      [LIVE_LEATHERBACK_COG_BOUNDS[0], LIVE_LEATHERBACK_COG_BOUNDS[1]],
+      [LIVE_LEATHERBACK_COG_BOUNDS[2], LIVE_LEATHERBACK_COG_BOUNDS[3]],
+    ]);
+    // the default (narrowed) camera is genuinely narrower than the whole globe...
+    expect(lonSpanOf(cam)).toBeLessThan(GLOBE_SPAN_DEG);
+    expect(cam.bounds).not.toEqual(cam.wholeRangeBounds);
+    // ...and its centre lies INSIDE the US study-area box, not merely inside the raw -180..180.
+    const usBbox = studyAreaBboxFallback(studyArea);
+    const cx = centerLon(cam);
+    expect(cx).toBeGreaterThanOrEqual(usBbox[0]);
+    expect(cx).toBeLessThanOrEqual(usBbox[2]);
+  });
+
+  it("with no study area supplied, there is still no usable camera (matches the pre-fix fallback: keep whatever camera is already on screen)", () => {
+    expect(cogBoundsCamera(LIVE_LEATHERBACK_COG_BOUNDS, DEFAULT_CAMERA_PADDING, null)).toBeNull();
+    expect(
+      cogBoundsCamera(LIVE_LEATHERBACK_COG_BOUNDS, DEFAULT_CAMERA_PADDING, undefined),
+    ).toBeNull();
+  });
+
+  it("the walrus shape — a real antimeridian wrap that minimalFrame CAN narrow, never reaching the globe-spanning branch — is unaffected by this fix", () => {
+    // naive span 340 (> MAX_FRAME_SPAN_DEG) but minimalFrame's complement (20 deg, Bering/Chukchi)
+    // is real, not degenerate — this is the shape mdl_seq=54383's own live bounds take.
+    const walrusLike: Bbox = [-170, 52, 170, 75];
+    const cam = cogBoundsCamera(walrusLike, DEFAULT_CAMERA_PADDING, studyAreaFor("v7"));
+    expect(cam).not.toBeNull();
+    if (!cam) throw new Error("expected a bounds camera");
+    // reframed via minimalFrame (170..190, not 170..170) and, at a 20-deg span, well under the
+    // wide-range threshold — no narrowing, no "Zoom to" toggle, exactly as before this fix.
+    expect(cam.bounds).toEqual([
+      [170, 52],
+      [190, 75],
+    ]);
     expect(cam.wholeRangeBounds).toBeUndefined();
   });
 });

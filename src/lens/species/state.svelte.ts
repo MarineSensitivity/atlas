@@ -13,30 +13,33 @@ import { untrack } from "svelte";
 import type { Popup } from "maplibre-gl";
 import { gridFromBoot } from "../../lib/grid/grid";
 import type { MapHandle } from "../../lib/map/map";
-import type { CameraBoundsInput, ChromePadding } from "../../lib/map/camera";
+import type { CameraBoundsInput, ChromePadding, Viewport } from "../../lib/map/camera";
+import {
+  boundsToCameraView,
+  phoneAwareWideRangeBounds,
+  symmetricPadding,
+} from "../../lib/map/camera";
 import { createPopup } from "../../lib/map/popup";
 import { announce } from "../../lib/ui/announcer";
 import { mapClick, type LngLat, type QueryableMap } from "../../lib/map/interaction";
 import { createTitilerValueSource, type ValueSource } from "../../lib/raster/point";
 import { createTitilerBoundsSource, type BoundsSource } from "../../lib/raster/bounds";
 import { paletteStopsFromBoot, type PaletteName } from "../../lib/raster/ramps";
-import { bboxSpansGlobe } from "../../lib/grid/grid";
 import type { SelStore } from "../../lib/state/sel.svelte";
 import type { Representation } from "../../lib/state/types";
 import type { SessionLike } from "../../lib/release/dataBase";
 import {
   cameraFor,
+  cogBoundsCamera,
   cogUrlForBoundsFallback,
   refitNeeded,
   refitOnInputChange,
   studyAreaView,
-  minimalFrame,
-  wideRangeAware,
-  GLOBE_SPAN_DEG,
   FULL_STUDY_AREA,
   DEFAULT_CAMERA_PADDING,
   type BoundsCamera,
   type Camera,
+  type CameraBounds,
   type CameraKey,
 } from "./data/camera";
 import { documentTitle, speciesCard, type SpeciesCard } from "./data/card";
@@ -87,6 +90,17 @@ export interface SpeciesLensDeps {
    * whatever it was at mount. Optional: a caller that supplies none (a test, the gallery) keeps
    * the old flat `DEFAULT_CAMERA_PADDING` behaviour via `applyCamera`'s own fallback below. */
   chromePadding?: () => ChromePadding;
+  /** R3-rr fix 1, round 5 (orchestrator eyes-on, phone framing): the current viewport dimensions
+   * -- needed alongside {@link isPhone} to decide whether a wide-range model's narrowed "US
+   * waters" bounds are too wide for the phone (`lib/map/camera.ts#phoneAwareWideRangeBounds`) and
+   * to compute "Whole range"'s own camera directly (never through MapLibre's real
+   * `cameraForBounds()`, which does not reliably keep both edges of an extreme arc in frame -- see
+   * `setZoomTarget`'s own header). Optional: a caller that supplies neither (a test, the gallery)
+   * never substitutes and falls back to the ordinary bounds-fit path for "Whole range" too. */
+  viewport?: () => Viewport;
+  /** the SAME `matchMedia("(max-width: 899px)")` breakpoint `Shell.svelte` already uses -- never a
+   * second breakpoint decision. */
+  isPhone?: () => boolean;
 }
 
 /** R3-A1: which of a wide-range model's two framings is currently applied — `null` when the
@@ -107,6 +121,9 @@ export interface SpeciesLens {
   readonly popup: { lngLat: LngLat; content: PopupContent } | null;
   readonly taxaIndex: TaxaIndex | null;
   readonly datasets: DatasetIndex;
+  /** UI-9 (round-3 review): the resolved release id, for the not-found/error copy ("This species
+   * isn't in release v7…") -- `null` before `deps.ver()` has settled. */
+  readonly ver: string | null;
   readonly wideRange: WideRangeZoom;
   /** R3-W8 item 2: the "Zoom to layer on change" checkbox's own checked state — `Sel.zl !== false`. */
   readonly zoomToLayerOnChange: boolean;
@@ -200,7 +217,8 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
       rep: selStore.sel.rep,
       boot: deps.boot() as { palettes?: unknown } | null,
       ver,
-      legendTitle: card.sci,
+      scientificName: card.sci,
+      commonName: card.common,
     });
   });
 
@@ -260,6 +278,42 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     zoomTarget = "us";
   }
 
+  // R3-rr fix 1, round 5 (orchestrator eyes-on, real e1fcfc8 build, 2026-09-25): a wide-range
+  // model's narrowed "US waters" `cam.bounds` can still be far too wide to frame well at phone
+  // width (live-measured: the leatherback's own bounds settled at zoom 0.78, a tiny globe mostly
+  // hidden behind the sheet) -- `phoneAwareWideRangeBounds` (camera.ts) substitutes
+  // `PHONE_DEFAULT_BOUNDS` when that would happen. Only ever touches a camera that already carries
+  // `wholeRangeBounds` (a genuinely wide-range fit) -- an ordinary, already-compact bounds camera
+  // is returned completely unchanged, `===` and all, so this is a safe no-op to call on every
+  // camera the wide-range paths produce, not just the ones that need it.
+  function phoneAwareCamera(cam: Camera | null): Camera | null {
+    if (!cam || cam.kind !== "bounds" || !cam.wholeRangeBounds) return cam;
+    const viewport = deps.viewport?.() ?? { width: 0, height: 0 };
+    const padding = deps.chromePadding ? deps.chromePadding() : undefined;
+    const isPhone = deps.isPhone?.() ?? false;
+    const bounds = phoneAwareWideRangeBounds(
+      cam.bounds,
+      viewport,
+      padding ?? { top: 0, right: 0, bottom: 0, left: 0 },
+      isPhone,
+    );
+    // `phoneAwareWideRangeBounds` takes/returns the read-only `CameraBoundsInput` shape (it never
+    // mutates its input either way); `BoundsCamera.bounds` is the plain mutable tuple shape this
+    // module uses everywhere else -- the runtime value is always a plain array regardless, so this
+    // is a type-only cast, never a real copy/mutation concern.
+    return bounds === cam.bounds ? cam : { ...cam, bounds: bounds as CameraBounds };
+  }
+
+  /** the ONE place a freshly-computed wide-range-eligible camera is applied AND recorded -- wraps
+   * `applyCamera`/`recordWideRangeCamera` with the phone-awareness above so the three call sites
+   * below (the species-change effect, `refineCameraFromCogBounds`, `zoomToLayer`) can never apply
+   * the RAW bounds while recording the PHONE-AWARE ones (or vice versa) by forgetting one call. */
+  function applyWideRangeCamera(cam: Camera | null): void {
+    const aware = phoneAwareCamera(cam);
+    applyCamera(aware);
+    recordWideRangeCamera(aware);
+  }
+
   // D8 (Opus 5.5 eyes-on, 2026-09-24): `cameraFor()`'s own bundle-only chain (input -> merged ->
   // ecoregion -> sibling) is pure and network-free by contract (data/camera.ts's own header). A
   // release that publishes NO bbox anywhere for this taxon on ANY input (v7 — measured on the
@@ -277,10 +331,6 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     const bbox = await boundsSource.cogBounds(cogUrl);
     if (token !== cameraRefineToken) return; // a later species/refit superseded this fetch
     if (!bbox) return;
-    // the SAME antimeridian rule cameraFor()'s own chain applies to a published bbox: a wrapped
-    // frame is re-expressed to its minimal span, and a genuinely circumglobal one is not a camera.
-    const frame = minimalFrame(bbox);
-    if (bboxSpansGlobe(frame, GLOBE_SPAN_DEG)) return;
     if (cameraKeyOf(selStore.sel).sp !== key.sp) return; // the species itself changed meanwhile
     // D1 fix (Opus 5.5 eyes-on review round 2, 2026-09-25): this is v7's OWN path -- every v7
     // taxon (including the leatherback, the lens' default landing species) publishes no bbox
@@ -289,14 +339,24 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     // COG's own real extent, is what makes the leatherback's whole-Pacific span narrow to its US
     // portion and the "Zoom to" toggle appear on v7 at all -- `recordWideRangeCamera` (not just
     // `applyCamera`) is what the toggle's own `wideRange` getter reads.
-    const cam = wideRangeAware(
-      frame,
+    //
+    // R3-rr fix 1 (Opus 5.5 eyes-on review round 3, second pass, 2026-09-25): the D1 fix above
+    // still missed the leatherback's OWN live bounds -- `/cog/info` returns
+    // `[-180, -17.7, 180, 60.45]` (the model reaches Oceania across the antimeridian, so the
+    // raster's own bbox is already the full globe in longitude), and `minimalFrame()` cannot
+    // narrow a box that wide (its complement is zero-width). This used to `return` right here,
+    // BEFORE `wideRangeAware()` ever ran, because a globe-spanning frame was read as "not a
+    // camera" rather than as the WIDEST case the wide-range rule exists to handle.
+    // `cogBoundsCamera()` (data/camera.ts) now applies that rule to the raw bbox even when
+    // `minimalFrame()` couldn't narrow it -- see its own header for why `intersectBbox()`'s
+    // dateline-shift search still narrows a -180..180 box against the study area correctly.
+    const cam = cogBoundsCamera(
+      bbox,
       DEFAULT_CAMERA_PADDING,
-      "cog-bounds",
       studyAreaView(deps.boot(), FULL_STUDY_AREA),
     );
-    applyCamera(cam);
-    recordWideRangeCamera(cam);
+    if (!cam) return;
+    applyWideRangeCamera(cam);
   }
 
   async function bootstrap(ver: string): Promise<void> {
@@ -421,11 +481,16 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     // gated by the "Zoom to layer on change" checkbox (`Sel.zl`) and the pan guard above; a
     // species change is handled unconditionally by `needsSpeciesFit` and never checks either.
     const needsInputFit = untrack(() => refitOnInputChange(prevCameraKey, key));
-    prevCameraKey = key;
     if (!needsSpeciesFit && !needsInputFit) return;
     if (!needsSpeciesFit) {
-      if (selStore.sel.zl === false) return; // the viewer turned the checkbox off
-      if (pannedSincePick) return; // the viewer panned since the last pick — respect it
+      if (selStore.sel.zl === false) {
+        prevCameraKey = key; // the viewer turned the checkbox off — nothing left to retry for
+        return;
+      }
+      if (pannedSincePick) {
+        prevCameraKey = key; // the viewer panned since the last pick — respect it, don't retry
+        return;
+      }
     }
     const boot = deps.boot();
     const cam = cameraFor(card, selStore.sel.in, {
@@ -434,12 +499,24 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
       studyArea: studyAreaView(boot, FULL_STUDY_AREA),
       padding: DEFAULT_CAMERA_PADDING,
     });
-    applyCamera(cam);
-    recordWideRangeCamera(cam);
+    // R3-rr fix 1, round 4 (Opus 5.5 eyes-on review round 3, real-build eyes-on, 2026-09-25):
+    // `cameraFor()` returns `null` ONLY when it has no study area to fall back to (its own last
+    // resort) -- and on the LIVE app, `deps.boot()` -> `studyAreaView()` can still be incomplete
+    // on this effect's FIRST run (this same $effect reads `deps.boot()` reactively and re-runs once
+    // it fills in -- confirmed live: a real load hit `cam === null` on pass 1, then a real,
+    // populated `boot` on pass 2). The OLD code unconditionally wrote `prevCameraKey = key` before
+    // this null check, so `refitNeeded()` on pass 2 saw the SAME key and reported "already fitted"
+    // -- permanently skipping the species' own camera fit (and the COG-bounds last resort below)
+    // for the rest of the session, EVEN ONCE real study-area data existed. `prevCameraKey` is now
+    // only latched once a camera was actually computed, so a null-boot pass retries on the very
+    // next boot update instead of silently giving up forever.
+    if (!cam) return;
+    prevCameraKey = key;
+    applyWideRangeCamera(cam);
     pannedSincePick = false; // this IS the new "last pick" moment
     // D8: the bundle published no bbox anywhere for this taxon — try the COG's own extent before
     // giving up on framing it at all.
-    if (cam?.kind === "center") void refineCameraFromCogBounds(card, key);
+    if (cam.kind === "center") void refineCameraFromCogBounds(card, key);
   });
 
   return {
@@ -475,6 +552,9 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     },
     get datasets() {
       return datasets;
+    },
+    get ver() {
+      return deps.ver();
     },
     get wideRange(): WideRangeZoom {
       return wideRangeCamera?.wholeRangeBounds ? { value: zoomTarget } : null;
@@ -520,8 +600,7 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
         studyArea: studyAreaView(boot, FULL_STUDY_AREA),
         padding: DEFAULT_CAMERA_PADDING,
       });
-      applyCamera(cam);
-      recordWideRangeCamera(cam);
+      applyWideRangeCamera(cam);
       pannedSincePick = false; // an explicit manual re-fit is a "last pick" moment too
       // D8 fold-in (orchestrator round 2, 2026-09-24): the manual "zoom to layer" button used to
       // stop at `cameraFor()`'s own bundle-only chain, so a taxon with NO published bbox anywhere
@@ -532,13 +611,46 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     setZoomTarget(target: "us" | "whole") {
       if (!wideRangeCamera?.wholeRangeBounds || target === zoomTarget) return;
       zoomTarget = target;
-      const bounds = target === "whole" ? wideRangeCamera.wholeRangeBounds : wideRangeCamera.bounds;
-      applyCamera({
-        kind: "bounds",
-        bounds,
-        padding: wideRangeCamera.padding,
-        source: wideRangeCamera.source,
-      });
+      if (target === "whole") {
+        // R3-rr fix 1, round 5 (orchestrator eyes-on, real e1fcfc8 build, 2026-09-25): "Whole
+        // range" used to fit `wholeRangeBounds` the SAME way as "US waters" -- through
+        // `applyCamera`'s bounds branch, i.e. MapLibre's own real, globe-aware
+        // `cameraForBounds()`. Measured live that this does NOT reliably keep both edges of an
+        // extreme (~150deg) arc in frame: the leatherback's confirmed-data arc (145..294
+        // continuous, Guam/CNMI to the Atlantic seaboard) settled centred over the Americas
+        // (~-105deg) on desktop -- missing the Pacific side entirely -- and on the phone pushed
+        // the centre to lat -56.5, well south of the box's own -17.7 south edge, behind the
+        // sheet. `boundsToCameraView` (the SAME pure Mercator math `phoneDefaultCamera`'s own
+        // known-good phone default already trusts) computes the arc's exact geometric midpoint
+        // by construction -- a centre that can never fall outside the box it was fit to -- and a
+        // zoom that fits the box's FULL span within the padded viewport, applied as a plain
+        // camera move (`flyTo`, never `flyToBounds`/`cameraForBounds`).
+        // `symmetricPadding` (camera.ts's own header): keeps the SAME total chrome reserve on
+        // EACH axis (so the zoom, which fits the box's full span into the available space, is
+        // unaffected) but zeroes both differentials -- an asymmetric reserve (the desktop docked
+        // panel, the phone sheet) would otherwise push this extreme, near-zero-zoom arc's centre
+        // far enough that it lands outside the globe's own visible hemisphere (longitude) or even
+        // outside the box's own latitude range entirely (measured live on the phone: the SHIFT's
+        // own `1/worldPx` term overshoots badly at this zoom -- see the function's own header).
+        const viewport = deps.viewport?.() ?? { width: 0, height: 0 };
+        const padding = symmetricPadding(
+          deps.chromePadding ? deps.chromePadding() : { top: 0, right: 0, bottom: 0, left: 0 },
+        );
+        const view = boundsToCameraView(wideRangeCamera.wholeRangeBounds, viewport, { padding });
+        deps.mapHandle()?.flyTo({
+          key: "whole-range",
+          lon: view.center[0],
+          lat: view.center[1],
+          zoom: view.zoom,
+        });
+      } else {
+        applyCamera({
+          kind: "bounds",
+          bounds: wideRangeCamera.bounds,
+          padding: wideRangeCamera.padding,
+          source: wideRangeCamera.source,
+        });
+      }
       track("species_zoom_target", { target, mdl_key: card?.key ?? "" });
     },
 

@@ -30,10 +30,14 @@ const ALL = readdirSync(SQL_DIR).filter((f) => f.endsWith(".sql"));
 // DuckDB-WASM connection. `cell_value.sql` (atlas-4 fix round 3, the scores click popup) is the
 // second: it reads ONE column of the wide `cell` tile for a cell the release's grid already
 // resolved, which has no msens twin because the R app read that same value from a COG pixel
-// instead (`cog_point_value()`) -- the very thing plan D4 forbids here. The `value` scan still
-// covers both; the twin-header and placeholder-set rules are about the PORTED queries and would be
-// meaningless against a probe or a UI-only read with nothing in msens to cite.
-const TWINS = ALL.filter((f) => f !== "smoke_count.sql" && f !== "cell_value.sql");
+// instead (`cog_point_value()`) -- the very thing plan D4 forbids here. `cell_histogram.sql`
+// (round-3 review, Ben's popup-sparkline ask) is the third, for the SAME reason as `cell_value.sql`
+// beside it: a UI-only read of the wide `cell` tile, binned client-side, with nothing in msens to
+// cite as a twin. The `value` scan still covers all three; the twin-header and placeholder-set
+// rules are about the PORTED queries and would be meaningless against a probe or a UI-only read.
+const TWINS = ALL.filter(
+  (f) => f !== "smoke_count.sql" && f !== "cell_value.sql" && f !== "cell_histogram.sql",
+);
 const FILES = ALL;
 const text = (f: string) => readFileSync(new URL(f, SQL_DIR), "utf8");
 

@@ -1,6 +1,7 @@
-# atlas 0.10.75
+# atlas 0.10.78
 
-Round 3, W8 items 1-2 (species Layers pane: promote the data selection, zoom-to-layer).
+Round 3, W8 (species Layers pane: promote the data selection, zoom-to-layer, Share reproduces the
+UI arrangement).
 
 - **Promoted the species "Model input" picker to the top of the Layers pane** (Ben, live-review
   2026-09-25: "promote the main data selection up"). The layer bar (Merged + each input pill, the
@@ -18,6 +19,182 @@ Round 3, W8 items 1-2 (species Layers pane: promote the data selection, zoom-to-
   camera. A fit is also skipped when the viewer has panned since the last pick (`sel.map`'s own
   "only ever a real user gesture" guarantee, `map.ts`'s header). The preference is URL state
   (`zl=0` when off, absent when on, `Sel.zl`) so a shared link reproduces it.
+
+# atlas 0.10.77
+
+Round 3, W7 (consistency + copy, 2026-09-25): Ben's two asks — one colour-coded value popup with a
+distribution sparkline, shared by the scores cell/zone popups and the species popup; and the Legend
+naming which layer is displayed — plus UI-4/5/8/9 from the Opus 5.5 review.
+
+- **One colour-coded popup template, everywhere a cell/zone/species value is shown** (Ben, 2026-09-25).
+  `lib/map/popup.ts#valuePopupHtml` is now the ONE template the scores lens' cell popup AND its
+  Program-Area popup AND the species popup all render through: a shared subject line
+  (`lib/format.ts#formatSubject`, UI-4 — "Cell 3350704 · 28.625° N, 90.575° W" / a Program Area's
+  own name), a shared value line (`formatValueLine`, "Score 44" / "Suitability 71"), and a
+  ramp-colour swatch (`raster/ramps.ts#colorForValue`/`textColorFor`) that the scores lens never
+  had before this round. The scores click popup and the Program-Area popup previously used three
+  different, uncoloured text formats; they now look like the SAME kind of thing.
+- **A distribution sparkline in the popup** (Ben, 2026-09-25): a smooth, kernel-smoothed density
+  curve (`lib/map/density.ts`) filled with the legend's own ramp gradient, with a marker at the
+  clicked value — scores/Raster-cells reads a histogram over the mounted `cell` Parquet tile
+  (`sql/cell_histogram.sql` + `lib/analysis/queries.ts#cellHistogramValues`, never a tile pixel);
+  scores/Program-areas bins the unit's own already-in-memory `zone_metric` values
+  (`lib/map/distribution.ts#valueListDistribution`, no engine/network call); species reads titiler's
+  `/cog/statistics` (`raster/histogram.ts`, the second sanctioned tile-server read beside
+  `/cog/point`, plan D4). The popup always renders immediately; the sparkline fills in once its
+  fetch resolves (a skeleton meanwhile), never delaying the popup itself.
+- **UI-4: one `formatSubject()`/`formatValueLine()`** (`lib/format.ts`), used by the map popup, the
+  flower panel's title and the species table's header — the same clicked cell used to read "Cell
+  3350704 · lon -90.550, lat 28.601 · score: 44" in the popup, "Cell ID: 3350704 (x: -90.575, y:
+  28.625)" in the flower, and "Species for Cell ID: 3350704" in the table. All three now read "Cell
+  3350704 · 28.625° N, 90.575° W". The no-selection subject is now "All US waters" everywhere
+  (UI-5) — the same label the Zoom-to-region select already uses — replacing "Full study area".
+- **New `lib/map/legendTitle.ts`** (Ben's UI-L2 ask): the desktop legend card now shows a subtitle
+  under its title — "Raster cells · All US waters · v7"/"Program Areas · v7" for the scores lens —
+  so the legend says which layer is on screen, not just a bare ramp. **Species wiring completed in
+  this merge-fix round**: `SpeciesMapInputsOptions` took a bare `legendTitle: string` (always the
+  raw scientific name, e.g. "Odobenus rosmarus") that never actually called `legendTitle()` —
+  `speciesMapInputs()` (`lens/species/mapInputs.ts`) now builds the real title
+  ("Walrus (Odobenus rosmarus)") and subtitle ("Merged Model · habitat suitability 1-100" /
+  "IUCN Range · presence" / "AquaMaps · as delivered") for both the COG and PMTiles branches, shown
+  by the desktop legend card, the phone legend chip's short form, and the phone Legend modal (all
+  three share `SpeciesLegend.svelte`, so one fix reaches all three).
+- **`metricKeyLabel()` now sentence-cases every label it returns**, not only an absent/degenerate
+  one: a real, published `manifest.metrics` label that is itself lowercase ("score") used to stay
+  lowercase forever in the Layer select, legend and phone chip.
+- **UI-9 (species copy)**: ESA status codes are mapped for display (EN → Endangered, TN →
+  Threatened, LC → "Not listed"), with the code kept in parentheses and the source named once, in
+  the fact's own label ("Listed under the ESA (NMFS)") — a real, non-null source used to be named
+  TWICE ("NMFS:EN (NMFS)"). "IUCN RedList: VU" is now "IUCN Red List: Vulnerable (VU)". The
+  species-lens inputs table shows each dataset's own NAME, never the raw `ds_key`
+  ("ms_merge"/"am_0.05"/"rng_iucn"). A species card that fails to load now reads "This species
+  isn't in release {ver}. Search for another above." for a genuine not-found, instead of the raw
+  error code ("Couldn't load this species (not-found).").
+- **UI-8 (number formatting)**: the Zones table's score column is `minimumFractionDigits: 1` (a
+  "29" no longer sits beside a "29.7"); its numeric headers right-align to match their columns; the
+  Composition treemap's `valueLabel` is "species" (not "n species", which read as a typo).
+- **UI-12**: the Zones table's header text wraps at word boundaries (`overflow-wrap: normal;
+hyphens: auto`) instead of splitting a word like "Primary production" mid-letter.
+- **W3 hand-off**: `ZonesTable.svelte` and `Composition.svelte` had the same `max-height: 50vh`
+  blank-space defect B9 fixed for `SpeciesTable.svelte` — both now fill whatever height
+  `TablePanel.svelte`'s own `height: 100%` hands down, the same fix, applied the same way.
+- **Merge-fix round (post-`main` merge, 2026-09-25)**: `selectZone`'s search-pick fly path
+  (`src/lens/scores/state.svelte.ts#flyToZoneCenter`), auto-merged from `main`'s own R3-CI retry
+  fix, still called the OLD positional `zonePopupText(zRows, lyr, hit)` — a real type error against
+  this round's new object-shaped `ZonePopupInput`. Both call sites now go through the SAME
+  `buildZonePopup()` helper a real map click uses, so a Program-Area search pick's popup carries the
+  colour swatch + sparkline too, not just a real click's.
+- **UI-21: basemap labels in English** — `mergeCartoStyle()` (`lib/map/style.ts`) now rewrites a
+  merged CARTO symbol layer's plain `["get","name"]`/legacy `"{name}"` `text-field` to
+  `["coalesce", ["get","name_en"], ["get","name"]]`, falling back to the tile's own local spelling
+  only when it has no English variant; a DIFFERENT field (`water_name`, an already-localized
+  expression) is left exactly as CARTO published it.
+- **UI-15 (welcome modal)**: "Species lens" now switches the lens in place and closes the modal
+  (was a `target="_blank"` link to a second tab); "documentation" links this version's own docs URL
+  (`docsHref`, not a bare, version-less guess); "Take a Tour" → "Take a tour"; the intro now reads
+  "data release {ver}" — dropping "immutable"/"marine atlas" internal-repo wording, also fixed in
+  the report's own intro (`lib/report/model.ts`).
+- **UI-7 (report)**: "Open this release in the Atlas" now carries the report's own place token
+  (`appHref(ver, {pl})`, the SAME `pl=` value the header's permalink already encodes) instead of
+  landing on the bare default view; the empty-report state ("No places in this link") gains an
+  "Open the Atlas" escape hatch.
+
+# atlas 0.10.76
+
+Round 3, CI-reds fix (CI run 36158947685). A Program-Area search pick's camera flight could
+silently do nothing under load (webkit 3/3, firefox flaky, chromium fine).
+
+- **Fixed: a Program-Area search pick could fail to fly the camera at all, under load** —
+  `selectZone`'s bounds resolution (`src/lens/scores/state.svelte.ts`) made exactly ONE
+  synchronous attempt, at the instant Enter was pressed: a published `bbox`, else a live,
+  unfiltered `querySourceFeatures` query over the zones PMTiles source. MapLibre only answers
+  that query from tiles that have already finished BOTH their network fetch and their
+  worker-side vector-tile parse — a real race, not a geometry bug (the same class `report/
+reportMap.ts#waitForIdle` already exists to close for `queryRenderedFeatures`) — so a script
+  (or a person) pressing Enter before the zones layer's tiles are parsed could see the URL/
+  selection update with no camera move at all, permanently: no retry. Fixed by retrying the
+  exact same resolution once more after the map's next `"idle"` (bounded by a 1.5s fallback
+  timer), guarded so a stale retry can never override a later selection. New pure helpers
+  `zoneCacheKey`/`zoneKnownBounds` (`src/lens/scores/boot.ts`) factor the resolution out so both
+  the immediate attempt and the retry call the identical logic, and so it is unit-testable
+  without a real map (`tests/lens/scores/boot.test.ts`).
+
+# atlas 0.10.75
+
+Round 3 re-review fix round (Opus 5.5 eyes-on, second pass on `a7ba24a`/0.10.73). Four defects the
+live build still showed after the prior fix rounds.
+
+- **Fixed (BLOCKING): the species "Zoom to: US waters | Whole range" toggle STILL never appeared on
+  v7** (R3-A1, review D1, second time) — real-build eyes-on found FOUR compounding defects on the
+  live leatherback (`?mdl_seq=54241`), fixed together:
+  1. The leatherback's LIVE `/cog/info` bounds are `[-180, -17.7, 180, 60.45]` (the model reaches
+     American Samoa/Guam across the antimeridian); `minimalFrame()` cannot narrow a box that wide,
+     and the caller used to read that as "not a camera at all" and return BEFORE
+     `wideRangeAware()` ever ran. New exported `cogBoundsCamera()` (`src/lens/species/data/camera.ts`)
+     applies the wide-range narrowing rule to the RAW bbox when `minimalFrame()` can't reframe it.
+  2. That fix alone never actually reached the live leatherback: `src/lib/raster/bounds.ts`'s
+     `narrowLongitude()` intercepts the same degenerate bbox FIRST and used to hand back a
+     single-candidate window still 78° tall (under the wide-range threshold, so the toggle stayed
+     hidden) — or, for a genuinely wide-ranging species, the raw box itself, whose `cameraForBounds()`
+     fit for "Whole range" was verified LIVE to land on lng=0 (Africa). `narrowLongitude()` now probes
+     every candidate and, when the real hits are spread across multiple regions, hands back a
+     confirmed-data arc (`hitLonArc()`, dateline-aware) instead.
+  3. A fresh page load could still permanently skip the species' own camera fit: the species-camera
+     `$effect` (`src/lens/species/state.svelte.ts`) can run once before `boot` (the release's study
+     areas) has loaded, get `cam === null`, and used to latch `prevCameraKey` anyway — so a LATER
+     pass, once `boot` arrived, saw "already fitted" and never retried. It now latches only once a
+     camera was actually computed.
+
+  Second re-review pass (orchestrator eyes-on of the merged build) found three MORE problems with
+  the toggle, fixed the same round: 4. **Phone framing (blocking):** the narrowed "US waters" box (~136° wide) still could not fit
+  390px — it settled at zoom 0.78, a tiny globe mostly hidden behind the sheet, empty sky above.
+  New `phoneAwareWideRangeBounds()` (`src/lib/map/camera.ts`) substitutes `PHONE_DEFAULT_BOUNDS`
+  — the app's own known-good phone default view — whenever the narrowed box would zoom out
+  further than that default already does; gated to the phone only (`isPhone`), desktop untouched. 5. **"Whole range" missing the western Pacific hits:** on desktop it read as nearly identical to
+  "US waters" (never showing Guam/CNMI, 145°E); on the phone it centred at lat -56.5, south of
+  the confirmed-data arc's own -17.7° south edge, entirely behind the sheet. Root cause:
+  `boundsToCameraView`'s own asymmetric-padding shift overshoots badly at the near-zero zoom this
+  ~150°-wide arc needs. New `symmetricPadding()` (`src/lib/map/camera.ts`) splits each axis's
+  total chrome reserve evenly (the fitted zoom is unaffected) while zeroing both differentials,
+  so "Whole range" — now computed directly via `boundsToCameraView`, never through MapLibre's own
+  `cameraForBounds()` — always lands on the arc's true geometric midpoint. Verified live: both
+  viewports now settle at the SAME centre (`lng -140.5, lat 28.0`), visibly including the western
+  Pacific data. 6. **Speed:** `narrowLongitude()` probed its ~14 `/cog/point` candidates one at a time, taking
+  11-14s live before the toggle appeared. Now bounded-concurrent (4 in flight, never unbounded —
+  "never hammer titiler"), result order still independent of the real network's own response
+  order. Measured against the real titiler: the probe sweep itself dropped from ~7.0s sequential
+  to ~2.1s concurrent; end-to-end (a real browser run) the toggle now appears in ~3.5-3.7s.
+
+  "Whole range" frames the confirmed-data arc (or the model's own raw bbox, for a bundle-published
+  globe-spanning extent); the walrus (a real, narrowable antimeridian wrap, one compact location) is
+  unaffected throughout. Verified live end-to-end, both viewports, "US waters" and "Whole range".
+
+- **Fixed: the exported map title read "score · score"** for the default Scores layer (Download
+  menu, PNG/SVG, both themes) — `src/lib/download/footer.ts` gains `titleWithUnit()`, which skips
+  the unit when it equals the title (case-insensitive, trimmed); a species title + a distinct unit
+  still joins as before.
+- **Fixed: the Layers "Selection" row read "— nothing selected" while a place was loaded**
+  (`?pl=z.pa.GAA`) — `isPlacesSelectionEmpty()` (`src/lib/state/types.ts`) now also takes the
+  decoded places count, so a loaded `pl=` list (with no `sel.sel` pick yet) counts as "not empty",
+  matching what the Places panel and Download menu already showed.
+- **Fixed: the About modal's "Release notes" link 404'd** — `release_notes.html` was never a real
+  chapter; the docs book's release chapter is `releases.qmd` → `releases.html`.
+  `src/lib/release/docsUrl.ts#RELEASE_NOTES_CHAPTER_PATH` and `Shell.svelte`'s hand-duplicated
+  `releaseNotesHref` both fixed together.
+
+# atlas 0.10.74
+
+Round 3, W3b (accessibility fix, CI run 36158947685). The gallery's axe gate flagged
+`scrollable-region-focusable` on the Flower plot's component table (all 6 theme × width combos).
+
+- **Fixed: the Flower plot's component score table was not reachable by keyboard** — its own
+  independent scroll box (`.flower-table-scroll`, added R3-B10 so the "Mean" row stays reachable
+  when the flower above it is tall) had no `tabindex`, so a keyboard-only user could never scroll
+  it, only a mouse/touch one. It is now a `tabindex="0"` `role="region"`, named via
+  `aria-labelledby` to the table's own `<caption>` (never a second, independently-worded label),
+  with a visible `:focus-visible` ring using the same token/shape `Sheet.svelte`'s `.sheet-body`
+  and `Panel.svelte`'s `.panel-surface` already use (`outline: 2px solid var(--focus-ring);
+outline-offset: -2px;`).
 
 # atlas 0.10.73
 

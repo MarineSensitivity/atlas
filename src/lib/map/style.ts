@@ -88,7 +88,42 @@ export function mergeCartoStyle(
     }
     return layer as unknown as LayerSpecification;
   });
-  return { layers, sprite: carto.sprite, glyphs: carto.glyphs };
+  return { layers: anglicizeSymbolLabels(layers), sprite: carto.sprite, glyphs: carto.glyphs };
+}
+
+/** UI-21 (round-3 review, Ben's ask): CARTO's stock style.json labels every place in the tile's own
+ * locale field (a bare `["get","name"]`, or the legacy Mapbox token string `"{name}"` — the tile's
+ * local-language spelling), and this app has no locale switcher, so every viewer should see English
+ * names. Rewrites ONLY a symbol layer's plain "name" `text-field` to prefer `name_en`, falling back
+ * to the local `name` when a tile has no English variant:
+ * `["coalesce", ["get","name_en"], ["get","name"]]` — never touches a DIFFERENT field
+ * (`water_name`, an already-`name:en`-aware or otherwise-coalesced expression, ...), so CARTO's own
+ * water-body labels are left exactly as published. Pure, exported so `tests/map/style.test.ts` can
+ * assert it directly without a network fetch. */
+export function anglicizeSymbolLabels(layers: LayerSpecification[]): LayerSpecification[] {
+  return layers.map((raw) => {
+    const layer = raw as unknown as Record<string, unknown> & {
+      type?: string;
+      layout?: Record<string, unknown>;
+    };
+    if (layer.type !== "symbol" || !layer.layout) return raw;
+    if (!isPlainNameField(layer.layout["text-field"])) return raw;
+    return {
+      ...layer,
+      layout: {
+        ...layer.layout,
+        "text-field": ["coalesce", ["get", "name_en"], ["get", "name"]],
+      },
+    } as unknown as LayerSpecification;
+  });
+}
+
+/** true only for a `text-field` that names the plain `"name"` field and nothing else — a bare GL
+ * expression `["get","name"]` or the legacy Mapbox token string `"{name}"` — never a field this
+ * app must leave alone (`water_name`, `name:en`, an already-coalesced/localized expression). */
+function isPlainNameField(field: unknown): boolean {
+  if (field === "{name}") return true;
+  return Array.isArray(field) && field[0] === "get" && field[1] === "name" && field.length === 2;
 }
 
 /** does the fetched CARTO style itself carry a symbol layer (its own place/road labels)? Distinct

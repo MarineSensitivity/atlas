@@ -173,15 +173,21 @@ export function resolveTheme(theme: Theme, prefersDark: boolean | null): Resolve
 
 /**
  * Layers pane R3-W1 fix round (Ben: "dim Selection if there is none to display, otherwise its
- * presence can cause confusion"). `Sel.sel` already unifies every kind of selection this app has
- * ("cell:<id>" | "zone:<unit>:<key>" | "place:<n>", this file's own header) into one optional
- * string — a picked/drawn/uploaded place and a clicked cell/zone all write it, and nothing else
- * does — so "is there anything for the Selection (`data-places`) stack row to draw" is exactly
- * "is it set". A pure predicate (not a component-local check) so both lenses' `rowState` and this
- * file's own test agree on the one definition.
+ * presence can cause confusion"). `Sel.sel` unifies every kind of PICK this app has ("cell:<id>" |
+ * "zone:<unit>:<key>" | "place:<n>", this file's own header) into one optional string — a
+ * picked/drawn/uploaded place and a clicked cell/zone all write it, and nothing else does.
+ *
+ * R3-rr fix 3 (Opus 5.5 eyes-on review round 3, 2026-09-25): `sel.sel` is not the only thing the
+ * Selection row draws — a loaded PLACES LIST (the `pl=` hash token, decoded by
+ * `places/model.ts#placesFromHash`) shows on its own even with no `sel` pick at all (`?pl=z.pa.GAA`
+ * loads a place with no cell/zone SELECTED yet, and the Places panel + Download menu both treat
+ * that as "places present"). The row used to dim on `?pl=` alone because this predicate only ever
+ * checked `sel`. `placeCount` is the second thing that must ALSO be empty (0, the default) — a
+ * pure predicate over both so both lenses' `rowState` and this file's own test agree on the one
+ * definition, exactly as before.
  */
-export function isPlacesSelectionEmpty(sel: string | undefined): boolean {
-  return !sel;
+export function isPlacesSelectionEmpty(sel: string | undefined, placeCount = 0): boolean {
+  return !sel && placeCount === 0;
 }
 
 /** every field's context-INDEPENDENT default (see `defaultLens`/`defaultOut` for the two that are

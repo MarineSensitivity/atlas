@@ -1,15 +1,24 @@
 diff --git a/src/lens/scores/popup.ts b/src/lens/scores/popup.ts
-index fa8455a..e6d93a8 100644
+index 5cb39de..c8e6efc 100644
 --- a/src/lens/scores/popup.ts
 +++ b/src/lens/scores/popup.ts
-@@ -58,7 +58,9 @@ export interface CellPopupInput {
-  * once wrapped, for a click that landed nowhere the release scores at all.
-  */
- export function cellPopupText(input: CellPopupInput): string {
--  if (input.value === null) return noScoredCellText(input);
-+  // SEEDED FAULT (tests/faults/popup-no-value-cellid-title.patch): back to the cell id + long
-+  // layer title on a no-value cell -- the owner's ORIGINAL live defect (D3), reproduced by
-+  // dropping the no-value branch entirely. Must turn tests/lens/scores/popup.test.ts red.
-   return formatCellPopup(input, escapeHtml(input.layerLabel));
+@@ -78,14 +78,15 @@ function cellPopupContent(input: CellPopupInput): ValuePopupContent {
+       ? formatLatLon(input.lat, input.lon)
+       : formatSubject({ kind: "cell", cellId: input.cellId, lon: input.lon, lat: input.lat });
+   const swatch = cellSwatch(input.value, input.ramp);
++  // SEEDED FAULT (tests/faults/popup-no-value-cellid-title.patch): back to the full layer label +
++  // sparkline on a no-value cell -- must turn tests/lens/scores/popup.test.ts red.
+   return {
+     subject,
+-    valueLine:
+-      input.value === null ? "No scored cell here" : formatValueLine(input.layerLabel, input.value),
++    valueLine: formatValueLine(input.layerLabel, input.value),
+     swatchColor: swatch?.color ?? null,
+     textColor: swatch?.textColor ?? null,
+-    unitLabel: input.value === null ? null : input.layerLabel,
+-    sparkline: input.value === null ? null : input.sparkline,
++    unitLabel: input.layerLabel,
++    sparkline: input.sparkline,
+   };
  }
  

@@ -41,14 +41,25 @@ export function finalAttemptActuals(relPaths) {
 }
 
 /**
- * `<stem>-actual.png` -> `<stem>.png` -- the baseline filename `toHaveScreenshot` resolves to
- * (its own `-{project}-{platform}` suffix, e.g. `-chromium-linux`, is already baked into the name
- * a spec passes it, so this is literally just dropping the `-actual` Playwright itself inserts
- * before the extension when it writes a mismatch's artifacts). `null` for anything that is not a
- * `*-actual.png` filename -- defensive: an artifact should never contain one, but this is the one
- * place a stray file would otherwise silently overwrite the wrong baseline.
+ * `<stem>-actual.png` -> `<stem><platformSuffix>.png` -- the baseline filename `toHaveScreenshot`
+ * resolves to. Unlike the root three-engine suite's own snapshots, `e2e/gallery.spec.ts`'s
+ * `toHaveScreenshot()` calls pass a bare name with NO `-{project}-{platform}` suffix baked in
+ * (e.g. `gallery-navy-desktop-about.png`), so Playwright appends that suffix itself when it
+ * resolves the baseline path -- but a CI *actual* file (what this script downloads) carries no
+ * such suffix at all: CI run 36158947685's artifact held
+ * `gallery-navy-desktop-about-actual.png`, not `gallery-navy-desktop-about-chromium-linux-
+ * actual.png`. So this function must ADD `platformSuffix` (default `-chromium-linux`, matching
+ * `playwright.gallery.config.ts`'s only CI project/platform), not merely drop `-actual`. It stays
+ * idempotent for safety: if the stem already ends in that exact `-chromium-<platform>` shape
+ * (e.g. a future caller feeds it an already-suffixed name), the suffix is not doubled. `null` for
+ * anything that is not a `*-actual.png` filename -- defensive: an artifact should never contain
+ * one, but this is the one place a stray file would otherwise silently overwrite the wrong
+ * baseline.
  */
-export function baselineNameFor(actualFileName) {
+export function baselineNameFor(actualFileName, platformSuffix = "-chromium-linux") {
   const m = /^(.*)-actual\.png$/.exec(actualFileName);
-  return m ? `${m[1]}.png` : null;
+  if (!m) return null;
+  const stem = m[1];
+  if (/-chromium-[a-z]+$/.exec(stem)) return `${stem}.png`;
+  return `${stem}${platformSuffix}.png`;
 }

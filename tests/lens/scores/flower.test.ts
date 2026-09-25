@@ -197,10 +197,13 @@ describe("cellFlowerComponents", () => {
   });
 });
 
+// UI-4 (round-3 review): `flowerTitle` now routes through the SAME `formatSubject()` the map
+// popup and species table header use -- "Cell {id} · {lat}° N, {lon}° W" (not the old "Cell ID:
+// {id} (x: …, y: …)"), and "All US waters" (not "Full study area") when nothing is selected.
 describe("flowerTitle", () => {
-  it("cell: id + coords to 3 dp", () => {
+  it("cell: the shared subject line, 3 dp", () => {
     expect(flowerTitle({ kind: "cell", cellId: 42, lon: -90.12345, lat: 27.6789 })).toBe(
-      "Cell ID: 42 (x: -90.123, y: 27.679)",
+      "Cell 42 · 27.679° N, 90.123° W",
     );
   });
 
@@ -210,8 +213,8 @@ describe("flowerTitle", () => {
     );
   });
 
-  it("nothing selected: Full study area", () => {
-    expect(flowerTitle(null)).toBe("Full study area");
+  it("nothing selected: All US waters", () => {
+    expect(flowerTitle(null)).toBe("All US waters");
   });
 });
 

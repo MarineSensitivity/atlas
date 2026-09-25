@@ -47,6 +47,34 @@ async function gotoLayers(page: Page, search = "&lyr=long") {
   await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
 }
 
+// R3-CI (seeded fault `select-width-removed` stayed GREEN, CI run 36158947685 -- "it cannot fail,
+// so it is not a check"): `gotoLayers` ABOVE always injects `LONG_LABEL` into the Layer select's
+// own OPTION LIST, whether or not it is the SELECTED value -- a native `<select>` with no explicit
+// CSS width sizes its closed box to its WIDEST OPTION, not just the selected one (every engine).
+// With `LONG_LABEL` always present, the select's own natural content width already exceeds
+// `.select-wrap`'s width regardless of `.select`'s own `width: 100%` rule, so
+// "the box spans to the chevron" passed whether or not that rule existed -- confirmed directly:
+// reapplying the fault patch by hand and measuring `.select`'s `boundingBox()` against a PLAIN
+// `bootFor("v7")` boot (short option labels, e.g. "Overall score") showed the real, pre-fix bug
+// (a 112px-wide select inside a 346px wrap, the chevron floating ~200px past its right edge) --
+// but the SAME fault against `gotoLayers`'s own `bootWithLongLabel()` boot never did, because the
+// injected long option alone already stretched the box past the chevron. This helper is the fix:
+// short option labels only, so the box-spans-to-chevron assertion actually depends on the CSS
+// rule it is meant to gate, never on an accidentally-wide option elsewhere in the list.
+async function gotoLayersShortLabels(page: Page) {
+  await blockWasm(page);
+  await routeBucket(page, "v7", bootFor("v7"));
+  await routeSession(page, null);
+  await routeSealFixture(page);
+  await routeZones20(page);
+  await routeBasemapStyle(page);
+  await routeTitilerTiles(page);
+  await routeGlyphs(page);
+  await page.goto("/?proj=mercator");
+  await waitForHydration(page);
+  await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
+}
+
 /** the shared `Select.svelte` control (Study area / Spatial units / Color palette): the select
  * box's own right edge must be at or past the chevron's left edge -- i.e. the chevron sits
  * INSIDE the box, never floating past its end. */
@@ -88,7 +116,10 @@ for (const [name, viewport] of [
     // Regions group (`ScoresSearch.svelte`), which has no `Select.svelte`/chevron of its own; the
     // Layer field is now the panel's only one, and full width.
     test("Layer: the box spans to the chevron, never past it", async ({ page }) => {
-      await gotoLayers(page);
+      // short option labels (`gotoLayersShortLabels`, not `gotoLayers`'s own long-label fixture)
+      // -- see that helper's own header: a long OPTION anywhere in the list masks the CSS rule
+      // this assertion exists to gate by stretching the select's natural content width on its own.
+      await gotoLayersShortLabels(page);
       await assertSelectSpansChevron(page, "Layer");
     });
 

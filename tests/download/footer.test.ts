@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { canonicalShareUrl, fitsWidth, footerLines } from "../../src/lib/download/footer";
+import {
+  canonicalShareUrl,
+  fitsWidth,
+  footerLines,
+  titleWithUnit,
+} from "../../src/lib/download/footer";
 
 describe("canonicalShareUrl", () => {
   it("keeps the ABSOLUTE URL (D3 fix: never origin-stripped -- a relative link is useless off-site)", () => {
@@ -49,7 +54,38 @@ describe("fitsWidth", () => {
   });
 });
 
+describe("titleWithUnit", () => {
+  it('BUG: "score" title + "score" unit does not repeat (R3-rr fix 2 — the live default Scores layer)', () => {
+    expect(titleWithUnit("score", "score")).toBe("score");
+  });
+
+  it("case-insensitive, trimmed: differing case/whitespace still counts as the same word", () => {
+    expect(titleWithUnit("Score", "score")).toBe("Score");
+    expect(titleWithUnit("Score", "  Score  ")).toBe("Score");
+  });
+
+  it("a species title + a distinct unit still joins, unaffected", () => {
+    expect(titleWithUnit("Odobenus rosmarus", "suitability")).toBe(
+      "Odobenus rosmarus · suitability",
+    );
+  });
+
+  it("no unit at all: the bare title, unaffected", () => {
+    expect(titleWithUnit("Walrus", undefined)).toBe("Walrus");
+  });
+});
+
 describe("footerLines", () => {
+  it("BUG: the default Scores layer's title+unit ('score'/'score') collapses to one word, not 'score · score' (R3-rr fix 2)", () => {
+    const [l1] = footerLines({
+      title: "score",
+      unit: "score",
+      ver: "v9",
+      url: "https://x/atlas/",
+    });
+    expect(l1).toBe("score");
+  });
+
   it("puts the title+unit on line 1 and the app/version/canonical-url on the LAST line (2 lines, no description)", () => {
     const lines = footerLines({
       title: "Sensitivity",

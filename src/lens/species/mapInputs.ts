@@ -10,6 +10,7 @@
 // app's lenses (CLAUDE.md "keep core logic in an exported function... a component only calls it").
 import { RANGE_FILL_COLOR, RANGE_FILL_OPACITY } from "../../lib/map/layers/ranges";
 import { titilerTileTemplate } from "../../lib/map/layers/titiler";
+import { legendTitle } from "../../lib/map/legendTitle";
 import type { RangeLayerSpec, RasterLayerSpec } from "../../lib/map/types";
 import {
   legendStops,
@@ -53,8 +54,14 @@ export function activePill(bar: LayerBar): LayerPill | undefined {
 }
 
 export type SpeciesLegend =
-  | { kind: "continuous"; title: string; unit: string; stops: LegendStop[] }
-  | { kind: "categorical"; title: string; label: string; color: string }
+  | {
+      kind: "continuous";
+      title: string;
+      subtitle: string | null;
+      unit: string;
+      stops: LegendStop[];
+    }
+  | { kind: "categorical"; title: string; subtitle: string | null; label: string; color: string }
   | null;
 
 /** the species legend's `formatValue` (`SpeciesLegend.svelte`) — species surfaces are always
@@ -73,8 +80,12 @@ export interface SpeciesMapInputsOptions {
    * server-side regardless of whether this app can also draw a legend). */
   boot?: { palettes?: unknown } | null;
   ver: string;
-  /** the legend/downloads title — the caller's `documentTitle`-adjacent label, e.g. the card's `sci`. */
-  legendTitle: string;
+  /** the card's own scientific name — always present once a card resolves; the legend/downloads
+   * title falls back to it alone when there is no common name (`legendTitle()`'s own fallback). */
+  scientificName: string;
+  /** the card's common name, when the taxon has one — folded into `legendTitle()`'s "{common}
+   * ({sci})" title form (Ben's UI-L2 ask). `null`/omitted degrades to the bare scientific name. */
+  commonName?: string | null;
 }
 
 export interface SpeciesMapInputs {
@@ -135,10 +146,18 @@ export function speciesMapInputs(bar: LayerBar, opts: SpeciesMapInputsOptions): 
       opacity: SPECIES_RASTER_OPACITY,
     };
     const stops = paletteStopsFromBoot(opts.boot ?? null, colormapName as PaletteName);
+    const lt = legendTitle({
+      lens: "species",
+      commonName: opts.commonName ?? undefined,
+      scientificName: opts.scientificName,
+      inputLabel: pill.label,
+      valueSemantics: rasterValueSemantics(pill, asset.rep),
+    });
     const legend: SpeciesLegend = stops
       ? {
           kind: "continuous",
-          title: opts.legendTitle,
+          title: lt.title,
+          subtitle: lt.subtitle,
           unit: "score",
           stops: legendStops(stops, min, max),
         }
@@ -157,11 +176,31 @@ export function speciesMapInputs(bar: LayerBar, opts: SpeciesMapInputsOptions): 
     fillColor: RANGE_FILL_COLOR,
     opacity: RANGE_FILL_OPACITY,
   };
+  const rangeLt = legendTitle({
+    lens: "species",
+    commonName: opts.commonName ?? undefined,
+    scientificName: opts.scientificName,
+    inputLabel: pill.label,
+    valueSemantics: "presence",
+  });
   const legend: SpeciesLegend = {
     kind: "categorical",
-    title: opts.legendTitle,
+    title: rangeLt.title,
+    subtitle: rangeLt.subtitle,
     label: "range (presence)",
     color: RANGE_FILL_COLOR,
   };
   return { raster: null, range, legend, notice: null, asset };
+}
+
+/** Ben's UI-L2 ask, species form: the legend subtitle's value-semantics clause -- "habitat
+ * suitability 1-100" for the merged model (always rescaled 0/1-100, the merge's whole point) or an
+ * input pill whose picked asset is already on the ingest/model rescale (`rep === "model"`,
+ * `REPRESENTATION_LABELS`'s "As ingested"/"Interpolated" row); "as delivered" for an input pill
+ * whose picked asset is its own raw, undelivered band (`rep === "native"`, that table's "Delivered"/
+ * "Original" row) -- matches the brief's own two examples verbatim ("Merged model · habitat
+ * suitability 1–100", "AquaMaps · as delivered"). */
+function rasterValueSemantics(pill: LayerPill, assetRep: string): string {
+  if (pill.key === "merged") return "habitat suitability 1-100";
+  return assetRep === "native" ? "as delivered" : "habitat suitability 1-100";
 }

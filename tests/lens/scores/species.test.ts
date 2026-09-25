@@ -27,8 +27,12 @@ describe("unitSingularLabel", () => {
   });
 });
 
+// UI-4 (round-3 review): "Species in {subject}" for every state, `{subject}` the SAME
+// `formatSubject()` line the map popup and flower panel print -- replaces the old three bespoke
+// spellings ("Species for Cell ID: …", "Species for Program Area: …", "Species in Full study
+// area").
 describe("speciesHeader", () => {
-  it("cell clicked", () => {
+  it("cell clicked, no coords wired through: the id-only fallback", () => {
     expect(
       speciesHeader({
         selection: { kind: "cell", cellId: 42 },
@@ -36,7 +40,19 @@ describe("speciesHeader", () => {
         unitLabel: null,
         zoneAllKey: "USA",
       }),
-    ).toBe("Species for Cell ID: 42");
+    ).toBe("Species in Cell 42");
+  });
+
+  it("cell clicked, coords wired through: the shared formatSubject line", () => {
+    expect(
+      speciesHeader({
+        selection: { kind: "cell", cellId: 3350704 },
+        unit: "cell",
+        unitLabel: null,
+        zoneAllKey: "USA",
+        cellCoords: { lon: -90.575, lat: 28.625 },
+      }),
+    ).toBe("Species in Cell 3350704 · 28.625° N, 90.575° W");
   });
 
   it("zone clicked (programarea)", () => {
@@ -48,13 +64,13 @@ describe("speciesHeader", () => {
         unitLabel: "Program areas",
         zoneAllKey: "USA",
       }),
-    ).toBe("Species for Program Area: Gulf of America, Eastern");
+    ).toBe("Species in Gulf of America, Eastern");
   });
 
   it("nothing selected", () => {
     expect(
       speciesHeader({ selection: null, unit: "cell", unitLabel: null, zoneAllKey: "USA" }),
-    ).toBe("Species in Full study area");
+    ).toBe("Species in All US waters");
   });
 });
 

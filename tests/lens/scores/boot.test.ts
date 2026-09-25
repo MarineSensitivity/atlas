@@ -13,6 +13,8 @@ import {
   unitOptions,
   zoneAllKey,
   zoneBboxFromBoot,
+  zoneCacheKey,
+  zoneKnownBounds,
   zoneRows,
 } from "../../../src/lens/scores/boot";
 import { BOOT_V1_PLANAREA, BOOT_V7 } from "./fixtures";
@@ -360,10 +362,17 @@ describe("metricKeyLabel (R3-B1: title-case a bare metric_key)", () => {
       expect(metricKeyLabel("score", null)).toBe("Score");
     });
 
-    it("a REAL, different label wins verbatim -- the common case, unaffected", () => {
+    // R3-W7 follow-up (Ben, 2026-09-25): a real, different label still wins verbatim -- but its
+    // FIRST character is now sentence-cased too (a v7 manifest published a real, non-degenerate
+    // "score" label that stayed lowercase forever because it differed from its key).
+    it("a REAL, different label wins, sentence-cased -- the common case", () => {
       expect(metricKeyLabel("primprod", "prim prod, 2014-2023 avg (mg C/m^2/day)")).toBe(
-        "prim prod, 2014-2023 avg (mg C/m^2/day)",
+        "Prim prod, 2014-2023 avg (mg C/m^2/day)",
       );
+    });
+
+    it("R3-W7: a real label that is itself lowercase gets sentence-cased", () => {
+      expect(metricKeyLabel("composite_score", "score")).toBe("Score");
     });
 
     it("the reported bug: a curated label equal to the key (same case) is NOT treated as real", () => {
@@ -454,5 +463,93 @@ describe("zoneBboxFromBoot", () => {
   it("no boot loaded yet: null", () => {
     expect(zoneBboxFromBoot(null, "programarea", "GAA")).toBeNull();
     expect(zoneBboxFromBoot({}, "programarea", "GAA")).toBeNull();
+  });
+});
+
+// R3-CI regression (CI run 36158947685, webkit 3/3: "Enter flies the camera into the Aleutian
+// Arc's own polygon bbox"). Root cause: `state.svelte.ts#selectZone` resolved a zone's fly-to
+// bounds with exactly ONE synchronous attempt, at the instant Enter is pressed — a published
+// `zoneBboxFromBoot`, else a `zoneBoundsCache` hit from an earlier live, unfiltered
+// `querySourceFeatures` query. On a release that publishes no bbox (every release today) AND a
+// cache that is still empty (nothing has queried the zones PMTiles source yet THIS page load),
+// that single attempt misses — not because the zone has no geometry, but because MapLibre's
+// `querySourceFeatures` only answers from tiles that have ALREADY finished both their network
+// fetch and their worker-side vector-tile parse (the identical race `report/reportMap.ts#waitForIdle`
+// already exists to close for `queryRenderedFeatures`), and nothing forced that parse to finish
+// before this ran. `selectZone` used to fall straight to its announce-only branch on that miss,
+// permanently — no retry. The fix retries the SAME resolution once more after the map's next
+// "idle" (state.svelte.ts's own `retryZoneFlyAfterIdle`); `zoneKnownBounds` is the pure piece of
+// that resolution (published bbox, else cache) both the first attempt and the retry call, so this
+// test proves the property the retry depends on: repeating the SAME call, once the cache has since
+// been populated (standing in for "the live query the retry re-runs found the tile"), now resolves
+// where the first attempt — deliberately given an empty cache, exactly what a genuine tile-load
+// race looks like — did not.
+describe("zoneCacheKey / zoneKnownBounds (R3-CI: selectZone's idle-retry resolution)", () => {
+  it("zoneCacheKey is `unit:key`, matching state.svelte.ts's own zoneBoundsCache format", () => {
+    expect(zoneCacheKey("programarea", "ALA")).toBe("programarea:ALA");
+  });
+
+  it(
+    "an empty cache and no published bbox: null -- the exact miss the FIRST selectZone attempt " +
+      "can hit while the zones tile is still loading/parsing",
+    () => {
+      expect(zoneKnownBounds(BOOT_V7, "programarea", "ALA", new Map())).toBeNull();
+    },
+  );
+
+  it(
+    "a later cache hit resolves -- what the retry-after-idle finds once the live tile query " +
+      "the first attempt missed has since populated the cache",
+    () => {
+      const cache = new Map([
+        [
+          "programarea:ALA",
+          [
+            [-170, 20],
+            [-168, 22],
+          ] as [[number, number], [number, number]],
+        ],
+      ]);
+      expect(zoneKnownBounds(BOOT_V7, "programarea", "ALA", cache)).toEqual([
+        [-170, 20],
+        [-168, 22],
+      ]);
+    },
+  );
+
+  it(
+    "a published bbox wins over the cache even when both are present (R3-B14/C3's own rule, " +
+      "restated here so the retry path never accidentally reverses it)",
+    () => {
+      const boot = {
+        zones: { programarea: [{ key: "ALA", name: "Aleutian Arc", bbox: [40, 40, 42, 42] }] },
+      };
+      const cache = new Map([
+        [
+          "programarea:ALA",
+          [
+            [-170, 20],
+            [-168, 22],
+          ] as [[number, number], [number, number]],
+        ],
+      ]);
+      expect(zoneKnownBounds(boot, "programarea", "ALA", cache)).toEqual([
+        [40, 40],
+        [42, 42],
+      ]);
+    },
+  );
+
+  it("an unknown key and an unrelated cache entry: null, never a throw", () => {
+    const cache = new Map([
+      [
+        "programarea:GAA",
+        [
+          [-158, 26],
+          [-156, 28],
+        ] as [[number, number], [number, number]],
+      ],
+    ]);
+    expect(zoneKnownBounds(BOOT_V7, "programarea", "NOPE", cache)).toBeNull();
   });
 });

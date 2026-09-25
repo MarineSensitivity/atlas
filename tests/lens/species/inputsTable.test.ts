@@ -19,10 +19,41 @@ describe("inputsTableRows", () => {
       selectedInput: MERGED_IN,
       datasets: datasetsFor("v9"),
     });
-    const rows = inputsTableRows(bar);
+    const rows = inputsTableRows(bar, datasetsFor("v9"));
     expect(rows.map((r) => r.key)).toEqual(bar.pills.map((p) => p.key));
-    expect(rows.map((r) => r.dataset)).toEqual(bar.pills.map((p) => p.dsKey));
     expect(rows.map((r) => r.input)).toEqual(bar.pills.map((p) => p.label));
+  });
+
+  // UI-9 (round-3 review): the Table tool showed raw dataset keys ("ms_merge", "am_0.05",
+  // "rng_iucn") -- a NOAA reviewer does not recognize those. `dataset` is now the resolved NAME
+  // (`datasetLabel()`, the SAME `datasets.json` name the layer bar's own pills already use).
+  it("shows the dataset's own NAME, not the raw ds_key", () => {
+    const bar = layerBar(CARDS.leatherback(), {
+      ver: "v9",
+      selectedInput: MERGED_IN,
+      datasets: datasetsFor("v9"),
+    });
+    const rows = inputsTableRows(bar, datasetsFor("v9"));
+    const merged = rows.find((r) => r.key === MERGED_IN)!;
+    expect(merged.dataset).toBe("Merged Model");
+    expect(rows.some((r) => r.dataset === "ms_merge")).toBe(false);
+  });
+
+  // Shell.svelte (this component's real mount) does not thread a DatasetIndex through today --
+  // the fallback must still show a resolved NAME, not the raw ds_key, since `bar.pills[].label`
+  // was ALREADY resolved via `datasetLabel()` when `layerBar()` built it.
+  it("no datasets index supplied: falls back to the pill's own resolved label, never the raw ds_key", () => {
+    const bar = layerBar(CARDS.leatherback(), {
+      ver: "v9",
+      selectedInput: MERGED_IN,
+      datasets: datasetsFor("v9"),
+    });
+    const rows = inputsTableRows(bar);
+    for (const r of rows) {
+      const pill = bar.pills.find((p) => p.key === r.key)!;
+      expect(r.dataset).toBe(pill.label);
+      expect(r.dataset).not.toBe(pill.dsKey);
+    }
   });
 
   it("an available input's representation lists every rep its assets actually publish", () => {
@@ -31,7 +62,7 @@ describe("inputsTableRows", () => {
       selectedInput: MERGED_IN,
       datasets: datasetsFor("v9"),
     });
-    const merged = inputsTableRows(bar).find((r) => r.key === MERGED_IN)!;
+    const merged = inputsTableRows(bar, datasetsFor("v9")).find((r) => r.key === MERGED_IN)!;
     expect(merged.available).toBe(true);
     expect(merged.reason).toBeNull();
     // the merged pill's own single asset is always "native" (layerBar.ts's `mergedPill`).
@@ -44,7 +75,7 @@ describe("inputsTableRows", () => {
       selectedInput: MERGED_IN,
       datasets: datasetsFor("v7"),
     });
-    const am = inputsTableRows(bar).find((r) => r.dataset === "am_0.05")!;
+    const am = inputsTableRows(bar, datasetsFor("v7")).find((r) => r.dataset === "AquaMaps SDM")!;
     expect(am.available).toBe(false);
     expect(am.representation).toBe("—");
     expect(am.reason).toContain("no raster registered for this model");
@@ -59,7 +90,7 @@ describe("inputsTableRows", () => {
       selectedInput: MERGED_IN,
       datasets: datasetsFor("v9"),
     });
-    const rows = inputsTableRows(bar);
+    const rows = inputsTableRows(bar, datasetsFor("v9"));
     for (const r of rows) {
       const parts = r.representation.split(", ");
       expect(new Set(parts).size).toBe(parts.length);
