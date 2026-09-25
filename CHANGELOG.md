@@ -1,3 +1,31 @@
+# atlas 0.10.75
+
+Round 3 re-review fix round (Opus 5.5 eyes-on, second pass on `a7ba24a`/0.10.73). Four defects the
+live build still showed after the prior fix rounds.
+
+- **Fixed (BLOCKING): the species "Zoom to: US waters | Whole range" toggle STILL never appeared on
+  v7** (R3-A1, review D1, second time) — the leatherback's LIVE `/cog/info` bounds are
+  `[-180, -17.7, 180, 60.45]` (the model reaches American Samoa/Guam across the antimeridian, so the
+  raster's own bbox is already the full globe in longitude); `minimalFrame()` cannot narrow a box
+  that wide, and the caller used to read that as "not a camera at all" and return BEFORE
+  `wideRangeAware()` ever ran. New exported `cogBoundsCamera()`
+  (`src/lens/species/data/camera.ts`) applies the wide-range narrowing rule to the RAW bbox when
+  `minimalFrame()` can't reframe it — `intersectBbox()`'s own dateline-shift search still narrows a
+  -180..180 box against the study area correctly. "Whole range" for a globe-spanning extent frames
+  the model's own raw bbox. The walrus (a real, narrowable antimeridian wrap) is unaffected.
+- **Fixed: the exported map title read "score · score"** for the default Scores layer (Download
+  menu, PNG/SVG, both themes) — `src/lib/download/footer.ts` gains `titleWithUnit()`, which skips
+  the unit when it equals the title (case-insensitive, trimmed); a species title + a distinct unit
+  still joins as before.
+- **Fixed: the Layers "Selection" row read "— nothing selected" while a place was loaded**
+  (`?pl=z.pa.GAA`) — `isPlacesSelectionEmpty()` (`src/lib/state/types.ts`) now also takes the
+  decoded places count, so a loaded `pl=` list (with no `sel.sel` pick yet) counts as "not empty",
+  matching what the Places panel and Download menu already showed.
+- **Fixed: the About modal's "Release notes" link 404'd** — `release_notes.html` was never a real
+  chapter; the docs book's release chapter is `releases.qmd` → `releases.html`.
+  `src/lib/release/docsUrl.ts#RELEASE_NOTES_CHAPTER_PATH` and `Shell.svelte`'s hand-duplicated
+  `releaseNotesHref` both fixed together.
+
 # atlas 0.10.73
 
 Round 3, W6 (consistency slice A: shell + shared UI). Two live-site bugs (a second Program-Area
