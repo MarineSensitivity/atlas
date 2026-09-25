@@ -1,3 +1,29 @@
+# atlas 0.10.71
+
+Round 3, W4: the phone's default first view, wide-range species framing, and the category
+palette (R3-A1, R3-A2, R3-A3).
+
+- **Fixed (R3-A2): the phone's default first view showed only the northern Gulf of Mexico**, one
+  region of four. `PHONE_DEFAULT_BOUNDS` now frames the lower 48's Pacific, Gulf and
+  Atlantic/Florida coasts, with a real south-east-Alaska/Gulf-of-Alaska sliver visible at the
+  top-left edge as a hint of coverage there — chosen by looking at real builds, starting from the
+  round-3 plan's own `[[-135,20],[-60,52]]` bbox and narrowing to `[[-128,24],[-65,52]]`. The wider
+  frame computes a lower zoom than the old tight single-region fit (an accepted, deliberate trade
+  documented in `camera.ts`'s own header), so it no longer clears the old "empty-sky" zoom floor —
+  the live screenshot, not a zoom number, is what proves the render is still right.
+- **New (R3-A1): a wide-range species model frames its IN-US portion by default**, with a compact
+  "Zoom to: US waters | Whole range" toggle in the species card as the escape hatch back to the
+  whole thing. The v7 leatherback's own model spans the whole Pacific (SWOT DPS nesting near
+  Oceania, foraging to Alaska); when a model's fitted bbox spans more than 120° of longitude, it is
+  intersected against a dateline-aware "study area as a box" (the release's own published extent if
+  one ever exists, else derived from the same camera the desktop default view renders — never a
+  hardcoded number). Applies to both viewports; a compact model is completely unaffected.
+- **Changed (R3-A3): re-hued Fish (blue-violet) and Turtle (moss/olive) in the eight-category
+  palette**, and nudged Mammal darker/more golden — `--cat-bird`/`--cat-fish` and
+  `--cat-mammal`/`--cat-turtle` were near-identical in both themes, and Coral/Mammal collapsed
+  under a protanopia simulation despite passing on normal-vision CIE76 ΔE alone. Every category
+  stays ≥4.5:1 text / ≥3:1 non-text (`npm run contrast`) and distinct from `--cat-primprod`.
+
 # atlas 0.10.69
 
 Round 3, W2: a Download menu (PNG/SVG of the map view, GeoTIFF/GeoJSON of the current data layer),
