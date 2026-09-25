@@ -1,11 +1,11 @@
 diff --git a/src/lens/species/state.svelte.ts b/src/lens/species/state.svelte.ts
-index aab6d32..a508197 100644
+index 393781a..4807a16 100644
 --- a/src/lens/species/state.svelte.ts
 +++ b/src/lens/species/state.svelte.ts
-@@ -472,11 +472,12 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
+@@ -547,11 +547,12 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
+         padding: DEFAULT_CAMERA_PADDING,
        });
-       applyCamera(cam);
-       recordWideRangeCamera(cam);
+       applyWideRangeCamera(cam);
 -      // D8 fold-in (orchestrator round 2, 2026-09-24): the manual "zoom to layer" button used to
 -      // stop at `cameraFor()`'s own bundle-only chain, so a taxon with NO published bbox anywhere
 -      // (v7's walrus) fell to `kind: "center"` here too — the SAME COG-bounds last resort the
