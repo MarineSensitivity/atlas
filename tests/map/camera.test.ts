@@ -11,8 +11,10 @@ import {
   cameraViewToBounds,
   createCameraWriter,
   paddedStudyAreaCenter,
+  phoneAwareWideRangeBounds,
   phoneDefaultCamera,
   roundCamera,
+  symmetricPadding,
   shouldFlyToArea,
   type AreaCameraState,
 } from "../../src/lib/map/camera";
@@ -493,6 +495,136 @@ describe("phoneDefaultCamera / PHONE_DEFAULT_BOUNDS — the phone's DEFAULT firs
     const y = projectY(brokenCenter, brokenZoom, southLat, PHONE_VIEWPORT.height);
     const sheetTop = PHONE_VIEWPORT.height - PHONE_HALF_PADDING.bottom;
     expect(y).toBeGreaterThan(sheetTop); // off the bottom of the free area -- the bug this fixes
+  });
+});
+
+// R3-rr fix 1, round 5 (orchestrator eyes-on, real e1fcfc8 build, 2026-09-25): a wide-range
+// species' narrowed "US waters" box (e.g. the real leatherback's own ~136deg-wide US-EEZ
+// intersection) settled at `lng -134, lat -48.8, zoom 0.78` on the phone -- a tiny globe mostly
+// hidden behind the sheet, most of the free area empty sky (`phone-us-waters.png`, prior round's
+// report). Named after the bug: these are the EXACT live intersection bounds that produced it.
+describe("phoneAwareWideRangeBounds — R3-rr fix 1 round 5 (the phone US-waters framing bug)", () => {
+  const PHONE_VIEWPORT = { width: 390, height: 844 };
+  const PHONE_HALF_PADDING = { top: 48, right: 0, bottom: 452, left: 0 };
+  const DESKTOP_VIEWPORT = { width: 1280, height: 800 };
+  const DESKTOP_PADDING = { top: 0, right: 380, bottom: 0, left: 0 };
+  // the leatherback's real live US-EEZ intersection (west/south/east/north — this module's
+  // `[[west,south],[east,north]]` shape), ~136 deg of longitude.
+  const LEATHERBACK_US_WATERS: [[number, number], [number, number]] = [
+    [158.0056795206031, -9.653383675331355],
+    [294, 60.44999999999999],
+  ];
+
+  it("BUG: on the phone, a box too wide to frame at 390px substitutes PHONE_DEFAULT_BOUNDS", () => {
+    const out = phoneAwareWideRangeBounds(
+      LEATHERBACK_US_WATERS,
+      PHONE_VIEWPORT,
+      PHONE_HALF_PADDING,
+      true,
+    );
+    expect(out).toBe(PHONE_DEFAULT_BOUNDS);
+    // the substituted fit is the SAME known-good phone default -- never the tiny, mostly-hidden
+    // globe the raw box produced (zoom well above the live-measured 0.78 bug).
+    const fit = boundsToCameraView(out, PHONE_VIEWPORT, { padding: PHONE_HALF_PADDING });
+    expect(fit.zoom).toBeGreaterThan(2);
+  });
+
+  it("a box that already fits AT LEAST as well as the phone default keeps its own bounds unchanged", () => {
+    // PHONE_DEFAULT_BOUNDS itself: naive.zoom === def.zoom exactly (same function, same input),
+    // so the "would zoom out FURTHER" comparison is strictly false -- never substitutes a box for
+    // itself.
+    const out = phoneAwareWideRangeBounds(
+      PHONE_DEFAULT_BOUNDS,
+      PHONE_VIEWPORT,
+      PHONE_HALF_PADDING,
+      true,
+    );
+    expect(out).toBe(PHONE_DEFAULT_BOUNDS);
+  });
+
+  it("BUG: never substitutes on DESKTOP, even for the exact same wide box that triggers it on the phone", () => {
+    // desktop is explicitly reported as already working ("US waters -101.7, 25.3, z 2.32") --
+    // `isPhone: false` must gate this off unconditionally, never re-derived from the comparison
+    // alone (a narrow PHONE_DEFAULT_BOUNDS fit to a WIDE desktop viewport zooms in far higher than
+    // any wide species box legitimately can, so the naive comparison alone would wrongly fire).
+    const out = phoneAwareWideRangeBounds(
+      LEATHERBACK_US_WATERS,
+      DESKTOP_VIEWPORT,
+      DESKTOP_PADDING,
+      false,
+    );
+    expect(out).toBe(LEATHERBACK_US_WATERS);
+  });
+});
+
+// R3-rr fix 1, round 5 (orchestrator eyes-on, real e1fcfc8 build, 2026-09-25): "Whole range"'s own
+// fit used the LIVE (asymmetric) chrome padding, which pushed an extreme (~150deg) arc's centre far
+// enough that one edge (Guam/CNMI, 145deg E) fell outside the globe's own visible hemisphere --
+// desktop's "Whole range" read as visually IDENTICAL to "US waters" (`verify-desktop-whole-
+// range.png`, prior round). Named after the bug: these are the EXACT live docked-panel numbers.
+describe("symmetricPadding — R3-rr fix 1 round 5 (the 'Whole range' missing Guam/CNMI bug)", () => {
+  it("BUG: splits an asymmetric (docked-panel-shaped) padding's LEFT-RIGHT reserve evenly, zeroing the horizontal differential", () => {
+    const desktopPanel = { top: 0, right: 380, bottom: 0, left: 0 };
+    expect(symmetricPadding(desktopPanel)).toEqual({ top: 0, right: 190, bottom: 0, left: 190 });
+  });
+
+  it("a phone sheet's TOP-BOTTOM asymmetry is split the same way", () => {
+    // BOTH axes, deliberately -- keeping the phone sheet's own vertical differential was tried
+    // and measured WORSE at this near-zero-zoom regime (the shift's own `1/worldPx` term
+    // overshoots, landing the centre south of the box's own south edge entirely; see this
+    // function's own header for the exact live numbers).
+    const phoneSheet = { top: 48, right: 0, bottom: 452, left: 0 };
+    expect(symmetricPadding(phoneSheet)).toEqual({ top: 250, right: 0, bottom: 250, left: 0 });
+  });
+
+  it("preserves the TOTAL reserve on each axis (so the fitted zoom, which only sums each axis, is unchanged)", () => {
+    const padding = { top: 10, right: 380, bottom: 20, left: 0 };
+    const out = symmetricPadding(padding);
+    expect(out.left + out.right).toBe(padding.left + padding.right);
+    expect(out.top + out.bottom).toBe(padding.top + padding.bottom);
+  });
+
+  it("an already-symmetric padding (an ordinary uniform fit) is unchanged", () => {
+    expect(symmetricPadding({ top: 40, right: 40, bottom: 40, left: 40 })).toEqual({
+      top: 40,
+      right: 40,
+      bottom: 40,
+      left: 40,
+    });
+  });
+
+  it("BUG: zeroing both differentials keeps boundsToCameraView's fitted centre at the box's own true geometric midpoint, for BOTH an asymmetric desktop panel AND a phone sheet", () => {
+    // the leatherback's real confirmed-data arc (145..294 continuous, Guam/CNMI to the Atlantic
+    // seaboard) -- the exact shape "Whole range" fits.
+    const arc: [[number, number], [number, number]] = [
+      [145, -17.700000000000017],
+      [294, 60.44999999999999],
+    ];
+    const desktopPanel = { top: 0, right: 380, bottom: 0, left: 0 };
+    const phoneSheet = { top: 48, right: 0, bottom: 452, left: 0 };
+    const desktopView = boundsToCameraView(
+      arc,
+      { width: 1280, height: 800 },
+      { padding: symmetricPadding(desktopPanel) },
+    );
+    const phoneView = boundsToCameraView(
+      arc,
+      { width: 390, height: 844 },
+      { padding: symmetricPadding(phoneSheet) },
+    );
+    // the pure Mercator midpoint of [145, 294] is 219.5 (continuous) — wraps to -140.5. BOTH
+    // viewports land there, regardless of which side/edge their own real chrome occupies (the
+    // live bug: desktop's un-symmetrized panel landed at -105, phone's un-symmetrized sheet
+    // overshot even further, landing at lat -43 to -56, south of the box's own south edge).
+    expect(desktopView.center[0]).toBeCloseTo(219.5, 5);
+    expect(phoneView.center[0]).toBeCloseTo(219.5, 5);
+    // and the LATITUDE lands at the box's own true (MERCATOR, not naive-arithmetic) midpoint too
+    // -- 28.0, matching the live-measured value exactly -- not the wild southward overshoot an
+    // un-symmetrized (real, asymmetric) phone sheet padding produces at this near-zero zoom
+    // (measured live: lat -43 to -56) -- named-after-the-bug regression case.
+    expect(phoneView.center[1]).toBeCloseTo(28.00080444726477, 5);
+    expect(phoneView.center[1]).toBeGreaterThan(-17.700000000000017); // inside the box, not south of it
+    expect(phoneView.center[1]).toBeLessThan(60.44999999999999); // inside the box, not north of it
   });
 });
 

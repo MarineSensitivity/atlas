@@ -72,6 +72,39 @@ export interface ChromePadding {
 
 export const NO_PADDING: ChromePadding = { top: 0, right: 0, bottom: 0, left: 0 };
 
+/**
+ * R3-rr fix 1, round 5 (orchestrator eyes-on, real e1fcfc8 build, 2026-09-25 — "Whole range" not
+ * showing the western Pacific hits): {@link boundsToCameraView}'s shift moves the fitted centre by
+ * the padding's own LEFT-RIGHT and TOP-BOTTOM *differentials*, toward the free area's middle —
+ * correct and desired for an ordinary, already-narrow fit, but measured live to push an EXTREME
+ * (~150deg-wide, near-zero-zoom) box's centre by an amount the shift's own `1/worldPx` term
+ * (`shiftForPadding`'s own header) was never designed for: at this globe-regime zoom, `worldPx` is
+ * tiny, so the SAME pixel padding produces a wildly larger shift in normalized world-space than it
+ * does at an ordinary fit's zoom. Measured two distinct failure shapes live: the desktop docked
+ * panel's `right`-heavy reserve shifted the leatherback's confirmed-data arc's LONGITUDE off
+ * Guam/CNMI entirely (one edge fell outside the globe's own visible ~180deg hemisphere); trying to
+ * ALSO keep the phone sheet's own bottom-heavy reserve shifting LATITUDE (to push the fit above the
+ * sheet, as an ordinary fit does) overshot even further at this same low zoom, landing the centre
+ * at lat -43 to -56 — south of the box's OWN south edge (-17.7) — the SAME "wrong place entirely"
+ * failure the longitude bug was, just on the other axis.
+ *
+ * Splits EACH axis's total reserve evenly between its two edges (same TOTAL space reserved per
+ * axis, so the fitted ZOOM — which depends only on each axis's sum — is unchanged) while zeroing
+ * both differentials: the fitted centre becomes the box's own exact geometric midpoint on BOTH
+ * axes, regardless of which side of the viewport the chrome happens to occupy. This does mean
+ * "Whole range" on the phone does not get the SAME above-the-sheet push an ordinary (compact) fit
+ * gets — a real, accepted trade-off (documented as a follow-up, not silently dropped): the
+ * alternative (keep the vertical differential) is measurably WORSE, landing outside the box
+ * entirely, so "geometrically correct but not chrome-optimized" beats "chrome-optimized but
+ * wrong". Used for "Whole range" only — an ordinary (already narrow, ordinary-zoom) bounds fit
+ * keeps the real, fully asymmetric padding on both axes, where this overshoot does not occur.
+ */
+export function symmetricPadding(padding: ChromePadding): ChromePadding {
+  const h = (padding.left + padding.right) / 2;
+  const v = (padding.top + padding.bottom) / 2;
+  return { top: v, bottom: v, left: h, right: h };
+}
+
 /** the uncapped shift math both {@link paddedStudyAreaCenter} and {@link boundsToCameraView} share
  * -- letting `worldPx = MERCATOR_TILE_SIZE * 2^zoom`, the shift is `(frontPad - backPad) / 2 /
  * worldPx` in normalized world units, on each axis independently: exact (not a linear
@@ -357,6 +390,42 @@ export function phoneDefaultCamera(
   padding: ChromePadding,
 ): { center: [number, number]; zoom: number } {
   return boundsToCameraView(PHONE_DEFAULT_BOUNDS, viewport, { padding });
+}
+
+/**
+ * R3-rr fix 1, round 5 (orchestrator eyes-on, real e1fcfc8 build, 2026-09-25 — Ben's product
+ * intent via the orchestrator: "on the phone 'US waters' should look like the app's phone default
+ * view"): a wide-range species' narrowed "US EEZ" intersection can still be far too wide to frame
+ * well at phone width — measured live: the leatherback's own ~136deg-wide intersection settled at
+ * `lng -134, lat -48.8, zoom 0.78` — a tiny globe mostly hidden behind the sheet, empty sky above
+ * (`phone-us-waters.png` from the prior round's own report). A ~150deg-wide box cannot be usefully
+ * fit into 390px with the sheet's own padding; MapLibre's real, globe-aware `cameraForBounds()`
+ * zooms out far enough to technically contain it and, doing so, pushes the centre toward the
+ * globe's own pole/limb rather than anywhere useful.
+ *
+ * Compares the box's own naive fit zoom — the SAME pure Mercator math {@link phoneDefaultCamera}
+ * itself already trusts for the app's known-good first view, so the comparison is apples-to-apples
+ * against the SAME basis, never a mix of this module's math and MapLibre's own — against the phone
+ * default's own zoom for the SAME viewport/padding. When the box would zoom out FURTHER than the
+ * default view already does, reuse {@link PHONE_DEFAULT_BOUNDS} itself (the exact constant, never
+ * a second "too wide" fallback box) rather than fitting the too-wide box at all. `isPhone` gates
+ * this explicitly (the SAME `matchMedia("(max-width: 899px)")` breakpoint `Shell.svelte` already
+ * uses) — never substitutes on desktop, where a `naive.zoom < def.zoom` comparison would otherwise
+ * ALWAYS be true for a wide species (a narrow 41deg box fit to a wide 1280px viewport zooms in far
+ * higher than any wide box legitimately can, which would wrongly force PHONE_DEFAULT_BOUNDS onto
+ * desktop's own already-working "US waters" view — verified this substitution is a no-op there by
+ * construction, not by accident, via the explicit gate).
+ */
+export function phoneAwareWideRangeBounds(
+  bounds: CameraBoundsInput,
+  viewport: Viewport,
+  padding: ChromePadding,
+  isPhone: boolean,
+): CameraBoundsInput {
+  if (!isPhone) return bounds;
+  const naive = boundsToCameraView(bounds, viewport, { padding });
+  const def = phoneDefaultCamera(viewport, padding);
+  return naive.zoom < def.zoom ? PHONE_DEFAULT_BOUNDS : bounds;
 }
 
 // --- sel.area -> camera, the fly-on-load/fly-on-change decision -------------------------------
