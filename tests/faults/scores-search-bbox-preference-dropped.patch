@@ -1,13 +1,13 @@
-diff --git a/src/lens/scores/state.svelte.ts b/src/lens/scores/state.svelte.ts
-index 0e70edf..03f1a3a 100644
---- a/src/lens/scores/state.svelte.ts
-+++ b/src/lens/scores/state.svelte.ts
-@@ -492,7 +492,7 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
-       if (!zoneBoundsCache.has(cacheKey) && handle) {
-         refreshZoneBoundsCache(zoneBoundsCache, handle, boot, unit);
-       }
--      const bounds = zoneBboxFromBoot(boot, unit, key) ?? zoneBoundsCache.get(cacheKey) ?? null;
-+      const bounds = zoneBoundsCache.get(cacheKey) ?? null; // SEEDED FAULT: bbox preference dropped
-       const center = bounds
-         ? { lon: (bounds[0][0] + bounds[1][0]) / 2, lat: (bounds[0][1] + bounds[1][1]) / 2 }
-         : zoneCenterFromBoot(boot, unit, [key]);
+diff --git a/src/lens/scores/boot.ts b/src/lens/scores/boot.ts
+index b84143f..e5a8a2a 100644
+--- a/src/lens/scores/boot.ts
++++ b/src/lens/scores/boot.ts
+@@ -395,7 +395,7 @@ export function zoneKnownBounds(
+   key: string,
+   cache: ReadonlyMap<string, readonly [readonly [number, number], readonly [number, number]]>,
+ ): readonly [readonly [number, number], readonly [number, number]] | null {
+-  return zoneBboxFromBoot(boot, unit, key) ?? cache.get(zoneCacheKey(unit, key)) ?? null;
++  return cache.get(zoneCacheKey(unit, key)) ?? null; // SEEDED FAULT: bbox preference dropped
+ }
+ 
+ interface RawManifestZoneRow {

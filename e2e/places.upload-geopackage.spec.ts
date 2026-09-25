@@ -137,10 +137,19 @@ test("a real .gpkg is read end to end: polygon in, place + computed composite ou
   );
 
   // --- refusal paths: every one an HONEST message, not ST_Read's raw SQL error ----------------------
+  // R3-CI: `getByRole("button", { name: "Dismiss" })` alone now resolves >1 element -- W6's two
+  // "Place added." toasts (`Toast.svelte`'s `.toast-dismiss[aria-label="Dismiss"]`) from the two
+  // successful uploads above are still on screen (each auto-dismisses after 5s, longer than this
+  // spec takes to reach here) alongside this panel's own `.refusal button`. Confirmed by tracing
+  // the code, not a UI defect: `UploadPanel.svelte`'s `finalize()` comment says a refusal never
+  // calls `notify()` (only `onAdd`, i.e. success, does) -- so `.refusal` never carries a duplicate
+  // toast of itself, and two toasts for two successful uploads is the intended "each upload
+  // announces itself" behaviour. Scope to `.refusal` so this spec's Dismiss clicks never collide
+  // with the toasts sitting behind them.
   await dropGeoPackage(page, "gpkg_point.gpkg");
   await expect(page.locator(".refusal")).toBeVisible({ timeout: 15_000 });
   await expect(page.locator(".refusal")).toContainText("a Point"); // notPolygon
-  await page.getByRole("button", { name: "Dismiss" }).click();
+  await page.locator(".refusal").getByRole("button", { name: "Dismiss" }).click();
 
   // Measured (Q2): `sqlite_scan()` -- the ONLY way this parser can read a GeoPackage's own declared
   // SRS row -- cannot open a file registered via duckdb-wasm's `registerFileBuffer` at all ("Unable
@@ -152,7 +161,7 @@ test("a real .gpkg is read end to end: polygon in, place + computed composite ou
   await dropGeoPackage(page, "gpkg_projected.gpkg");
   await expect(page.locator(".refusal")).toBeVisible({ timeout: 15_000 });
   await expect(page.locator(".refusal")).toContainText("projected metres"); // projectedCoordinates
-  await page.getByRole("button", { name: "Dismiss" }).click();
+  await page.locator(".refusal").getByRole("button", { name: "Dismiss" }).click();
 
   // Same sqlite_scan limitation (see above) means `geopackageNoFeatureTable`'s own proactive check
   // cannot fire for real either -- it falls through, `ST_Read` itself then fails to open a dataset
@@ -163,7 +172,7 @@ test("a real .gpkg is read end to end: polygon in, place + computed composite ou
   await dropGeoPackage(page, "gpkg_no_features.gpkg");
   await expect(page.locator(".refusal")).toBeVisible({ timeout: 15_000 });
   await expect(page.locator(".refusal")).toContainText("stopped part way through"); // parseFailed
-  await page.getByRole("button", { name: "Dismiss" }).click();
+  await page.locator(".refusal").getByRole("button", { name: "Dismiss" }).click();
 
   // the place count never moved for any of the three refused drops
   await expect(page.locator(".place-row")).toHaveCount(2);
