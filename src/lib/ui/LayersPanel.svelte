@@ -509,6 +509,26 @@
     color: var(--text-secondary);
   }
 
+  /* phone, "half" detent (Deliverable 3's own requirement: "the toggle, Layer, Zoom to region and
+     the first rows visible without scrolling"): eyes-on caught the layer DESCRIPTION alone eating
+     enough height that the stack's first row never came into view at all -- clamped to 2 lines
+     here (a longer description is still fully readable once the viewer scrolls, or at "Full
+     height"; this only trims what shows before any scroll). Paired with a tighter panel-wide gap
+     on the same viewport (below) to free just enough room. */
+  @media (max-width: 480px) {
+    .note {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .layers-stack {
+      gap: var(--space-2);
+    }
+  }
+
   .layers-control h3 {
     font-size: var(--text-sm);
     margin: 0 0 var(--space-1);
@@ -766,10 +786,18 @@
   /* phone: the Layer + Zoom-to-region fields stack (Ben: "below it" on the phone, vs "to its
      RIGHT" on desktop) -- `.fields-row`'s `flex-wrap: wrap` already does this once each field's
      basis (160px) no longer fits two abreast; this just forces it unconditionally below the panel
-     max-width the phone sheet gives it. */
+     max-width the phone sheet gives it. `.field`'s own `flex: 1 1 160px` MUST be reset here too --
+     once `flex-direction` turns column, a 160px flex-BASIS applies along the (now vertical) main
+     axis, i.e. a 160px-tall field with a huge empty gap under its own (much shorter) content. This
+     was a real bug, caught by eyes-on (phone-04-layers-full): a ~200px blank gap sat between the
+     Layer select and "Zoom to region". */
   @media (max-width: 480px) {
     .fields-row {
       flex-direction: column;
+    }
+
+    .field {
+      flex: none;
     }
   }
 </style>

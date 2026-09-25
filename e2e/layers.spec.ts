@@ -66,6 +66,18 @@ const BLENDED_RASTER_RGB = [0, 1, 2].map((i) =>
   Math.round(RASTER_RGB[i] * SCORE_RASTER_OPACITY + BASEMAP_RGB[i] * (1 - SCORE_RASTER_OPACITY)),
 );
 
+/** R3: the raster blended over the theme's bare BACKGROUND colour instead of `BASEMAP_RGB` --
+ * WebGL alpha-blends a layer against whatever already painted beneath it, so once `basemap-land`
+ * itself is hidden (`layers=basemap-land:h`) the raster's own semi-transparent 60% opacity
+ * composites against the canvas background, not the (now invisible) water fill. Measured directly
+ * (247,171,122), not assumed -- hiding land is NOT a no-op for the raster's own blended pixel, it
+ * only means "the raster is still the topmost VISIBLE thing," never "nothing behind it changed." */
+const BLENDED_RASTER_OVER_BACKGROUND_RGB = [0, 1, 2].map((i) =>
+  Math.round(
+    RASTER_RGB[i] * SCORE_RASTER_OPACITY + MAP_BACKGROUND_PAPER_RGB[i] * (1 - SCORE_RASTER_OPACITY),
+  ),
+);
+
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -326,14 +338,20 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
   // `LayersPanel.svelte#move` now refocuses a real button in the SAME row after the DOM settles
   // (`tick()`): the SAME direction's button when it is still enabled, the OPPOSITE direction's
   // once the row hits the edge. Walks BOTH paths with `.press("Enter")` (a real keyboard
-  // activation, not `.click()`) on "Move Boundaries down" -- `basemap-boundaries` starts at
-  // arrIndex 2 (DEFAULT_LAYER_STACK), two presses from the very BOTTOM (arrIndex 0), where
+  // activation, not `.click()`) on "Move Place labels down" -- `basemap-labels` starts at
+  // arrIndex 4 (DEFAULT_LAYER_STACK), several presses from the very BOTTOM (arrIndex 0), where
   // "down" becomes html-disabled (`arrIndex === 0`). Land & water (arrIndex 0) or Selection
-  // (pinned at the top, M7) would each only ever exercise ONE of the two paths -- Boundaries'
-  // own two-step trip to the floor exercises "still enabled, same button" on the first press and
-  // "now disabled, refocus the other direction" on the second, and checks all three signals the
-  // review named: the URL (`layers=` changes), the live region (announces each move), and
-  // `document.activeElement` (never reverts to <body>).
+  // (pinned at the top, M7) would each only ever exercise ONE of the two paths -- Place labels'
+  // own multi-step trip to the floor exercises "still enabled, same button" on every press but
+  // the last and "now disabled, refocus the other direction" on the last, and checks all three
+  // signals the review named: the URL (`layers=` changes), the live region (announces each
+  // move), and `document.activeElement` (never reverts to <body>).
+  //
+  // R3 (round-3 plan, W1 "Layers pane redesign"): this test used to drive "Boundaries" --
+  // `LAYER_GROUP_IN_PANEL` now hides that row from the panel entirely (still a full model
+  // citizen, just with no row here), so "Place labels" (still listed) replaces it. Driven as a
+  // bounded LOOP (never a hand-simulated position count) so the exact arrIndex a future
+  // `DEFAULT_LAYER_STACK` reorder gives "Place labels" can never desync this test from reality.
   //
   // P5 fix (post-merge finding): `LayersPanel.svelte` used to render its own private
   // `.layers-stack [aria-live]` region -- a real SC 4.1.3 regression (the shell's own rule is
@@ -348,35 +366,47 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
   }) => {
     const errors = collectConsoleErrors(page);
     await gotoLayersScores(page, "");
+    const label = "Place labels";
     const downBtn = page.getByRole("button", {
-      name: "Move Boundaries down (toward the bottom of the map)",
+      name: `Move ${label} down (toward the bottom of the map)`,
     });
     const upBtn = page.getByRole("button", {
-      name: "Move Boundaries up (toward the top of the map)",
+      name: `Move ${label} up (toward the top of the map)`,
     });
     const liveRegion = page.locator('[role="status"]').first();
     const activeElementLabel = () =>
       page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? null);
 
-    // arrIndex 2 -> position 6 of 8 initially ("1 = top of the list", LayersPanel.svelte's own
-    // convention: displayPosition = stack.length - arrIndex).
     await downBtn.focus();
-    await downBtn.press("Enter"); // arrIndex 2 -> 1, position 6 -> 7; "down" still enabled
+    // first press: still enabled (Place labels starts several rows above the bottom) -- the
+    // "same button keeps focus while it stays enabled" half of the property.
+    await downBtn.press("Enter");
     await expect.poll(() => page.url(), { timeout: 10_000 }).toContain("layers=");
-    await expect(liveRegion).toContainText("Boundaries moved to position 7 of 8");
+    await expect(liveRegion).toContainText(`${label} moved to position`);
     await expect(downBtn).toBeEnabled();
     await expect
       .poll(activeElementLabel, { timeout: 10_000 })
-      .toBe("Move Boundaries down (toward the bottom of the map)");
+      .toBe(`Move ${label} down (toward the bottom of the map)`);
 
-    await downBtn.press("Enter"); // arrIndex 1 -> 0, position 7 -> 8 (the very bottom)
-    await expect(liveRegion).toContainText("Boundaries moved to position 8 of 8");
+    // keep pressing "down" until the row itself reaches the very bottom of the stack and its
+    // OWN button disables -- bounded at the stack's own size (8) so a real regression (the
+    // button never disabling at all) fails loudly instead of looping forever. Never a
+    // hand-simulated position count: robust to wherever "Place labels" sits in
+    // DEFAULT_LAYER_STACK, unlike the fixed arrIndex this test used to assume.
+    let presses = 1;
+    while ((await downBtn.isEnabled()) && presses < 8) {
+      await downBtn.press("Enter");
+      presses++;
+      await expect.poll(() => page.url(), { timeout: 10_000 }).toContain("layers=");
+      await expect(liveRegion).toContainText(`${label} moved to position`);
+    }
+    expect(presses, "the row never reached the bottom of the stack").toBeLessThan(8);
     // ITS OWN "down" button is now disabled (nothing left below it) -- focus must have moved to
     // "up" instead of silently reverting to <body>.
     await expect(downBtn).toBeDisabled();
     await expect
       .poll(activeElementLabel, { timeout: 10_000 })
-      .toBe("Move Boundaries up (toward the top of the map)");
+      .toBe(`Move ${label} up (toward the top of the map)`);
     expect(await upBtn.evaluate((el) => el === document.activeElement)).toBe(true);
     expect(errors).toEqual([]);
   });
@@ -533,13 +563,14 @@ test.describe("layer stack (R3): reorder, dim and reload a REAL composed map", (
     await gotoLayersScores(page, "&layers=basemap-land:h,data-raster,data-zones,data-places");
     const [lon, lat] = OCEAN_PROBES[0];
     // the raster still paints on TOP of the hidden basemap fill (proving basemap-land's own hidden
-    // state did not accidentally hide anything else) -- the SAME blended pixel every other test in
-    // this file expects with land visible, so hiding it changes nothing yet.
+    // state did not accidentally hide anything else) -- but BLENDED against the bare background
+    // now, not the water fill (`BLENDED_RASTER_OVER_BACKGROUND_RGB`'s own header: WebGL blends
+    // against whatever painted underneath, and land no longer does).
     await expect
       .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
         timeout: 20_000,
       })
-      .toBe(BLENDED_RASTER_RGB.join(","));
+      .toBe(BLENDED_RASTER_OVER_BACKGROUND_RGB.join(","));
 
     // now also hide the raster, via the real panel checkbox (the Data row IS still in the panel) --
     // with BOTH the raster and the basemap fill hidden, the background shows through.
@@ -916,13 +947,14 @@ test.describe("R3: Layers-pane redesign", () => {
       await expect(page.locator(".stack-list")).not.toContainText(label);
     }
     // and the token still APPLIED (basemap-land really is hidden, not silently ignored) -- the
-    // raster still paints on top of it (same proof `M3: hiding basemap-land` above uses).
+    // raster still paints on top of it, blended against the bare background (same proof
+    // `M3: hiding basemap-land` above uses, and the same reason its own constant exists).
     const [lon, lat] = OCEAN_PROBES[0];
     await expect
       .poll(async () => (await readPixel(page, lon, lat))?.slice(0, 3).join(","), {
         timeout: 20_000,
       })
-      .toBe(BLENDED_RASTER_RGB.join(","));
+      .toBe(BLENDED_RASTER_OVER_BACKGROUND_RGB.join(","));
     // the still-listed rows are unaffected.
     for (const label of ["Data", "Zone outlines", "Selection", "Place labels"]) {
       await expect(page.getByRole("checkbox", { name: `${label} visible on the map` })).toHaveCount(
@@ -937,7 +969,7 @@ test.describe("R3: Layers-pane redesign", () => {
     await gotoLayersScores(page, "");
     expect(page.url()).not.toContain("out=");
 
-    await page.getByRole("button", { name: "Zone outlines", exact: false }).click();
+    await page.getByRole("button", { name: "Zone outlines", exact: true }).click();
     const ecoregionRadio = page.getByRole("radio", { name: "Ecoregions" });
     await expect(ecoregionRadio).toBeVisible();
     await ecoregionRadio.click();
