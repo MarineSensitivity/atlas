@@ -39,9 +39,16 @@
      * file's own header) -- so the shell needs to know what that geometry currently is. Called
      * once on mount (the loaded-from-storage value) and again on every change; never read back. */
     ongeometry?: (geometry: PanelGeometry) => void;
+    /** R3-W8 item 3: "Share reproduces the UI arrangement" — when a shared link carries a `ui=`
+     * token, Shell.svelte passes the dock/size it decoded here so the FIRST geometry this panel
+     * ever reports is the restored one, not whatever localStorage happens to remember for this
+     * viewport. Applied ONCE, on mount, on top of the loaded (or default) geometry — never
+     * overrides `collapsed`/`maximized` (chrome habits the link does not try to reproduce). `null`/
+     * omitted keeps the ordinary localStorage-only load (every existing caller). */
+    initialGeometryOverride?: { dock: Dock; size: number } | null;
   }
 
-  let { id, title, children, ongeometry }: Props = $props();
+  let { id, title, children, ongeometry, initialGeometryOverride }: Props = $props();
 
   const bodyId = $derived(`panel-body-${id}`);
   const titleId = $derived(`panel-title-${id}`);
@@ -58,7 +65,14 @@
   }
 
   onMount(() => {
-    geometry = loadPanelGeometry(storage(), id, viewportBucket(window.innerWidth));
+    const loaded = loadPanelGeometry(storage(), id, viewportBucket(window.innerWidth));
+    geometry = initialGeometryOverride
+      ? {
+          ...loaded,
+          dock: initialGeometryOverride.dock,
+          size: clampPanelSize(initialGeometryOverride.size),
+        }
+      : loaded;
     ongeometry?.(geometry);
     // Esc-inside-a-panel is a keyboard shortcut for the whole panel, not a per-element widget
     // interaction, so it is wired imperatively (not a template `onkeydown` on a non-interactive

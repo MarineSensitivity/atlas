@@ -149,6 +149,15 @@
     /** R3 deliverable 3 — see {@link LayersLayerField}. Omitted by the species lens (no metric
      * layer choice there). */
     layerField?: LayersLayerField;
+    /** R3-W8 item 1 (Ben, 2026-09-25: "promote the main data selection up"): the species lens' own
+     * equivalent of `layerField` — its "Model input" picker (the layer-bar pills + representation
+     * toggle, `LayerBarView.svelte`), moved out of the Data row's body to this same panel-level
+     * slot. A snippet, not a typed field-value shape like `layerField`, because the species picker
+     * is not a single `<select>` — it is a whole existing component the species lens already owns.
+     * Mutually exclusive with `layerField` in practice (never both true at once — scores passes
+     * one, species the other) but each renders independently so neither lens has to know the other
+     * exists. */
+    speciesField?: Snippet;
     /** R3 deliverable 6 — see {@link LayersOutlineChoice}. Omitted while a lens has not resolved
      * `sel`/`boot` yet; the "Outlines" row then still expands but shows no radio body,
      * matching `dataControls`' own "nothing to render yet" convention. */
@@ -159,6 +168,13 @@
      * a lens that has nothing empty-able to report (there is none today besides Selection) simply
      * does not pass this prop at all. */
     rowState?: Partial<Record<LayerGroupId, LayersRowState>>;
+    /** R3-W8 item 3: controlled row-expansion, so Shell.svelte can restore the "Data"/"Outlines"
+     * expander from a shared `ui=` link and read it back to build one. `undefined` (every existing
+     * caller/test) keeps this component's own internal state — only Shell wires this pair, and
+     * only one `LayersPanel` is ever mounted at a time (see `DATA_ROW_BODY_ID`'s own header), so a
+     * single Shell-level value is enough regardless of which lens is active. */
+    expandedRow?: LayerGroupId | null;
+    onExpandedRowChange?: (id: LayerGroupId | null) => void;
   }
 
   let {
@@ -167,9 +183,12 @@
     dataControls,
     unitToggle,
     layerField,
+    speciesField,
     outline,
     projection,
     rowState,
+    expandedRow,
+    onExpandedRowChange,
   }: Props = $props();
 
   function onUnitToggleChange(value: string) {
@@ -205,10 +224,15 @@
       .reverse(),
   );
 
-  let expandedId = $state<LayerGroupId | null>(DATA_ROW_ID);
+  let internalExpandedId = $state<LayerGroupId | null>(DATA_ROW_ID);
+  // R3-W8 item 3: `expandedRow === undefined` (no caller controlling it) falls back to this
+  // component's own internal state, exactly as before this prop pair existed.
+  const expandedId = $derived(expandedRow !== undefined ? expandedRow : internalExpandedId);
 
   function toggleExpanded(id: LayerGroupId) {
-    expandedId = expandedId === id ? null : id;
+    const next = expandedId === id ? null : id;
+    if (onExpandedRowChange) onExpandedRowChange(next);
+    else internalExpandedId = next;
   }
 
   function setVisible(id: LayerGroupId, visible: boolean) {
@@ -301,6 +325,14 @@
     {#if layerField?.description}
       <p class="note" data-testid="layer-description">{layerField.description}</p>
     {/if}
+  {/if}
+
+  {#if speciesField}
+    <!-- R3-W8 item 1: the species lens' promoted "Model input" picker — same panel position as
+         `layerField` above (scores' own equivalent), never both at once. -->
+    <div class="species-field-row" data-testid="species-field-row">
+      {@render speciesField()}
+    </div>
   {/if}
 
   <!-- fix list #10 (SC 1.3.1, e2e/keyboard-walk.spec.ts): a plain `div` (never a landmark) so this
@@ -539,6 +571,14 @@
     margin: 0;
     font-size: var(--text-xs);
     color: var(--text-secondary);
+  }
+
+  /* R3-W8 item 1: the species picker's own row — a vertical stack (label, pills, representation,
+     the zoom-to-layer checkbox), unlike `.fields-row`'s wrapping horizontal layout, and bottom-
+     bordered the same way `.unit-toggle` is (this sits directly below it, at the top of the pane). */
+  .species-field-row {
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--divider);
   }
 
   /* phone, "half" detent (Deliverable 3's own requirement: "the toggle, Layer, Zoom to region and

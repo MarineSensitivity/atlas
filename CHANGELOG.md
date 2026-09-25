@@ -1,3 +1,24 @@
+# atlas 0.10.75
+
+Round 3, W8 items 1-2 (species Layers pane: promote the data selection, zoom-to-layer).
+
+- **Promoted the species "Model input" picker to the top of the Layers pane** (Ben, live-review
+  2026-09-25: "promote the main data selection up"). The layer bar (Merged + each input pill, the
+  Delivered/As-ingested representation toggle) moved out of the Data row's collapsible body to a
+  new panel-level slot (`LibLayersPanel`'s `speciesField` snippet — the species lens' own
+  equivalent of the scores lens' promoted `layerField`), directly under the unit-toggle divider, so
+  it is visible without expanding anything. The Data row's body now holds only the species TITLE
+  and the descriptive card (`SpeciesCardView`).
+- **Added: "Zoom to layer on change"** (Ben: "I just chose FWS Range from default leatherback
+  turtle layer, but see nothing on map because out of view, so would be good to default to zoom to
+  selected layer and have a tickbox to stop doing that"). Picking an input (or Merged) now refits
+  the camera to that surface's own extent through the same fit chain the species title's zoom
+  already used (`data/camera.ts#refitOnInputChange`, `cameraFor`) — a checkbox directly under the
+  input picker, checked by default, turns it off so a viewer can flip between inputs at a fixed
+  camera. A fit is also skipped when the viewer has panned since the last pick (`sel.map`'s own
+  "only ever a real user gesture" guarantee, `map.ts`'s header). The preference is URL state
+  (`zl=0` when off, absent when on, `Sel.zl`) so a shared link reproduces it.
+
 # atlas 0.10.73
 
 Round 3, W6 (consistency slice A: shell + shared UI). Two live-site bugs (a second Program-Area

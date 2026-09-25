@@ -28,6 +28,7 @@ import {
   cameraFor,
   cogUrlForBoundsFallback,
   refitNeeded,
+  refitOnInputChange,
   studyAreaView,
   minimalFrame,
   boundsOf,
@@ -107,6 +108,8 @@ export interface SpeciesLens {
   readonly taxaIndex: TaxaIndex | null;
   readonly datasets: DatasetIndex;
   readonly wideRange: WideRangeZoom;
+  /** R3-W8 item 2: the "Zoom to layer on change" checkbox's own checked state — `Sel.zl !== false`. */
+  readonly zoomToLayerOnChange: boolean;
 
   dismissNotFound(): void;
   closePopup(): void;
@@ -115,6 +118,8 @@ export interface SpeciesLens {
   selectLayer(inKey: string): void;
   setRepresentation(rep: Representation): void;
   setUsOnly(enabled: boolean): void;
+  /** R3-W8 item 2: the checkbox's own writer — URL state (`Sel.zl`) so a shared link reproduces it. */
+  setZoomToLayerOnChange(enabled: boolean): void;
   zoomToLayer(): void;
   /** R3-A1: the species card's "Zoom to: US waters | Whole range" toggle — ephemeral (component
    * state, not `Sel`), a no-op when {@link wideRange} is `null` (nothing to toggle between). */
@@ -153,6 +158,14 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
   // (or a camera with no `wholeRangeBounds`) means the current model was never narrowed.
   let wideRangeCamera = $state<BoundsCamera | null>(null);
   let zoomTarget = $state<"us" | "whole">("us");
+  // R3-W8 item 2: "a fit never runs when `sel.map` was set by the user's own pan since the last
+  // pick" (Shell.svelte's own precedence rule for `sel.map`, `map.ts`'s header: `onCamera` only
+  // ever fires for a REAL user gesture — every fit this module applies goes through
+  // `flyTo`/`flyToBounds`, which mark their own moveend `atlasProgrammatic: true` and are filtered
+  // out before they ever reach `selStore`). So any observed CHANGE of `selStore.sel.map` after the
+  // first is, by construction, a genuine pan — never an echo of a fit this module itself just made.
+  let pannedSincePick = false;
+  let mapWatchPrimed = false;
   let taxaLoadPromise: Promise<TaxaIndex | null> | null = null;
   /** the real MapLibre popup (§6.5 step 6: "opens immediately", MapLibre's own re-anchors it on
    * pan/zoom) — plain, not `$state`: it is DOM/MapLibre state, not something a template reads. */
@@ -376,15 +389,35 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
   // (tests/shell/documentTitle.test.ts); it reads this lens' `docTitle` when `sel.lens ===
   // "species"`.
 
+  // R3-W8 item 2: any user-driven camera move observed AFTER the first read of `selStore.sel.map`
+  // arms the pan guard — the FIRST read (mount, or a deep link's own `?map=`) is not itself a pan,
+  // it is the starting state this module inherits. See `pannedSincePick`'s own header above.
+  $effect(() => {
+    void selStore.sel.map; // tracked dependency — the value itself is read fresh where it matters
+    if (!mapWatchPrimed) {
+      mapWatchPrimed = true;
+      return;
+    }
+    pannedSincePick = true;
+  });
+
   $effect(() => {
     if (resolving || !card) return;
     const key = cameraKeyOf(selStore.sel);
     // read-only comparison, not a dependency the effect should re-run for on its own — prevCameraKey
     // is plain (non-reactive) state precisely so switching `in`/`rep` alone (no species change)
     // does not retrigger this effect a second time once the camera has already been applied.
-    const needsFit = untrack(() => refitNeeded(prevCameraKey, key));
+    const needsSpeciesFit = untrack(() => refitNeeded(prevCameraKey, key));
+    // R3-W8 item 2: "picking an input (or Merged) refits the camera to THAT surface's extent" —
+    // gated by the "Zoom to layer on change" checkbox (`Sel.zl`) and the pan guard above; a
+    // species change is handled unconditionally by `needsSpeciesFit` and never checks either.
+    const needsInputFit = untrack(() => refitOnInputChange(prevCameraKey, key));
     prevCameraKey = key;
-    if (!needsFit) return;
+    if (!needsSpeciesFit && !needsInputFit) return;
+    if (!needsSpeciesFit) {
+      if (selStore.sel.zl === false) return; // the viewer turned the checkbox off
+      if (pannedSincePick) return; // the viewer panned since the last pick — respect it
+    }
     const boot = deps.boot();
     const cam = cameraFor(card, selStore.sel.in, {
       rep: selStore.sel.rep,
@@ -394,6 +427,7 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     });
     applyCamera(cam);
     recordWideRangeCamera(cam);
+    pannedSincePick = false; // this IS the new "last pick" moment
     // D8: the bundle published no bbox anywhere for this taxon — try the COG's own extent before
     // giving up on framing it at all.
     if (cam?.kind === "center") void refineCameraFromCogBounds(card, key);
@@ -436,6 +470,9 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     get wideRange(): WideRangeZoom {
       return wideRangeCamera?.wholeRangeBounds ? { value: zoomTarget } : null;
     },
+    get zoomToLayerOnChange() {
+      return selStore.sel.zl !== false;
+    },
 
     dismissNotFound() {
       notFound = null;
@@ -460,6 +497,10 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
       track("toggle_us_only", { enabled });
       selStore.set({ us: enabled });
     },
+    setZoomToLayerOnChange(enabled: boolean) {
+      track("zoom_to_layer_on_change", { enabled });
+      selStore.set({ zl: enabled });
+    },
     zoomToLayer() {
       track("zoom_to_layer", {});
       if (!card) return;
@@ -472,6 +513,7 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
       });
       applyCamera(cam);
       recordWideRangeCamera(cam);
+      pannedSincePick = false; // an explicit manual re-fit is a "last pick" moment too
       // D8 fold-in (orchestrator round 2, 2026-09-24): the manual "zoom to layer" button used to
       // stop at `cameraFor()`'s own bundle-only chain, so a taxon with NO published bbox anywhere
       // (v7's walrus) fell to `kind: "center"` here too — the SAME COG-bounds last resort the

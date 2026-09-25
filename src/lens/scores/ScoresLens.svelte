@@ -68,6 +68,10 @@
     /** P3 fix (Opus eyes-on review, 2026-09-24): passed straight through to `FlowerPanel`'s own
      * prop of the same name -- see that component's header for why. */
     compactFlower?: boolean;
+    /** R3-W8 item 3: forwarded straight through to `LibLayersPanel`'s own controlled-row-expansion
+     * pair — see SpeciesLens.svelte's identical prop for the full header. */
+    expandedRow?: LayerGroupId | null;
+    onExpandedRowChange?: (id: LayerGroupId | null) => void;
   }
 
   let {
@@ -83,6 +87,8 @@
     layerStack,
     onLayerStackChange,
     compactFlower = false,
+    expandedRow,
+    onExpandedRowChange,
   }: Props = $props();
 
   const unit = $derived(lens.unit);
@@ -271,6 +277,8 @@
     {outline}
     {projection}
     {rowState}
+    {expandedRow}
+    {onExpandedRowChange}
   >
     {#snippet dataControls()}
       <ScoresLayersPanel

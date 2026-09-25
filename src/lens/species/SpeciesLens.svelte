@@ -38,12 +38,27 @@
     sel: Sel;
     selStore: SelStore;
     mapHandle: MapHandle | undefined;
+    /** R3-W8 item 3: forwarded straight through to `LibLayersPanel`'s own controlled-row-expansion
+     * pair — see that component's header. Shell.svelte owns the value (one Layers pane, shared
+     * across lenses). */
+    expandedRow?: LayerGroupId | null;
+    onExpandedRowChange?: (id: LayerGroupId | null) => void;
   }
 
   // `boot` stays a declared prop (Shell.svelte always passes it, and a lens prop this narrow is
   // not worth a second Shell.svelte branch to drop) but is no longer destructured -- this
   // component reads nothing from it now the toggle it used to feed is gone (below).
-  let { lens, rep, layerStack, onLayerStackChange, sel, selStore, mapHandle }: Props = $props();
+  let {
+    lens,
+    rep,
+    layerStack,
+    onLayerStackChange,
+    sel,
+    selStore,
+    mapHandle,
+    expandedRow,
+    onExpandedRowChange,
+  }: Props = $props();
 
   // Orchestrator hand-off (Opus UI review of main, 2026-09-25): "in the Species lens HIDE the
   // 'Raster cells | Program areas' toggle instead of showing it disabled with a reason." Species
@@ -73,9 +88,48 @@
   const rowState = $derived<Partial<Record<LayerGroupId, LayersRowState>>>({
     "data-places": { empty: isPlacesSelectionEmpty(sel.sel), hint: "— nothing selected" },
   });
+
+  // R3-W8 item 2: "have a tickbox to stop [zoom-to-layer] in case you want to toggle between
+  // layers" — a plain checkbox writer, `lens.setZoomToLayerOnChange` (URL state, `Sel.zl`).
+  function onZoomToLayerChange(checked: boolean) {
+    lens.setZoomToLayerOnChange(checked);
+  }
 </script>
 
-<LibLayersPanel stack={layerStack} onChange={onLayerStackChange} {outline} {projection} {rowState}>
+<LibLayersPanel
+  stack={layerStack}
+  onChange={onLayerStackChange}
+  {outline}
+  {projection}
+  {rowState}
+  {expandedRow}
+  {onExpandedRowChange}
+>
+  {#snippet speciesField()}
+    <!-- R3-W8 item 1 (Ben, 2026-09-25): "promote the main data selection up" — the layer bar
+         (Merged + each input pill, the representation toggle) moved here from the Data row's own
+         body, labelled the same way the scores lens' promoted "Layer" field is. -->
+    {#if lens.bar}
+      <div class="model-input-field" data-testid="model-input-field">
+        <span class="field-label">Model input</span>
+        <LayerBarView
+          bar={lens.bar}
+          {rep}
+          onSelectLayer={(key) => lens.selectLayer(key)}
+          onSetRepresentation={(r) => lens.setRepresentation(r)}
+        />
+        <label class="zoom-to-layer-check">
+          <input
+            type="checkbox"
+            data-testid="zoom-to-layer-toggle"
+            checked={lens.zoomToLayerOnChange}
+            onchange={(e) => onZoomToLayerChange(e.currentTarget.checked)}
+          />
+          <span>Zoom to layer on change</span>
+        </label>
+      </div>
+    {/if}
+  {/snippet}
   {#snippet dataControls()}
     <div class="species-panel" data-testid="species-panel">
       {#if lens.cardError}
@@ -87,14 +141,6 @@
           wideRange={lens.wideRange}
           onSetZoomTarget={(target) => lens.setZoomTarget(target)}
         />
-        {#if lens.bar}
-          <LayerBarView
-            bar={lens.bar}
-            {rep}
-            onSelectLayer={(key) => lens.selectLayer(key)}
-            onSetRepresentation={(r) => lens.setRepresentation(r)}
-          />
-        {/if}
         {#if lens.mapInputs.notice}
           <p class="notice" role="status">{lens.mapInputs.notice}</p>
         {/if}
@@ -122,5 +168,35 @@
   .error,
   .notice {
     color: var(--text-secondary);
+  }
+
+  /* R3-W8 item 1: the promoted "Model input" field — label, the layer bar, the zoom-to-layer
+     checkbox, one vertical stack (matches `LibLayersPanel.svelte`'s own `.field`/`.field-label`
+     shape, duplicated here for the same reason `ScoresLayersPanel`'s `.outside-pra-check` already
+     duplicates `.visible-check` -- a scoped class cannot cross a component boundary). */
+  .model-input-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .field-label {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+  }
+
+  .zoom-to-layer-check {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+
+  .zoom-to-layer-check input {
+    width: 20px;
+    height: 20px;
+    accent-color: var(--border-control);
+    cursor: pointer;
   }
 </style>

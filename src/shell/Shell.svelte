@@ -16,6 +16,10 @@
   import { onMount, tick, type Component } from "svelte";
   import "./shell.css";
   import { buildRailItems, TOOL_BODY, TOOL_LABEL, type ToolName } from "./tools";
+  // R3-W8 item 3: the `ui=` token's parse/format core — see that module's own header for what it
+  // carries and why it is a separate token from Sel's own query keys.
+  import { formatUi, parseUi } from "./uiState";
+  import type { LayerGroupId } from "../lib/map/layerStack";
   // R5: the wave-in-hexagon mark replaces the old two-file "wave in a circle" pair
   // (mst-mark.svg/mst-mark-dark.svg, kept vendored only for history -- Report.svelte moved to
   // this same component too) -- inline, so ONE definition serves both themes through
@@ -147,6 +151,18 @@
   const selStore = createSelStore(location);
   const sel = selStore.sel;
 
+  // R3-W8 item 3: a shared link's `ui=` token (Share's own writer, `onShare` below) — parsed ONCE,
+  // synchronously, from the page's initial query string, so every chrome piece it restores
+  // (`activeTool`, `expandedRow` below; `panelGeom`/`sheetGeom`'s own initial overrides, passed to
+  // `<Panel>`/`<Sheet>` further down) gets its restored value from the very first render this
+  // component makes — never a later `$effect` that would repaint after a visible default flash.
+  // `ui=` is NEVER read again after this (no `$effect` watches `location.search` for it) and is
+  // never written by `history.replaceState` (`selStore`/`formatSel` do not know it exists) — U1's
+  // rule ("layout is chrome, never the URL") holds for every ORDINARY interaction exactly as
+  // before; only Share's own one-shot link build touches this token at all.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- write-once, never a template read
+  const initialUi = parseUi(new URLSearchParams(location.search).get("ui"));
+
   // V3: created once, up front -- trigger (a) (boot) fires from the `early.version` onMount below,
   // trigger (b) (a real tile failure) from the map's own onMount, trigger (c) from the banner's
   // Retry. It never polls on its own (brief: "Do not poll continuously while everything is fine").
@@ -203,8 +219,17 @@
   // (spec.md §5.1; data + order live in ./tools.ts, unit-tested there). The Flower control fades
   // in place -- never removed -- in the Species lens (spec.md §5.2): "activeTool" is chrome (which
   // panel is open), not URL view state.
-  let activeTool = $state<ToolName>("layers");
+  // R3-W8 item 3: restored from a shared link's `ui=` token when present (`initialUi`, above) —
+  // "layers" (unchanged) otherwise.
+  let activeTool = $state<ToolName>(initialUi?.tool ?? "layers");
   const railItems = $derived(buildRailItems(sel.lens === "species"));
+
+  // R3-W8 item 3: the Layers pane's own expanded row (`LibLayersPanel`'s controlled-row-expansion
+  // pair) — lifted here (rather than left as that component's own internal state) so Share can read
+  // it and a `ui=` link can restore it, matching `activeTool`'s own "chrome, restorable from a
+  // link, never ordinary URL state" treatment. "data-raster" (the Data row) is the same default
+  // `LayersPanel.svelte`'s own internal state used before this existed.
+  let expandedRow = $state<LayerGroupId | null>(initialUi?.expandedRow ?? "data-raster");
 
   // fix list #5 (SC 2.4.3), WEBKIT ONLY: activating a rail tool that CHANGES the open tool drops
   // `document.activeElement` to `<body>` roughly 100ms later, once the newly-chosen tool's lazy
@@ -293,9 +318,26 @@
     selStore.set({ lens, out: defaultOut(lens) });
   }
 
+  // R3-W8 item 3 (Ben, 2026-09-25): "when clicking Share, the link should include all the same UI
+  // elements in their arrangement, eg on Layers pane." Everything ELSE Ben's example names (the
+  // species input, its representation, the zoom-to-layer preference) is already ordinary `Sel`
+  // query state by the time Share is clicked — `location.href` already carries it, same as
+  // `unit`/`lyr`/`pal` for the scores lens. This appends ONLY the chrome `ui=` covers (see
+  // `uiState.ts`'s own header): built fresh, here, from the shell's own live state — never written
+  // by `selStore`/`history.replaceState`, so an ordinary drag/dock/tab change never touches the URL
+  // (U1's rule, unchanged).
+  function shareUrl(): string {
+    const url = new URL(location.href);
+    url.searchParams.set(
+      "ui",
+      formatUi({ tool: activeTool, dock: panelGeom.dock, size: panelGeom.size, detent: sheetGeom.detent, expandedRow }),
+    );
+    return url.toString();
+  }
+
   async function onShare() {
     try {
-      await navigator.clipboard.writeText(location.href);
+      await navigator.clipboard.writeText(shareUrl());
       notify("Link copied to your clipboard.");
     } catch {
       notify("Couldn't copy the link automatically — copy it from the address bar.", {
@@ -1931,6 +1973,8 @@
             {sel}
             {selStore}
             {mapHandle}
+            {expandedRow}
+            onExpandedRowChange={(id) => (expandedRow = id)}
           />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
@@ -1966,6 +2010,8 @@
             {layerStack}
             {onLayerStackChange}
             compactFlower={isPhone && sheetGeom.detent === "half"}
+            {expandedRow}
+            onExpandedRowChange={(id) => (expandedRow = id)}
           />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
@@ -1982,6 +2028,7 @@
         headerExtra={phoneLegend && legendChipMode(sheetGeom.detent) === "inline"
           ? legendChipContent
           : undefined}
+        initialDetentOverride={initialUi?.detent ?? null}
       >
         {@render panelBody()}
       </Sheet>
@@ -1991,6 +2038,7 @@
         title={TOOL_LABEL[activeTool]}
         bind:this={panelRef}
         ongeometry={(g) => (panelGeom = g)}
+        initialGeometryOverride={initialUi ? { dock: initialUi.dock, size: initialUi.size } : null}
       >
         {@render panelBody()}
       </Panel>

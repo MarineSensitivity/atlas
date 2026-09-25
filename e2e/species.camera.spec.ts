@@ -18,6 +18,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession, waitForHydration } from "./hermetic";
 import { blockWasm, routeGlyphs, routeTitilerTiles } from "./map-hermetic";
 import {
+  LEATHERBACK_SP,
   WALRUS_AM_MDL_KEY,
   WIDE_RANGE_SP,
   bootFor,
@@ -670,5 +671,112 @@ test.describe("R3-A1: a wide-range model frames its IN-US portion, with a Zoom-t
     await gotoSpecies(page, `/?mdl_key=${WALRUS_AM_MDL_KEY}&ver=v9`);
     await expect(page.getByTestId("species-title-sci")).toHaveText("Odobenus rosmarus");
     await expect(page.getByRole("group", { name: "Zoom to" })).toHaveCount(0);
+  });
+});
+
+// R3-W8 item 2 (Ben, 2026-09-25): "I just chose FWS Range from default leatherback turtle layer,
+// but see nothing on map because out of view, so would be good to default to zoom to selected
+// layer and have a tickbox to stop doing that." The leatherback fixture (LEATHERBACK_SP, taxon
+// f9.json) is the real worked example: `merged.bbox` is null and its `am`/`ax` inputs publish no
+// bbox either, so the initial species-change fit falls all the way to the study-area default
+// (P6c's own mask-skip keeps the sibling step from finding one of the range/CH masks either) — the
+// exact "nothing on the map" starting state Ben described. `rng_fws` ("FWS Range",
+// [-123.5, 17.65, -64.55, 41.3]) and `ch_fws` ("FWS Critical Habitat", a single reef,
+// [-64.95, 17.65, -64.85, 17.7]) are two of its own real inputs with distinct, real bboxes — good
+// enough to prove a SECOND, independent camera change per pick (not just "some fit happened once").
+test.describe("R3-W8 item 2: zoom to layer on change (+ its tickbox and pan guard)", () => {
+  test("picking an input refits the camera to ITS OWN extent, on every pick", async ({ page }) => {
+    await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Dermochelys coriacea");
+    // starting on Merged: no bbox anywhere reachable (see header) -- parked at the study-area
+    // default, same ceiling every other test in this file uses for "never zoomed in".
+    await expect
+      .poll(async () => (await readCamera(page)).zoom, { timeout: 5_000 })
+      .toBeLessThan(STUDY_AREA_ZOOM_CEILING);
+    const start = await readCamera(page);
+
+    // the checkbox defaults ON (Ben: "default to zoom to selected layer").
+    await expect(page.getByTestId("zoom-to-layer-toggle")).toBeChecked();
+
+    await page.locator('[data-testid="layer-pill"][data-key="rng_fws"]').click();
+    const afterRng = await waitForCameraToChangeFrom(page, start, "picking FWS Range");
+    // rng_fws bbox center (-94.025, 29.475) -- a broad US-coastal fit, well away from the tiny
+    // reef the SECOND pick below lands on.
+    expect(afterRng.center.lng).toBeGreaterThan(-130);
+    expect(afterRng.center.lng).toBeLessThan(-60);
+
+    await page.locator('[data-testid="layer-pill"][data-key="ch_fws"]').click();
+    const afterCh = await waitForCameraToChangeFrom(page, afterRng, "picking FWS Critical Habitat");
+    // ch_fws is a single reef 0.1 x 0.05 deg off Puerto Rico -- a real, independent SECOND camera
+    // change (not the same fit repeating), and a much tighter zoom than the broad range fit.
+    expect(afterCh.center.lng).toBeGreaterThan(-65.1);
+    expect(afterCh.center.lng).toBeLessThan(-64.8);
+    expect(afterCh.center.lat).toBeGreaterThan(17.5);
+    expect(afterCh.center.lat).toBeLessThan(17.8);
+    expect(afterCh.zoom).toBeGreaterThan(afterRng.zoom);
+  });
+
+  test("unchecking the tickbox stops the auto-refit — picking a new input leaves the camera put", async ({
+    page,
+  }) => {
+    await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Dermochelys coriacea");
+    const start = await readCamera(page);
+
+    await page.locator('[data-testid="layer-pill"][data-key="rng_fws"]').click();
+    await waitForCameraToChangeFrom(page, start, "picking FWS Range");
+
+    await page.getByTestId("zoom-to-layer-toggle").uncheck();
+    await expect(page.getByTestId("zoom-to-layer-toggle")).not.toBeChecked();
+
+    const beforeSecondPick = await readCamera(page);
+    await page.locator('[data-testid="layer-pill"][data-key="ch_fws"]').click();
+    // the pill itself still switches (§7.2's own behaviour is untouched) -- only the CAMERA must
+    // stay put. Poll briefly for a change that must NOT happen, then assert the position held.
+    await page.waitForTimeout(500);
+    const afterSecondPick = await readCamera(page);
+    expect(afterSecondPick.center.lng).toBeCloseTo(beforeSecondPick.center.lng, 2);
+    expect(afterSecondPick.center.lat).toBeCloseTo(beforeSecondPick.center.lat, 2);
+    expect(afterSecondPick.zoom).toBeCloseTo(beforeSecondPick.zoom, 2);
+    await expect(page.locator('[data-testid="layer-pill"][data-key="ch_fws"]')).toHaveClass(
+      /active/,
+    );
+  });
+
+  test("panning since the last pick suppresses the next auto-refit, checkbox still on", async ({
+    page,
+  }) => {
+    await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Dermochelys coriacea");
+    const start = await readCamera(page);
+
+    await page.locator('[data-testid="layer-pill"][data-key="rng_fws"]').click();
+    await waitForCameraToChangeFrom(page, start, "picking FWS Range");
+    await expect(page.getByTestId("zoom-to-layer-toggle")).toBeChecked();
+
+    // a real, instant, USER-attributed camera move (same technique the COG-bounds test above uses
+    // to prove `zoomToLayer()`'s own re-fit, not a leftover animation) -- this is what writes
+    // `sel.map` and arms the pan guard.
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        __atlasMap: {
+          handle: { map: { jumpTo(o: { center: [number, number]; zoom: number }): void } };
+        };
+      };
+      w.__atlasMap.handle.map.jumpTo({ center: [10, 10], zoom: 4 });
+    });
+    await expect
+      .poll(async () => (await readCamera(page)).center.lng, { timeout: 5_000 })
+      .toBeCloseTo(10, 0);
+    // give the debounced camera writer (`map.ts`, ~300ms) time to actually reach `sel.map` before
+    // the next pick — the pan guard reads `selStore.sel.map`, not the live map camera.
+    await page.waitForTimeout(500);
+    const panned = await readCamera(page);
+
+    await page.locator('[data-testid="layer-pill"][data-key="ch_fws"]').click();
+    await page.waitForTimeout(500);
+    const afterPick = await readCamera(page);
+    expect(afterPick.center.lng).toBeCloseTo(panned.center.lng, 1);
+    expect(afterPick.center.lat).toBeCloseTo(panned.center.lat, 1);
   });
 });

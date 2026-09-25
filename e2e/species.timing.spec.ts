@@ -108,7 +108,10 @@ test.describe("species lens, cold first-paint timing (own Playwright project, wo
       // that is genuinely on-budget end to end.
       await expect
         .poll(
-          () => page.locator('[data-testid="species-panel"] [data-testid="layer-bar"]').count(),
+          // R3-W8 item 1: the layer bar moved out of `species-panel` (the Data row's body) to the
+          // panel-level "Model input" field (`speciesField`, promoted to the top of the pane) —
+          // scoped to `model-input-field` now, not `species-panel`.
+          () => page.locator('[data-testid="model-input-field"] [data-testid="layer-bar"]').count(),
           {
             message:
               "the layer bar never rendered — the taxon shard fetch is the first thing to check",
