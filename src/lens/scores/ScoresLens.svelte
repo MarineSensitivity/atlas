@@ -109,8 +109,12 @@
   const studyAreas = $derived(studyAreasFromBoot(boot));
   const groups = $derived(layerGroups(boot));
 
+  // Fix round (orchestrator, 2026-09-25, R3-B1): the WHOLE `metricLabels ?? layer.label` chain
+  // now routes through `metricKeyLabel()` as its `label` argument -- a curated label that is
+  // itself just the bare key ("score") is caught there too, not only an ABSENT one (see that
+  // function's own header for why the old `?? metricKeyLabel(key)` tail never saw that case).
   function metricLabel(l: { metric_key: string; label?: string }): string {
-    return lens.metricLabels[l.metric_key] ?? l.label ?? metricKeyLabel(l.metric_key);
+    return metricKeyLabel(l.metric_key, lens.metricLabels[l.metric_key] ?? l.label);
   }
 
   function onLyrChange(value: string) {

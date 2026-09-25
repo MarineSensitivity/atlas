@@ -156,6 +156,24 @@ describe("scoresMapInputs — legend title precedence (M6)", () => {
     });
     expect(out.legend?.title).toBe("Score");
   });
+
+  // Fix round (orchestrator, 2026-09-25): the OTHER way "score" reaches the UI -- a real, published
+  // `manifest.metrics` row whose curated `label` is ITSELF just the bare key. The old
+  // `metricLabels[key] ?? ... ?? metricKeyLabel(key)` chain found this truthy value on the very
+  // FIRST `??` and never reached the title-casing fallback at all.
+  it("R3-B1 (fix round): a curated manifest label equal to the key is ALSO title-cased, not shown verbatim", () => {
+    const out = scoresMapInputs({
+      boot: BOOT_V7,
+      overlays: MANIFEST_OVERLAYS_V7,
+      unit: "cell",
+      lyr: "score",
+      palette: "spectral_r",
+      showOutsidePra: false,
+      selection: null,
+      metricLabels: { score: "score" },
+    });
+    expect(out.legend?.title).toBe("Score");
+  });
 });
 
 describe("scoresMapInputs — zone-choropleth branch", () => {

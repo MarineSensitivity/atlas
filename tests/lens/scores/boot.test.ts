@@ -347,6 +347,43 @@ describe("metricKeyLabel (R3-B1: title-case a bare metric_key)", () => {
     expect(metricKeyLabel("")).toBe("");
     expect(metricKeyLabel("   ")).toBe("");
   });
+
+  // Fix round (orchestrator, 2026-09-25): a curated label that is ITSELF just the bare key is a
+  // second way the raw string reaches the UI -- a release publishing `manifest.metrics: [{
+  // metric_key: "score", label: "score" }]` used to defeat every caller's own `metricLabels[key]
+  // ?? ... ?? metricKeyLabel(key)` chain on the FIRST `??` (a truthy "score" string), never
+  // reaching this function at all.
+  describe("a `label` argument: title-cases when absent OR identical to the key (case-insensitive)", () => {
+    it("no label at all: same as before, title-cases the key", () => {
+      expect(metricKeyLabel("score")).toBe("Score");
+      expect(metricKeyLabel("score", undefined)).toBe("Score");
+      expect(metricKeyLabel("score", null)).toBe("Score");
+    });
+
+    it("a REAL, different label wins verbatim -- the common case, unaffected", () => {
+      expect(metricKeyLabel("primprod", "prim prod, 2014-2023 avg (mg C/m^2/day)")).toBe(
+        "prim prod, 2014-2023 avg (mg C/m^2/day)",
+      );
+    });
+
+    it("the reported bug: a curated label equal to the key (same case) is NOT treated as real", () => {
+      expect(metricKeyLabel("score", "score")).toBe("Score");
+    });
+
+    it("case-insensitive: 'Score'/'SCORE' as the label are equally degenerate", () => {
+      expect(metricKeyLabel("score", "Score")).toBe("Score");
+      expect(metricKeyLabel("score", "SCORE")).toBe("Score");
+    });
+
+    it("a blank/whitespace-only label is treated the same as absent", () => {
+      expect(metricKeyLabel("score", "")).toBe("Score");
+      expect(metricKeyLabel("score", "   ")).toBe("Score");
+    });
+
+    it("whitespace around an otherwise-real label does not make it 'identical to the key'", () => {
+      expect(metricKeyLabel("score", "  Overall score  ")).toBe("Overall score");
+    });
+  });
 });
 
 // R3-B14/C3: `boot.zones[unit][*].bbox` — the published `[west, south, east, north]` a Program-Area

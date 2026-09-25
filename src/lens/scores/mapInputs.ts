@@ -180,11 +180,16 @@ export function scoresMapInputs(state: ScoresMapState): ScoresMapInputs {
   // composite row really is `metric_key: "score"` with no label anywhere painted the lowercase raw
   // key into this legend's `<h2>` (and, via the SAME `legend.title`, `LegendChip.svelte`'s phone
   // chip text) instead of "Score". `metricKeyLabel()` is the ONE title-casing fallback the Layer
-  // `<select>` (`LayersPanel.svelte`'s `layerOptionLabel`) uses too, so all three surfaces agree.
-  const title =
-    (state.metricLabels ?? {})[state.lyr ?? ""] ??
-    layer?.label ??
-    (state.lyr ? metricKeyLabel(state.lyr) : "Score");
+  // `<select>` (`ScoresLens.svelte`'s `metricLabel()`) uses too, so all three surfaces agree.
+  //
+  // Fix round (orchestrator, 2026-09-25): the WHOLE `metricLabels ?? layer.label` chain now routes
+  // through `metricKeyLabel()` as its `label` argument -- a curated label that is itself just the
+  // bare key ("score") is caught there too, not only an absent one (see that function's own
+  // header). `state.lyr` still gets the hardcoded "Score" fallback when it is null/undefined
+  // (nothing to even title-case), unchanged.
+  const title = state.lyr
+    ? metricKeyLabel(state.lyr, (state.metricLabels ?? {})[state.lyr] ?? layer?.label)
+    : "Score";
   const legend: ScoresLegend = isCellBranch
     ? (() => {
         const rl = rasterLegend(

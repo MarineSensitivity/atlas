@@ -157,7 +157,7 @@ export function layerByKey(boot: unknown, key: string | undefined | null): BootL
 
 /**
  * R3-B1 (round-3 plan): the ONE place a bare `metric_key` becomes display text when the release
- * publishes no label for it — a release's composite row is sometimes literally `metric_key:
+ * publishes no USEFUL label for it — a release's composite row is sometimes literally `metric_key:
  * "score"` with no `label` and no `manifest.metrics` entry, and every caller's own fallback chain
  * used to end on that raw key verbatim ("score", lowercase) instead of title-casing it, the same
  * class of bug `lib/ui/categories.ts#categoryLabel` already fixes for a raw sp_cat/component key
@@ -166,14 +166,28 @@ export function layerByKey(boot: unknown, key: string | undefined | null): BootL
  * capitalized — "score" -> "Score", "some_key" -> "Some key" — matching `categoryLabel`'s own
  * "sentence case, not Title Case" convention so the two never read inconsistently side by side.
  *
- * `layerOptionLabel` (the Layer `<select>`, `LayersPanel.svelte`), `mapInputs.ts`'s legend `title`
+ * Fix round (orchestrator, 2026-09-25): "the select/legend/chip still show 'score' — the
+ * manifest's curated label EQUALS the key." A release can publish a real, non-blank
+ * `manifest.metrics` row whose `label` is ALSO just the bare key verbatim ("score") — a degenerate
+ * curated label, not an absent one, so the OLD `metricLabels[key] ?? layer?.label ??
+ * metricKeyLabel(key)` chain found a truthy value on the first `??` and never reached this
+ * function at all. `label` is now this function's OWN second argument: title-casing fires when
+ * the resolved label is absent/blank OR case-insensitively IDENTICAL to `key` — a real, DIFFERENT
+ * curated label (however it was spelled) is returned unchanged either way. Every caller now routes
+ * its whole `metricLabels[key] ?? layer?.label` chain through here as `label`, rather than calling
+ * this only as the final `??` link.
+ *
+ * `ScoresLens.svelte`'s `metricLabel()` (the Layer `<select>`), `mapInputs.ts`'s legend `title`
  * (which `ScoresLegend.svelte`'s `<h2>` AND `LegendChip.svelte`'s chip text both read verbatim —
- * one fix covers all three surfaces the plan names) all call this as their LAST resort, after a
- * release's own `metricLabels`/`layer.label` have already had first refusal.
+ * one fix covers all three surfaces the plan names) both call this now.
  */
-export function metricKeyLabel(key: string): string {
-  const trimmed = key.trim().replace(/_/g, " ");
-  return trimmed ? trimmed[0].toUpperCase() + trimmed.slice(1) : trimmed;
+export function metricKeyLabel(key: string, label?: string | null): string {
+  const trimmedKey = key.trim();
+  const trimmedLabel = typeof label === "string" ? label.trim() : "";
+  const isUseful = trimmedLabel !== "" && trimmedLabel.toLowerCase() !== trimmedKey.toLowerCase();
+  if (isUseful) return trimmedLabel;
+  const spaced = trimmedKey.replace(/_/g, " ");
+  return spaced ? spaced[0].toUpperCase() + spaced.slice(1) : spaced;
 }
 
 /** `layer.by_subregion.FULL` — the raster is ALWAYS the FULL COG (D7: "the study area is a camera,

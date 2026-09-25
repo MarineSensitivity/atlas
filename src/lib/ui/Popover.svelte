@@ -30,6 +30,13 @@
      * Esc/outside-click, which this component already owned). Every existing caller omits it and
      * keeps the original self-contained open/close it always had. */
     open?: boolean;
+    /** Fix round (orchestrator, 2026-09-25): "the popover as wide as the trigger" -- the default
+     * popover is a fixed 240px (right for a short prose aside); a full-row trigger like the ramp
+     * picker's own `Select`-shaped button wants its dropdown to match. `.popover-wrap` (the
+     * positioned ancestor `width: 100%` resolves against) already stretches to the trigger's own
+     * width when the caller's trigger itself is `width: 100%` of ITS OWN container (true for
+     * `.ramp-trigger`) -- so this is just "opt into that," never a caller-supplied pixel value. */
+    matchTriggerWidth?: boolean;
   }
 
   let {
@@ -39,6 +46,7 @@
     triggerClass,
     align = "left",
     open = $bindable(false),
+    matchTriggerWidth = false,
   }: Props = $props();
   let wrapEl: HTMLSpanElement | undefined;
   let triggerEl: HTMLButtonElement | undefined;
@@ -100,7 +108,7 @@
   <button
     type="button"
     class="popover-trigger {triggerClass ?? ''}"
-    class:popover-trigger--custom={!!trigger}
+    class:popover-trigger--icon={!trigger}
     bind:this={triggerEl}
     aria-expanded={open}
     aria-controls={popoverId}
@@ -119,6 +127,7 @@
   <div
     class="popover"
     class:popover--right={align === "right"}
+    class:popover--match-trigger={matchTriggerWidth}
     id={popoverId}
     bind:this={popoverEl}
     hidden={!open}
@@ -133,17 +142,31 @@
     display: inline-block;
   }
 
+  /* Fix round (orchestrator, 2026-09-25, desktop-04/phone-04): the base rule used to carry the
+     default (i)-icon button's own fixed 18x18 round `inline-grid; place-items: center` shape, and
+     a `.popover-trigger--custom` modifier tried to override just width/height/display for a
+     custom trigger (opacity %, ramp strip + name) -- but BOTH classes live in this SAME component,
+     so Svelte's CSS scoping gives them equal specificity, and the two rules' properties fought
+     (e.g. `.popover-trigger`'s `display: inline-grid` was never actually overridden, silently
+     stacking a custom trigger's icon/text on top of each other in one grid cell). The fixed-icon
+     shape now lives ENTIRELY on its own `--icon` modifier instead: the base carries only what
+     EVERY trigger shares (border, cursor, color, focus/pressed state), so a custom trigger's own
+     `triggerClass` (the caller's `:global(...)` rules, e.g. `.opacity-btn`/`.ramp-trigger`) is the
+     ONLY thing ever setting layout/size for it -- no cross-component specificity fight possible. */
   .popover-trigger {
-    display: inline-grid;
-    place-items: center;
-    width: 18px;
-    height: 18px;
     border: 1px solid var(--border-control);
-    border-radius: var(--radius-pill);
     background: none;
     color: var(--text-secondary);
     cursor: pointer;
     padding: 0;
+  }
+
+  .popover-trigger--icon {
+    display: inline-grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: var(--radius-pill);
   }
 
   .popover-trigger:focus-visible {
@@ -154,15 +177,6 @@
   .popover-trigger[aria-expanded="true"] {
     color: var(--text-primary);
     border-color: var(--text-primary);
-  }
-
-  /* a custom trigger (opacity %, ramp strip + name) is content-sized, not the default 18px round
-     icon button -- the caller's own `triggerClass` sets width/height/padding; this only drops the
-     fixed circle so those rules aren't fighting a 18x18 box. */
-  .popover-trigger--custom {
-    width: auto;
-    height: auto;
-    border-radius: var(--radius-control);
   }
 
   .popover {
@@ -183,5 +197,14 @@
   .popover--right {
     left: auto;
     right: 0;
+  }
+
+  /* Fix round (orchestrator, 2026-09-25): "the popover as wide as the trigger" -- `.popover-wrap`
+     is a flex ITEM of the caller's own column-flex field, so it already stretches to the trigger's
+     own full width (align-items: stretch, the flex default) when the trigger itself is width:
+     100% of its container (true for `.ramp-trigger`); `width: 100%` here just opts THIS popover
+     into matching that, instead of the default fixed 240px sized for a short prose aside. */
+  .popover--match-trigger {
+    width: 100%;
   }
 </style>

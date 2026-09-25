@@ -502,18 +502,17 @@
   }
 
   /* phone, "half" detent (Deliverable 3's own requirement: "the toggle, Layer, Zoom to region and
-     the first rows visible without scrolling"): eyes-on caught the layer DESCRIPTION alone eating
-     enough height that the stack's first row never came into view at all -- clamped to 2 lines
-     here (a longer description is still fully readable once the viewer scrolls, or at "Full
-     height"; this only trims what shows before any scroll). Paired with a tighter panel-wide gap
-     on the same viewport (below) to free just enough room. */
+     the first [two] rows visible without scrolling"): eyes-on first found the layer DESCRIPTION
+     alone eating enough height that the stack's first row never came into view -- clamped to 2
+     lines as a first pass. Fix round (orchestrator, 2026-09-25): line-clamping still left the
+     first two rows below the fold, and the description is no longer the only copy of this text on
+     phone anyway -- the Legend modal (W3's B5, merged from main) now shows the SAME layer
+     description there. Omitted entirely on phone (never rendered short-but-clamped); unchanged on
+     desktop, where there is no Legend-modal duplicate and no space pressure. Paired with a
+     tighter panel-wide gap on the same viewport (below) to free the rest of the room. */
   @media (max-width: 480px) {
     .note {
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
+      display: none;
     }
 
     .layers-stack {
@@ -616,21 +615,39 @@
   }
 
   /* R3: the opacity slider moved off the row into this small trigger button (Popover's own
-     `triggerClass`) -- an icon + the current percent, content-sized. */
+     `triggerClass`) -- a droplet icon + the current percent, ONE horizontal line, content-sized.
+     Fix round (orchestrator, 2026-09-25, desktop-04/phone-04): paired with Popover.svelte's own
+     `.popover-trigger--custom` fix (the base trigger's `inline-grid; place-items: center` was
+     stacking the icon and the percent text on top of each other, not beside), this button also
+     needed `flex: none` on its own two children so neither the icon nor the percent text ever
+     shrinks/clips inside the row, and a touch-target floor on coarse pointers (phone) below. */
   :global(.opacity-btn) {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
     height: 28px;
     padding: 0 var(--space-2);
     border: 1px solid var(--border-control);
+    border-radius: var(--radius-control);
     background: var(--surface-raised);
     color: var(--text-secondary);
     font-size: var(--text-xs);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  :global(.opacity-btn .icon) {
+    flex: none;
+  }
+
+  @media (pointer: coarse) {
+    :global(.opacity-btn) {
+      height: var(--size-touch);
+    }
   }
 
   .opacity-pct {
+    flex: none;
     min-width: 2.4em;
     text-align: right;
   }
