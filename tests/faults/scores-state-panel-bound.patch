@@ -1,5 +1,5 @@
 diff --git a/src/lens/scores/ScoresLens.svelte b/src/lens/scores/ScoresLens.svelte
-index 8e05383..2fd4742 100644
+index 1dd652d..48bce5a 100644
 --- a/src/lens/scores/ScoresLens.svelte
 +++ b/src/lens/scores/ScoresLens.svelte
 @@ -66,6 +66,10 @@
@@ -13,10 +13,10 @@ index 8e05383..2fd4742 100644
      /** P3 fix (Opus eyes-on review, 2026-09-24): passed straight through to `FlowerPanel`'s own
       * prop of the same name -- see that component's header for why. */
      compactFlower?: boolean;
-@@ -97,12 +101,20 @@
-     onExpandedRowChange,
+@@ -102,12 +106,20 @@
      tab,
      onTabChange,
+     onOpenPlaces,
 +    mapExtra = $bindable(null),
    }: Props = $props();
  
@@ -35,10 +35,10 @@ index 8e05383..2fd4742 100644
    // `unitToggle` prop) -- replaces the old "Spatial units" `<Select>` that used to live in
    // `ScoresLayersPanel` (`./LayersPanel.svelte`, still rendered below for the Data row's OTHER
 diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
-index 26dbaf7..b0cb568 100644
+index 25c25d1..77ee5f0 100644
 --- a/src/shell/Shell.svelte
 +++ b/src/shell/Shell.svelte
-@@ -660,12 +660,19 @@
+@@ -700,6 +700,13 @@
    // every read of it below is null-safe and falls back to "the shell's own base view", same as
    // the old `{}` default did.
    let scoresLens = $state<ScoresLensState | null>(null);
@@ -50,7 +50,9 @@ index 26dbaf7..b0cb568 100644
 +    null,
 +  );
  
-   // P1 fix: hoisted out of the template (it used to be a `{@const}` inline where the legend chip
+   // R3-W8 item 5 fix round (Ben, verbatim): the ONE `reportSubjects()` result the Places tab's own
+   // "Last clicked" row, the Report tab's own sentence, and the Table's subject line all read --
+@@ -755,7 +762,7 @@
    // rendered) so BOTH the floating placement and the "full" detent's inline-in-sheet placement can
    // read the SAME value without recomputing it or duplicating the lens/kind branch.
    const phoneLegend = $derived(
@@ -59,7 +61,7 @@ index 26dbaf7..b0cb568 100644
    );
  
    // UI-1 (round 3): `<Toast>`'s own phone bottom-offset PROP -- see its mount point (below) for why
-@@ -791,7 +798,7 @@
+@@ -881,7 +888,7 @@
    // never mounted on a species view in the first place.
    const zonesForStyle = $derived<ZoneUnitSpec[]>(
      zoneUnitsWithOutline(
@@ -68,7 +70,25 @@ index 26dbaf7..b0cb568 100644
        sel.out,
      ),
    );
-@@ -1200,11 +1207,11 @@
+@@ -952,7 +959,7 @@
+     // V4 fix (owner phone report, 2026-09-24, desktop-18): `phoneLegend` (despite its name) is
+     // already lens-agnostic -- "the legend value the current lens would draw", the same one the
+     // desktop `.lens-legend-region` branch reads (species -> speciesLens.mapInputs.legend, scores
+-    // -> scoresLens?.mapExtra.legend) -- so it doubles as desktop's own "is a legend card actually
++    // -> scoresPanelMapExtra?.legend) -- so it doubles as desktop's own "is a legend card actually
+     // on screen right now" flag with no new derived state.
+     return desktopPanelPadding(panelGeom, !!phoneLegend);
+   }
+@@ -1187,7 +1194,7 @@
+   // `currentChromePadding()` already computes the SAME `chipShowing` boolean for every LATER
+   // (post-load) re-fit (V1 fix, above) -- this is the one remaining caller still calling
+   // `phonePaddingFromMeasured` bare. Gated additionally on `scoresLens` (the default lens) having
+-  // loaded: `phoneLegend` reads `scoresLens?.mapExtra.legend`, and `scoresLens` itself is a
++  // loaded: `phoneLegend` reads `scoresPanelMapExtra?.legend`, and `scoresLens` itself is a
+   // DYNAMIC IMPORT (this file's own "0.10.21 fix 1" comment) -- firing before it resolves would
+   // silently compute `chipShowing: false` and reproduce the exact defect this fixes.
+   let refitOnceForMeasuredSheet = false;
+@@ -1290,11 +1297,11 @@
      projection: sel.proj,
      zones: ecoregionUnit ? [...zonesForStyle, ecoregionUnit] : zonesForStyle,
      raster:
@@ -83,7 +103,7 @@ index 26dbaf7..b0cb568 100644
      layerStack,
    });
  
-@@ -2085,6 +2092,7 @@
+@@ -2198,6 +2205,7 @@
              lens={scoresLens}
              {layerStack}
              {onLayerStackChange}
@@ -91,7 +111,7 @@ index 26dbaf7..b0cb568 100644
              compactFlower={isPhone && sheetGeom.detent === "half"}
              {expandedRow}
              onExpandedRowChange={(id: LayerGroupId | null) => (expandedRow = id)}
-@@ -2155,7 +2163,7 @@
+@@ -2269,7 +2277,7 @@
    {:else if sel.lens === "scores" && ScoresLegendComp}
      {@const Comp = ScoresLegendComp}
      <div class="lens-legend-region">
