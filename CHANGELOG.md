@@ -4,15 +4,28 @@ Round 3 re-review fix round (Opus 5.5 eyes-on, second pass on `a7ba24a`/0.10.73)
 live build still showed after the prior fix rounds.
 
 - **Fixed (BLOCKING): the species "Zoom to: US waters | Whole range" toggle STILL never appeared on
-  v7** (R3-A1, review D1, second time) — the leatherback's LIVE `/cog/info` bounds are
-  `[-180, -17.7, 180, 60.45]` (the model reaches American Samoa/Guam across the antimeridian, so the
-  raster's own bbox is already the full globe in longitude); `minimalFrame()` cannot narrow a box
-  that wide, and the caller used to read that as "not a camera at all" and return BEFORE
-  `wideRangeAware()` ever ran. New exported `cogBoundsCamera()`
-  (`src/lens/species/data/camera.ts`) applies the wide-range narrowing rule to the RAW bbox when
-  `minimalFrame()` can't reframe it — `intersectBbox()`'s own dateline-shift search still narrows a
-  -180..180 box against the study area correctly. "Whole range" for a globe-spanning extent frames
-  the model's own raw bbox. The walrus (a real, narrowable antimeridian wrap) is unaffected.
+  v7** (R3-A1, review D1, second time) — real-build eyes-on found FOUR compounding defects on the
+  live leatherback (`?mdl_seq=54241`), fixed together:
+  1. The leatherback's LIVE `/cog/info` bounds are `[-180, -17.7, 180, 60.45]` (the model reaches
+     American Samoa/Guam across the antimeridian); `minimalFrame()` cannot narrow a box that wide,
+     and the caller used to read that as "not a camera at all" and return BEFORE
+     `wideRangeAware()` ever ran. New exported `cogBoundsCamera()` (`src/lens/species/data/camera.ts`)
+     applies the wide-range narrowing rule to the RAW bbox when `minimalFrame()` can't reframe it.
+  2. That fix alone never actually reached the live leatherback: `src/lib/raster/bounds.ts`'s
+     `narrowLongitude()` intercepts the same degenerate bbox FIRST and used to hand back a
+     single-candidate window still 78° tall (under the wide-range threshold, so the toggle stayed
+     hidden) — or, for a genuinely wide-ranging species, the raw box itself, whose `cameraForBounds()`
+     fit for "Whole range" was verified LIVE to land on lng=0 (Africa). `narrowLongitude()` now probes
+     every candidate and, when the real hits are spread across multiple regions, hands back a
+     confirmed-data arc (`hitLonArc()`, dateline-aware) instead.
+  3. A fresh page load could still permanently skip the species' own camera fit: the species-camera
+     `$effect` (`src/lens/species/state.svelte.ts`) can run once before `boot` (the release's study
+     areas) has loaded, get `cam === null`, and used to latch `prevCameraKey` anyway — so a LATER
+     pass, once `boot` arrived, saw "already fitted" and never retried. It now latches only once a
+     camera was actually computed.
+  "Whole range" frames the confirmed-data arc (or the model's own raw bbox, for a bundle-published
+  globe-spanning extent); the walrus (a real, narrowable antimeridian wrap, one compact location) is
+  unaffected throughout. Verified live end-to-end, both viewports, "US waters" and "Whole range".
 - **Fixed: the exported map title read "score · score"** for the default Scores layer (Download
   menu, PNG/SVG, both themes) — `src/lib/download/footer.ts` gains `titleWithUnit()`, which skips
   the unit when it equals the title (case-insensitive, trimmed); a species title + a distinct unit
