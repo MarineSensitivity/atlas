@@ -1958,6 +1958,17 @@ export const FAULTS = [
       "carries -- installs suffix-less files the gallery spec never reads",
     gate: ["npx", "vitest", "run", "tests/scripts/galleryBaselinesFromCi.test.ts"],
   },
+  // --- round 3, W8 (species Layers pane: promote data selection, zoom-to-layer, Share reproduces
+  // the UI arrangement) --------------------------------------------------------------------------
+  {
+    id: "ui-token-dock-dropped",
+    patch: "tests/faults/ui-token-dock-dropped.patch",
+    describe:
+      "uiState.ts's formatUi() hardcodes the dock field to 'bottom' instead of encoding the " +
+      "live panel dock it was handed -- a Share link built while docked left/right silently " +
+      "reopens docked bottom instead of reproducing the arrangement the viewer actually saw",
+    gate: ["npx", "vitest", "run", "tests/shell/uiState.test.ts"],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror
