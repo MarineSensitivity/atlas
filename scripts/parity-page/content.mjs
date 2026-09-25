@@ -189,7 +189,7 @@ export const INTENTIONAL = [
     id: "ID-10",
     title:
       "The Layers control lists the layers that exist — and MapLibre's own map chrome is not there yet",
-    what: "The Shiny apps' layers control carried switches (`pra_ln`, `pra_lbl`, `er_ln`) that controlled nothing. The atlas derives the list from the composed style (R3: the real, interactive `LayersPanel.svelte` stack, one row per `LayerGroupId`, wired to `moveLayerStackEntry`/`composeStyle`'s own `layerStack` input), so a switch always has a layer. The other side of the same line: MapLibre's fullscreen / navigation / scale controls, the globe minimap and the Nominatim \"Go to location\" geocoder are NOT built in either lens.",
+    what: "The Shiny apps' layers control carried switches (`pra_ln`, `pra_lbl`, `er_ln`) that controlled nothing. The atlas derives the list from the composed style (R3: the real, interactive `LayersPanel.svelte` stack, one row per `LayerGroupId`, wired to `moveLayerStackEntry`/`composeStyle`'s own `layerStack` input), so a switch always has a layer — every group still has a row EXCEPT three basemap groups (Land & water, Boundaries, Roads & buildings) R3's own redesign (2026-09-25) deliberately hides from the pane's list (`layerStack.ts`'s `LAYER_GROUP_IN_PANEL`), still full model citizens (default stack, `layers=` codec, Reset), just with no row to change them from. The other side of the same line: MapLibre's fullscreen / navigation / scale controls, the globe minimap and the Nominatim \"Go to location\" geocoder are NOT built in either lens.",
     why: 'The dead switches are a documented bug (§6.4). The missing chrome is a deliberate hold: those are real buttons that would nest inside `#map[role="img"]` and fail axe, so where map chrome lives is one cross-lens decision, recorded as gap G-02 rather than guessed at twice.',
     where: [
       {
@@ -198,7 +198,7 @@ export const INTENTIONAL = [
       },
       {
         file: "e2e/layers.spec.ts",
-        name: "M3: the Land & water row's eye hides the basemap fill, showing the theme's plain background colour through",
+        name: "M3: hiding basemap-land (layers=) shows the theme's plain background colour through",
       },
     ],
     rows: ["S-08", "P-07"],

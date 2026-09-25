@@ -1,13 +1,11 @@
 <script lang="ts">
   // R4 (docs/usability.md §7): the tool rail's own button, replacing HexButton.svelte in this
-  // role (HexButton stays -- the gallery still shows it, and its own hexagon shape is now reused
-  // by the LOGO and by this component's active marker instead of the button's own face). A
-  // labelled vertical stack: icon above a visible short label, not an icon-only hex needing a
-  // hover to learn (docs/usability.md's own finding: "they read as decoration ... a first-timer
-  // has to hover each"). The active tool is marked by a small hexagon PIP beside the button
-  // (`--fill-accent`), the same shape and position the reviewed mockup uses
-  // (docs/design/mockups/r2/r2.css's `.rail-stack button.is-on::before`) -- not the button's own
-  // face, which is now a plain rounded rect.
+  // role (HexButton stays -- the gallery still shows it, and its own hexagon shape is still used
+  // by the LOGO). A labelled vertical stack: icon above a visible short label, not an icon-only
+  // hex needing a hover to learn (docs/usability.md's own finding: "they read as decoration ... a
+  // first-timer has to hover each"). R3 (Ben, live-review 2026-09-25): "drop the tiny hexagon icon
+  // next to selected tool -- excessive and distracting" -- the active state is now the accent fill
+  // + ring alone (below), no separate pip glyph beside the button.
   import Icon from "./Icon.svelte";
   import type { IconName } from "./icon-paths";
   import { uid } from "./uid";
@@ -183,33 +181,6 @@
     color: var(--text-primary);
   }
 
-  /* the active marker: a small brand hexagon PIP beside the button (R4 -- "the hexagon moves to
-     the logo and the active marker"), not the button's own face. Vertical stack: to its left;
-     phone tab bar (horizontal): above it -- either way, outside the touch target, never resized
-     by it. Candidate y1: --border-accent rings it too, so the pip stays legible against
-     --fill-accent's own 1.49:1-on-paper fill (WCAG 1.4.11). */
-  .railitem.is-on::before {
-    content: "";
-    position: absolute;
-    width: 7px;
-    height: 8px;
-    background: var(--fill-accent);
-    box-shadow: 0 0 0 1px var(--border-accent);
-    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-  }
-
-  .railitem.is-on:not(.railitem--horizontal)::before {
-    left: -9px;
-    top: 50%;
-    margin-top: -4px;
-  }
-
-  .railitem.is-on.railitem--horizontal::before {
-    top: -7px;
-    left: 50%;
-    margin-left: -3.5px;
-  }
-
   .railitem.is-on {
     background: var(--fill-accent);
     color: var(--text-on-accent);
@@ -270,10 +241,6 @@
     }
     .railitem.is-on :global(.railitem-icon) {
       color: HighlightText;
-    }
-    .railitem.is-on::before {
-      background: Highlight;
-      box-shadow: 0 0 0 1px ButtonText;
     }
     .railitem :global(.railitem-icon-inactive) {
       color: GrayText;

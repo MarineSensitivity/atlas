@@ -137,6 +137,25 @@ describe("scoresMapInputs — legend title precedence (M6)", () => {
     });
     expect(out.legend?.title).toBe(PRIMPROD_SHORT_LABEL);
   });
+
+  // R3-B1 (round-3 plan): a release whose composite `metric_key` really IS the bare string
+  // "score" (no `boot.layers[].label`, no `manifest.metrics` entry for it) used to fall all the
+  // way through to the raw key verbatim, lowercase -- the exact "raw metric key 'score' shown in
+  // the legend/chip" bug the plan names. `boot.layers` here has no row named "score" at all (an
+  // unresolved `lyr`, the OTHER way this path is reached), so both `metricLabels` and `layer?.label`
+  // miss and the fallback is exercised for real, not just documented.
+  it("R3-B1: an unresolved lyr with no label anywhere title-cases the raw key ('score' -> 'Score')", () => {
+    const out = scoresMapInputs({
+      boot: BOOT_V7,
+      overlays: MANIFEST_OVERLAYS_V7,
+      unit: "cell",
+      lyr: "score",
+      palette: "spectral_r",
+      showOutsidePra: false,
+      selection: null,
+    });
+    expect(out.legend?.title).toBe("Score");
+  });
 });
 
 describe("scoresMapInputs — zone-choropleth branch", () => {
@@ -201,7 +220,9 @@ describe("scoresMapInputs — zone-choropleth branch", () => {
       showOutsidePra: false,
       selection: null,
     });
-    expect(out.legend).toEqual({ kind: "empty", title: "nope" });
+    // R3-B1: an unresolved lyr with no label anywhere now title-cases via `metricKeyLabel()`
+    // ("nope" -> "Nope"), not the raw lowercase key verbatim — see the dedicated R3-B1 test above.
+    expect(out.legend).toEqual({ kind: "empty", title: "Nope" });
   });
 });
 

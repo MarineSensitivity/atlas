@@ -95,6 +95,29 @@ export const LAYER_GROUP_ENABLED: Record<LayerGroupId, boolean> = {
 };
 
 /**
+ * R3 (Ben, live-review 2026-09-25): "clean up the Layers pane... drop [Roads & buildings,
+ * Boundaries, Land & water] that are fine to leave on as default basemap without worrying about
+ * layer ordering." These three groups stay FULL model citizens — present in
+ * {@link DEFAULT_LAYER_STACK}, still classified by {@link classifyBasemapLayer}, still round-trip
+ * through the `layers=` codec ({@link parseLayerStack}/{@link formatLayerStack}), still restored by
+ * "Reset layers" — this table ONLY says whether `src/lib/ui/LayersPanel.svelte` lists the group as
+ * a row. A `layers=` link naming a hidden group (e.g. `basemap-roads:h`) still parses and still
+ * applies; the viewer just has no panel row to change it from again short of Reset or a new link.
+ * `basemap-bathymetry` stays listed (disabled, "coming soon") — Ben did not name it, and its own
+ * presence documents the group exists for later (see {@link LAYER_GROUP_ENABLED}'s own comment).
+ */
+export const LAYER_GROUP_IN_PANEL: Record<LayerGroupId, boolean> = {
+  "basemap-land": false,
+  "basemap-bathymetry": true,
+  "basemap-boundaries": false,
+  "basemap-roads": false,
+  "basemap-labels": true,
+  "data-raster": true,
+  "data-zones": true,
+  "data-places": true,
+};
+
+/**
  * The default stack, bottom (index 0) to top (last) — draw order, the same convention
  * `style.ts#LAYER_ORDER` already used. This is EXACTLY today's rendering (every basemap sub-role
  * sits where the old single "basemap" role sat, all of it under the raster): moving `basemap-labels`

@@ -7,6 +7,7 @@ import {
   legendTicks,
   paletteStopsFromBoot,
   paletteStopsWithFallback,
+  rampCss,
   type PaletteStops,
 } from "../../src/lib/raster/ramps";
 
@@ -223,5 +224,19 @@ describe("colorForValue (continuous blend between the two nearest stops)", () =>
 
   it("throws for an empty stop list", () => {
     expect(() => colorForValue([], 1, 0, 1)).toThrow();
+  });
+});
+
+// R3 (round-3 plan, W1: "actual color ramps visualized for given options" -- the ramp picker's
+// strip preview, `lens/scores/LayersPanel.svelte`).
+describe("rampCss (a flat left-to-right gradient string over the given stops)", () => {
+  it("joins every stop, in order, into one linear-gradient", () => {
+    expect(rampCss(["#111111", "#222222", "#333333"])).toBe(
+      "linear-gradient(to right, #111111, #222222, #333333)",
+    );
+  });
+
+  it("works for a single-stop palette (a degenerate but legal gradient)", () => {
+    expect(rampCss(["#123456"])).toBe("linear-gradient(to right, #123456)");
   });
 });

@@ -11,10 +11,35 @@
     /** the trigger's accessible name, e.g. "About the ER-score rule" */
     label: string;
     children: Snippet;
+    /** R3 (Layers-pane redesign, 2026-09-25): the default trigger is a bare (i) icon in an 18px
+     * round button -- fine for a "more info" aside, too small/opaque for a control that opens a
+     * WORKING input (the per-row opacity slider, the color-ramp picker). When given, this renders
+     * INSIDE the trigger button instead of the (i) icon; every other part of the trigger (the real
+     * `<button>`, its `aria-expanded`/`aria-controls`/`aria-label`, open/close, outside-click, Esc)
+     * is unchanged, so a caller only ever customizes what the button shows, never how it behaves. */
+    trigger?: Snippet;
+    /** an extra class on the trigger `<button>` -- the default 18px round shape is wrong for a
+     * content-sized trigger like "gradient strip + palette name" or "icon + 62%". Ignored when
+     * `trigger` is omitted (the default (i) button keeps its own fixed size regardless). */
+    triggerClass?: string;
+    /** which edge the popover opens from -- `"left"` (default, unchanged) or `"right"`, for a
+     * trigger near the panel's own right edge where a left-opening popover would overflow it. */
+    align?: "left" | "right";
+    /** R3 (ramp picker, `lens/scores/LayersPanel.svelte`): `$bindable` so a caller can close the
+     * popover itself after a selection (a listbox's own "pick an option" gesture, distinct from
+     * Esc/outside-click, which this component already owned). Every existing caller omits it and
+     * keeps the original self-contained open/close it always had. */
+    open?: boolean;
   }
 
-  let { label, children }: Props = $props();
-  let open = $state(false);
+  let {
+    label,
+    children,
+    trigger,
+    triggerClass,
+    align = "left",
+    open = $bindable(false),
+  }: Props = $props();
   let wrapEl: HTMLSpanElement | undefined;
   let triggerEl: HTMLButtonElement | undefined;
   let popoverEl: HTMLDivElement | undefined = $state();
@@ -24,8 +49,17 @@
   function close() {
     if (!open) return;
     open = false;
-    triggerEl?.focus();
   }
+
+  // "focus returns to the trigger on close" (this component's own header) -- tracked here, not
+  // inline in `close()`, so a caller closing the (now bindable) `open` prop directly from OUTSIDE
+  // (the ramp picker's own "select an option" click) gets the identical refocus, not just Esc/
+  // outside-click. `wasOpen` starts false (matching `open`'s own default), so mount fires no focus.
+  let wasOpen = false;
+  $effect(() => {
+    if (wasOpen && !open) triggerEl?.focus();
+    wasOpen = open;
+  });
 
   function handleDocumentPointerdown(event: PointerEvent) {
     if (!open) return;
@@ -65,19 +99,30 @@
 <span class="popover-wrap" bind:this={wrapEl}>
   <button
     type="button"
-    class="popover-trigger"
+    class="popover-trigger {triggerClass ?? ''}"
+    class:popover-trigger--custom={!!trigger}
     bind:this={triggerEl}
     aria-expanded={open}
     aria-controls={popoverId}
     aria-label={label}
     onclick={() => (open = !open)}
   >
-    <Icon name="info" size={16} />
+    {#if trigger}
+      {@render trigger()}
+    {:else}
+      <Icon name="info" size={16} />
+    {/if}
   </button>
   <!-- always rendered (never {#if open}), toggled with `hidden` -- aria-controls (on the trigger
        above) must reference an element that actually EXISTS in the DOM (SC 4.1.2); see
        Accordion.svelte's identical fix for the same reason. -->
-  <div class="popover" id={popoverId} bind:this={popoverEl} hidden={!open}>
+  <div
+    class="popover"
+    class:popover--right={align === "right"}
+    id={popoverId}
+    bind:this={popoverEl}
+    hidden={!open}
+  >
     {@render children()}
   </div>
 </span>
@@ -111,6 +156,15 @@
     border-color: var(--text-primary);
   }
 
+  /* a custom trigger (opacity %, ramp strip + name) is content-sized, not the default 18px round
+     icon button -- the caller's own `triggerClass` sets width/height/padding; this only drops the
+     fixed circle so those rules aren't fighting a 18x18 box. */
+  .popover-trigger--custom {
+    width: auto;
+    height: auto;
+    border-radius: var(--radius-control);
+  }
+
   .popover {
     position: absolute;
     z-index: 20;
@@ -124,5 +178,10 @@
     color: var(--text-primary);
     font-size: var(--text-sm);
     box-shadow: var(--elev-3);
+  }
+
+  .popover--right {
+    left: auto;
+    right: 0;
   }
 </style>

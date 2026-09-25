@@ -1,5 +1,7 @@
 <script lang="ts" module>
   import type { SegmentedOption } from "./Segmented.svelte";
+  import type { SelectOption, SelectOptionGroup } from "./Select.svelte";
+  import type { Outline } from "../state/types";
 
   /** P round deliverable 1 (Ben, live-review 2026-09-24): "emphasize Raster Cells vs Program Areas
    * as a toggle similar to Scores vs Species at top, but this only applies to Scores (so grayed out
@@ -7,10 +9,16 @@
    * buried inside the Data row's own body (`lens/scores/LayersPanel.svelte`'s old "Spatial units"
    * field, now removed — this toggle replaces it, not a second control setting the same thing) to
    * ONE segmented control at the very top of this shared panel, styled like the top bar's own
-   * Scores|Species `Segmented`. */
+   * Scores|Species `Segmented`.
+   *
+   * R3 (Ben, live-review 2026-09-25): "prettify this pill so [it] doesn't look like [a] 3rd missing
+   * option on right that is not colored when 'Program areas' is selected" -- rendered with
+   * `Segmented`'s new `fit` prop (content-sized, left-aligned) instead of the P-round's row-stretch
+   * layout, the same shape the top bar's own Scores|Species switch already uses. */
   export interface LayersUnitToggle {
-    /** `lens/scores/boot.ts#unitOptions(boot)` — "Raster cells (0.05°)" always first, then the
-     * release's one drawable unit (e.g. "Program areas") when it publishes one. */
+    /** `lens/scores/boot.ts#unitOptions(boot)` — "Raster cells" always first (R3: the "(0.05°)"
+     * resolution note was dropped, Ben 2026-09-25), then the release's one drawable unit (e.g.
+     * "Program areas") when it publishes one. */
     options: SegmentedOption[];
     value: string;
     /** omitted (species lens): the toggle renders disabled, and `disabledReason` (below) must be
@@ -20,6 +28,51 @@
      * there is no spatial-unit CHOICE to make there, unlike the scores lens' zone choropleth). */
     disabledReason?: string;
   }
+
+  /** R3 deliverable 3: the Layer (metric) picker, promoted from inside the Data row's own body
+   * (`lens/scores/LayersPanel.svelte`'s old bespoke native `<select>`) to panel-level, directly
+   * below the unit toggle — paired with {@link LayersZoomField} in one row (desktop) / stacked
+   * (phone). `groups` is `Select.svelte`'s new `<optgroup>` support (R3-B2) — this component no
+   * longer hand-rolls its own grouped `<select>`. Species has no metric-layer choice of its own (it
+   * picks a SPECIES, a different mechanism entirely, via its own `LayerBarView` inside
+   * `dataControls`) — `SpeciesLens.svelte` omits this prop and that row simply does not render. */
+  export interface LayersLayerField {
+    label: string;
+    value: string;
+    groups: SelectOptionGroup[];
+    onChange: (value: string) => void;
+    /** the current layer's own one-line description — rendered under the field,
+     * `data-testid="layer-description"`, unchanged from where it lived before this move. */
+    description?: string | null;
+  }
+
+  /** R3 deliverable 3: "Study area" renamed "Zoom to region" and promoted to sit beside
+   * {@link LayersLayerField} (desktop) / below it (phone) — same `Select.svelte`, same
+   * `selStore.set({area, map: undefined})` behaviour, only the label and position changed. */
+  export interface LayersZoomField {
+    label: string;
+    value: string;
+    options: SelectOption[];
+    onChange: (value: string) => void;
+  }
+
+  /** R3 deliverable 6: the "Zone outlines" row's expander body — a two-option radio choice bound
+   * to `Sel.out`. `"none"` is deliberately NOT a third radio option: the row's own visible
+   * checkbox (every row has one) already hides the whole `data-zones` group — unchecking IS
+   * "none", so the radio group only ever offers the two real outlines. `value` may still arrive as
+   * `"none"` (a lens whose default is `"none"`, e.g. species) — the radio group then simply shows
+   * neither option checked, a legal state for a native radio group with no `checked` member. */
+  export interface LayersOutlineChoice {
+    value: Outline;
+    onChange: (value: "programarea" | "ecoregion") => void;
+  }
+
+  /** R3 deliverable 7: "Sphere" moved out of the Data row's body to the bottom of the whole panel
+   * (both lenses share ONE projection, `Sel.proj` — this is not scores-specific). */
+  export interface LayersProjectionControl {
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+  }
 </script>
 
 <script lang="ts">
@@ -27,17 +80,26 @@
   // that IS the stack, the data row expanding into today's controls — PLUS the ability to change
   // the stacking of data layers (Program Areas, the score raster) relative to map layers (place
   // names, bathymetry)." Lens-independent (both `ScoresLens.svelte` and `SpeciesLens.svelte` mount
-  // this the same way, per this task's own Deliverable 3): it owns the STACK rows (name, eye toggle,
-  // opacity, ▲▼ move) and hands the lens's own controls to the `dataControls` snippet, unmodified.
+  // this the same way, per this task's own Deliverable 3): it owns the STACK rows (name, visible
+  // checkbox, opacity popover, ▲▼ move) and hands the lens's own controls to the `dataControls`
+  // snippet, unmodified.
   //
   // This component never touches MapLibre or `composeStyle` — it only reads/writes
   // `LayerStackEntry[]` (`../map/layerStack.ts`, the pure model `style.ts#composeStyle` consumes via
   // its `layerStack` input). `Shell.svelte` owns turning a change here into `selStore.set({layers})`
   // (URL-is-the-view, CLAUDE.md) — this component only calls `onChange`.
+  //
+  // R3 (Ben, live-review 2026-09-25) reshaped this panel top to bottom: the unit toggle stays at
+  // top (now `fit`-sized); the Layer + Zoom-to-region fields moved here from inside the Data row's
+  // body; every stack row's `Switch` became a plain checkbox; the inline opacity slider moved into
+  // a per-row popover; three basemap rows (Land & water, Boundaries, Roads & buildings) are hidden
+  // from the list (still full model citizens -- `layerStack.ts#LAYER_GROUP_IN_PANEL`'s own header);
+  // "Zone outlines" gained an expander for the `Sel.out` choice; "Sphere" moved to the very bottom.
   import { tick, type Snippet } from "svelte";
-  import Switch from "./Switch.svelte";
   import Icon from "./Icon.svelte";
   import Segmented from "./Segmented.svelte";
+  import Select from "./Select.svelte";
+  import Popover from "./Popover.svelte";
   // P5 fix (post-merge finding, e2e/shell.a11y.spec.ts "exactly one live region"): `move()`/
   // `reset()` below used to hold their own local `announce` STATE and render a second, private
   // `<p aria-live>` -- a real SC 4.1.3 regression against this app's own rule (announcer.ts's own
@@ -49,6 +111,7 @@
   import { announce } from "./announcer";
   import {
     LAYER_GROUP_ENABLED,
+    LAYER_GROUP_IN_PANEL,
     LAYER_GROUP_LABEL,
     canMoveLayerStackEntry,
     defaultLayerStackEntries,
@@ -70,9 +133,29 @@
      * that has not resolved `boot` yet renders the rest of the panel with no toggle at all, never a
      * disabled-looking placeholder for data that just has not arrived. */
     unitToggle?: LayersUnitToggle;
+    /** R3 deliverable 3 — see {@link LayersLayerField}. Omitted by the species lens (no metric
+     * layer choice there). */
+    layerField?: LayersLayerField;
+    /** R3 deliverable 3 — see {@link LayersZoomField}. */
+    zoomField?: LayersZoomField;
+    /** R3 deliverable 6 — see {@link LayersOutlineChoice}. Omitted while a lens has not resolved
+     * `sel`/`boot` yet; the "Zone outlines" row then still expands but shows no radio body,
+     * matching `dataControls`' own "nothing to render yet" convention. */
+    outline?: LayersOutlineChoice;
+    /** R3 deliverable 7 — see {@link LayersProjectionControl}. */
+    projection?: LayersProjectionControl;
   }
 
-  let { stack, onChange, dataControls, unitToggle }: Props = $props();
+  let {
+    stack,
+    onChange,
+    dataControls,
+    unitToggle,
+    layerField,
+    zoomField,
+    outline,
+    projection,
+  }: Props = $props();
 
   function onUnitToggleChange(value: string) {
     // a disabled toggle passes no onChange at all (species lens) -- this call would otherwise be a
@@ -81,23 +164,28 @@
     unitToggle?.onChange?.(value);
   }
 
-  /** the ONE row this panel expands — "Data", the lens's own layer (round-2 plan: "the data row
-   * expanding into today's controls"). Every other group is visible/opacity/reorder only. */
+  /** the two rows this panel EXPANDS — "Data" (the lens's own layer) and "Zone outlines" (the
+   * outline choice, R3 deliverable 6). Every other group is visible/opacity/reorder only. */
   const DATA_ROW_ID: LayerGroupId = "data-raster";
+  const ZONES_ROW_ID: LayerGroupId = "data-zones";
+  const EXPANDABLE_ROW_IDS: readonly LayerGroupId[] = [DATA_ROW_ID, ZONES_ROW_ID];
 
-  /** m6 (review round 1): `aria-controls` target for the Data row's expander button — only one
-   * `LayersPanel` is ever mounted at a time (the active lens owns the rail), so a static id is
-   * safe. */
+  /** m6 (review round 1): `aria-controls` target for an expander button — only one `LayersPanel`
+   * is ever mounted at a time (the active lens owns the rail), so static ids are safe. */
   const DATA_ROW_BODY_ID = "layers-data-row-body";
+  const ZONES_ROW_BODY_ID = "layers-zones-row-body";
 
   // "the stack in draw order (top of the list = top of the map)" (Deliverable 3) -- the MODEL's own
   // array is bottom-to-top (style.ts#LAYER_ORDER's convention: index 0 paints first, i.e. lowest),
   // so the panel reverses it for DISPLAY only. `arrIndex` is kept alongside each row so a move
   // button can call `moveLayerStackEntry` against the model's own indexing without the caller
-  // re-deriving it from the reversed position.
+  // re-deriving it from the reversed position. R3: filtered to `LAYER_GROUP_IN_PANEL` -- the three
+  // dropped basemap rows stay in `stack` (so reorder/opacity on them, if a `layers=` link set any,
+  // is never lost), they simply have no row here to change them from.
   const rows = $derived(
     stack
       .map((entry, arrIndex) => ({ entry, arrIndex }))
+      .filter(({ entry }) => LAYER_GROUP_IN_PANEL[entry.id])
       .slice()
       .reverse(),
   );
@@ -138,9 +226,11 @@
     );
     if (other && !other.disabled) return other.focus();
     // both move buttons are disabled (a one-entry stack, never true today, but not this
-    // function's assumption to make) -- the row's own switch (or, for the Data row, its expander
-    // button) is always focusable, scoped by the row's own data-row-id.
-    panelEl.querySelector<HTMLButtonElement>(`[data-row-id="${id}"] button`)?.focus();
+    // function's assumption to make) -- the row's own checkbox is always focusable, scoped by the
+    // row's own data-row-id.
+    panelEl
+      .querySelector<HTMLButtonElement>(`[data-row-id="${id}"] input, [data-row-id="${id}"] button`)
+      ?.focus();
   }
 
   /** ▲ (toward the top of the LIST) moves toward the END of the model array (toward the top of the
@@ -164,7 +254,8 @@
 <div class="layers-stack" bind:this={panelEl}>
   {#if unitToggle}
     <!-- P round deliverable 1: the panel's own primary control, ABOVE the stack list -- styled
-         like the top bar's Scores|Species `Segmented` (same component, reused, not re-styled). -->
+         like the top bar's Scores|Species `Segmented` (same component, reused, not re-styled).
+         R3: `fit` (content-sized, left-aligned) instead of the P-round row-stretch. -->
     <div class="unit-toggle" data-control="layers-unit-toggle">
       <Segmented
         options={unitToggle.options}
@@ -172,11 +263,42 @@
         ariaLabel="Spatial units"
         disabled={!!unitToggle.disabledReason}
         onchange={onUnitToggleChange}
+        fit
       />
       {#if unitToggle.disabledReason}
         <p class="unit-toggle-reason">{unitToggle.disabledReason}</p>
       {/if}
     </div>
+  {/if}
+
+  {#if layerField || zoomField}
+    <div class="fields-row">
+      {#if layerField}
+        <label class="field field-layer">
+          <span class="field-label">{layerField.label}</span>
+          <Select
+            label={layerField.label}
+            value={layerField.value}
+            groups={layerField.groups}
+            onchange={layerField.onChange}
+          />
+        </label>
+      {/if}
+      {#if zoomField}
+        <label class="field field-zoom">
+          <span class="field-label">{zoomField.label}</span>
+          <Select
+            label={zoomField.label}
+            value={zoomField.value}
+            options={zoomField.options}
+            onchange={zoomField.onChange}
+          />
+        </label>
+      {/if}
+    </div>
+    {#if layerField?.description}
+      <p class="note" data-testid="layer-description">{layerField.description}</p>
+    {/if}
   {/if}
 
   <!-- fix list #10 (SC 1.3.1, e2e/keyboard-walk.spec.ts): a plain `div` (never a landmark) so this
@@ -190,18 +312,19 @@
     {#each rows as { entry, arrIndex } (entry.id)}
       {@const enabled = LAYER_GROUP_ENABLED[entry.id]}
       {@const label = LAYER_GROUP_LABEL[entry.id]}
-      {@const isData = entry.id === DATA_ROW_ID}
+      {@const isExpandable = EXPANDABLE_ROW_IDS.includes(entry.id)}
+      {@const bodyId = entry.id === DATA_ROW_ID ? DATA_ROW_BODY_ID : ZONES_ROW_BODY_ID}
       <li class="stack-row" class:stack-row--disabled={!enabled} data-row-id={entry.id}>
         <div class="row-head">
-          {#if isData}
+          {#if isExpandable}
             <button
               type="button"
               class="row-name row-name--button"
-              aria-expanded={expandedId === DATA_ROW_ID}
-              aria-controls={DATA_ROW_BODY_ID}
-              onclick={() => toggleExpanded(DATA_ROW_ID)}
+              aria-expanded={expandedId === entry.id}
+              aria-controls={bodyId}
+              onclick={() => toggleExpanded(entry.id)}
             >
-              <Icon name={expandedId === DATA_ROW_ID ? "chevronUp" : "chevronDown"} size={16} />
+              <Icon name={expandedId === entry.id ? "chevronUp" : "chevronDown"} size={16} />
               {label}
             </button>
           {:else}
@@ -211,27 +334,37 @@
             </span>
           {/if}
 
-          <Switch
-            label={`${label} visible on the map`}
+          <input
+            type="checkbox"
+            class="visible-check"
             checked={entry.visible}
             disabled={!enabled}
-            variant="quiet"
-            onchange={(v) => setVisible(entry.id, v)}
+            aria-label={`${label} visible on the map`}
+            onchange={(e) => setVisible(entry.id, e.currentTarget.checked)}
           />
 
-          <label class="opacity-control">
-            <span class="sr-only">{label} opacity</span>
-            <input
-              type="range"
-              min="0.1"
-              max="1"
-              step="0.05"
-              value={entry.opacity}
-              disabled={!enabled}
-              aria-valuetext={`${Math.round(entry.opacity * 100)}%`}
-              onchange={(e) => setOpacity(entry.id, Number(e.currentTarget.value))}
-            />
-          </label>
+          <Popover label={`${label} opacity`} triggerClass="opacity-btn" align="right">
+            {#snippet trigger()}
+              <Icon name="opacity" size={13} />
+              <span class="opacity-pct">{Math.round(entry.opacity * 100)}%</span>
+            {/snippet}
+            <div class="opacity-popover-body">
+              <label class="opacity-range-label">
+                <span>{label} opacity</span>
+                <input
+                  type="range"
+                  min="0.1"
+                  max="1"
+                  step="0.05"
+                  value={entry.opacity}
+                  disabled={!enabled}
+                  aria-valuetext={`${Math.round(entry.opacity * 100)}%`}
+                  oninput={(e) => setOpacity(entry.id, Number(e.currentTarget.value))}
+                />
+              </label>
+              <p class="opacity-value">{Math.round(entry.opacity * 100)}%</p>
+            </div>
+          </Popover>
 
           <span class="move-buttons">
             <button
@@ -243,7 +376,7 @@
               data-move-dir="up"
               onclick={() => move(arrIndex, arrIndex + 1, label, "up")}
             >
-              <Icon name="chevronUp" size={18} />
+              <Icon name="chevronUp" size={14} />
             </button>
             <button
               type="button"
@@ -254,19 +387,74 @@
               data-move-dir="down"
               onclick={() => move(arrIndex, arrIndex - 1, label, "down")}
             >
-              <Icon name="chevronDown" size={18} />
+              <Icon name="chevronDown" size={14} />
             </button>
           </span>
         </div>
 
-        {#if isData && expandedId === DATA_ROW_ID && dataControls}
+        {#if entry.id === DATA_ROW_ID && expandedId === DATA_ROW_ID && dataControls}
           <div class="row-body" id={DATA_ROW_BODY_ID}>
             {@render dataControls()}
+          </div>
+        {:else if entry.id === ZONES_ROW_ID && expandedId === ZONES_ROW_ID && outline}
+          <!-- R3 deliverable 6: the outline CHOICE (which unit's own outline draws) -- "none" is
+               reached via the row's own visible checkbox above, never a third radio here. -->
+          <div class="row-body" id={ZONES_ROW_BODY_ID}>
+            <div class="outline-choice" role="radiogroup" aria-label="Zone outline">
+              <label class="outline-option">
+                <input
+                  type="radio"
+                  name="layers-zone-outline"
+                  checked={outline.value === "programarea"}
+                  disabled={!entry.visible}
+                  onchange={() => outline?.onChange("programarea")}
+                />
+                <span class="outline-option-text">
+                  <span class="outline-option-label">Program Areas</span>
+                  <span class="outline-option-note"
+                    >BOEM's 2026 Program Areas — the planning units the scores are reported for (a
+                    thin outline).</span
+                  >
+                </span>
+              </label>
+              <label class="outline-option">
+                <input
+                  type="radio"
+                  name="layers-zone-outline"
+                  checked={outline.value === "ecoregion"}
+                  disabled={!entry.visible}
+                  onchange={() => outline?.onChange("ecoregion")}
+                />
+                <span class="outline-option-text">
+                  <span class="outline-option-label">Ecoregions</span>
+                  <span class="outline-option-note"
+                    >the marine ecoregions each component is rescaled within (0-100 by ecoregion
+                    min/max) — this release always draws the ecoregion boundary itself (a thick
+                    black line) when published, independent of this choice.</span
+                  >
+                </span>
+              </label>
+            </div>
           </div>
         {/if}
       </li>
     {/each}
   </ul>
+
+  {#if projection}
+    <!-- R3 deliverable 7: Sphere moved to the bottom of the panel (both lenses share ONE
+         projection) -- a plain checkbox row, same shape as every stack row's own visible check. -->
+    <div class="sphere-row">
+      <label class="sphere-check">
+        <input
+          type="checkbox"
+          checked={projection.checked}
+          onchange={(e) => projection?.onChange(e.currentTarget.checked)}
+        />
+        <span>Sphere (globe projection)</span>
+      </label>
+    </div>
+  {/if}
 
   <div class="stack-footer">
     <button type="button" class="reset-btn" disabled={isDefaultLayerStack(stack)} onclick={reset}>
@@ -296,6 +484,31 @@
     font-size: var(--text-xs);
   }
 
+  .fields-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    flex: 1 1 160px;
+    min-width: 0;
+  }
+
+  .field-label {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+  }
+
+  .note {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+  }
+
   .layers-control h3 {
     font-size: var(--text-sm);
     margin: 0 0 var(--space-1);
@@ -317,7 +530,7 @@
   }
 
   .stack-row--disabled {
-    opacity: 0.55;
+    opacity: 0.5;
   }
 
   .row-head {
@@ -325,7 +538,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-1) var(--space-2);
-    min-height: var(--size-touch);
+    min-height: 36px;
   }
 
   .row-name {
@@ -360,37 +573,101 @@
   .hint {
     color: var(--text-secondary);
     font-weight: 400;
+    font-size: var(--text-xs);
   }
 
-  .opacity-control {
+  /* R3: a native checkbox replaces the Switch (Ben, 2026-09-25: "checkbox instead of toggle") --
+     the app's own tokens, not the browser default appearance, but otherwise a plain checkbox.
+     `--border-control` (not `--fill-accent`): the P-round coordinator's own rule for this panel
+     carries over -- "every switch in that panel [is] the quiet variant (accent stays only on the
+     segmented toggle)" -- 4-5 of these rows are checked by default at once, and a real accent
+     color here would be the same "too much yellow emphasis" Ben already flagged once. */
+  .visible-check {
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    accent-color: var(--border-control);
+    cursor: pointer;
+  }
+
+  .visible-check:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+
+  .visible-check:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* R3: the opacity slider moved off the row into this small trigger button (Popover's own
+     `triggerClass`) -- an icon + the current percent, content-sized. */
+  :global(.opacity-btn) {
     display: inline-flex;
     align-items: center;
-    min-height: var(--size-touch);
+    gap: 2px;
+    height: 28px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border-control);
+    background: var(--surface-raised);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
   }
 
-  .opacity-control input[type="range"] {
-    width: 64px;
+  .opacity-pct {
+    min-width: 2.4em;
+    text-align: right;
+  }
+
+  .opacity-popover-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    width: 160px;
+  }
+
+  .opacity-range-label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    font-size: var(--text-xs);
+  }
+
+  .opacity-range-label input[type="range"] {
+    width: 100%;
+  }
+
+  .opacity-value {
+    margin: 0;
+    text-align: right;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
   }
 
   .move-buttons {
     display: inline-flex;
   }
 
+  /* R3 (Ben, 2026-09-25): "the ▲▼ move buttons stay but at 32px and quiet" -- smaller than the
+     44px touch-target minimum other controls hold to; a deliberate compactness trade the brief
+     calls for on a row this dense (checkbox + opacity + two move buttons all on one line). */
   .move-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: var(--size-touch);
-    height: var(--size-touch);
+    width: 32px;
+    height: 32px;
     border: 0;
     background: none;
-    color: var(--text-primary);
+    color: var(--text-secondary);
     cursor: pointer;
   }
 
   .move-btn:disabled {
     color: var(--text-secondary);
-    opacity: 0.4;
+    opacity: 0.35;
     cursor: default;
   }
 
@@ -403,6 +680,60 @@
     padding: 0 var(--space-2) var(--space-2);
     border-top: 1px solid var(--border-control);
     padding-top: var(--space-2);
+  }
+
+  .outline-choice {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .outline-option {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    cursor: pointer;
+  }
+
+  .outline-option input {
+    margin-top: 3px;
+    accent-color: var(--border-control); /* quiet, same rule as .visible-check above */
+  }
+
+  .outline-option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .outline-option-label {
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .outline-option-note {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+  }
+
+  .sphere-row {
+    padding-top: var(--space-1);
+    border-top: 1px solid var(--divider);
+  }
+
+  .sphere-check {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+
+  .sphere-check input {
+    width: 20px;
+    height: 20px;
+    accent-color: var(--border-control); /* quiet, same rule as .visible-check above */
+    cursor: pointer;
   }
 
   .stack-footer {
@@ -432,15 +763,13 @@
     outline-offset: 2px;
   }
 
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
+  /* phone: the Layer + Zoom-to-region fields stack (Ben: "below it" on the phone, vs "to its
+     RIGHT" on desktop) -- `.fields-row`'s `flex-wrap: wrap` already does this once each field's
+     basis (160px) no longer fits two abreast; this just forces it unconditionally below the panel
+     max-width the phone sheet gives it. */
+  @media (max-width: 480px) {
+    .fields-row {
+      flex-direction: column;
+    }
   }
 </style>

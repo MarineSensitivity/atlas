@@ -59,7 +59,7 @@ export const STATUS = {
       },
       {
         file: "e2e/scores.studyarea.spec.ts",
-        name: "changing the Study area select FULL -> AK flies there (real moveend) and writes area=AK to the URL",
+        name: "changing the Zoom to region select FULL -> AK flies there (real moveend) and writes area=AK to the URL",
       },
       {
         file: "e2e/scores.studyarea.spec.ts",
@@ -240,7 +240,7 @@ export const STATUS = {
       },
       {
         file: "e2e/layers.spec.ts",
-        name: "M3: the Land & water row's eye hides the basemap fill, showing the theme's plain background colour through",
+        name: "M3: hiding basemap-land (layers=) shows the theme's plain background colour through",
       },
     ],
     // R3 (round-2 plan §5 U4) replaced the dead-switch fix's structural, uncalled-in-production
@@ -250,7 +250,7 @@ export const STATUS = {
     // as testing dead code with no caller; the evidence above is the panel's own eyes proven
     // against a REAL rendered map (a pixel handoff or a rendered-feature-count drop to exactly 0,
     // never merely "the id list changed"), the stronger, load-bearing claim this row makes.
-    note: "the dead-switch bug is fixed by construction (the panel's ids come from `layerStack.ts`'s own `LayerGroupId` enum, never a hand-maintained list) and proven end-to-end by the eye-toggle e2e above. NOT built: MapLibre's fullscreen / navigation / scale controls and the Nominatim geocoder — they are real buttons that would nest inside `#map[role=img]` and fail axe, so where map chrome lives is one cross-lens decision still open (known gap G-02).",
+    note: "the dead-switch bug is fixed by construction (the panel's ids come from `layerStack.ts`'s own `LayerGroupId` enum, never a hand-maintained list) and proven end-to-end by the eye-toggle e2e above. NOT built: MapLibre's fullscreen / navigation / scale controls and the Nominatim geocoder — they are real buttons that would nest inside `#map[role=img]` and fail axe, so where map chrome lives is one cross-lens decision still open (known gap G-02). R3 (Ben, live-review 2026-09-25): 'Layers control lists the layers that actually exist' now reads differently — `layerStack.ts`'s new `LAYER_GROUP_IN_PANEL` deliberately DROPS three basemap rows (Land & water, Boundaries, Roads & buildings) from the pane's own list ('fine to leave on as default basemap without worrying about layer ordering'); they stay full model citizens (still in `DEFAULT_LAYER_STACK`, the `layers=` codec, Reset), so the basemap-land eye-toggle proof above now drives it via `layers=` rather than a panel row, per `e2e/layers.spec.ts`'s own updated header comment on that test.",
     diffs: ["ID-10"],
   },
   "S-09": {

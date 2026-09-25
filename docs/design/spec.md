@@ -243,6 +243,7 @@ generator must follow:
 | `sortAsc`      | `mdiArrowUp`             | table sort ascending                                                                                    |
 | `sortDesc`     | `mdiArrowDown`           | table sort descending                                                                                   |
 | `preview`      | `mdiEye`                 | the PREVIEW chip on the preview host                                                                    |
+| `opacity`      | `mdiOpacity`             | Layers pane R3: a stack row's per-row opacity popover trigger                                           |
 
 ### The bespoke `flower` glyph
 

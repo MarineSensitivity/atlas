@@ -1724,8 +1724,20 @@
           {@const Comp = SpeciesLensPanelComp}
           <!-- P round deliverable 1: `boot` is new here -- SpeciesLens.svelte reads the SAME
                `unitOptions(boot)` the scores lens does, so its disabled Raster cells | Program
-               Areas toggle shows the release's real unit label rather than a hand-typed guess. -->
-          <Comp lens={speciesLens} rep={sel.rep} {layerStack} {onLayerStackChange} {boot} />
+               Areas toggle shows the release's real unit label rather than a hand-typed guess.
+               R3 deliverable 6/7: `sel`/`selStore`/`mapHandle` are new here too -- the shared
+               panel's "Zone outlines" and "Sphere" rows are lens-independent (`Sel.out`/
+               `Sel.proj`), and this lens previously had no reason to read either. -->
+          <Comp
+            lens={speciesLens}
+            rep={sel.rep}
+            {layerStack}
+            {onLayerStackChange}
+            {boot}
+            {sel}
+            {selStore}
+            {mapHandle}
+          />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
         {/if}
