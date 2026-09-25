@@ -9,16 +9,18 @@ control and the Scores-lens flower plot.
   controls setting the same thing would just have been confusing). In the Species lens it renders
   disabled, with a short reason ("Species surfaces are rasters only.") — species has no spatial-unit
   choice to make. Switching units still writes `?unit=` the same way it always did.
-- **Fixed: the layer stack's 8 visibility switches all glowed the SAME accent gold at once** — every
-  row starts visible by default, so the panel read as a wash of yellow with no real emphasis left
-  for anything genuinely selected. The stack's own switches now use a quiet, neutral "on" color;
-  accent is reserved for the new toggle above.
+- **Fixed: every switch in the Layers panel glowed the SAME accent gold at once** — the layer
+  stack's 8 visibility switches (all visible by default) plus the Sphere and "Cells outside Program
+  Areas" switches lower in the panel, so the panel read as a wash of yellow with no real emphasis
+  left for anything genuinely selected. Every switch in the panel now uses a quiet, neutral "on"
+  color; accent is reserved for the new toggle above.
 - **The flower plot is bigger** and now grows to fill the panel's own free area (it used to be
   pinned to a small fixed pixel size no matter how much room the panel had).
 - **The flower plot has a reference ring** — a low-contrast dashed circle at the release's own
-  published maximum component score, with a small grey "contour" label naming that value (falls
-  back to 100, and says so, on a release that publishes no such maximum — true of every release
-  today).
+  published maximum component score, with a small grey "contour" label naming that value, read from
+  the release manifest's own per-component metric maxima (the same source the map's score legend
+  reads its own endpoints from) — falls back to 100, and says so, only on a release that publishes
+  none.
 
 # atlas 0.10.63
 

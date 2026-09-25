@@ -193,6 +193,7 @@
 {:else if activeTool === "flower"}
   <FlowerPanel
     {boot}
+    {manifest}
     {selection}
     cellComponents={cellFlowerRows}
     cellComponentsError={cellFlowerError}

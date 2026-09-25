@@ -194,9 +194,13 @@
   </label>
 
   <div class="switch-row">
+    <!-- P round follow-up (coordinator, 2026-09-25): "make every switch in that panel the quiet
+         variant (accent stays only on the segmented toggle)" -- this one was still accent, same
+         reason the layer stack's own switches were before the first round's fix. -->
     <Switch
       label="Sphere (globe projection)"
       checked={sel.proj === "globe"}
+      variant="quiet"
       onchange={onProjChange}
     />
     <span>Sphere</span>
@@ -207,6 +211,7 @@
       <Switch
         label="Cells outside Program Areas"
         checked={showOutsidePra}
+        variant="quiet"
         onchange={onShowOutsidePraChange}
       />
       <span>Cells outside Program Areas</span>

@@ -1696,7 +1696,10 @@
       {#if activeTool === "places"}
         {#if PlacesComp}
           {@const Comp = PlacesComp}
-          <Comp {sel} {selStore} {boot} {mapHandle} {zoneUnits} mapStore={placesMap} />
+          <!-- P round deliverable 2 follow-up: `manifest` threads down to ResultsPanel.svelte's own
+               Flower (the SAME flowerMaxComponentScore(manifest) the scores lens' Flower tool uses),
+               so a custom place's/zone's flower ring is never a second, disagreeing source. -->
+          <Comp {sel} {selStore} {boot} {manifest} {mapHandle} {zoneUnits} mapStore={placesMap} />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
         {/if}

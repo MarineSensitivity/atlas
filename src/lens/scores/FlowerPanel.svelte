@@ -23,6 +23,11 @@
 
   interface Props {
     boot: unknown;
+    /** P round deliverable 2 follow-up (coordinator, 2026-09-25): `flowerMaxComponentScore` reads
+     * the release MANIFEST's `metrics[]`, not `boot.layers[]` (only the manifest carries a per-
+     * component `rescale_max` -- boot.json's `by_subregion` exists only on the composite row on
+     * every real release). */
+    manifest: unknown;
     selection: ScoresSelection;
     /** the clicked cell's own flower (step 2's engine-backed path, already de-duplicated by
      * `cellFlowerComponents`); `undefined` while unloaded, `null` on a load failure OR genuinely no
@@ -38,12 +43,13 @@
     cellCoords?: { lon: number; lat: number };
   }
 
-  let { boot, selection, cellComponents, cellComponentsError, cellCoords }: Props = $props();
+  let { boot, manifest, selection, cellComponents, cellComponentsError, cellCoords }: Props =
+    $props();
 
   const allKey = $derived(zoneAllKey(boot));
   // P round deliverable 2: the reference ring's own value -- `null` falls back inside Flower.svelte
-  // (every real release TODAY, see that function's own header).
-  const maxScore = $derived(flowerMaxComponentScore(boot));
+  // (a manifest that has not loaded yet, or a pre-metrics release; see that function's own header).
+  const maxScore = $derived(flowerMaxComponentScore(manifest));
 
   const title = $derived(
     selection?.kind === "cell" && cellCoords
