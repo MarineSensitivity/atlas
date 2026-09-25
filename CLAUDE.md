@@ -224,3 +224,72 @@ in the same commit that makes the change — same discipline as `NEWS.md` in `ms
   code exists to satisfy — the next reader (human or agent) should not have to re-derive it.
 - Keep core logic in an exported function under `src/lib/`, callable from a test; a component or a
   script _calls_ it.
+
+## Round-2 lessons (2026-09-24/25) — what the gates missed and what now catches it
+
+Round 2 shipped 0.10.21 → 0.10.67 in two days with green gates throughout, and three of the
+five Opus eyes-on reviews still said HOLD on real defects. The pattern each time: a gate that was
+**code-shaped** (element exists, expression compiles, test green against its own fixture) while the
+screen was wrong. These rules are now part of every merge:
+
+- **Eyes-on before push, every merge.** `scripts/eyes-shots.mjs` shoots the real build (40 states:
+  phone 390×844@2x + desktop 1280×800, fresh browser context per state, projected taps on known
+  scored cells with a `WARN`/`-MISSED` mark when none hits, the Program-Area states, the report map
+  scrolled into frame). The orchestrator looks at them and an Opus 5.5 review judges them against
+  `scratchpad/briefs/eyes-review.md` before the push. Three false results were fixed in the harness
+  itself (a petal selector that never hit `path.petal`, table shots before "Loading species…"
+  cleared, two states that were byte-identical); a harness that cannot fail is not a check.
+- **Hermetic fixtures hide timing.** The report's one-shot map style built the instant `model`
+  turned non-null, before any place had its score — every place painted the no-data colour on the
+  live site while the caption (reactive) was right. `blockWasm()` made the engine reject _faster_
+  than the map's imports resolved, so every test ran the race the safe way. Rule: a one-shot build
+  that reads a progressively-loaded value must gate on that value's completion, and its e2e must
+  reproduce the live timing (`slowRealWasm()` — `route.continue()` after a delay, never an abort,
+  which hangs `bootEngine()` forever).
+- **A probe must never read 403/404 as DOWN.** The health banner's data-origin probe hit a URL the
+  fixtures did not mock and classed the resulting 404 as an outage; because the banner was a fixed
+  overlay it covered the top bar and 97 three-engine tests timed out on every browser. The banner
+  now lives in flow below the top bar (never over interactive chrome) and only 5xx / network error /
+  timeout count as down. Any change under `src/shell/` or `src/lib/ui/` runs `e2e/shell.*.spec.ts`
+  - `e2e/feedback.spec.ts` locally (chromium, `--workers=1`) before the merge.
+- **Every camera fit takes the chrome padding.** The species fit, the Scores zone fit (search pick,
+  Places zoom, click) and the phone default all go through `chromePadding.ts`: the sheet's live
+  detent + chip band on the phone, the docked panel's footprint + its 12 px outer inset + a 20 px
+  gutter on desktop, the legend card's height only (never a full side column), 20 px side gutters
+  on the phone. Fits use MapLibre's own `cameraForBounds()` (projection-aware; the phone draws the
+  globe at these zooms) — hand-rolled Mercator math regressed the phone species view in 0.10.56.
+  A wide model (the v7 leatherback spans the Pacific) cannot be framed at 390 px; that is a product
+  decision (round-3 plan A1), not a bug.
+- **Pixel gates must first prove the layer painted.** Under CI's software GL a single `readPixel`
+  assertion passed with the layer-stack fault applied because the raster never painted and the
+  probe read the basemap colour either way. Gate on the whole spec, or assert the un-promoted
+  colour at a control point first.
+- **Seeded-fault registry hygiene.** `test-faults.mjs --only <id>` takes ONE id per run. After
+  every merge, `git apply --check` every `tests/faults/*.patch`; regenerate a stale one on an
+  otherwise clean tree with `git apply --reject` + a hand edit, cut it with
+  `git diff HEAD -- <that one file>`, and prove it red with `--only` **before** writing the commit
+  message (a patch once shipped that did not even apply, with a message claiming red). When a fix
+  adds a second sentence/branch to what a fault reverts (W4's one-place caption), the patch must
+  revert both or the gate stays green. Stage explicit paths; `git add -A -- . ':!.tmp'` exits 1 on
+  the ignored path and silently breaks a `&&` chain.
+- **Copy changes break specs nobody ran.** Rewording the struck-pill tooltip redded
+  `species.smoke.spec.ts`, which no round had touched. Grep `e2e/` and `tests/` for the old wording
+  in the same change.
+- **Gallery baselines are two sets.** Darwin regenerates locally (`npm run e2e:gallery --
+--update-snapshots`, then LOOK at the PNG); linux comes only from CI (`gh run download <run> -n
+gallery-test-results`, copy each final-attempt `*-actual.png` over `*-chromium-linux.png`).
+  Every gallery-rendered component change costs a second push.
+- **Parallel rounds reserve versions and never share files.** The orchestrator resolves the
+  registries (CHANGELOG order = version order, package + both lock fields = the higher version,
+  `test-faults.mjs` rebuilt from main's file + the branch's new entries, GATES count). A merge that
+  conflicts inside a `&&` chain dies silently — never chain a merge with anything.
+- **Labels resolve everywhere or nowhere.** A Program Area's display name comes from
+  `paLabel(key, publishedName, unit)` (bundle name, else the generated `programAreaNames.ts`
+  table, else the key) — search ranking, map tooltip, flower title, table header, report, GeoJSON
+  export all go through it. A fix that "reads `name` from the bundle" was code-shaped for weeks
+  because no published bundle carried names.
+- **The feedback endpoint commits to `main`.** `scripts/feedback/Code.gs` files a public issue and
+  commits `feedback/<id>.png`; `pages.yml` ignores `feedback/**` on push so a report never re-runs
+  CI or cancels the in-flight slow jobs. GA4's Enhanced Measurement history setting and the two
+  Apps Scripts (`feedback` vs the usage-log Sheet behind `VITE_LOG_URL`, which is the Shiny apps'
+  `MSENS_LOG_URL`) are documented in `docs/feedback.md` and `docs/analytics.md`.

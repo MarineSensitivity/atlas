@@ -10,10 +10,21 @@ for the full architecture and decisions, and [`CLAUDE.md`](./CLAUDE.md) for the 
 change phase to phase (relative URLs, URL-is-the-view, the size budget, the testing pyramid).
 
 **Status:** built and live at <https://marinesensitivity.org/atlas/> (GitHub Pages, published by CI
-after the fast checks job). Scores and species lenses, places (pick, draw, coordinates, upload,
-share), flower plot, tables, and the client-side report with HTML/ZIP/DOCX exports are all in;
-round 2 (usability) is in progress — see `docs/status.md` for what is live, in flight and decided,
-and `CHANGELOG.md` for the user-facing changes per version.
+after the fast checks job) and at `https://preview.marinesensitivity.org/{ver}/atlas/` for restricted
+releases. Round 2 (usability, 0.10.21 → 0.10.67, 2026-09-21..25) is complete: scores and species
+lenses, places (pick, draw, coordinates, upload incl. GeoPackage, share, GeoJSON download), the
+Program Area results panel, Scores search, a layer stack with a spatial-unit toggle, the flower plot
+with a reference ring, the client-side report with places painted by score and HTML/ZIP/DOCX
+exports, Send feedback (Sheet + email + GitHub issue), a usage beacon, and a service-health banner.
+`docs/status.md` is the board (live version, what landed, open items), `CHANGELOG.md` the per-version
+changes, `docs/parity.html` the parity page against the Shiny apps, and
+`../workflows/.claude/plans_todo/2026-09-25 atlas app plan, round 3.md` everything still open with
+evidence screenshots.
+
+**How a change lands** (see `CLAUDE.md` "Round-2 lessons"): a worktree branch with a reserved
+version; unit + build-invariant + Playwright gates and a seeded fault proving the new test can fail;
+eyes-on screenshots of the real build (`scripts/eyes-shots.mjs`) reviewed before the push; CI runs
+the three-engine suite, the gallery baselines and the whole seeded-fault suite on every push.
 
 ## Getting started
 
