@@ -1,6 +1,22 @@
-# atlas 0.10.66
+# atlas 0.10.67
 
-P round, W4 (Ben, phone, live 0.10.64, with a screenshot): the Report's map colour.
+P round, W5 (Opus 5.5 eyes-on review 5 of 0.10.66, 2026-09-25): two zone-fit framing gutters, a
+report screenshot blind spot, and the capped flower's header.
+
+- **Fixed: a Program-Area search pick's fitted area ran under the docked desktop panel's own
+  edge**, by about 12px — the fit's own reserve counted only the panel's content width, not its
+  outer CSS inset from the stage edge. The reserve now clears the panel's real edge, plus a small
+  gutter, and no longer over-reserves a full-width column for the (short, corner-sized) floating
+  legend card.
+- **Fixed: the same fit had no side gutter at all on the phone** — a search pick's outline could
+  land flush against the screen's own edge. Both zone and species-model camera fits now keep a
+  breathing gutter on every side.
+- **Fixed: the capped flower (phone, sheet at "Half" height) squeezed its own title into the same
+  narrow column as the chart**, wrapping a clicked cell's coordinates onto two lines instead of
+  spanning the sheet's full width above a centred, smaller chart.
+- **Screenshot harness: the report's map (its legend and caption) is now captured directly**,
+  instead of being skipped by a blind, fixed-distance scroll that missed it on the phone and only
+  ever showed its very top edge on desktop.
 
 - **Fixed: a Report with two (or more) Program Areas painted every place the SAME flat grey-blue —
   no colour at all**, even though the caption and legend both showed the real ramp and scores

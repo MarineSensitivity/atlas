@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DESKTOP_LEGEND_HEIGHT_PX,
-  DESKTOP_LEGEND_WIDTH_PX,
   desktopPanelPadding,
+  FIT_GUTTER_PX,
   LEGEND_CHIP_HEIGHT_PX,
   phoneLiveChromePadding,
   phonePadding,
@@ -16,36 +16,57 @@ import { DEFAULT_PANEL_GEOMETRY } from "../../src/lib/ui/panelGeometry";
 // `tokens.css`'s `--size-topbar`) is now reserved unconditionally by both functions.
 const TOPBAR = 48;
 
+// W5 fix (Opus 5.5 eyes-on review 5, 2026-09-25): the docked panel's own DOM footprint is
+// `geometry.size` PLUS its outer CSS inset from the stage edge (shell.css's `.panel-region`,
+// `--space-3`: 12px) PLUS the fit's own breathing gutter (`FIT_GUTTER_PX`) -- see
+// `chromePadding.ts#desktopPanelPadding`'s own header for the desktop-19 measurement this fixes.
+const PANEL_OUTER_INSET = 12;
+function panelReserve(size: number): number {
+  return size + PANEL_OUTER_INSET + FIT_GUTTER_PX;
+}
+
 describe("desktopPanelPadding (usability M4)", () => {
-  it("default geometry (dock right, 380px, not collapsed) reserves the right edge and the top bar", () => {
+  it("default geometry (dock right, 380px, not collapsed) reserves the right edge (panel + its outer inset + gutter) and the top bar", () => {
     expect(desktopPanelPadding(DEFAULT_PANEL_GEOMETRY)).toEqual({
       top: TOPBAR,
-      right: 380,
+      right: panelReserve(380),
       bottom: 0,
       left: 0,
     });
   });
 
-  it("dock left reserves the left edge and the top bar", () => {
+  it("dock left reserves the left edge (panel + its outer inset + gutter) and the top bar", () => {
     expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, dock: "left" })).toEqual({
       top: TOPBAR,
       right: 0,
       bottom: 0,
-      left: 380,
+      left: panelReserve(380),
     });
   });
 
-  it("dock bottom reserves the bottom edge and the top bar", () => {
+  it("dock bottom reserves the bottom edge (panel + its outer inset + gutter) and the top bar", () => {
     expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, dock: "bottom" })).toEqual({
       top: TOPBAR,
       right: 0,
-      bottom: 380,
+      bottom: panelReserve(380),
       left: 0,
     });
   });
 
-  it("a resized panel reserves its OWN size, not the default", () => {
-    expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, size: 600 }).right).toBe(600);
+  it("a resized panel reserves its OWN size (plus the fixed inset+gutter), not the default", () => {
+    expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, size: 600 }).right).toBe(
+      panelReserve(600),
+    );
+  });
+
+  // W5 fix regression (desktop-19/20/21, "GAA's east outline... under the panel's edge"): the old
+  // `right: geometry.size` (380) left the panel's own outer inset (12px) AND the fit gutter
+  // entirely uncounted -- a fit computed against 380 alone lands INSIDE the panel's real 392px+
+  // footprint. Named so this can never silently regress back to the bare `geometry.size`.
+  it("W5 regression: the right reserve clears the panel's real outer edge, not just its content width", () => {
+    const { right } = desktopPanelPadding(DEFAULT_PANEL_GEOMETRY);
+    const panelOuterEdgeFromStageEdge = DEFAULT_PANEL_GEOMETRY.size + PANEL_OUTER_INSET; // 392
+    expect(right).toBeGreaterThan(panelOuterEdgeFromStageEdge);
   });
 
   it("collapsed still reserves the top bar (the pill is small; the map is otherwise fully visible)", () => {
@@ -70,29 +91,35 @@ describe("desktopPanelPadding (usability M4)", () => {
   // corner sits under the legend card" -- desktopPanelPadding used to reserve the docked panel's
   // own side only, blind to SpeciesLegend.svelte/ScoresLegend.svelte floating into the OPPOSITE
   // corner (or, for a bottom-docked panel, just above it).
-  it("a legend showing at the default dock (right) also reserves bottom-LEFT for the legend card", () => {
+  //
+  // W5 fix (desktop-19/20/21): the legend card no longer reserves a full-width SIDE column
+  // (`DESKTOP_LEGEND_WIDTH_PX`) -- only its own `bottom: DESKTOP_LEGEND_HEIGHT_PX` -- because the
+  // card is a short (~75px) corner box, and reserving its full 320px width as a column pushed a
+  // fit's centre away from that corner and into the panel on the OPPOSITE side (see
+  // `desktopPanelPadding`'s own header).
+  it("a legend showing at the default dock (right) reserves bottom (for the legend card), not a left column", () => {
     expect(desktopPanelPadding(DEFAULT_PANEL_GEOMETRY, true)).toEqual({
       top: TOPBAR,
-      right: 380,
+      right: panelReserve(380),
       bottom: DESKTOP_LEGEND_HEIGHT_PX,
-      left: DESKTOP_LEGEND_WIDTH_PX,
+      left: 0,
     });
   });
 
-  it("a legend showing with the panel docked left reserves bottom-RIGHT instead (the legend's own base corner)", () => {
+  it("a legend showing with the panel docked left reserves bottom (for the legend card), not a right column", () => {
     expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, dock: "left" }, true)).toEqual({
       top: TOPBAR,
-      right: DESKTOP_LEGEND_WIDTH_PX,
+      right: 0,
       bottom: DESKTOP_LEGEND_HEIGHT_PX,
-      left: 380,
+      left: panelReserve(380),
     });
   });
 
-  it("a legend showing with the panel docked bottom adds the legend's height ON TOP of the panel's", () => {
+  it("a legend showing with the panel docked bottom adds the legend's height ON TOP of the panel's (incl. its inset+gutter)", () => {
     expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, dock: "bottom" }, true)).toEqual({
       top: TOPBAR,
       right: 0,
-      bottom: 380 + DESKTOP_LEGEND_HEIGHT_PX,
+      bottom: panelReserve(380) + DESKTOP_LEGEND_HEIGHT_PX,
       left: 0,
     });
   });
@@ -118,8 +145,8 @@ describe("phonePadding (usability M4)", () => {
     const p = phonePadding("peek", 844);
     expect(p.bottom).toBeGreaterThan(96); // the sheet's own peek height alone
     expect(p.top).toBe(TOPBAR);
-    expect(p.left).toBe(0);
-    expect(p.right).toBe(0);
+    expect(p.left).toBe(FIT_GUTTER_PX);
+    expect(p.right).toBe(FIT_GUTTER_PX);
   });
 
   it("half reserves roughly 46% of the viewport height, plus the rail row", () => {
@@ -139,18 +166,29 @@ describe("phonePadding (usability M4)", () => {
     const tall = phonePadding("half", 1000);
     expect(tall.bottom).toBeGreaterThan(short.bottom);
   });
+
+  // W5 fix regression (phone-19/20/21, "GAA spans x 6-779 of 780... no side gutter"): `left`/
+  // `right` used to be bare 0 (`NO_PADDING`), so a fitted zone's outline could touch the viewport
+  // edge exactly. Named so a future edit cannot silently drop the gutter back to 0.
+  it("W5 regression: every detent reserves a non-zero side gutter on both edges", () => {
+    for (const detent of ["peek", "half", "full"] as const) {
+      const p = phonePadding(detent, 844);
+      expect(p.left).toBeGreaterThan(0);
+      expect(p.right).toBeGreaterThan(0);
+    }
+  });
 });
 
 // P2 round 2 (orchestrator, real-build eyes-on, 2026-09-24): the re-fit's own padding source --
 // Sheet.svelte's REAL measured `offsetHeight`, not the 46svh-derived ESTIMATE `phonePadding` above
 // computes before the Sheet has ever mounted.
 describe("phonePaddingFromMeasured (P2 round 2)", () => {
-  it("reserves the top bar + the measured sheet height + the rail row", () => {
+  it("reserves the top bar + the measured sheet height + the rail row, and a side gutter (W5 fix)", () => {
     const p = phonePaddingFromMeasured(388);
     expect(p.top).toBe(TOPBAR);
     expect(p.bottom).toBeGreaterThan(388); // the rail row is added on top of the measured height
-    expect(p.left).toBe(0);
-    expect(p.right).toBe(0);
+    expect(p.left).toBe(FIT_GUTTER_PX);
+    expect(p.right).toBe(FIT_GUTTER_PX);
   });
 
   it("a taller measured sheet reserves proportionally more, never less", () => {

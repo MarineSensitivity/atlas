@@ -36,6 +36,16 @@
 // (ScoresSearch.svelte -- same mechanism the Places picker's "Add a Program Area" uses) so the flower/
 // table's PROGRAM AREA NAME ROUTING (map popup, flower title, table header) is actually visible in a
 // screenshot for the first time -- every prior state only ever tapped a raw cell.
+// 2026-09-25 fifth pass (W5 fix, Opus eyes-on review 5 of 0.10.66): the "report" state's own two
+// scroll shots (14/15) blindly `mouse.wheel(0, 1400)` from the top of the report -- on the phone
+// that never reaches the map figure at all (13-report-top ends at the "Map" heading), and on
+// desktop it only ever shows the figure's own top 190px. Neither shot ever framed the figure's
+// legend + figcaption, so the single-swatch legend (W4's own fix, `model.map.single`) and the
+// painted place were never actually visible in any shot. A new "13b-report-map" shot scrolls the
+// map figure itself (`figure[aria-describedby="map-summary"]`, Report.svelte's own selector for
+// it) into view with a real `Element.scrollIntoView({block:"center"})` -- centred, not merely
+// "into the viewport", so there is margin above AND below the figure's own ~450px height on both
+// viewports -- then shoots it, on both viewports (no phone-only/desktop-only guard).
 import { chromium } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 const BASE = process.env.ATLAS_URL ?? "http://localhost:4380/atlas";
@@ -377,6 +387,23 @@ const STATES = [
       }
       await r.waitForTimeout(8000);
       await shot(r, vp, "13-report-top");
+      // W5 fix: the map figure itself (legend + caption) was never in frame -- 1400px blind scroll
+      // on the phone overshoots it entirely, and on desktop only its top 190px ever showed. Scroll
+      // it into view DIRECTLY (never by a fixed pixel guess), centred so there is margin on every
+      // side of its own ~450px box (map + legend + figcaption), then shoot before the two blind
+      // scrolls below (which cover the rest of the report unrelated to this figure).
+      const mapFigure = r.locator('figure[aria-describedby="map-summary"]');
+      if (await mapFigure.count()) {
+        await mapFigure.evaluate((el) =>
+          el.scrollIntoView({ block: "center", behavior: "instant" }),
+        );
+        await r.waitForTimeout(500);
+        await shot(r, vp, "13b-report-map");
+      } else {
+        log(
+          `WARN report-map: figure[aria-describedby='map-summary'] not found -- skipping the map-figure shot`,
+        );
+      }
       await r.mouse.wheel(0, 1400);
       await r.waitForTimeout(800);
       await shot(r, vp, "14-report-scrolled");

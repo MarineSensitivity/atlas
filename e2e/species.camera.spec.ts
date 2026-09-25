@@ -141,9 +141,15 @@ test.describe("D8: selecting a model frames its extent, not the default study ar
       .toBeGreaterThan(STUDY_AREA_ZOOM_CEILING);
 
     const camera = await readCamera(page);
-    // narrowed bbox: [-190, 53.15, -150, 73.75] -> center (-170, 63.45).
+    // narrowed bbox: [-190, 53.15, -150, 73.75] -> center (-170, 63.45). W5 fix (Opus 5.5 eyes-on
+    // review 5, 2026-09-25): the desktop docked panel's own reserve grew by
+    // `PANEL_OUTER_INSET_PX + FIT_GUTTER_PX` (chromePadding.ts) to clear its real outer edge, so
+    // this asymmetric-padding shift (camera.ts#shiftForPadding, via the SAME live
+    // `desktopPanelPadding` this fix touches) now lands measurably further east (-152.3 measured,
+    // was comfortably under -155 before) -- the bound widens to keep real margin, not to just
+    // barely pass.
     expect(camera.center.lng).toBeGreaterThan(-185);
-    expect(camera.center.lng).toBeLessThan(-155);
+    expect(camera.center.lng).toBeLessThan(-145);
     expect(camera.center.lat).toBeGreaterThan(58);
     expect(camera.center.lat).toBeLessThan(70);
   });
@@ -214,8 +220,10 @@ test.describe("D8: selecting a model frames its extent, not the default study ar
 
     const camera = await readCamera(page);
     // narrowed bbox: [-190, 53.15, -150, 73.75] -> center (-170, 63.45), same as the effect's own.
+    // W5 fix: same widened bound as that test above (the desktop panel's larger reserve), same
+    // reason.
     expect(camera.center.lng).toBeGreaterThan(-185);
-    expect(camera.center.lng).toBeLessThan(-155);
+    expect(camera.center.lng).toBeLessThan(-145);
     expect(camera.center.lat).toBeGreaterThan(58);
     expect(camera.center.lat).toBeLessThan(70);
   });

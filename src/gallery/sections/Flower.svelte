@@ -47,6 +47,15 @@
     <Flower title="Program Area: GEO — one component absent" components={withNoData} />
   </div>
   <Flower title="Cell 99999 — no data at all" components={allNull} size={150} />
+  <!-- W5 fix (Opus 5.5 eyes-on review 5, 2026-09-25, phone-06/07): the EXACT scenario that wrapped
+       onto two lines and narrowed to the flower's own compact column -- a real clicked-cell title
+       (`flower.ts#flowerTitle`'s own format) at `FlowerPanel.svelte`'s phone half-detent cap
+       (`FLOWER_SIZE_HALF_DETENT`, 170). The `.flower`/`.flower-body` CSS fix (Flower.svelte) is
+       shared by this gallery instance and the real app's FlowerPanel, so this is a real reproduction
+       of the bug, not a synthetic stand-in for it. -->
+  <div id="flower-compact-cell-title">
+    <Flower title="Cell ID: 3350704 (x: -90.575, y: 28.625)" components={seven} size={170} />
+  </div>
 </div>
 
 <style>
