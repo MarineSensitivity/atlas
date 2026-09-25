@@ -552,6 +552,13 @@
     // RIGHT NOW (see currentChromePadding's own header, below) instead of a flat 40px on every
     // edge -- a getter, called fresh on every fit, never a value captured at this line.
     chromePadding: () => currentChromePadding(),
+    // R3-rr fix 1, round 5: a wide-range species' "US waters"/"Whole range" camera needs the
+    // CURRENT viewport dimensions (`phoneAwareWideRangeBounds`/`boundsToCameraView`, both in
+    // `lib/map/camera.ts`) -- read fresh on every call, never a captured snapshot. `isPhone` is
+    // the SAME `matchMedia` breakpoint state this file already tracks (above), never a second
+    // decision.
+    viewport: () => ({ width: window.innerWidth, height: window.innerHeight }),
+    isPhone: () => isPhone,
   });
 
   // --- page title: the ONE writer (spec.md/atlas-3 step 3 deliverable 4; atlas-8 fix) -----------

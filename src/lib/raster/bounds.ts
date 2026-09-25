@@ -102,6 +102,38 @@ async function hasDataAt(
   return typeof first === "number" && Number.isFinite(first);
 }
 
+/** R3-rr fix 1, round 5: at most this many `/cog/point` probes in flight at once -- bounded so a
+ * genuinely wide-range species (every candidate probed) never fires all `CANDIDATE_LONS.length`
+ * requests at once, but still fast: measured live against titiler-v8, 4-way concurrency for the
+ * real leatherback's 14-candidate sweep dropped ~11-14s (sequential) to well under 4s (see the
+ * round's own report for the exact before/after numbers). */
+export const PROBE_CONCURRENCY = 4;
+
+/** runs `fn` over `items` with at most `limit` in flight at once, returning results in the SAME
+ * order as `items` regardless of which one finishes first (a simple worker-pool: each of `limit`
+ * workers repeatedly claims the next unclaimed index until none remain). Exists here rather than
+ * as a general utility because its one contract — order-preserving despite concurrent completion —
+ * is specific to why {@link narrowLongitude} needs it: `hits` must come out in `CANDIDATE_LONS`'s
+ * own fixed order for {@link hitLonArc}'s dateline math to see byte-identical input to a purely
+ * sequential probe of the same real data. */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
+
 /**
  * The smallest arc (west/east, in the SAME continuous, never-normalized frame `camera.ts`'s own
  * `minimalFrame` produces — `east` may exceed 180) that contains every hit longitude, wrapping
@@ -187,10 +219,17 @@ export async function narrowLongitude(
   const [xmin, ymin, xmax, ymax] = bbox;
   if (xmax - xmin < GLOBE_SPAN_DEG) return bbox; // not degenerate — nothing to narrow
   const midLat = (ymin + ymax) / 2;
-  const hits: number[] = [];
-  for (const lon of CANDIDATE_LONS) {
-    if (await hasDataAt(fetchJson, config, cogUrl, lon, midLat)) hits.push(lon);
-  }
+  // R3-rr fix 1, round 5 (orchestrator eyes-on: the toggle took 11-14s to appear -- CANDIDATE_LONS
+  // sequentially, one /cog/point round-trip at a time): bounded concurrency, never sequential and
+  // never unbounded ("never hammer titiler" -- this module's own header). The RESULT stays
+  // order-independent of completion timing: `hits` is filtered back into CANDIDATE_LONS's own
+  // fixed order below, not the order responses happen to arrive in, so hitLonArc()'s own dateline
+  // math (which only cares about the SET of hits, not their order) sees byte-identical input to
+  // the old sequential version for the same real data.
+  const flags = await mapWithConcurrency(CANDIDATE_LONS, PROBE_CONCURRENCY, (lon) =>
+    hasDataAt(fetchJson, config, cogUrl, lon, midLat),
+  );
+  const hits = CANDIDATE_LONS.filter((_, i) => flags[i]);
   if (hits.length === 0) return null;
   const [arcWest, arcEast] = hitLonArc(hits);
   if (arcEast - arcWest <= MULTI_REGION_SPREAD_DEG) {

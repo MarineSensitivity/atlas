@@ -25,6 +25,7 @@ import {
   routeSpeciesShards,
 } from "./species-hermetic";
 import { studyAreaBboxFallback, studyAreaView } from "../src/lens/species/data/camera";
+import { PHONE_DEFAULT_BOUNDS } from "../src/lib/map/camera";
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -870,35 +871,35 @@ test.describe("R3-A1: a wide-range model frames its IN-US portion, with a Zoom-t
     // verified LIVE to centre there, the opposite side of the world from any real data.
     const wholeButton = toggle.getByRole("button", { name: "Whole range" });
     await expect(wholeButton).toHaveAttribute("aria-pressed", "false");
+    const usWaters = await readCamera(page);
     await wholeButton.click();
     await expect(wholeButton).toHaveAttribute("aria-pressed", "true");
-    await expect
-      .poll(
-        async () =>
-          page.evaluate(
-            () =>
-              (
-                window as unknown as {
-                  __atlasMap: { handle: { map: { getCenter(): { lng: number; lat: number } } } };
-                }
-              ).__atlasMap.handle.map.getCenter().lng,
-          ),
-        { message: "the 'Whole range' camera never settled away from the US-waters centre" },
-      )
-      .not.toBeCloseTo(center.lng, 0);
-    const wholeCenter = await page.evaluate(() =>
-      (
-        window as unknown as {
-          __atlasMap: { handle: { map: { getCenter(): { lng: number; lat: number } } } };
-        }
-      ).__atlasMap.handle.map.getCenter(),
-    );
-    const wholeContinuous = wholeCenter.lng < 0 ? wholeCenter.lng + 360 : wholeCenter.lng;
+    const wholeRange = await waitForCameraStable(page);
+    const wholeContinuous =
+      wholeRange.center.lng < 0 ? wholeRange.center.lng + 360 : wholeRange.center.lng;
     // NOT near lng=0 (continuous 0 or 360) -- the bug this round's own eyes-on caught live.
     expect(
       Math.min(Math.abs(wholeContinuous - 0), Math.abs(wholeContinuous - 360)),
       "'Whole range' camera landed near lng=0 (Africa) -- the exact live bug",
     ).toBeGreaterThan(30);
+    // R3-rr fix 1, round 5 (orchestrator eyes-on, "Whole range" missing the western Pacific hits,
+    // item B): the visible bounds must CONTAIN lon 145 (Guam/CNMI, continuous frame) -- at the
+    // settled zoom, half the visible span either side of the centre -- and the camera must differ
+    // MATERIALLY from "US waters" (never the "nearly identical, ~4deg apart" live bug).
+    // the visible longitude span at a Mercator zoom: viewport width (px) / world width (px) *
+    // 360deg -- this describe block's own viewport is the file's top-level 1280x800 default.
+    const worldPxAtZoom = 512 * 2 ** wholeRange.zoom;
+    const visibleHalfSpanDeg = (1280 / worldPxAtZoom) * 360 * 0.5;
+    expect(
+      Math.abs(145 - wholeContinuous) <= visibleHalfSpanDeg ||
+        Math.abs(145 + 360 - wholeContinuous) <= visibleHalfSpanDeg,
+      `Whole range's visible span (±${visibleHalfSpanDeg.toFixed(1)}deg around ${wholeContinuous.toFixed(1)}) does not contain lon 145 (Guam/CNMI)`,
+    ).toBe(true);
+    const usContinuous = usWaters.center.lng < 0 ? usWaters.center.lng + 360 : usWaters.center.lng;
+    expect(
+      Math.abs(wholeContinuous - usContinuous),
+      "'Whole range' centre is nearly identical to 'US waters' -- the exact live bug (item B)",
+    ).toBeGreaterThan(20);
   });
 
   // R3-rr fix 1, round 4 (Opus 5.5 eyes-on review round 3, real-build eyes-on, 2026-09-25): live-
@@ -973,5 +974,123 @@ test.describe("R3-A1: a wide-range model frames its IN-US portion, with a Zoom-t
     // first, boot-less pass.
     const toggle = page.getByRole("group", { name: "Zoom to" });
     await expect(toggle).toBeVisible({ timeout: 20_000 });
+  });
+});
+
+// R3-rr fix 1, round 5 (orchestrator eyes-on, real e1fcfc8 build, 2026-09-25 — item A, BLOCKING):
+// a fresh phone load of the real leatherback settled "US waters" at `lng -134, lat -48.8, zoom
+// 0.78` — a tiny globe mostly hidden behind the sheet, most of the free area empty sky
+// (`phone-us-waters.png`, prior round's own report). `phoneAwareWideRangeBounds` (camera.ts)
+// substitutes `PHONE_DEFAULT_BOUNDS` — the app's own known-good phone default view — whenever the
+// narrowed box would zoom out further than that default already does.
+test.describe("R3-rr fix 1, round 5: the phone 'US waters'/'Whole range' framing bug (item A)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("BUG: on the phone, 'US waters' no longer settles at a near-zero zoom behind the sheet -- it matches the app's own phone default view", async ({
+    page,
+  }) => {
+    await blockWasm(page);
+    await routeBucket(page, "v7", bootFor("v7"));
+    await routeSpeciesShards(page);
+    await routeSession(page, null);
+    await routeSealFixture(page);
+    await routeGlyphs(page);
+    await routeTitilerTiles(page);
+    const LIVE_LEATHERBACK_COG_BOUNDS = [-180, -17.700000000000017, 180, 60.44999999999999];
+    const LIVE_HIT_LONS = new Set([-165, -66, -157, 145]);
+    await page.route(
+      (url) => url.hostname === "titiler-v8.marinesensitivity.org" && url.pathname === "/cog/info",
+      (route: Route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ bounds: LIVE_LEATHERBACK_COG_BOUNDS }),
+        }),
+    );
+    await page.route(
+      (url) =>
+        url.hostname === "titiler-v8.marinesensitivity.org" &&
+        url.pathname.startsWith("/cog/point/"),
+      (route: Route) => {
+        const m = /\/cog\/point\/(-?\d+(?:\.\d+)?),/.exec(route.request().url());
+        const lon = m ? Number(m[1]) : NaN;
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ values: [LIVE_HIT_LONS.has(lon) ? 100 : null] }),
+        });
+      },
+    );
+    await page.goto("/?mdl_seq=54241&ver=v7");
+    await waitForHydration(page);
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Dermochelys coriacea");
+    const toggle = page.getByRole("group", { name: "Zoom to" });
+    await expect(toggle).toBeVisible({ timeout: 20_000 });
+
+    const settled = await waitForCameraStable(page);
+    // the live bug: zoom 0.78. PHONE_DEFAULT_BOUNDS's own zoom (at ANY reasonable phone chrome
+    // padding) is comfortably above 2 (tests/map/camera.test.ts pins the exact band) -- this is
+    // the SAME observable "did the substitution actually happen" signal that test uses.
+    expect(
+      settled.zoom,
+      "phone 'US waters' still settles at the broken near-zero zoom",
+    ).toBeGreaterThan(2);
+    // the settled centre lies inside PHONE_DEFAULT_BOUNDS's own longitude span -- not the
+    // leatherback's own ~136deg-wide US-EEZ intersection, which spans well outside it.
+    const [[west], [east]] = PHONE_DEFAULT_BOUNDS;
+    expect(settled.center.lng).toBeGreaterThanOrEqual(west);
+    expect(settled.center.lng).toBeLessThanOrEqual(east);
+  });
+
+  test("'Whole range' on the phone lands its centre INSIDE the confirmed-data arc's own bounds -- never south of the box entirely (the live bug: lat -56.5, south of the box's own -17.7 south edge)", async ({
+    page,
+  }) => {
+    await blockWasm(page);
+    await routeBucket(page, "v7", bootFor("v7"));
+    await routeSpeciesShards(page);
+    await routeSession(page, null);
+    await routeSealFixture(page);
+    await routeGlyphs(page);
+    await routeTitilerTiles(page);
+    const LIVE_LEATHERBACK_COG_BOUNDS = [-180, -17.700000000000017, 180, 60.44999999999999];
+    const LIVE_HIT_LONS = new Set([-165, -66, -157, 145]);
+    await page.route(
+      (url) => url.hostname === "titiler-v8.marinesensitivity.org" && url.pathname === "/cog/info",
+      (route: Route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ bounds: LIVE_LEATHERBACK_COG_BOUNDS }),
+        }),
+    );
+    await page.route(
+      (url) =>
+        url.hostname === "titiler-v8.marinesensitivity.org" &&
+        url.pathname.startsWith("/cog/point/"),
+      (route: Route) => {
+        const m = /\/cog\/point\/(-?\d+(?:\.\d+)?),/.exec(route.request().url());
+        const lon = m ? Number(m[1]) : NaN;
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ values: [LIVE_HIT_LONS.has(lon) ? 100 : null] }),
+        });
+      },
+    );
+    await page.goto("/?mdl_seq=54241&ver=v7");
+    await waitForHydration(page);
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Dermochelys coriacea");
+    const toggle = page.getByRole("group", { name: "Zoom to" });
+    await expect(toggle).toBeVisible({ timeout: 20_000 });
+    await waitForCameraStable(page);
+
+    await toggle.getByRole("button", { name: "Whole range" }).click();
+    const settled = await waitForCameraStable(page);
+    // the confirmed-data arc's own latitude range (-17.7..60.45) -- the centre must land INSIDE
+    // it, never south of it (the live bug: lat -56.5, an un-symmetrized phone sheet padding's own
+    // shift overshooting badly at this near-zero-zoom regime -- camera.ts#symmetricPadding's own
+    // header has the full story).
+    expect(settled.center.lat).toBeGreaterThan(-17.700000000000017);
+    expect(settled.center.lat).toBeLessThan(60.44999999999999);
   });
 });
