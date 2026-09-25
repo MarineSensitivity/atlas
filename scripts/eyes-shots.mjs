@@ -390,7 +390,13 @@ const STATES = [
         .waitForEvent("page", { timeout: 15_000 })
         .catch(() => null);
       await tool(p, "Report");
-      // the rail opens the chooser sheet; "Open report" is what opens report.html in a new tab
+      // R3-W8 item 5: the Report pane opens on its Places tab; "Open report" lives on the Report tab
+      await p
+        .locator('[data-tour="report-tabs"]')
+        .getByText("Report", { exact: true })
+        .click({ timeout: 10_000 })
+        .catch(() => log("WARN report: Report tab not found"));
+      // the Report tab holds the chooser; "Open report" is what opens report.html in a new tab
       const open = p.getByRole("button", { name: /open report/i }).first();
       if (await open.count()) await open.click({ timeout: 10_000 }).catch(() => {});
       await sheet(p, "Full height");
