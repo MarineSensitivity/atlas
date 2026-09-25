@@ -502,19 +502,27 @@ test.describe("P round deliverable 2: the flower grows to fill its panel (deskto
 test.describe("P round deliverable 2: the flower grows to fill its panel (phone, 390x844)", () => {
   test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
 
-  test("at both Half and Full sheet height, the flower is well past the reported ~105-130px", async ({
+  // P3 fix (Opus eyes-on review, 2026-09-24): "Half height" no longer shares Full's own bigger
+  // cap -- see `FlowerPanel.svelte`'s `compactFlower`/`FLOWER_SIZE_HALF_DETENT` (170) and the
+  // dedicated "P3 fix: the flower is capped at the half detent" describe below for why. This test
+  // still proves BOTH detents sit well past the reported ~105-130px stuck bug, just with two
+  // different floors now that Half has its own smaller, intentional cap.
+  test("Full height is well past the reported ~105-130px; Half height clears its own smaller, intentional cap", async ({
     page,
   }) => {
     await gotoScoresMap(page, "v7");
     await openFlower(page);
-    for (const detentLabel of ["Half height", "Full height"]) {
+    for (const [detentLabel, minWidth] of [
+      ["Half height", 150],
+      ["Full height", 200],
+    ] as const) {
       await page.getByRole("button", { name: detentLabel }).click();
       const svgBox = await page.locator(".flower-svg").boundingBox();
       expect(svgBox, `detent "${detentLabel}": .flower-svg has no bounding box`).not.toBeNull();
       expect(
         svgBox!.width,
         `detent "${detentLabel}": flower rendered at ${svgBox!.width}px`,
-      ).toBeGreaterThan(200);
+      ).toBeGreaterThan(minWidth);
     }
   });
 });

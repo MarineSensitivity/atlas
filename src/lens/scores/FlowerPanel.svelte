@@ -61,9 +61,13 @@
     compactFlower = false,
   }: Props = $props();
 
-  /** the flower's own pre-P-round-deliverable-2 size cap -- restored ONLY for the phone's "half"
-   * detent (see `compactFlower`'s own header above), never the default otherwise. */
-  const FLOWER_SIZE_HALF_DETENT = 220;
+  /** the flower's own size cap at the phone's "half" detent (see `compactFlower`'s own header
+   * above). NOT the old pre-P-round 220 -- measured live (eyes-on screenshots against a REAL cell
+   * tap, whose two-line "Cell ID: … (x: …, y: …)" title costs more vertical room than the
+   * default/no-selection flower's own single-line title, `e2e/scores.flower.spec.ts`'s own test
+   * fixture): 220 left only the table's HEADER row above the fold, not an actual data row. 170
+   * leaves real room to spare for both. */
+  const FLOWER_SIZE_HALF_DETENT = 170;
 
   const allKey = $derived(zoneAllKey(boot));
   // P round deliverable 2: the reference ring's own value -- `null` falls back inside Flower.svelte
