@@ -4,13 +4,15 @@ Round 3, W4: the phone's default first view, wide-range species framing, and the
 palette (R3-A1, R3-A2, R3-A3).
 
 - **Fixed (R3-A2): the phone's default first view showed only the northern Gulf of Mexico**, one
-  region of four. `PHONE_DEFAULT_BOUNDS` now frames the lower 48's Pacific, Gulf and
-  Atlantic/Florida coasts, with a real south-east-Alaska/Gulf-of-Alaska sliver visible at the
-  top-left edge as a hint of coverage there — chosen by looking at real builds, starting from the
-  round-3 plan's own `[[-135,20],[-60,52]]` bbox and narrowing to `[[-128,24],[-65,52]]`. The wider
-  frame computes a lower zoom than the old tight single-region fit (an accepted, deliberate trade
-  documented in `camera.ts`'s own header), so it no longer clears the old "empty-sky" zoom floor —
-  the live screenshot, not a zoom number, is what proves the render is still right.
+  region of four. `PHONE_DEFAULT_BOUNDS` now frames the Pacific coast and Florida/the Gulf, chosen
+  by looking at real builds and measuring directly against a 10%-of-free-area sky-band target
+  (`e2e/shell.firstview.phone.spec.ts`'s own two-colour probe, checked at both the "half" and
+  "peek" sheet detents). First pass framed the lower 48 + a south-east-Alaska/Gulf-of-Alaska hint
+  (`[[-128,24],[-65,52]]`) but left ~43%/23% of the free area as empty sky above the globe's rim;
+  second pass narrowed further to `[[-119,25],[-78,51]]` (zoom ~2.6), measuring 7.0%/3.7% sky — both
+  under target. A span narrow enough to clear the target cannot also carry the Alaska hint or the
+  Atlantic seaboard north of the Carolinas (the same lever narrows both), so per the decision's own
+  fallback, both are dropped in favor of a clean, minimal-sky lower-48 view.
 - **New (R3-A1): a wide-range species model frames its IN-US portion by default**, with a compact
   "Zoom to: US waters | Whole range" toggle in the species card as the escape hatch back to the
   whole thing. The v7 leatherback's own model spans the whole Pacific (SWOT DPS nesting near
