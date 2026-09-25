@@ -1707,8 +1707,18 @@ export const FAULTS = [
     describe:
       "Segmented.svelte's `.seg button` (W3 item 3: the segments filled only part of the pill, " +
       "~283 of 1245px on desktop) drops `flex: 1 1 0%` -- a caller whose own layout stretches " +
-      "`.seg` (the Layers unit toggle, the Table Species|Zones|Composition switch) leaves dead " +
-      "space past the last segment again",
+      "`.seg` (the Table Species|Zones|Composition switch) leaves dead space past the last " +
+      "segment again",
+    // R3-CI (CI run 36158947685: this gate stayed GREEN with the fault applied -- "it cannot
+    // fail, so it is not a check"). Root cause: R3's redesign gave the Layers unit toggle
+    // `Segmented`'s new `fit` prop, which sets `align-self: flex-start` on `.seg` itself --
+    // that cancels the toggle's own parent's `align-items: stretch`, so `.seg`'s outer box is
+    // now always exactly as wide as its (unstretched) content REGARDLESS of `.seg button`'s own
+    // `flex: 1 1 0%` rule -- the old gate target, "the two segments fill the pill's own width",
+    // no longer depends on the rule it was meant to gate. Retargeted at the Table view switch
+    // (`TablePanel.svelte`, `fit` omitted, still parent-stretched exactly like the pre-R3
+    // toggle) -- confirmed red by hand before this change shipped (see that test's own header
+    // in `e2e/layers.spec.ts`).
     gate: [
       "npx",
       "playwright",
@@ -1716,7 +1726,7 @@ export const FAULTS = [
       "--project=chromium",
       "e2e/layers.spec.ts",
       "-g",
-      "the two segments fill the pill's own width",
+      "the Table view switch's segments fill the pill's own width",
       "--workers=1",
     ],
     env: { PW_PORT: "4533" },
