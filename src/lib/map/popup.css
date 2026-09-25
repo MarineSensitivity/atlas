@@ -23,10 +23,11 @@
   font-size: var(--text-md);
   line-height: var(--leading-normal);
   /* R3-B3: a cell popup's own text ("Cell 3350704 · lon -90.575, lat 28.625 · score: 44") wrapped
-     its LAST word onto its own line — MapLibre sizes this box to content, up to `createPopup()`'s
-     own 260px `maxWidth`, and the browser's default wrap can leave a box just wide enough for the
-     longest single line while stranding one short trailing word below it. A floor keeps the box
-     wide enough that the wrap point lands somewhere less awkward. */
+     its LAST word onto its own line — the string needed ~300px on one line at this font-size, past
+     the map/popup.ts `createPopup()` default `maxWidth` at the time (260px, now 320px — see that
+     function's own comment for the measurement). This floor is the OTHER half of the fix: without
+     it, a SHORTER string (a short label, a single-digit cell id) auto-sizes narrower than it needs
+     to and can still strand a trailing word the same way. */
   min-width: 220px;
 }
 

@@ -9,7 +9,9 @@ on the preview host.
   CENTRE for the same cell** ("lon -90.550, lat 28.601" vs. "-90.575, 28.625") — both now read the
   cell centre (`cellRing()`, the same helper the panel's own coordinate line already used), since
   the cell is the unit being described, not wherever the pointer happened to land inside it. The
-  popup also gets a `min-width` so a short trailing word ("44") no longer wraps onto its own line.
+  popup's `maxWidth` also grows from 260px to 320px, and its content box gets a `min-width`, so its
+  own text ("Cell 3350704 · lon -90.575, lat 28.625 · score: 44") no longer wraps with the trailing
+  value stranded alone on its own line.
 - **Fixed: the welcome (and every other) modal focused its own close button on open**, showing a
   thick gold focus ring around the "x" before anything was clicked. `Modal.svelte` now focuses the
   dialog container itself; a keyboard user's first Tab still lands on the first real control, and
