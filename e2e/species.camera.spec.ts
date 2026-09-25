@@ -671,4 +671,72 @@ test.describe("R3-A1: a wide-range model frames its IN-US portion, with a Zoom-t
     await expect(page.getByTestId("species-title-sci")).toHaveText("Odobenus rosmarus");
     await expect(page.getByRole("group", { name: "Zoom to" })).toHaveCount(0);
   });
+
+  // D1 (Opus 5.5 eyes-on review round 2, 2026-09-25): the toggle never appeared on v7 AT ALL,
+  // including on the leatherback -- the Species lens' own DEFAULT landing species. Root cause: v7
+  // publishes NO bbox on ANY asset for ANY taxon (`tests/fixtures/species/v7/taxon/e1.json`, the
+  // REAL on-disk fixture, has `merged.bbox: null` and `assets: []` on every input -- unlike the
+  // OLDER "leatherback...fills the free area" test above, this one does NOT override that fixture
+  // with a synthetic bbox), so `cameraFor()` falls all the way to `kind: "center"` and
+  // `state.svelte.ts#refineCameraFromCogBounds` -- the COG-bounds LAST resort -- built its own
+  // plain camera by hand, never running `wideRangeAware()`. This is the "hermetic fixture hides the
+  // live shape" trap CLAUDE.md already names: every other camera test in this file either supplies
+  // a bundle bbox directly or narrows a walrus-shaped 360deg-degenerate one, never exercises a
+  // REAL, un-widened, non-degenerate wide COG-bounds extent on the bbox-LESS v7 shape.
+  test("v7's OWN COG-bounds path (a bbox-LESS leatherback fixture) also narrows to the US intersection, and the toggle appears", async ({
+    page,
+  }) => {
+    await blockWasm(page);
+    await routeBucket(page, "v7", bootFor("v7"));
+    await routeSpeciesShards(page); // the REAL, unmodified e1.json: merged.bbox null, assets: []
+    await routeSession(page, null); // v7 is public
+    await routeSealFixture(page);
+    await routeGlyphs(page);
+    await routeTitilerTiles(page);
+    // the leatherback's own /cog/info answer: a REAL, wide (130deg) but non-degenerate span (never
+    // hits narrowLongitude's point-probe sweep, which only fires past bboxSpansGlobe's 350deg
+    // threshold) -- the exact shape D1 names: "still framed across the whole Pacific... no toggle".
+    await page.route(
+      (url) => url.hostname === "titiler-v8.marinesensitivity.org" && url.pathname === "/cog/info",
+      (route: Route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ bounds: [130, 10, 260, 65] }),
+        }),
+    );
+    await page.goto("/?mdl_seq=54241&ver=v7");
+    await waitForHydration(page);
+    await expect(page.getByTestId("species-title-sci")).toHaveText("Dermochelys coriacea");
+
+    // the toggle only renders once the COG-bounds fetch has resolved AND wideRangeAware() has
+    // narrowed it -- poll rather than assert immediately (a real fire-and-forget fetch).
+    const toggle = page.getByRole("group", { name: "Zoom to" });
+    await expect(toggle).toBeVisible({ timeout: 15_000 });
+    await expect(toggle.getByRole("button", { name: "US waters" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // the same US-intersection bounds as the synthetic-fixture test above ([130,10,260,65] narrowed
+    // against the SAME derived study-area box is [158.0057,10,260,65]) -- the centre must land
+    // INSIDE it, in the continuous (never re-wrapped) frame, not merely somewhere on the whole
+    // Pacific-spanning whole range.
+    const center = await page.evaluate(() =>
+      (
+        window as unknown as {
+          __atlasMap: { handle: { map: { getCenter(): { lng: number; lat: number } } } };
+        }
+      ).__atlasMap.handle.map.getCenter(),
+    );
+    const continuous = center.lng < 0 ? center.lng + 360 : center.lng;
+    expect(
+      continuous,
+      "camera centre lands OUTSIDE the US intersection's west edge",
+    ).toBeGreaterThanOrEqual(158);
+    expect(
+      continuous,
+      "camera centre lands OUTSIDE the US intersection's east edge",
+    ).toBeLessThanOrEqual(260);
+  });
 });

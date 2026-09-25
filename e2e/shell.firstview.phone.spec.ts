@@ -277,6 +277,56 @@ test.describe("P2: the phone first view frames the study area, not empty sky", (
     expect(fraction).toBeLessThan(0.85);
   });
 
+  // D5 fix (Opus 5.5 eyes-on review round 2, 2026-09-25): the reference-point test above only ever
+  // checked "above the SHEET" -- the floating legend chip sits ON TOP OF the sheet (a sibling of
+  // `#panel-region`, `.legend-chip-region`, Shell.svelte's own template comment), so a fit that
+  // cleared the sheet could still tuck the bbox's own SOUTH edge (the Gulf of Mexico/Florida) right
+  // under the chip. `phoneLegend` is always a real, non-null object here (`ScoresMapInputs.legend`
+  // is `{kind:"unavailable",...}` rather than `null` when the fixture's own `layers: []` has
+  // nothing to draw -- `mapInputs.ts`'s own header), so the chip DOES render on this fixture and
+  // this DOES exercise the fixed code path, not a fixture that happens to skip it.
+  test("the bbox's own SOUTH edge (the Gulf/Florida) projects above the legend chip, not just the sheet", async ({
+    page,
+  }) => {
+    await gotoPhone(page);
+    const [[, south], [, north]] = PHONE_DEFAULT_BOUNDS;
+    const southPoint = await page.evaluate(
+      (ll) => {
+        const w = window as unknown as {
+          __atlasMap: {
+            handle: { map: { project(ll: [number, number]): { x: number; y: number } } };
+          };
+        };
+        const p = w.__atlasMap.handle.map.project(ll);
+        return { x: p.x, y: p.y };
+      },
+      [(PHONE_DEFAULT_BOUNDS[0][0] + PHONE_DEFAULT_BOUNDS[1][0]) / 2, south] as [number, number],
+    );
+
+    const chip = page.locator(".legend-chip-region");
+    await expect(chip, "no .legend-chip-region -- phoneLegend never rendered a chip").toBeVisible();
+    const chipBox = await chip.boundingBox();
+    expect(chipBox, "no legend chip box").not.toBeNull();
+    expect(
+      southPoint.y,
+      `south edge (y=${southPoint.y}) is at or below the legend chip's own top (${chipBox!.y})`,
+    ).toBeLessThan(chipBox!.y);
+    // and the north edge stays below the top bar throughout, unaffected by the chip.
+    const northPoint = await page.evaluate(
+      (ll) =>
+        (
+          window as unknown as {
+            __atlasMap: {
+              handle: { map: { project(ll: [number, number]): { x: number; y: number } } };
+            };
+          }
+        ).__atlasMap.handle.map.project(ll),
+      [(PHONE_DEFAULT_BOUNDS[0][0] + PHONE_DEFAULT_BOUNDS[1][0]) / 2, north] as [number, number],
+    );
+    const topbar = await page.locator(".topbar").boundingBox();
+    expect(northPoint.y).toBeGreaterThan(topbar!.y + topbar!.height);
+  });
+
   // SEEDED-FAULT SHAPE (P9): the OLD `FALLBACK_FULL_STUDY_AREA` centroid itself -- central North
   // Dakota, the wrong anchor the bug shipped with -- must NOT be what a fixed camera frames. This
   // is the regression the retired mechanism could never have caught (it was built to keep this

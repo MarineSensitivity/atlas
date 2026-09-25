@@ -30,7 +30,7 @@ import {
   refitNeeded,
   studyAreaView,
   minimalFrame,
-  boundsOf,
+  wideRangeAware,
   GLOBE_SPAN_DEG,
   FULL_STUDY_AREA,
   DEFAULT_CAMERA_PADDING,
@@ -272,12 +272,21 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     const frame = minimalFrame(bbox);
     if (bboxSpansGlobe(frame, GLOBE_SPAN_DEG)) return;
     if (cameraKeyOf(selStore.sel).sp !== key.sp) return; // the species itself changed meanwhile
-    applyCamera({
-      kind: "bounds",
-      bounds: boundsOf(frame),
-      padding: DEFAULT_CAMERA_PADDING,
-      source: "cog-bounds",
-    });
+    // D1 fix (Opus 5.5 eyes-on review round 2, 2026-09-25): this is v7's OWN path -- every v7
+    // taxon (including the leatherback, the lens' default landing species) publishes no bbox
+    // anywhere, so `cameraFor()`'s own wide-range step (`wideRangeAware`, called from ITS
+    // `input`/`merged` branches) never ran for any of them. Running the SAME rule here, on the
+    // COG's own real extent, is what makes the leatherback's whole-Pacific span narrow to its US
+    // portion and the "Zoom to" toggle appear on v7 at all -- `recordWideRangeCamera` (not just
+    // `applyCamera`) is what the toggle's own `wideRange` getter reads.
+    const cam = wideRangeAware(
+      frame,
+      DEFAULT_CAMERA_PADDING,
+      "cog-bounds",
+      studyAreaView(deps.boot(), FULL_STUDY_AREA),
+    );
+    applyCamera(cam);
+    recordWideRangeCamera(cam);
   }
 
   async function bootstrap(ver: string): Promise<void> {
