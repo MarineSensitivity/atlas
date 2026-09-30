@@ -28,7 +28,7 @@
   import { DETAILS_LINK_ATTR } from "../lib/map/popup";
   // R3-W8 item 3: the `ui=` token's parse/format core — see that module's own header for what it
   // carries and why it is a separate token from Sel's own query keys.
-  import { formatUi, parseUi, type UiExpandedRow, type UiReportTab } from "./uiState";
+  import { formatUi, parseUi, type UiExpandedRow } from "./uiState";
   import type { LayerGroupId } from "../lib/map/layerStack";
   // R5: the wave-in-hexagon mark replaces the old two-file "wave in a circle" pair
   // (mst-mark.svg/mst-mark-dark.svg, kept vendored only for history -- Report.svelte moved to
@@ -40,7 +40,7 @@
   import Panel from "../lib/ui/Panel.svelte";
   import Sheet from "../lib/ui/Sheet.svelte";
   import Segmented from "../lib/ui/Segmented.svelte";
-  import ReportPane from "./ReportPane.svelte";
+  import type { ReportFlowSlots } from "./ReportPane.svelte";
   import VersionBadge from "../lib/ui/VersionBadge.svelte";
   import Announcer from "../lib/ui/Announcer.svelte";
   import Toast from "../lib/ui/Toast.svelte";
@@ -165,7 +165,7 @@
     hashFromPlaces as HashFromPlacesFn,
     placesFromHash as PlacesFromHashFn,
   } from "../places/model";
-  import { reportSubjects } from "../lib/state/subjects";
+  import { lastClickedInPlaces, reportSubjects } from "../lib/state/subjects";
   // `lastClicked.ts`/`lastClickedPlace.ts` are BOTH reached only through a dynamic `import()`
   // (`lastClickedLabelFn`, below, and `onAddLastClicked()`'s own `import()`) -- `lastClicked.ts`
   // looks cheap on its own, but its transitive imports (`places/zoneStats.ts#paLabel` pulls in
@@ -267,21 +267,14 @@
   );
   const railItems = $derived(buildRailItems());
 
-  // R3-W8 item 5: which of the Report pane's own two tabs is showing ("places" | "report" --
-  // Places is the default, folded in from its own former rail tool). Same "chrome, restorable
-  // from a link, Share reads it back" treatment as `activeTab` above.
-  let activeReportTab = $state<UiReportTab>(initialUi?.reportTab ?? "places");
-
   // R4-B: the panel/sheet header says what is being SHOWN, not the spine entry's name
   // (control-grammar.md rule 6) -- `panelHeaderTitle` (tools.ts, unit-tested) is the one rule; the
   // context it reads is assembled just below `lastClickedRowLabel`, where those values exist.
 
   // R3-W8 item 5 fix round: "The Table: when there is no selection, add a line... with a button
-  // that opens that tab" -- the SAME tab-open the Report tool's own "Draw, enter coordinates or
-  // upload a file" hand-off (`ReportTool.svelte`'s `onOpenPlaces`) already uses.
+  // that opens that tab". R4-D: the Report tool is one flow, so this just opens the tool.
   function openReportPlaces() {
     selectTool("report");
-    activeReportTab = "places";
   }
 
   // R3-W8 item 3: the Layers pane's own expanded row (`LibLayersPanel`'s controlled-row-expansion
@@ -417,7 +410,6 @@
         size: panelGeom.size,
         detent: sheetGeom.detent,
         expandedRow: toUiExpandedRow(expandedRow),
-        reportTab: activeReportTab,
       }),
     );
     return url.toString();
@@ -521,21 +513,18 @@
     let tourSnapshot: {
       lens: Lens;
       activeTool: ToolName;
-      activeReportTab: UiReportTab;
     } | null = null;
     return {
       getLens: () => sel.lens,
       setLens: (lens) => onLensChange(lens),
       selectTool: (name) => selectTool(name),
-      selectReportTab: (tab) => (activeReportTab = tab),
       snapshot: () => {
-        tourSnapshot = { lens: sel.lens, activeTool, activeReportTab };
+        tourSnapshot = { lens: sel.lens, activeTool };
       },
       restore: () => {
         if (!tourSnapshot) return;
         if (sel.lens !== tourSnapshot.lens) onLensChange(tourSnapshot.lens);
         activeTool = tourSnapshot.activeTool;
-        activeReportTab = tourSnapshot.activeReportTab;
         tourSnapshot = null;
       },
     };
@@ -778,6 +767,11 @@
   });
   const lastClickedRowLabel = $derived(
     lastClickedLabelFn ? lastClickedLabelFn(lastClickedSelection, boot) : null,
+  );
+
+  // R4-D: the Report tool's Last-clicked row shows only a click that is not already in the list.
+  const reportLastClickedLabel = $derived(
+    lastClickedInPlaces(lastClickedSelection, reportPlaces) ? null : lastClickedRowLabel,
   );
 
   // R4-B: the popup's "Details" link opens the Details tool. The popup is a MapLibre-owned div
@@ -1545,8 +1539,14 @@
   let ScoresSearchComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let SpeciesLensPanelComp = $state<Component<any> | null>(null);
+  $effect(() => {
+    if (activeTool === "report" && !ReportPaneComp) {
+      import("./ReportPane.svelte").then((mod) => (ReportPaneComp = mod.default));
+    }
+  });
+
   // owner review item 7 (live 0.10.62): the species lens' "Table" tool body -- lazy ON-DEMAND
-  // (activeTool==="table", below), same convention as PlacesComp/ReportToolComp, not part of the
+  // (activeTool==="table", below), same convention as PlacesComp, not part of the
   // eager species-UI-group effect further down (a species session that never opens Table should
   // not download it).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1559,18 +1559,17 @@
   let NotFoundModalComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let PlacesComp = $state<Component<any> | null>(null);
-  // U6 (round 2): the "report" rail tool's real panel body -- same lazy-on-first-open pattern as
-  // PlacesComp above (ReportTool.svelte itself has no heavy deps; this is about keeping every
-  // tool's panel out of the static graph equally, not a size concern for this one).
+  // R4-D: the Report tool's pane (ReportPane.svelte) imports `report.ts` -> `places/model` (the place
+  // codec), which pushed the static path past budget when imported eagerly -- lazy, like PlacesComp.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let ReportToolComp = $state<Component<any> | null>(null);
+  let ReportPaneComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let VersionPickerModalComp = $state<Component<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let WelcomeModalComp = $state<Component<any> | null>(null);
   // P1 (Opus eyes-on assessment, 2026-09-24): the phone-only search modal's own lazy chunk --
   // loaded on first tap of the phone search button (below), the same "load on first open" idiom
-  // PlacesComp/ReportToolComp already use, rather than a preemptive `$effect` -- a phone visitor
+  // PlacesComp already uses, rather than a preemptive `$effect` -- a phone visitor
   // who never opens search never pays for it.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let ModalComp = $state<Component<any> | null>(null);
@@ -1706,12 +1705,6 @@
       import("../places/Places.svelte")
         .then((mod) => (PlacesComp = mod.default))
         .catch(() => announceChunkFailure("the Places panel"));
-    }
-  });
-
-  $effect(() => {
-    if (activeTool === "report" && !ReportToolComp) {
-      import("./ReportTool.svelte").then((mod) => (ReportToolComp = mod.default));
     }
   });
 
@@ -2194,44 +2187,44 @@
          "layers" only). -->
     {#snippet panelBody()}
       {#if activeTool === "report"}
-        <!-- R3-W8 item 5: "Places folds into the Report tool as its first tab." "Places" (today's
-             Places.svelte, unchanged behaviour) is the DEFAULT tab; "Report" is today's
-             ReportTool.svelte. U6 (round 2)'s own note still applies: intercepted here, BEFORE the
-             lens branches below, so this is the SAME panel on either lens. -->
-        {#snippet placesContent()}
+        <!-- R4-D: the Report tool is ONE flow (Places, Add a place, pinned footer), no sub-tabs.
+             Intercepted here, BEFORE the lens branches below, so this is the SAME panel on either
+             lens. `ReportPane` hands `Places.svelte` the footer lead / recents as snippets. -->
+        {#snippet placesContent(slots: ReportFlowSlots)}
           {#if PlacesComp}
             {@const Comp = PlacesComp}
             <!-- P round deliverable 2 follow-up: `manifest` threads down to ResultsPanel.svelte's
                  own Flower (the SAME flowerMaxComponentScore(manifest) the scores lens' Flower tab
                  uses), so a custom place's/zone's flower ring is never a second, disagreeing
                  source. -->
-            <Comp {sel} {selStore} {boot} {manifest} {mapHandle} {zoneUnits} mapStore={placesMap} />
+            <Comp
+              {sel}
+              {selStore}
+              {boot}
+              {manifest}
+              {mapHandle}
+              {zoneUnits}
+              mapStore={placesMap}
+              lastClickedLabel={slots.lastClickedLabel}
+              onAddLastClicked={slots.onAddLastClicked}
+              footerLead={slots.footerLead}
+              recentsExtra={slots.recentsExtra}
+            />
           {:else}
             <p>Select, draw and upload tools arrive in a later phase.</p>
           {/if}
         {/snippet}
-        {#snippet reportContent()}
-          {#if ReportToolComp}
-            {@const Comp = ReportToolComp}
-            <Comp
-              {sel}
-              {boot}
-              ver={earlyVersion}
-              onOpenPlaces={() => (activeReportTab = "places")}
-            />
-          {:else}
-            <p>The report builder arrives in a later phase.</p>
-          {/if}
-        {/snippet}
-        <ReportPane
-          {activeReportTab}
-          onActiveReportTabChange={(t) => (activeReportTab = t)}
-          places={placesContent}
-          report={reportContent}
-          subject={reportSubject}
-          lastClickedLabel={lastClickedRowLabel}
-          {onAddLastClicked}
-        />
+        {#if ReportPaneComp}
+          {@const Pane = ReportPaneComp}
+          <Pane
+            {sel}
+            ver={earlyVersion}
+            places={placesContent}
+            subject={reportSubject}
+            lastClickedLabel={reportLastClickedLabel}
+            {onAddLastClicked}
+          />
+        {/if}
       {:else if sel.lens === "species" && (activeTool === "layers" || activeTool === "details")}
         {#if SpeciesLensPanelComp}
           {@const Comp = SpeciesLensPanelComp}

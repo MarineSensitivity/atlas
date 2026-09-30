@@ -367,17 +367,37 @@ const STATES = [
     },
   },
   {
-    // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- opening it is
-    // "Report" (the rail tool) then, defensively, the "Places" tab (in case a prior state on this
-    // page left it on "Report").
+    // R4-D: the Report tool is one flow (Places, Add a place, pinned footer) -- no sub-tabs. The empty
+    // state (no places, nothing clicked); the phone also shoots it at full height.
     id: "places",
     run: async (p, vp) => {
       await go(p, "?ver=v7&theme=dark");
       await explore(p);
       await tool(p, "Report");
-      await tool(p, "Places");
-      await shot(p, vp, "11-places");
-      if (await sheet(p, "Full height")) await shot(p, vp, "12-places-full");
+      await shot(p, vp, "11-report-empty");
+      if (await sheet(p, "Full height")) await shot(p, vp, "12-report-empty-full");
+    },
+  },
+  {
+    // R4-D: a last-clicked cell not yet in the list -> the pink Last-clicked row + its "Add".
+    id: "report-last-clicked",
+    run: async (p, vp) => {
+      await go(p, "?ver=v7&theme=dark");
+      await explore(p);
+      const hit = await tapScoredCell(p, vp);
+      await tool(p, "Report");
+      await shot(p, vp, `11c-report-last-clicked${hit ? "" : "-MISSED"}`);
+    },
+  },
+  {
+    // R4-D: two explicit places -> the list, the footer sentence "Reporting on 2 places."
+    id: "report-two-places",
+    run: async (p, vp) => {
+      await go(p, "?ver=v7&theme=dark#pl=z.pa.GAA~z.pa.MDA");
+      await explore(p);
+      await tool(p, "Report");
+      await shot(p, vp, "11d-report-two-places");
+      if (await sheet(p, "Full height")) await shot(p, vp, "12d-report-two-places-full");
     },
   },
   {
@@ -390,13 +410,7 @@ const STATES = [
         .waitForEvent("page", { timeout: 15_000 })
         .catch(() => null);
       await tool(p, "Report");
-      // R3-W8 item 5: the Report pane opens on its Places tab; "Open report" lives on the Report tab
-      await p
-        .locator('[data-tour="report-tabs"]')
-        .getByText("Report", { exact: true })
-        .click({ timeout: 10_000 })
-        .catch(() => log("WARN report: Report tab not found"));
-      // the Report tab holds the chooser; "Open report" is what opens report.html in a new tab
+      // "Open report" (the pinned footer) is what opens report.html in a new tab
       const open = p.getByRole("button", { name: /open report/i }).first();
       if (await open.count()) await open.click({ timeout: 10_000 }).catch(() => {});
       await sheet(p, "Full height");

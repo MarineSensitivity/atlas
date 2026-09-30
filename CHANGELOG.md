@@ -1,3 +1,19 @@
+# atlas 0.10.83
+
+Round 4, R4-D: the Report tool is one flow with no sub-tabs.
+
+- **Places and Report are one scrolling flow.** The Report tool lists your places with their count
+  ("Places 2 / 20"), then an "Add a place" section (Program Area picker, pick on the map, polygon,
+  rectangle, circle, coordinates, file upload, analysis cells). A click on the map shows up as a pink
+  "Last clicked" row with an **Add** button, and hides once that place is in the list.
+- **The footer is pinned to the bottom of the pane**: what the report is about ("Reporting on 2
+  places." / "Reporting on the last clicked place. Add it to keep it." / "Add a place to open a
+  report."), the gold **Open report** button (disabled with nothing to report on), then Share and
+  Download places. "Reports opened this session" moved into the one "Recent" disclosure.
+- The old Program Area chooser and the "Draw, enter coordinates or upload a file" link are gone (the
+  Add a place section covers both). Share links from 0.10.81 still open; the report-tab field in the
+  `ui=` token is ignored, and new links no longer write it.
+
 # atlas 0.10.81
 
 Round 4, R4-B: the tool rail attaches to the panel and becomes four tabs, docked left by default.

@@ -86,7 +86,6 @@ async function gotoPlacesWithRealRelease(page: Page): Promise<void> {
   // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
   // even if a PRIOR step on this page already switched to the Report tab).
   await page.locator("#rail-region button[aria-label='Report']").click();
-  await page.getByRole("button", { name: "Places", exact: true }).click();
 }
 
 /** drop a fixture through the file input inside `.dropzone` -- "through the drop zone" the way a

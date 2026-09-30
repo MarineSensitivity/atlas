@@ -17,6 +17,8 @@
   import Icon from "../lib/ui/Icon.svelte";
   import Pill from "../lib/ui/Pill.svelte";
   import Chip from "../lib/ui/Chip.svelte";
+  import type { Snippet } from "svelte";
+  import { SELECTION_COLOR } from "../lib/map/colors";
   import Accordion from "../lib/ui/Accordion.svelte";
   import Select from "../lib/ui/Select.svelte";
   import { notify } from "../lib/ui/announcer";
@@ -111,6 +113,15 @@
      * no-op -- see analytics.ts's own header for why nothing here sends anything until the GA4
      * loader is wired app-wide. */
     track?: Track;
+    /** R4-D: the "Last clicked" row label (`lastClicked.ts#lastClickedLabel`), `null` = no last
+     * click (or it is already in the list) -- the row is hidden. */
+    lastClickedLabel?: string | null;
+    onAddLastClicked?: () => void;
+    /** R4-D: the pinned footer's lead (the subject sentence + the primary Open report button),
+     * owned by `ReportPane.svelte`, which knows the report action. Rendered above Share/Download. */
+    footerLead?: Snippet;
+    /** R4-D: "Reports opened this session", rendered inside the one "Recent" disclosure. */
+    recentsExtra?: Snippet;
   }
 
   let {
@@ -122,6 +133,10 @@
     zoneUnits,
     mapStore,
     track = noopTrack,
+    lastClickedLabel = null,
+    onAddLastClicked,
+    footerLead,
+    recentsExtra,
   }: Props = $props();
 
   const places = $derived(placesFromHash(sel.pl));
@@ -762,32 +777,6 @@
     notify(`Downloaded ${places.length} place${places.length === 1 ? "" : "s"} as GeoJSON.`);
   }
 
-  // atlas-7 step 4: "Report" opens report.html for every place currently in the panel.
-  // `window.open()` MUST run SYNCHRONOUSLY inside the click handler -- no `await` before it -- or
-  // every browser's popup blocker treats the call as no longer user-initiated (the exact bug the
-  // legacy Shiny app's own placeholder-tab workaround, `apps/scores/app.R:1311-1326`, existed to
-  // route around; a static link needs no such workaround as long as this rule holds). `sel.pl` is
-  // already this panel's own encoding of `places` (`placesFromHash`/`hashFromPlaces`, model.ts) --
-  // reused verbatim, never re-derived, so the report's `#pl=` is byte-identical to what a Share
-  // link for the same view would carry. `ver` is the release THIS panel is actually viewing
-  // (`window.__early.version`, read above) -- included explicitly so the report reproduces this
-  // exact release even if `latest.txt` changes between the click and report.html's own load.
-  function onReport() {
-    if (!places.length) {
-      notify("No places to report on yet.");
-      return;
-    }
-    // B2 fix: build the hash with the SAME encoder `reportHref()` (above) and `formatSel`
-    // (lib/state/codec.ts) use -- `reportHash()`, model.ts -- instead of the old
-    // `#pl=${sel.pl}`, which spliced `sel.pl` in with zero layers of percent-encoding while
-    // report.html's `parseSel` reads the hash back through `URLSearchParams` (one layer of
-    // decoding). That mismatch silently turned a g1 token's own internal "%20" escape back into
-    // a literal space, corrupting every place whose name contains one.
-    const hash = reportHash(sel.pl, sel.t);
-    const query = ver ? `?ver=${encodeURIComponent(ver)}` : "";
-    window.open(`./report.html${query}${hash}`, "_blank", "noopener");
-  }
-
   // --- "Recent" accordion (Deliverable 1: last ten tokens, localStorage, never the only copy) -----
   let recentTokens = $state<string[]>(loadRecents(storage()));
 
@@ -817,112 +806,29 @@
 </script>
 
 <div class="places">
-  <section class="pick-bar" aria-label="Pick from the map">
-    <Pill
-      label="Pick mode"
-      pressed={pickOn}
-      disabled={!mapHandle}
-      disabledReason={mapHandle ? undefined : "The map isn't ready yet."}
-      onclick={togglePickMode}
-    />
-    <button type="button" class="add-picked" disabled={!pickState.keys.length} onclick={addPicked}>
-      <Icon name="places" size={16} />
-      Add to places{pickState.keys.length ? ` (${pickState.keys.length})` : ""}
-    </button>
-  </section>
+  <!-- R4-D (Ben, 2026-09-30): the Report tool is ONE flow -- Places (with its count), then "Add a
+       place", then a footer pinned to the bottom of the pane. No sub-tabs. -->
+  <h3 class="flow-heading" data-tour="places-heading" data-testid="places-heading">
+    Places <span class="flow-count">{places.length} / {MAX_PLACES}</span>
+  </h3>
 
-  {#if programAreas.length}
-    <!-- orchestrator finding (2026-09-24): a keyboard/phone-reachable alternative to map Pick
-         mode above -- "Aleutian Arc (ALA)" style options (`paLabel`), full-name sorted
-         (`allZoneStats`). Adds through the IDENTICAL `addZonePlace`/`writePlaces` path a map pick
-         uses, so the resulting place/URL hash cannot differ by route. -->
-    <!-- the landmark's own name is deliberately DIFFERENT from the Select's (below) -- two
-         controls/regions sharing one accessible name is ambiguous for anything that looks a
-         control up "by its label" (Playwright's own `getByLabel`, a screen reader's forms list). -->
-    <section class="pa-picker" aria-label="Program Area picker">
-      <Select
-        label="Add a Program Area"
-        value={paPickValue}
-        onchange={(v) => (paPickValue = v)}
-        options={[
-          { value: "", label: "Choose a Program Area…" },
-          ...programAreas.map((pa) => ({ value: pa.key, label: paLabel(pa.key, pa.name) })),
-        ]}
-      />
-      <button
-        type="button"
-        class="add-picked"
-        disabled={!paPickValue}
-        onclick={() => addProgramAreaByKey(paPickValue)}
-      >
-        <Icon name="places" size={16} />
-        Add this Program Area
+  {#if lastClickedLabel}
+    <div
+      class="last-clicked-row"
+      data-testid="last-clicked-row"
+      style:border-color={SELECTION_COLOR}
+    >
+      <span class="last-clicked-label">Last clicked: {lastClickedLabel}</span>
+      <button type="button" class="last-clicked-add" onclick={() => onAddLastClicked?.()}>
+        Add
       </button>
-    </section>
+    </div>
   {/if}
 
-  <section class="draw-bar" aria-label="Draw a place" role="group">
-    <button
-      type="button"
-      class="draw-tool"
-      class:draw-tool--active={drawMode === "polygon"}
-      disabled={drawBusy}
-      onclick={() => startDraw("polygon")}
-    >
-      <Icon name="draw" size={16} />
-      Polygon
-    </button>
-    <button
-      type="button"
-      class="draw-tool"
-      class:draw-tool--active={drawMode === "rectangle"}
-      disabled={drawBusy}
-      onclick={() => startDraw("rectangle")}
-    >
-      Rectangle
-    </button>
-    <button
-      type="button"
-      class="draw-tool"
-      class:draw-tool--active={drawMode === "circle"}
-      disabled={drawBusy}
-      onclick={() => startDraw("circle")}
-    >
-      Circle
-    </button>
-    {#if drawMode}
-      <button type="button" class="draw-tool" onclick={stopDraw}>Done</button>
-    {/if}
-    <button type="button" class="draw-tool" onclick={() => (coordDialogOpen = true)}>
-      Enter coordinates
-    </button>
-    {#if selectedIndex !== null && places[selectedIndex]?.kind === "zone" && !zoneCellsAvailable(boot)}
-      <!-- Q3 item 1: "the button is absent for zones with a one-line reason" -- the OLD disabled
-           Pill here read "Select a drawn or uploaded place first," which is actively wrong once a
-           zone place CAN be selected (P3's "Add a Program Area" picker); `zoneCellsAvailable()`
-           (zoneStats.ts) is the one place that flips true the day a `zone_cell` data path lands, so
-           nothing here needs to change when it does. -->
-      <span class="cells-unavailable" title={ZONE_CELLS_UNAVAILABLE_REASON}>
-        Show analysis cells: not available for Program Areas yet
-      </span>
-    {:else}
-      <Pill
-        label={loadingCells ? "Loading analysed cells…" : "Show analysis cells"}
-        pressed={mapStore.showCells}
-        disabled={loadingCells || selectedIndex === null || places[selectedIndex]?.kind !== "geom"}
-        disabledReason="Select a drawn or uploaded place first."
-        onclick={toggleAnalysisCells}
-      />
-    {/if}
-  </section>
-
-  <UploadPanel {mapHandle} dataEngine={dataEngineFn} onAdd={addEnteredPlaces} {track} />
-
   {#if !places.length}
-    <p class="empty">
-      No places yet. Choose a Program Area above, turn on pick mode and click one on the map, draw a
-      shape, enter coordinates, or drop a file on the map.
-    </p>
+    {#if !lastClickedLabel}
+      <p class="empty">No places yet. Click the map, or add one below.</p>
+    {/if}
   {:else}
     <ul class="place-list" aria-label="Places">
       {#each places as place, i (i)}
@@ -1011,29 +917,111 @@
     {/if}
   {/if}
 
-  <p class="cap-note">{places.length} / {MAX_PLACES} places</p>
+  <h3 class="flow-heading flow-heading--add">Add a place</h3>
 
-  <!-- orchestrator finding (2026-09-24): these three actions all operate on the CURRENT place
-       list -- with zero places, Share opened an empty-list dialog and Download/Report merely
-       announced a rejection AFTER the click (their own internal guards, unchanged, below). They
-       are disabled outright now, matching the panel's own draw-tool/pick-mode buttons' existing
-       `:disabled` convention, so the empty state is visible before a click rather than after. -->
-  <footer class="places-footer">
-    <button type="button" disabled={!places.length} onclick={() => (shareDialogOpen = true)}>
-      <Icon name="share" size={16} />
-      Share
+  {#if programAreas.length}
+    <!-- orchestrator finding (2026-09-24): a keyboard/phone-reachable alternative to map Pick
+         mode below -- "Aleutian Arc (ALA)" style options (`paLabel`), full-name sorted
+         (`allZoneStats`). Adds through the IDENTICAL `addZonePlace`/`writePlaces` path a map pick
+         uses, so the resulting place/URL hash cannot differ by route. -->
+    <!-- the landmark's own name is deliberately DIFFERENT from the Select's (below) -- two
+         controls/regions sharing one accessible name is ambiguous for anything that looks a
+         control up "by its label" (Playwright's own `getByLabel`, a screen reader's forms list). -->
+    <section class="pa-picker" aria-label="Program Area picker">
+      <Select
+        label="Add a Program Area"
+        value={paPickValue}
+        onchange={(v) => (paPickValue = v)}
+        options={[
+          { value: "", label: "Choose a Program Area…" },
+          ...programAreas.map((pa) => ({ value: pa.key, label: paLabel(pa.key, pa.name) })),
+        ]}
+      />
+      <button
+        type="button"
+        class="add-picked"
+        disabled={!paPickValue}
+        onclick={() => addProgramAreaByKey(paPickValue)}
+      >
+        <Icon name="places" size={16} />
+        Add this Program Area
+      </button>
+    </section>
+  {/if}
+
+  <section class="pick-bar" aria-label="Pick from the map">
+    <Pill
+      label="Pick mode"
+      pressed={pickOn}
+      disabled={!mapHandle}
+      disabledReason={mapHandle ? undefined : "The map isn't ready yet."}
+      onclick={togglePickMode}
+    />
+    <button type="button" class="add-picked" disabled={!pickState.keys.length} onclick={addPicked}>
+      <Icon name="places" size={16} />
+      Add to places{pickState.keys.length ? ` (${pickState.keys.length})` : ""}
     </button>
-    <button type="button" disabled={!places.length} onclick={onDownload}>
-      <Icon name="download" size={16} />
-      Download places
+  </section>
+
+  <section class="draw-bar" aria-label="Draw a place" role="group">
+    <button
+      type="button"
+      class="draw-tool"
+      class:draw-tool--active={drawMode === "polygon"}
+      disabled={drawBusy}
+      onclick={() => startDraw("polygon")}
+    >
+      <Icon name="draw" size={16} />
+      Polygon
     </button>
-    <button type="button" disabled={!places.length} onclick={onReport}>
-      <Icon name="report" size={16} />
-      Report
+    <button
+      type="button"
+      class="draw-tool"
+      class:draw-tool--active={drawMode === "rectangle"}
+      disabled={drawBusy}
+      onclick={() => startDraw("rectangle")}
+    >
+      Rectangle
     </button>
-  </footer>
+    <button
+      type="button"
+      class="draw-tool"
+      class:draw-tool--active={drawMode === "circle"}
+      disabled={drawBusy}
+      onclick={() => startDraw("circle")}
+    >
+      Circle
+    </button>
+    {#if drawMode}
+      <button type="button" class="draw-tool" onclick={stopDraw}>Done</button>
+    {/if}
+    <button type="button" class="draw-tool" onclick={() => (coordDialogOpen = true)}>
+      Enter coordinates
+    </button>
+    {#if selectedIndex !== null && places[selectedIndex]?.kind === "zone" && !zoneCellsAvailable(boot)}
+      <!-- Q3 item 1: "the button is absent for zones with a one-line reason" -- the OLD disabled
+           Pill here read "Select a drawn or uploaded place first," which is actively wrong once a
+           zone place CAN be selected (P3's "Add a Program Area" picker); `zoneCellsAvailable()`
+           (zoneStats.ts) is the one place that flips true the day a `zone_cell` data path lands, so
+           nothing here needs to change when it does. -->
+      <span class="cells-unavailable" title={ZONE_CELLS_UNAVAILABLE_REASON}>
+        Show analysis cells: not available for Program Areas yet
+      </span>
+    {:else}
+      <Pill
+        label={loadingCells ? "Loading analysed cells…" : "Show analysis cells"}
+        pressed={mapStore.showCells}
+        disabled={loadingCells || selectedIndex === null || places[selectedIndex]?.kind !== "geom"}
+        disabledReason="Select a drawn or uploaded place first."
+        onclick={toggleAnalysisCells}
+      />
+    {/if}
+  </section>
+
+  <UploadPanel {mapHandle} dataEngine={dataEngineFn} onAdd={addEnteredPlaces} {track} />
 
   <Accordion title="Recent">
+    {@render recentsExtra?.()}
     {#if !recentTokens.length}
       <p class="empty">No recent places yet.</p>
     {:else}
@@ -1051,6 +1039,23 @@
       <button type="button" class="clear-recents" onclick={onClearRecents}>Clear</button>
     {/if}
   </Accordion>
+
+  <!-- R4-D: the pinned footer -- it does not scroll away (`position: sticky` to the panel
+       body's own scrollport). The lead (subject sentence + Open report) comes from ReportPane; with
+       zero places Share/Download are disabled outright, before a click rather than after. -->
+  <footer class="places-footer">
+    {@render footerLead?.()}
+    <div class="footer-actions">
+      <button type="button" disabled={!places.length} onclick={() => (shareDialogOpen = true)}>
+        <Icon name="share" size={16} />
+        Share
+      </button>
+      <button type="button" disabled={!places.length} onclick={onDownload}>
+        <Icon name="download" size={16} />
+        Download places
+      </button>
+    </div>
+  </footer>
 
   <CoordinateDialog
     open={coordDialogOpen}
@@ -1250,17 +1255,84 @@
     background: var(--fill-control);
   }
 
-  .cap-note {
+  .flow-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
     margin: 0;
+    font-size: var(--text-base, 1rem);
+    font-weight: 600;
+  }
+
+  .flow-heading--add {
+    margin-top: var(--space-2);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--divider);
+  }
+
+  .flow-count {
     font-size: var(--text-sm);
+    font-weight: 400;
     color: var(--text-secondary);
   }
 
+  /* R4-D: the Last-clicked row, pink-outlined like the map's own selection ring. */
+  .last-clicked-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: 2px solid transparent; /* colour: the map's own SELECTION_COLOR, inline on the row */
+    border-radius: var(--radius-card);
+    background: var(--surface-raised);
+  }
+
+  .last-clicked-label {
+    min-width: 0;
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .last-clicked-add {
+    flex: 0 0 auto;
+    height: var(--size-touch);
+    padding: 0 var(--space-4);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-control);
+    background: var(--fill-control);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+
+  .last-clicked-add:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* R4-D: pinned to the bottom of the pane's own scroller (`.panel-body` / the sheet body), bleeding
+     through its padding so scrolled content never shows beside or under it. */
   .places-footer {
+    position: sticky;
+    bottom: calc(var(--space-4) * -1);
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: 0 calc(var(--space-4) * -1) calc(var(--space-4) * -1);
+    padding: var(--space-3) var(--space-4) var(--space-4);
+    border-top: 1px solid var(--divider);
+    background: var(--surface-panel, var(--surface-raised));
+  }
+
+  .footer-actions {
     display: flex;
     gap: var(--space-2);
-    border-top: 1px solid var(--divider);
-    padding-top: var(--space-2);
+    flex-wrap: wrap;
   }
 
   .places-footer button {

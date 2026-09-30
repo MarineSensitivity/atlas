@@ -5,7 +5,11 @@
 // CALLERS (never cross-writing `pl` from a click handler), not of this function.
 import { describe, expect, it } from "vitest";
 import type { Place, ZonePlace } from "../../src/lib/geo/placeCodec";
-import { reportSubjectSentence, reportSubjects } from "../../src/lib/state/subjects";
+import {
+  lastClickedInPlaces,
+  reportSubjectSentence,
+  reportSubjects,
+} from "../../src/lib/state/subjects";
 
 const ZONE_PLACE: ZonePlace = { kind: "zone", set: "pa", keys: ["GAA"] };
 const OTHER_ZONE_PLACE: ZonePlace = { kind: "zone", set: "pa", keys: ["GOA"] };
@@ -70,16 +74,16 @@ describe("reportSubjects", () => {
 // R3-W8 item 5 fix round: the Report tab's own one-sentence explanation, driven by the SAME
 // reportSubjects() result the Places tab's "Last clicked" row and the Table's subject line read.
 describe("reportSubjectSentence", () => {
-  it("last-clicked (with or without a real selection): the verbatim add-to-keep-it sentence", () => {
-    const sentence =
-      "Reporting on the last clicked place — add it to Places to keep it, or add more places below.";
-    expect(reportSubjectSentence({ kind: "last-clicked", selection: null })).toBe(sentence);
+  it("a last click not yet in the list: add it to keep it", () => {
     expect(
-      reportSubjectSentence({
-        kind: "last-clicked",
-        selection: { kind: "cell", cellId: 1 },
-      }),
-    ).toBe(sentence);
+      reportSubjectSentence({ kind: "last-clicked", selection: { kind: "cell", cellId: 1 } }),
+    ).toBe("Reporting on the last clicked place. Add it to keep it.");
+  });
+
+  it("nothing at all: the third sentence (Open report is disabled with it)", () => {
+    expect(reportSubjectSentence({ kind: "last-clicked", selection: null })).toBe(
+      "Add a place to open a report.",
+    );
   });
 
   it("places, singular", () => {
@@ -92,5 +96,23 @@ describe("reportSubjectSentence", () => {
     expect(reportSubjectSentence({ kind: "places", items: [ZONE_PLACE, OTHER_ZONE_PLACE] })).toBe(
       "Reporting on 2 places.",
     );
+  });
+});
+
+describe("lastClickedInPlaces: the Last-clicked row hides once its subject is listed", () => {
+  it("a zone matches by key", () => {
+    const sel = { kind: "zone", unit: "programarea", key: "GAA" } as const;
+    expect(lastClickedInPlaces(sel, [ZONE_PLACE])).toBe(ZONE_PLACE.keys.includes("GAA"));
+    expect(lastClickedInPlaces({ ...sel, key: "NOPE" }, [ZONE_PLACE])).toBe(false);
+  });
+
+  it("nothing clicked is never 'in the list'", () => {
+    expect(lastClickedInPlaces(null, [ZONE_PLACE])).toBe(false);
+  });
+
+  it("a cell matches the Cell <id> geometry place, not a different cell", () => {
+    const geom = { kind: "geom", name: "Cell 500" } as unknown as Place;
+    expect(lastClickedInPlaces({ kind: "cell", cellId: 500 }, [geom])).toBe(true);
+    expect(lastClickedInPlaces({ kind: "cell", cellId: 501 }, [geom])).toBe(false);
   });
 });

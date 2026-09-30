@@ -2,12 +2,12 @@
 // elements in their arrangement." Most of that is already URL state (`Sel`'s own keys); this module
 // covers only the remaining CHROME pieces `panelGeometry.ts`'s U1 rule ("layout is chrome, never the
 // URL") keeps out of `Sel`/`history.replaceState`: which tool is open, the desktop panel's side+size
-// (or the phone sheet's detent), the Layers pane's expanded row and the Report pane's tab.
+// (or the phone sheet's detent), the Layers pane's expanded row.
 //
 // This is a SEPARATE token (`ui=`), written ONLY when Share builds its link (Shell.svelte's
 // `onShare`) and read ONLY once, at boot -- never through `formatSel`/`parseSel`/
 // `history.replaceState`. Versioned like the places codec (`g1`, plan D8):
-// `ui=4.<tool>.<side>.<size>.<detent>.<expandedRow>.<reportTab>`. Unknown/malformed input (wrong
+// `ui=4.<tool>.<side>.<size>.<detent>.<expandedRow>`. Unknown/malformed input (wrong
 // version, wrong field count, an out-of-range value, an unrecognized code) is ignored ENTIRELY --
 // never a partial apply, matching `codec.ts`'s "clamp to absent, never throw" rule.
 //
@@ -20,6 +20,9 @@
 //   v3: `3.<tool>.<dock>.<size>.<detent>.<row>.<tab>.<reportTab>` (8 fields)
 //   v2: `2.<tool>.<dock>.<size>.<detent>.<row>.<tab>` (7 fields; tool `p` = places -> report)
 //   v1: `1.<tool>.<dock>.<size>.<detent>.<row>` (6 fields; tool `f` = flower -> details, `p` -> report)
+// R4-D: the Report tool lost its sub-tabs, so the trailing `reportTab` field is retired. Tokens
+// written by 0.10.81 (v4, 7 fields) and every v3 token still parse; the field is read and ignored,
+// and `formatUi` no longer writes it (a v4 token is now 6 fields).
 // A pre-v4 token whose tool is `layers` and whose `tab` is `info` opens Details; whose tool is
 // something else keeps that tool (the tab is moot there).
 //
@@ -37,11 +40,6 @@ export const UI_TOKEN_VERSION = "4";
  * `null` = neither row expanded. */
 export type UiExpandedRow = "data-raster" | "data-zones" | null;
 
-/** R3-W8 item 5: the Report pane's own two TABS -- "places" (today's Places.svelte content, the
- * default) and "report" (today's ReportTool.svelte content). Only meaningful while
- * `tool === "report"`, carried unconditionally. (R4-D retires the sub-tabs; the field goes then.) */
-export type UiReportTab = "places" | "report";
-
 export interface UiState {
   tool: ToolName;
   /** R4-B: the panel's side -- `left` (the default) or `right`. Named `dock` for continuity with
@@ -53,7 +51,6 @@ export interface UiState {
   /** phone sheet detent -- carried even when the viewer shares from desktop, for the same reason. */
   detent: SheetDetent;
   expandedRow: UiExpandedRow;
-  reportTab: UiReportTab;
 }
 
 const TOOL_CODE: Record<ToolName, string> = {
@@ -88,9 +85,6 @@ const CODE_ROW: Partial<Record<string, UiExpandedRow>> = {
  * Details tool. */
 const LEGACY_TAB_CODES = new Set(["l", "i"]);
 
-const REPORT_TAB_CODE: Record<UiReportTab, string> = { places: "1", report: "2" };
-const CODE_REPORT_TAB: Partial<Record<string, UiReportTab>> = { "1": "places", "2": "report" };
-
 const INT_RE = /^\d+$/;
 
 function parsePanelSize(sizeStr: string): number | null {
@@ -112,23 +106,21 @@ export function formatUi(ui: UiState): string {
     size,
     DETENT_CODE[ui.detent],
     row,
-    REPORT_TAB_CODE[ui.reportTab],
   ].join(".");
 }
 
-/** version-4 decode: 7 fields, structural -- see `formatUi`. */
+/** version-4 decode: 6 fields (7 for a pre-R4-D token, whose last field is ignored). */
 function parseUiV4(parts: string[]): UiState | null {
-  if (parts.length !== 7) return null;
-  const [, toolCode, dockCode, sizeStr, detentCode, rowCode, reportTabCode] = parts;
+  if (parts.length !== 6 && parts.length !== 7) return null;
+  const [, toolCode, dockCode, sizeStr, detentCode, rowCode] = parts;
   const tool = CODE_TOOL[toolCode];
   const dock = CODE_DOCK[dockCode];
   const detent = CODE_DETENT[detentCode];
-  const reportTab = CODE_REPORT_TAB[reportTabCode];
-  if (!tool || !dock || !detent || !reportTab) return null;
+  if (!tool || !dock || !detent) return null;
   if (!(rowCode in CODE_ROW)) return null;
   const size = parsePanelSize(sizeStr);
   if (size === null) return null;
-  return { tool, dock, size, detent, expandedRow: CODE_ROW[rowCode] ?? null, reportTab };
+  return { tool, dock, size, detent, expandedRow: CODE_ROW[rowCode] ?? null };
 }
 
 /** the pre-v4 tool codes, forward-mapped: `f` (flower, retired v1->v2) and `p` (places) as before;
@@ -141,22 +133,21 @@ function legacyTool(toolCode: string, tabCode: string | undefined): ToolName | n
   return tool === "layers" && tabCode === "i" ? "details" : tool;
 }
 
-/** version-3 decode (retired by R4-B, read-only): 8 fields. */
+/** version-3 decode (retired by R4-B, read-only): 8 fields; the trailing report-tab field is ignored. */
 function parseUiV3(parts: string[]): UiState | null {
   if (parts.length !== 8) return null;
-  const [, toolCode, dockCode, sizeStr, detentCode, rowCode, tabCode, reportTabCode] = parts;
+  const [, toolCode, dockCode, sizeStr, detentCode, rowCode, tabCode] = parts;
   const dock = LEGACY_CODE_DOCK[dockCode];
   const detent = CODE_DETENT[detentCode];
-  const reportTab = CODE_REPORT_TAB[reportTabCode];
-  if (!dock || !detent || !reportTab || !LEGACY_TAB_CODES.has(tabCode)) return null;
+  if (!dock || !detent || !LEGACY_TAB_CODES.has(tabCode)) return null;
   if (!(rowCode in CODE_ROW)) return null;
   const size = parsePanelSize(sizeStr);
   const tool = legacyTool(toolCode, tabCode);
   if (size === null || !tool) return null;
-  return { tool, dock, size, detent, expandedRow: CODE_ROW[rowCode] ?? null, reportTab };
+  return { tool, dock, size, detent, expandedRow: CODE_ROW[rowCode] ?? null };
 }
 
-/** version-2 decode (retired, read-only): 7 fields, no `reportTab` (defaults to "places"). */
+/** version-2 decode (retired, read-only): 7 fields, no report tab. */
 function parseUiV2(parts: string[]): UiState | null {
   if (parts.length !== 7) return null;
   const [, toolCode, dockCode, sizeStr, detentCode, rowCode, tabCode] = parts;
@@ -167,7 +158,7 @@ function parseUiV2(parts: string[]): UiState | null {
   const size = parsePanelSize(sizeStr);
   const tool = legacyTool(toolCode, tabCode);
   if (size === null || !tool) return null;
-  return { tool, dock, size, detent, expandedRow: CODE_ROW[rowCode] ?? null, reportTab: "places" };
+  return { tool, dock, size, detent, expandedRow: CODE_ROW[rowCode] ?? null };
 }
 
 /** version-1 decode (retired, read-only): 6 fields, no tab fields at all. */
@@ -181,7 +172,7 @@ function parseUiV1(parts: string[]): UiState | null {
   const size = parsePanelSize(sizeStr);
   const tool = legacyTool(toolCode, undefined);
   if (size === null || !tool) return null;
-  return { tool, dock, size, detent, expandedRow: CODE_ROW[rowCode] ?? null, reportTab: "places" };
+  return { tool, dock, size, detent, expandedRow: CODE_ROW[rowCode] ?? null };
 }
 
 /** Parse a `ui=` value. `null` (never a partial `UiState`) on ANY malformed input -- wrong version,

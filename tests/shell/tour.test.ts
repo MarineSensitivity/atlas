@@ -14,7 +14,6 @@ function fakeActions(currentLens: "scores" | "species" = "scores"): TourActions 
   calls: {
     setLens: string[];
     selectTool: string[];
-    selectReportTab: string[];
     snapshot: number;
     restore: number;
   };
@@ -22,7 +21,6 @@ function fakeActions(currentLens: "scores" | "species" = "scores"): TourActions 
   const calls = {
     setLens: [] as string[],
     selectTool: [] as string[],
-    selectReportTab: [] as string[],
     snapshot: 0,
     restore: 0,
   };
@@ -31,7 +29,6 @@ function fakeActions(currentLens: "scores" | "species" = "scores"): TourActions 
     getLens: () => currentLens,
     setLens: (l) => calls.setLens.push(l),
     selectTool: (t) => calls.selectTool.push(t),
-    selectReportTab: (t) => calls.selectReportTab.push(t),
     snapshot: () => calls.snapshot++,
     restore: () => calls.restore++,
   };
@@ -86,20 +83,18 @@ describe("SCORES_TOUR_STEPS: 9 steps, docs/usability.md §5 (R4-B added Details)
     }
   });
 
-  // R3-W8 item 5: "Places folds into the Report tool as its first tab" -- the "places" step opens
-  // the Report tool AND switches its own tab to "places" (the pane's default, but the tour must
-  // not assume a PRIOR step left it there); the "report" step does the same for "report".
-  it("the places/report steps both open the Report rail tool, and switch to their own tab", () => {
-    for (const [id, reportTab] of [
-      ["places", "places"],
-      ["report", "report"],
-    ] as const) {
+  // R4-D: the Report tool is one flow (no sub-tabs): the places/report steps both just open it, and
+  // the places step points at the Places heading inside the flow.
+  it("the places/report steps both open the Report rail tool", () => {
+    for (const id of ["places", "report"]) {
       const a = fakeActions();
       SCORES_TOUR_STEPS.find((s) => s.id === id)?.before?.(a);
       expect(a.calls.selectTool).toEqual(["report"]);
-      expect(a.calls.selectReportTab).toEqual([reportTab]);
       expect(a.calls.setLens).toEqual([]);
     }
+    expect(SCORES_TOUR_STEPS.find((s) => s.id === "places")?.element).toBe(
+      '[data-tour="places-heading"]',
+    );
   });
 
   it("the map step switches to the scores lens when the tour started from Species", () => {
