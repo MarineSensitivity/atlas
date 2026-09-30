@@ -76,7 +76,7 @@
   });
   const markerFrac = $derived(markerX(marker, domain));
   // the popup's own rounding, not the ramp-end formatter (which keeps decimals)
-  const markerLabel = $derived(formatMarkerValue(marker) ?? "");
+  const markerLabel = $derived(formatMarkerValue(marker, domain) ?? "");
   const histogramName = $derived(
     `Distribution of ${title} across the whole layer, ${unit} from ${
       stops.length ? formatValue(stops[0].value) : ""
