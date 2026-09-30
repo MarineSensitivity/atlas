@@ -122,16 +122,17 @@ test.describe("axe: zero serious/critical with each rail tool open (and the zone
   async function openRailTool(page: Page, baseURL: string, label: string) {
     await page.setViewportSize(DESKTOP);
     await gotoState(page, baseURL, BASE!);
+    // R4-B: Layers is the ACTIVE tool at load, and a click on the active entry collapses the panel
+    // -- audit it as loaded (open) instead of clicking it.
+    if (label === "Layers") return;
     await page
       .locator("#rail-region [role='toolbar']")
       .locator(`button[aria-label="${label}"]`)
       .click();
   }
 
-  // R3-W8 item 4/5: the rail is now three tools -- the Flower plot moved into the Layers pane's
-  // own second tab, and Places into the Report pane's own first tab (a11y for both is covered by
-  // opening "Layers"/"Report" above; there is no separate rail control to axe-check any more).
-  for (const label of ["Layers", "Table", "Report"]) {
+  // R4-B: the spine is four tools (Layers, Details, Table, Report).
+  for (const label of ["Layers", "Details", "Table", "Report"]) {
     test(`rail tool: ${label}`, async ({ page, baseURL }) => {
       await openRailTool(page, baseURL!, label);
       const bad = await seriousOrCritical(page);
@@ -192,27 +193,38 @@ test.describe("axe: zero serious/critical on the auto-opened denial dialog (D15)
 // panel maximize, the bottom dock, and the phone ⋯ overflow menu are all CHROME (never URL state,
 // same reasoning as the rail-tool-open block above), so no matrix state ever opens them. One base
 // state ("shell (default)") + the interaction that reaches each.
-test.describe("axe: zero serious/critical on R1 maximize / bottom dock, and R2's phone ⋯ menu", () => {
+test.describe("axe: zero serious/critical on the full-stage Table, the right-hand side, the collapsed panel, and R2's phone ⋯ menu", () => {
   const BASE = STATE_MATRIX.find((s) => s.name === "shell (default)");
 
-  test("panel maximized (Table tool, the widest content)", async ({ page, baseURL }) => {
+  test("Table takes the full stage (the widest content)", async ({ page, baseURL }) => {
     await page.setViewportSize(DESKTOP);
     await gotoState(page, baseURL!, BASE!);
     await page
       .locator("#rail-region [role='toolbar']")
       .locator('button[aria-label="Table"]')
       .click();
-    await page.locator("#panel-region").getByRole("button", { name: "Full screen" }).click();
     await expect(page.locator("#panel-region")).toHaveAttribute("data-maximized", "true");
     const bad = await seriousOrCritical(page);
     expect(bad, summarize(bad)).toEqual([]);
   });
 
-  test("panel docked to the bottom", async ({ page, baseURL }) => {
+  test("panel moved to the right (rail attached on that edge)", async ({ page, baseURL }) => {
     await page.setViewportSize(DESKTOP);
     await gotoState(page, baseURL!, BASE!);
-    await page.locator("#panel-region").getByRole("button", { name: "Dock bottom" }).click();
-    await expect(page.locator("#panel-region")).toHaveAttribute("data-dock", "bottom");
+    await page
+      .locator("#panel-region")
+      .getByRole("button", { name: "Move panel to the right" })
+      .click();
+    await expect(page.locator("#panel-region")).toHaveAttribute("data-dock", "right");
+    const bad = await seriousOrCritical(page);
+    expect(bad, summarize(bad)).toEqual([]);
+  });
+
+  test("panel collapsed to its pill, rail still attached", async ({ page, baseURL }) => {
+    await page.setViewportSize(DESKTOP);
+    await gotoState(page, baseURL!, BASE!);
+    await page.locator("#panel-region").getByRole("button", { name: "Collapse to a pill" }).click();
+    await expect(page.locator("#panel-region .panel-pill")).toBeVisible();
     const bad = await seriousOrCritical(page);
     expect(bad, summarize(bad)).toEqual([]);
   });

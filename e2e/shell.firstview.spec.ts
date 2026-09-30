@@ -57,14 +57,17 @@ async function projectFallback(page: Page): Promise<{ x: number; y: number }> {
 }
 
 test.describe("usability M4: default camera padded for the docked panel", () => {
-  test("no explicit ?map=: the fallback study area's point renders LEFT of canvas center (the docked panel reserves the right edge)", async ({
+  test("no explicit ?map=: the fallback study area's point renders RIGHT of canvas center (the LEFT-docked panel + rail reserve the left edge)", async ({
     page,
   }) => {
     await gotoMap(page, "/");
     const pt = await projectFallback(page);
     const viewportWidth = 1280;
     expect(pt.x, "still on screen").toBeGreaterThan(0);
-    expect(pt.x, "shifted meaningfully left of canvas center").toBeLessThan(viewportWidth / 2 - 50);
+    expect(pt.x, "shifted meaningfully right of canvas center").toBeGreaterThan(
+      viewportWidth / 2 + 50,
+    );
+    expect(pt.x, "still on screen").toBeLessThan(viewportWidth);
   });
 
   test("an explicit ?map= matching the SAME point is never padded (a real camera is not second-guessed)", async ({
@@ -77,7 +80,7 @@ test.describe("usability M4: default camera padded for the docked panel", () => 
     expect(Math.abs(pt.x - viewportWidth / 2)).toBeLessThan(20);
   });
 
-  test("collapsing the panel (no reserved space) renders the point close to canvas center", async ({
+  test("collapsing the panel reserves only the rail: the point sits much closer to canvas center than uncollapsed", async ({
     page,
   }) => {
     // seed the "shell" panel collapsed BEFORE the app's own script runs, the same technique
@@ -97,7 +100,10 @@ test.describe("usability M4: default camera padded for the docked panel", () => 
     );
     await gotoMap(page, "/");
     const pt = await projectFallback(page);
-    expect(Math.abs(pt.x - 1280 / 2)).toBeLessThan(20);
+    // R4-B: the rail stays on the dock side even collapsed (RAIL_FOOTPRINT_PX), so the shift is the
+    // rail's half-width (~54px measured), not zero -- and far below the uncollapsed panel's (~229px,
+    // the first test above).
+    expect(Math.abs(pt.x - 1280 / 2)).toBeLessThan(80);
   });
 });
 

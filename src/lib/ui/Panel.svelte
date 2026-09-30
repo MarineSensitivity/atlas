@@ -396,11 +396,15 @@
     width: 6px;
     cursor: ew-resize;
   }
+  /* INSIDE the surface's own edge (not straddling it): `.panel-surface` is `overflow: hidden`, so a
+     handle centred ON the edge had its outer half clipped -- a pointer at the handle's own
+     bounding-box centre hit the map underneath instead (R4-B: the left-docked default put the
+     handle's centre just outside the surface's right edge). */
   [data-dock="left"] .resize-handle {
-    right: -3px;
+    right: 0;
   }
   [data-dock="right"] .resize-handle {
-    left: -3px;
+    left: 0;
   }
   @media (pointer: coarse) {
     [data-dock="left"] .resize-handle,
@@ -408,10 +412,10 @@
       width: var(--size-touch);
     }
     [data-dock="left"] .resize-handle {
-      right: calc(var(--size-touch) / -2);
+      right: 0;
     }
     [data-dock="right"] .resize-handle {
-      left: calc(var(--size-touch) / -2);
+      left: 0;
     }
   }
 

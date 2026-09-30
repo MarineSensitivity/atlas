@@ -35,6 +35,14 @@ interface CameraState {
   zoom: number;
 }
 
+/** R4-B: the panel (and its rail) now dock LEFT by default, so a fit that keeps the model clear of
+ * them pushes the camera centre WEST of the bbox centre -- past the antimeridian for these Bering
+ * Sea models (MapLibre reports 176.6, not -183.4). Unwrap to the western hemisphere's continuous
+ * range so the bounds below read as plain "west of the bbox centre". */
+function unwrapWest(lng: number): number {
+  return lng > 0 ? lng - 360 : lng;
+}
+
 async function readCamera(page: Page): Promise<CameraState> {
   return page.evaluate(() => {
     const w = window as unknown as {
@@ -162,11 +170,12 @@ test.describe("D8: selecting a model frames its extent, not the default study ar
 
     const camera = await readCamera(page);
     // the ax sibling's bbox is [-177.7, 60.65, -139.15, 79] -> center (-158.425, 69.825).
-    expect(camera.center.lng).toBeGreaterThan(-179);
-    // W5 (0.10.67): the desktop fit now reserves the docked panel's full footprint (+ inset +
-    // gutter) and only the legend card's height, so the camera centre sits further east than the
-    // bbox centre (-158.4) to keep the whole bbox left of the panel; measured -133.4 at 1280 px.
-    expect(camera.center.lng).toBeLessThan(-125);
+    // R4-B: docked LEFT by default -- the fit reserves the rail + panel footprint (+ inset +
+    // gutter) on the west, so the camera centre sits WEST of the bbox centre (-158.4), keeping the
+    // whole bbox east of the panel (measured -183.4 at 1280 px, i.e. 176.6 unwrapped). Was -133.4
+    // (east of it) when the panel docked right.
+    expect(unwrapWest(camera.center.lng)).toBeGreaterThan(-200);
+    expect(unwrapWest(camera.center.lng)).toBeLessThan(-165);
     expect(camera.center.lat).toBeGreaterThan(55);
     expect(camera.center.lat).toBeLessThan(85);
   });
@@ -210,8 +219,10 @@ test.describe("D8: selecting a model frames its extent, not the default study ar
     // `desktopPanelPadding` this fix touches) now lands measurably further east (-152.3 measured,
     // was comfortably under -155 before) -- the bound widens to keep real margin, not to just
     // barely pass.
-    expect(camera.center.lng).toBeGreaterThan(-185);
-    expect(camera.center.lng).toBeLessThan(-145);
+    // R4-B: docked LEFT by default, so the centre shifts west of the bbox centre (-170); measured
+    // -191.2 (168.8 unwrapped). Was -152.3 with the panel on the right.
+    expect(unwrapWest(camera.center.lng)).toBeGreaterThan(-205);
+    expect(unwrapWest(camera.center.lng)).toBeLessThan(-180);
     expect(camera.center.lat).toBeGreaterThan(58);
     expect(camera.center.lat).toBeLessThan(70);
   });
@@ -288,8 +299,10 @@ test.describe("D8: selecting a model frames its extent, not the default study ar
     // narrowed bbox: [-190, 53.15, -150, 73.75] -> center (-170, 63.45), same as the effect's own.
     // W5 fix: same widened bound as that test above (the desktop panel's larger reserve), same
     // reason.
-    expect(camera.center.lng).toBeGreaterThan(-185);
-    expect(camera.center.lng).toBeLessThan(-145);
+    // R4-B: docked LEFT by default, so the centre shifts west of the bbox centre (-170); measured
+    // -191.2 (168.8 unwrapped). Was -152.3 with the panel on the right.
+    expect(unwrapWest(camera.center.lng)).toBeGreaterThan(-205);
+    expect(unwrapWest(camera.center.lng)).toBeLessThan(-180);
     expect(camera.center.lat).toBeGreaterThan(58);
     expect(camera.center.lat).toBeLessThan(70);
   });

@@ -105,12 +105,9 @@ async function expectCameraSettlesIn(
     .toBe(true);
 }
 
-// R3-W8 item 4: the Flower plot moved into the Layers pane's own second tab -- opening it is
-// "Layers" (the rail tool) then "Flower plot" (the tab), scoped to #rail-region since the panel's
-// own tab switch also has a "Layers" button once open (e2e/scores.flower.spec.ts's identical fix).
+// R4-B: the Flower plot is the rail's "Details" entry (e2e/scores.flower.spec.ts's identical helper).
 async function openFlower(page: Page) {
-  await page.locator("#rail-region").getByRole("button", { name: "Layers", exact: true }).click();
-  await page.getByRole("button", { name: "Flower plot" }).click();
+  await page.locator("#rail-region").getByRole("button", { name: "Details", exact: true }).click();
   const flower = page.locator(".flower-title");
   await expect(flower).toBeVisible({ timeout: 10_000 });
   return flower;
@@ -220,7 +217,10 @@ test.describe("Q1: Scores-lens top-bar search (desktop, 1280x800)", () => {
                 __atlasMap: { handle: { map: { getCenter(): { lng: number; lat: number } } } };
               }
             ).__atlasMap.handle.map.getCenter();
-            return c.lng >= 40 && c.lng <= 42 && c.lat >= 40 && c.lat <= 42;
+            // R4-B: the panel + rail dock LEFT by default, so the padded fit centres the camera a little WEST
+            // of the bbox's own centre (measured 39.84 at zoom 7.2) -- the 2-degree bbox [40,42] is
+            // still what it fit (the polygon it must NOT prefer is 210 degrees away, lon -170).
+            return c.lng >= 39 && c.lng <= 42 && c.lat >= 40 && c.lat <= 42;
           }),
         { timeout: 10_000 },
       )
@@ -481,6 +481,13 @@ test.describe("P3 fix: a search-picked Program Area's bounds fit pads for the sh
         const panelLeft = panelEl
           ? panelEl.getBoundingClientRect().left - containerRect.left
           : null;
+        // R4-B: the panel docks LEFT by default, so the free area is to its RIGHT (and the rail sits
+        // even further out) -- `panelRight` is that panel edge; which one applies follows `data-dock`.
+        const panelRight = panelEl
+          ? panelEl.getBoundingClientRect().right - containerRect.left
+          : null;
+        const dockLeft =
+          document.querySelector("#panel-region")?.getAttribute("data-dock") === "left";
 
         const fracs = [0, 0.25, 0.5, 0.75, 1];
         const lons = fracs.map((f) => xmin + f * (xmax - xmin));
@@ -500,7 +507,10 @@ test.describe("P3 fix: a search-picked Program Area's bounds fit pads for the sh
                 p.y < sheetTop;
             } else {
               inside = inside && p.x >= 0 && p.x <= containerRect.width;
-              if (panelLeft !== null) inside = inside && p.x < panelLeft - gutterArg;
+              if (panelLeft !== null && panelRight !== null) {
+                inside =
+                  inside && (dockLeft ? p.x > panelRight + gutterArg : p.x < panelLeft - gutterArg);
+              }
             }
             sample.push({ x: p.x, y: p.y, inside });
           }
@@ -616,7 +626,7 @@ test.describe("P3 fix: a search-picked Program Area's bounds fit pads for the sh
   test.describe("desktop (1280x800)", () => {
     test.use({ viewport: { width: 1280, height: 800 } });
 
-    test("GAA's fitted area lands mostly left of the docked panel, and its popup is visible there too", async ({
+    test("GAA's fitted area lands clear of the (left-docked) panel, and its popup is visible there too", async ({
       page,
     }) => {
       await searchAndSelectGAA(page, false);
@@ -629,7 +639,7 @@ test.describe("P3 fix: a search-picked Program Area's bounds fit pads for the sh
       await expect
         .poll(async () => (await freeAreaCoverage(page, GAA_BBOX)).insideFraction, {
           message:
-            "GAA's own bbox grid did not settle FULLY into the area left of the docked panel's " +
+            "GAA's own bbox grid did not settle FULLY into the free area beside the docked panel's " +
             "outer edge (minus the gutter)",
           timeout: 15_000,
         })
@@ -639,11 +649,11 @@ test.describe("P3 fix: a search-picked Program Area's bounds fit pads for the sh
       await expect(popup).toBeVisible({ timeout: 10_000 });
       const popupBox = (await popup.boundingBox())!;
       const panelBox = (await page.locator("#panel-region .panel-surface").boundingBox())!;
+      // R4-B: the default dock is LEFT, so the popup must start at or beyond the panel's RIGHT edge
       expect(
-        popupBox.x + popupBox.width,
-        `popup right edge x=${popupBox.x + popupBox.width} reaches into the docked panel ` +
-          `starting at x=${panelBox.x}`,
-      ).toBeLessThanOrEqual(panelBox.x + 0.5);
+        popupBox.x,
+        `popup left edge x=${popupBox.x} reaches into the docked panel ending at x=${panelBox.x + panelBox.width}`,
+      ).toBeGreaterThanOrEqual(panelBox.x + panelBox.width - 0.5);
     });
   });
 

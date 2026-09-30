@@ -661,7 +661,13 @@ test.describe("0.10.22: the species raster's style is issued when its shard land
 test.describe("R3: the Layers panel's spatial-unit toggle is HIDDEN entirely in the Species lens", () => {
   test("no toggle, no group, no reason text -- and never writes unit=", async ({ page }) => {
     await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}`);
-    await page.locator("#rail-region button[aria-label='Layers']").click();
+    // R4-B: Layers is already the open tool at load (a click on the ACTIVE entry would collapse the
+    // panel and make every "not present" assertion below vacuous).
+    await expect(page.locator("#rail-region button[aria-label='Layers']")).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    await expect(page.locator("#panel-region .panel-surface")).toBeVisible();
 
     await expect(page.getByRole("group", { name: "Spatial units" })).toHaveCount(0);
     await expect(page.getByText("Species surfaces are rasters only.")).toHaveCount(0);

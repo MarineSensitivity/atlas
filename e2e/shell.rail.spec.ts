@@ -8,14 +8,12 @@
 //   3. the active tool's marker (`aria-current`, plus the accent fill/ring CSS) follows clicks.
 //   4. arrow keys (+ Home/End) move the roving-tabindex focus stop, per roving.ts.
 //
-// R3-W8 item 4 (Ben, 2026-09-25): "drop the Flower plot from the toolbar (which only applies to
-// the Scores lens)" -- the Flower plot moved into the Layers pane as its own second tab
-// (e2e/scores.flower.spec.ts's `openFlower()`). Item 5: "Places folds into the Report tool as its
-// first tab" -- the rail is now THREE tools (Layers, Table, Report).
+// R4-B (2026-09-30): the rail is the spine -- FOUR entries (Layers, Details, Table, Report), the
+// same in both lenses and on every viewport, attached to the panel's outer edge.
 import { expect, test, type Page } from "@playwright/test";
 import { gotoPublicShell, waitForHydration } from "./hermetic";
 
-const RAIL_LABELS = ["Layers", "Table", "Report"];
+const RAIL_LABELS = ["Layers", "Details", "Table", "Report"];
 
 async function dismissWelcome(page: Page) {
   await expect(
@@ -32,7 +30,7 @@ test.describe("R4: desktop -- a vertical labelled stack", () => {
     await dismissWelcome(page);
 
     const items = page.locator("#rail-region .rail button.railitem");
-    await expect(items).toHaveCount(3);
+    await expect(items).toHaveCount(4);
     for (const label of RAIL_LABELS) {
       const btn = page.locator(`#rail-region button.railitem[aria-label="${label}"]`);
       // the visible label text sits inside the button (a real, laid-out, non-empty text node) --
@@ -79,7 +77,10 @@ test.describe("R4: desktop -- a vertical labelled stack", () => {
     await expect(page.locator('button.railitem[aria-label="Layers"]')).toBeFocused();
 
     await page.keyboard.press("ArrowDown");
+    await expect(page.locator('button.railitem[aria-label="Details"]')).toBeFocused();
+    await page.keyboard.press("ArrowDown");
     await expect(page.locator('button.railitem[aria-label="Table"]')).toBeFocused();
+    await page.keyboard.press("ArrowUp");
 
     await page.keyboard.press("ArrowUp");
     await expect(page.locator('button.railitem[aria-label="Layers"]')).toBeFocused();
@@ -96,12 +97,12 @@ test.describe("R4: desktop -- a vertical labelled stack", () => {
   });
 });
 
-test.describe("R4: phone (390x844) -- a labelled bottom tab bar, same three tools", () => {
+test.describe("R4: phone (390x844) -- a labelled bottom tab bar, same four tools", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   const DETENTS = ["Collapse to a peek", "Half height", "Full height"] as const;
 
-  test("the tab bar shows all three labels, in a row, at every sheet detent", async ({ page }) => {
+  test("the tab bar shows all four labels, in a row, at every sheet detent", async ({ page }) => {
     await gotoPublicShell(page);
     await waitForHydration(page);
     await dismissWelcome(page);
@@ -119,3 +120,32 @@ test.describe("R4: phone (390x844) -- a labelled bottom tab bar, same three tool
     }
   });
 });
+
+// R4-B: the phone bar grew from three to four entries -- it must still fit the narrowest viewport
+// the matrix covers (320) and the common one (390), every target at least 44px.
+for (const width of [320, 390]) {
+  test.describe(`R4-B: phone bar at ${width}px -- four entries, no overflow, 44px targets`, () => {
+    test.use({ viewport: { width, height: 800 } });
+
+    test("every entry is on screen, at least 44x44, and the page does not scroll sideways", async ({
+      page,
+    }) => {
+      await gotoPublicShell(page);
+      await waitForHydration(page);
+      await dismissWelcome(page);
+      const buttons = page.locator("#rail-region button.railitem");
+      await expect(buttons).toHaveCount(4);
+      for (let i = 0; i < 4; i++) {
+        const box = (await buttons.nth(i).boundingBox())!;
+        expect(box.x, `entry ${i} left edge`).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width, `entry ${i} right edge`).toBeLessThanOrEqual(width);
+        expect(box.width, `entry ${i} width`).toBeGreaterThanOrEqual(44);
+        expect(box.height, `entry ${i} height`).toBeGreaterThanOrEqual(44);
+      }
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      expect(overflow).toBeLessThanOrEqual(0);
+    });
+  });
+}
