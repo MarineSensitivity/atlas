@@ -119,6 +119,14 @@ describe("formatMarkerValue (matches the popup's value line)", () => {
     expect(formatMarkerValue(71.5)).toBe("72");
     expect(formatMarkerValue(0.4)).toBe("0");
   });
+  it("precision follows the domain span: integer >= 10, one decimal < 10, two < 1", () => {
+    expect(formatMarkerValue(33.0930431598879, { min: 7.5, max: 52.7 })).toBe("33");
+    expect(formatMarkerValue(50.4, { min: 1, max: 100 })).toBe("50");
+    expect(formatMarkerValue(3.14159, { min: 0, max: 9.9 })).toBe("3.1");
+    expect(formatMarkerValue(0.4, { min: 0, max: 1 })).toBe("0.4");
+    expect(formatMarkerValue(0.4321, { min: 0, max: 0.5 })).toBe("0.43");
+    expect(formatMarkerValue(0.4, { min: 0, max: 10 })).toBe("0");
+  });
   it("null / non-finite -> no label", () => {
     expect(formatMarkerValue(null)).toBeNull();
     expect(formatMarkerValue(undefined)).toBeNull();

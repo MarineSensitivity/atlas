@@ -109,12 +109,18 @@ export function histogramBars(
 }
 
 /**
- * The marker's label: the SAME rounding the click popup's value line uses (`lib/format.ts#
- * formatValueLine`, `Math.round` -- Scores zones, Scores cells and Species all print an integer
- * there), so the legend never shows a raw "33.0930431598879" beside a popup that says "Score 33".
- * `null` (no marker) for a non-finite/absent value.
+ * The marker's label. Precision follows the legend axis so a small-range layer is not flattened:
+ * integer when the domain span is >= 10 (the app's own cases -- 0-93, 7.5-52.7, 1-100 -- where it
+ * is the popup value line's `Math.round`, so the legend never shows a raw "33.0930431598879" beside
+ * a popup that says "Score 33"), one decimal when the span is < 10, two when it is < 1. No domain
+ * (or a zero-width one) falls back to the integer. `null` (no label) for a non-finite/absent value.
  */
-export function formatMarkerValue(value: number | null | undefined): string | null {
+export function formatMarkerValue(
+  value: number | null | undefined,
+  domain?: AxisDomain | null,
+): string | null {
   if (value === null || value === undefined || !Number.isFinite(value)) return null;
-  return String(Math.round(value));
+  const span = domain ? Math.abs(domain.max - domain.min) : Infinity;
+  const dp = span >= 10 || !(span > 0) ? 0 : span >= 1 ? 1 : 2;
+  return dp === 0 ? String(Math.round(value)) : value.toFixed(dp);
 }
