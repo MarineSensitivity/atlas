@@ -323,7 +323,6 @@
   <div class="details" data-testid="details-tool">
     {#if lastClickedLabel}
       <div class="details-head" data-testid="details-head">
-        <span class="details-label">{lastClickedLabel}</span>
         <div class="details-actions">
           <button type="button" data-testid="details-add" onclick={() => onAddLastClicked?.()}>
             Add to report
@@ -342,6 +341,7 @@
       cellComponentsError={cellFlowerError}
       {cellCoords}
       {compactFlower}
+      subjectInHeader={!!lastClickedLabel}
     />
   </div>
 {:else if activeTool === "table"}
@@ -376,14 +376,6 @@
     border: 1px solid var(--border-control);
     border-radius: var(--radius-card);
     background: var(--surface-raised);
-  }
-
-  .details-label {
-    font-size: var(--text-sm);
-    font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .details-actions {

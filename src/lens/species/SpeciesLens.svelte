@@ -118,6 +118,7 @@
     {:else if lens.info}
       <SpeciesCardView
         info={lens.info}
+        hideName={!lens.card?.common}
         asset={lens.mapInputs.asset}
         onSelect={(key) => lens.selectLayer(key)}
       />
