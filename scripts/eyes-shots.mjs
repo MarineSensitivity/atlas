@@ -379,8 +379,16 @@ const STATES = [
       await p.getByRole("tab", { name: "Zones", exact: true }).click();
       await shot(p, vp, `10b-table-zones${missed}`);
       await p.getByRole("tab", { name: "Composition", exact: true }).click();
-      await p.waitForTimeout(1500);
-      await shot(p, vp, `10c-table-composition${missed}`);
+      // composition loads AFTER the species rows (TablePanel's sequential reload): wait for a
+      // real treemap cell, not just the loading text to go (30 s, then -MISSED like a missed tap)
+      const drawn = await p
+        .locator(".treemap .cell")
+        .first()
+        .waitFor({ state: "visible", timeout: 30_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!drawn) log("WARN composition treemap did not render within 30000 ms");
+      await shot(p, vp, `10c-table-composition${missed}${drawn ? "" : "-MISSED"}`);
     },
   },
   {
