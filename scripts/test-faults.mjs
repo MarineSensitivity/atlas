@@ -1962,6 +1962,15 @@ export const FAULTS = [
   },
   // --- round 3, W8 (species Layers pane: promote data selection, zoom-to-layer, Share reproduces
   // the UI arrangement) --------------------------------------------------------------------------
+  // R4-C: Tabs' keyboard roving (`tabsKeys.ts`) -- arrows stop moving the selection.
+  {
+    id: "tabs-arrow-keys-dead",
+    patch: "tests/faults/tabs-arrow-keys-dead.patch",
+    describe:
+      "tabsKeys.ts's tabsKeyTarget() returns null for every Arrow key -- Tabs.svelte's Left/Right " +
+      "no longer move or select a tab (Home/End still do)",
+    gate: ["npx", "vitest", "run", "tests/ui/tabsKeys.test.ts"],
+  },
   {
     id: "ui-token-dock-dropped",
     patch: "tests/faults/ui-token-dock-dropped.patch",

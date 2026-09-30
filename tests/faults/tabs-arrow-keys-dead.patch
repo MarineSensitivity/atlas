@@ -1,0 +1,12 @@
+diff --git a/src/lib/ui/tabsKeys.ts b/src/lib/ui/tabsKeys.ts
+index 1de40fd..928d75d 100644
+--- a/src/lib/ui/tabsKeys.ts
++++ b/src/lib/ui/tabsKeys.ts
+@@ -5,5 +5,7 @@ import { nextRovingIndex } from "./roving";
+ 
+ /** the index a key press moves a tablist's selection to, or `null` when the key is not ours. */
+ export function tabsKeyTarget(current: number, count: number, key: string): number | null {
++  // SEEDED FAULT (tests/faults/tabs-arrow-keys-dead.patch): arrows never move the selection.
++  if (key.startsWith("Arrow")) return null;
+   return nextRovingIndex(current, count, key, "horizontal");
+ }

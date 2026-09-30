@@ -678,8 +678,8 @@ test.describe("step 3: open the report and export it", () => {
   /** step 1, replayed as this step's precondition: rail -> Table -> the Zones sub-tab. */
   async function openZonesTable(page: Page, browserName: string, step: string): Promise<void> {
     await openTool(page, browserName, "Table", `${step} setup`);
-    await tabTo(page, browserName, "Zones", { step: `${step} setup: the Zones sub-tab` });
-    await page.keyboard.press("Enter");
+    await tabTo(page, browserName, "Species", { step: `${step} setup: the table view tabs` });
+    await page.keyboard.press("ArrowRight");
     await expect(page.getByRole("table", { name: /^Zones ranked by/ })).toBeVisible();
   }
 

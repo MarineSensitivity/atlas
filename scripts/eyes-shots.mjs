@@ -367,6 +367,23 @@ const STATES = [
     },
   },
   {
+    // R4-C: the Table's Zones and Composition tabs (the "table" state above shoots Species only).
+    id: "table-tabs",
+    run: async (p, vp) => {
+      await go(p, "?ver=v7&theme=dark");
+      await explore(p);
+      const hit = await tapScoredCell(p, vp);
+      const missed = hit ? "" : "-MISSED";
+      await tool(p, "Table");
+      await sheet(p, "Full height");
+      await p.getByRole("tab", { name: "Zones", exact: true }).click();
+      await shot(p, vp, `10b-table-zones${missed}`);
+      await p.getByRole("tab", { name: "Composition", exact: true }).click();
+      await p.waitForTimeout(1500);
+      await shot(p, vp, `10c-table-composition${missed}`);
+    },
+  },
+  {
     // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- opening it is
     // "Report" (the rail tool) then, defensively, the "Places" tab (in case a prior state on this
     // page left it on "Report").
