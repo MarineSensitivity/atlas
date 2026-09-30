@@ -93,8 +93,10 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
 - **Numbers never come from the tile server.** Rasters are _displayed_ through the existing stock
   titiler (COG tiles) — that's fine, that's what it's for. But scores, cell ids, and zonal statistics
   always come from Parquet (DuckDB-WASM, materialize-then-query — no httpfs range reads in v1), never
-  by reading rendered tile pixels. The one sanctioned exception is a species click value, which may
-  use `/cog/point`, and only behind an interface so it can be swapped later (plan D4).
+  by reading rendered tile pixels. Two sanctioned exceptions, each behind an interface so it can be
+  swapped later (plan D4): a species click value may use `/cog/point`, and the legend's whole-layer
+  histogram — its _shape_ only, display-only, in both lenses — may use `/cog/statistics` (round-4 D4,
+  owner 2026-09-30). The clicked value the legend marks still comes from Parquet in the Scores lens.
 - **One MapLibre style, one `setStyle(diff:true)`.** When map code lands (atlas-2/3), the basemap +
   bathymetry + boundaries + data compose into one plain style object, applied with
   `map.setStyle(composed, { diff: true })`. Never `addLayer()` piecemeal after `load` — layers added
@@ -232,11 +234,13 @@ five Opus eyes-on reviews still said HOLD on real defects. The pattern each time
 **code-shaped** (element exists, expression compiles, test green against its own fixture) while the
 screen was wrong. These rules are now part of every merge:
 
-- **Eyes-on before push, every merge.** `scripts/eyes-shots.mjs` shoots the real build (40 states:
+- **Eyes-on before push, once per wave.** `scripts/eyes-shots.mjs` shoots the real build (40 states:
   phone 390×844@2x + desktop 1280×800, fresh browser context per state, projected taps on known
   scored cells with a `WARN`/`-MISSED` mark when none hits, the Program-Area states, the report map
-  scrolled into frame). The orchestrator looks at them and an Opus 5.5 review judges them against
-  `scratchpad/briefs/eyes-review.md` before the push. Three false results were fixed in the harness
+  scrolled into frame). The orchestrating agent looks at them itself before the push — only the
+  states the wave touched (`ONLY=`), not all 40 — and that is the whole review: no separate reviewer
+  agent (owner, 2026-09-30: the per-merge Opus eyes review was dropped as token churn; builders do
+  not view images either, they shoot and report the paths). Three false results were fixed in the harness
   itself (a petal selector that never hit `path.petal`, table shots before "Loading species…"
   cleared, two states that were byte-identical); a harness that cannot fail is not a check.
 - **Hermetic fixtures hide timing.** The report's one-shot map style built the instant `model`
