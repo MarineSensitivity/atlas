@@ -23,6 +23,9 @@ import { createPopup } from "../../lib/map/popup";
 import { announce } from "../../lib/ui/announcer";
 import { mapClick, type LngLat, type QueryableMap } from "../../lib/map/interaction";
 import { createTitilerValueSource, type ValueSource } from "../../lib/raster/point";
+import { createTitilerHistogramSource, type HistogramSource } from "../../lib/raster/histogram";
+import { layerHistogramFor } from "../../lib/map/distribution";
+import type { Histogram } from "../../lib/map/density";
 import { createTitilerBoundsSource, type BoundsSource } from "../../lib/raster/bounds";
 import { paletteStopsFromBoot, type PaletteName } from "../../lib/raster/ramps";
 import type { SelStore } from "../../lib/state/sel.svelte";
@@ -84,6 +87,9 @@ export interface SpeciesLensDeps {
   /** D8's own last resort (`refineCameraFromCogBounds` below) — defaults to a real titiler
    * `/cog/bounds` fetch through `fetchJson`, same convention as `valueSource` above. */
   boundsSource?: BoundsSource;
+  /** R4-A: the legend histogram's `/cog/statistics` source; defaults to stock titiler through
+   * `fetchJson`, same convention as `boundsSource`. */
+  histogramSource?: HistogramSource;
   /** V1 fix (Opus eyes-on review, 2026-09-24): the shell's CURRENT chrome geometry (docked panel
    * on desktop; sheet detent + legend chip on the phone) — a getter, not a snapshot, so every
    * re-fit (species change, "Zoom to layer") pads for whatever is covering the map RIGHT NOW, not
@@ -158,6 +164,7 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
   const fetchJson = deps.fetchJson ?? builtinFetchJson;
   const valueSource = deps.valueSource ?? createTitilerValueSource(fetchJson);
   const boundsSource = deps.boundsSource ?? createTitilerBoundsSource(fetchJson);
+  const histogramSource = deps.histogramSource ?? createTitilerHistogramSource(fetchJson);
   const track = deps.track ?? (() => {});
 
   let bootStarted = false;
@@ -192,6 +199,7 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     mapLibrePopup?.remove();
     mapLibrePopup = null;
     popup = null;
+    legendMarker = null; // R4-A: the legend's marker belongs to the popup it came from
   }
 
   const datasets: DatasetIndex = $derived(
@@ -210,7 +218,7 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
     return speciesCard(card, { ver, selectedInput: selStore.sel.in, datasets });
   });
 
-  const mapInputs: SpeciesMapInputs = $derived.by(() => {
+  const baseMapInputs: SpeciesMapInputs = $derived.by(() => {
     const ver = deps.ver();
     if (!bar || !ver || !card) return EMPTY_MAP_INPUTS;
     return speciesMapInputs(bar, {
@@ -220,6 +228,43 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
       scientificName: card.sci,
       commonName: card.common,
     });
+  });
+
+  // R4-A (Ben, 2026-09-30): the legend carries the WHOLE-layer histogram (`/cog/statistics` on the
+  // drawn asset's own COG, `histogram_range` = its rescale, so the bins line up with the ramp) and
+  // the last click's `/cog/point` value as a marker. The histogram is cached by (ver, lens, layer),
+  // never by click; a PMTiles range (presence only) has none; `null` -> the ramp alone.
+  let legendHistogram = $state<Histogram | null>(null);
+  let legendMarker = $state<number | null>(null);
+  $effect(() => {
+    const ver = deps.ver();
+    const asset = baseMapInputs.asset;
+    if (!ver || !card || !asset || asset.type !== "cog" || !asset.rescale) {
+      legendHistogram = null;
+      return;
+    }
+    let cancelled = false;
+    legendHistogram = null; // never show the previous layer's shape while this one loads
+    void layerHistogramFor(histogramSource, {
+      ver,
+      lens: "species",
+      layer: `${card.key}|${asset.rep}|${asset.url}`,
+      cogUrl: asset.url,
+      range: asset.rescale,
+    }).then((h) => {
+      if (!cancelled) legendHistogram = h;
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
+  const mapInputs: SpeciesMapInputs = $derived.by(() => {
+    const legend = baseMapInputs.legend;
+    if (legend?.kind !== "continuous") return baseMapInputs;
+    return {
+      ...baseMapInputs,
+      legend: { ...legend, histogram: legendHistogram, marker: legendMarker },
+    };
   });
 
   const docTitle: string | null = $derived.by(() => {
@@ -658,8 +703,9 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
       if (selStore.sel.lens !== "species" || !card) return;
       // §6.5 step 6: opens on the FIRST click, immediately (not the second, as mapgl's own marker
       // popup would need) — set right away, one popup instance at a time.
-      function show(content: PopupContent): void {
+      function show(content: PopupContent, markerValue: number | null = null): void {
         popup = { lngLat, content };
+        legendMarker = markerValue; // R4-A: only a real value draws the legend's marker line
         const handle = deps.mapHandle();
         mapLibrePopup?.remove();
         mapLibrePopup = handle
@@ -691,7 +737,7 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
           cellId = null;
         }
       }
-      const asset = mapInputs.asset;
+      const asset = baseMapInputs.asset;
       const base = { sci: card.sci, lon: lngLat.lng, lat: lngLat.lat, cellId };
       if (!asset) {
         show(popupContent({ ...base, kind: "no-value" }));
@@ -719,6 +765,7 @@ export function createSpeciesLens(deps: SpeciesLensDeps): SpeciesLens {
         value === null
           ? popupContent({ ...base, kind: "no-value" })
           : popupContent({ ...base, kind: "value", value, rescale: asset.rescale, stops }),
+        value,
       );
     },
   };

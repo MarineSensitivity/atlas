@@ -15,7 +15,6 @@
 import { roundHalfEven } from "../../lib/geo/round";
 import { RANGE_FILL_COLOR } from "../../lib/map/colors";
 import { binColor, luminance, textColorFor, type PaletteStops } from "../../lib/raster/ramps";
-import { sparklineBlock, type SparklineSlot } from "../../lib/map/popup";
 
 // R3-W7 (round-3 review, Ben's "colour coding" ask): `luminance`/`textColorFor` moved to
 // `raster/ramps.ts` (a ramp-adjacent color utility, shared with `lens/scores/popup.ts`'s own
@@ -162,15 +161,8 @@ function escapeHtml(s: string): string {
  * entirely, even when `content.cellId` resolved to a real grid cell — showing an internal id next
  * to "no value" reads as a data/lookup bug, not as "this model has no data here" (the scores lens'
  * `noScoredCellText` fix, same rule).
- *
- * Ben's ask (round-3 review, 2026-09-25): `sparkline`, when given, appends the SAME distribution
- * sparkline markup the scores lens' popup renders (`lib/map/popup.ts#sparklineBlock` — one shared
- * skeleton/SVG builder, never a second one here). Only meaningful for `kind === "value"`: a
- * presence/no-value popup has no numeric value to plot a marker against, so a caller should not
- * pass one for those kinds (this function does not itself gate on `kind` — the caller already
- * knows whether it fetched a distribution for this click at all).
  */
-export function popupHtml(content: PopupContent, sparkline?: SparklineSlot): string {
+export function popupHtml(content: PopupContent): string {
   const lon = content.lon.toFixed(3);
   const lat = content.lat.toFixed(3);
   const swatchStyle =
@@ -188,7 +180,6 @@ export function popupHtml(content: PopupContent, sparkline?: SparklineSlot): str
     `Lon: ${lon}<br>` +
     `Lat: ${lat}<br>` +
     `<span class="species-popup-swatch" style="${swatchStyle}">${escapeHtml(content.text)}</span>` +
-    sparklineBlock(sparkline) +
     `</div>`
   );
 }

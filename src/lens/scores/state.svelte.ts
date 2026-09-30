@@ -74,13 +74,15 @@ import {
   zonePopupAnnounceText,
   zonePopupText,
 } from "./popup";
-// R3-W7 (Ben's colour-coding + sparkline ask): the popup's swatch ramp and its distribution
-// sparkline -- see `lib/map/popup.ts`/`lib/map/density.ts`/`lib/map/distribution.ts`'s own headers.
-import { popupSparkline, type SparklineSlot } from "../../lib/map/popup";
-import { rasterCellDistribution, valueListDistribution } from "../../lib/map/distribution";
+// R3-W7 (Ben's colour-coding ask): the popup's swatch ramp. R4-A (Ben, 2026-09-30): the
+// distribution histogram lives in the LEGEND now -- whole-layer, cached by (ver, lens, layer),
+// with only the marker following clicks -- see `lib/map/distribution.ts`'s header.
+import { layerHistogramFor } from "../../lib/map/distribution";
+import type { Histogram } from "../../lib/map/density";
+import { createTitilerHistogramSource, type HistogramSource } from "../../lib/raster/histogram";
+import { builtinFetchJson } from "../species/data/shards";
 import { paletteStopsWithFallback } from "../../lib/raster/ramps";
 import { zoneValuesFor } from "./zoneFill";
-import { exclusive } from "../../lib/analysis/exclusive";
 // Q1 (atlas-8 P-round, 2026-09-24): the top-bar search's "fly to the zone's own centroid" reuses
 // the SAME point `places/zoneStats.ts#zoneCenterFromBoot` already computes for a zone Place's own
 // "Zoom to place" (`Places.svelte`) — one reader for "where does this zone's label sit", never a
@@ -109,6 +111,9 @@ export interface ScoresLensDeps {
    * whatever is covering the map RIGHT NOW. Optional: a caller that supplies none (a test, the
    * gallery) keeps the old flat 40px padding via `selectZone`'s own fallback below. */
   chromePadding?: () => ChromePadding;
+  /** R4-A: the legend histogram's `/cog/statistics` source; defaults to stock titiler over `fetch`.
+   * Injectable so a test never touches the network. */
+  histogramSource?: HistogramSource;
 }
 
 export interface ScoresLens {
@@ -240,8 +245,58 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     }
   });
 
+  // R4-A: the Raster-cells layer's WHOLE-layer histogram (display-only `/cog/statistics`, owner
+  // decision D4) and the last click's value for the legend marker. The histogram is keyed by
+  // (ver, lens, layer) -- never by a click -- and `null` (loading, failed, tiler down) draws the
+  // ramp alone. The marker is remembered with the layer/unit it was clicked on, so switching
+  // either drops it rather than drawing a stale line on a different scale.
+  const histogramSource = deps.histogramSource ?? createTitilerHistogramSource(builtinFetchJson);
+  let rasterHistogram = $state<Histogram | null>(null);
+  let clickMarker = $state<{ lyr: string; unit: string; value: number } | null>(null);
+  const marker = $derived(
+    clickMarker && clickMarker.lyr === lyr && clickMarker.unit === unit ? clickMarker.value : null,
+  );
+  function setMarker(value: number | null | undefined): void {
+    clickMarker =
+      lyr && value !== null && value !== undefined && Number.isFinite(value)
+        ? { lyr, unit, value }
+        : null;
+  }
+
+  $effect(() => {
+    const ver = deps.ver();
+    const boot = deps.boot();
+    const layerKey = lyr;
+    if (!ver || !boot || !layerKey || unit !== "cell") {
+      rasterHistogram = null;
+      return;
+    }
+    const layer = layerByKey(boot, layerKey);
+    const full = layer ? fullSubregion(layer) : null;
+    if (!full?.cog || !full.rescale) {
+      rasterHistogram = null;
+      return;
+    }
+    let cancelled = false;
+    rasterHistogram = null; // never show the previous layer's shape while this one loads
+    void layerHistogramFor(histogramSource, {
+      ver,
+      lens: "scores",
+      layer: layerKey,
+      cogUrl: full.cog,
+      range: full.rescale,
+    }).then((h) => {
+      if (!cancelled) rasterHistogram = h;
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
+
   const mapExtra: ScoresMapInputs = $derived.by(() =>
     scoresMapInputs({
+      rasterHistogram,
+      marker,
       boot: deps.boot(),
       overlays: manifestOverlays,
       unit,
@@ -307,33 +362,16 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
   // (Shell.svelte instantiates it once, whenever `sel.lens` first becomes "scores", and never
   // discards it -- see this module's own header), the same lifetime `document` itself has.
   document.addEventListener("keydown", (e: KeyboardEvent) => {
-    if (e.key === "Escape") clearPopup();
+    if (e.key === "Escape") {
+      clearPopup();
+      clickMarker = null; // the legend marker follows the popup it belongs to
+    }
   });
-
-  /** R3-W7 (Ben's colour-coding + sparkline ask): the Program-Area popup's ramp stops + its
-   * distribution sparkline -- both cheap and SYNCHRONOUS (`boot.zones` is already in memory, no
-   * engine/network call), unlike the cell branch's raster histogram. Shared by every zone-popup
-   * call site (a real click, the search-pick paths) so the ramp/sparkline logic lives in one
-   * place; the marker is placed at `zoneValue` (the specific clicked zone's own value). */
-  function zonePopupExtras(
-    zRows: ReturnType<typeof zoneRows>,
-    zoneValue: number | undefined,
-  ): { stops: ReturnType<typeof paletteStopsWithFallback>; sparkline: SparklineSlot } {
-    const bootObj = deps.boot() as { palettes?: unknown } | null | undefined;
-    const stops = lyr ? paletteStopsWithFallback(bootObj, deps.selStore.sel.pal) : null;
-    const values = lyr ? zoneValuesFor(zRows, lyr).map((v) => v.value) : [];
-    const histogram = values.length ? valueListDistribution(values) : null;
-    const sparkline =
-      histogram && stops && zoneValue !== undefined
-        ? popupSparkline(histogram, zoneValue, stops)
-        : null;
-    return { stops, sparkline };
-  }
 
   /** builds the whole zone popup (HTML + announce text) for `zone`, over `zRows` -- the ONE place
    * every zone-popup call site (a real click, the two search-pick paths) resolves the clicked
-   * zone's own value once and reuses it for both the ramp/sparkline marker AND `zonePopupText`'s
-   * own lookup, rather than looking it up twice. */
+   * zone's own value once, and reuses it for the popup's ramp swatch AND the legend marker
+   * (R4-A: the histogram itself is the legend's, built from the same `boot.zones` values). */
   function buildZonePopup(
     zRows: ReturnType<typeof zoneRows>,
     zone: { unit: string; key: string; name: string },
@@ -341,9 +379,11 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     const zoneValue = lyr
       ? zoneValuesFor(zRows, lyr).find((v) => v.key === zone.key)?.value
       : undefined;
-    const { stops, sparkline } = zonePopupExtras(zRows, zoneValue);
+    const bootObj = deps.boot() as { palettes?: unknown } | null | undefined;
+    const stops = lyr ? paletteStopsWithFallback(bootObj, deps.selStore.sel.pal) : null;
+    setMarker(zoneValue);
     return {
-      html: zonePopupText({ zones: zRows, lyr, zone, stops, sparkline }),
+      html: zonePopupText({ zones: zRows, lyr, zone, stops }),
       announceText: zonePopupAnnounceText({ zones: zRows, lyr, zone }),
     };
   }
@@ -358,27 +398,12 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     const bootObj = deps.boot() as Record<string, unknown>;
     const ver = deps.ver();
     let value: number | null = null;
-    // R3-W7 (Ben's ask): the popup's distribution sparkline, scores/Raster-cells branch -- fetched
-    // AFTER the value, as a SEPARATE `exclusive()` call on the SAME engine (never nested inside
-    // `fetchCellValue`'s own `exclusive()` -- `analysis/exclusive.ts`'s own header: "NEVER nest
-    // exclusive() on the same database"). The tile `fetchCellValue` just mounted is still the
-    // `cell` view's content, so this reads it without mounting anything a second time.
-    let sparkline: SparklineSlot = null;
     try {
       if (ver && lyr) {
         const grid = gridFromBoot(bootObj);
         const tile = tileOf(cellId, grid);
         const sources = await getAnalysisSources(ver, bootObj);
         value = await fetchCellValue(sources, { cellId, tile, metricKey: lyr });
-        if (value !== null) {
-          const histogram = await exclusive(sources.db, () =>
-            rasterCellDistribution(sources.db, sources.templates, lyr as string),
-          ).catch(() => null);
-          if (histogram) {
-            const stops = paletteStopsWithFallback(bootObj, deps.selStore.sel.pal);
-            if (stops) sparkline = popupSparkline(histogram, value, stops);
-          }
-        }
       }
     } catch {
       value = null; // no engine / no tile for this cell (off-grid, unscored) — "no value", not a throw
@@ -414,7 +439,6 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
       layerLabel: label,
       value,
       ramp,
-      sparkline,
     };
     // D3(a) round 2 (orchestrator, 2026-09-24 -- fixes a regression the FIRST D3 fix introduced):
     // `handleMapClick` below now writes `sel` EAGERLY, synchronously, on click -- exactly the
@@ -439,6 +463,7 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     if (value === null && deps.selStore.sel.sel === formatCellToken(cellId)) {
       deps.selStore.set({ sel: prevSel });
     }
+    setMarker(value); // R4-A: the legend's marker line -- a no-value click clears it
     updatePopup(lngLat, cellPopupText(input), cellPopupAnnounceText(input));
   }
 
@@ -453,7 +478,7 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
     hit: { unit: string; key: string; name: string },
     zRows: ReturnType<typeof zoneRows>,
   ): void {
-    // R3-W7: the popup goes through the SAME shared builder (colour swatch + sparkline) a real map
+    // R3-W7: the popup goes through the SAME shared builder (colour swatch) a real map
     // click uses, not the bare `zonePopupText`/`zonePopupAnnounceText` pair this helper called
     // directly before W7's unified popup template landed.
     const popup = buildZonePopup(zRows, hit);

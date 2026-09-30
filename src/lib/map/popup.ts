@@ -8,7 +8,6 @@
 // popup construction through `createPopup()` means the fix (popup.css, scoped under the
 // `atlas-popup` class below) cannot be forgotten at a second call site — there is only one.
 import { Popup, type PopupOptions } from "maplibre-gl";
-import { densityCurve, densityPathD, markerX, type Histogram } from "./density";
 import "./popup.css";
 
 /** every atlas popup carries this class; popup.css scopes its rules under it, and
@@ -43,14 +42,14 @@ export function createPopup(options: PopupOptions = {}): Popup {
 //
 // "make the map click popup more consistent across layers (scores raster or program area,
 // species raster/vector). i like the color coding in the species popup, which could be added to
-// scores layers... it would be really awesome to have a sparkline style histogram showing the
-// range of values and a vertical line where that given clicked element exists". This is the ONE
+// scores layers". (R4-A, 2026-09-30: the histogram + marker line the same ask wanted now live in
+// the legend, `lib/ui/Legend.svelte`, not here.) This is the ONE
 // template every value-bearing popup renders through now: `lens/scores/popup.ts` (cell AND zone
 // branches) and `lens/species/popup.ts` (the COG-value branch) all build a `ValuePopupContent`
 // and hand it to `valuePopupHtml()` here — same paddings, same min-width (`createPopup()` above),
-// same typography, same swatch/sparkline markup, on every lens. A presence-only or no-value popup
+// same typography, same swatch markup, on every lens. A presence-only or no-value popup
 // (a species range click, a click outside the scored area) still goes through this template with
-// `swatchColor`/`sparkline` set to what applies — never a hand-rolled second markup.
+// `swatchColor` set to what applies — never a hand-rolled second markup.
 //
 // Escaping: kept local rather than shared, matching this repo's existing convention
 // (`lens/scores/popup.ts`'s own copy, `src/report/exportHtml.ts`'s independent copy) — a
@@ -62,33 +61,6 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
-
-/** one gradient stop, `offset` in `[0, 1]` — built from the SAME `boot.palettes` stops the legend
- * draws (`raster/ramps.ts`), never a second ramp (`popupSparkline()` below is the one place this
- * repo turns a `PaletteStops` array into a sparkline gradient). */
-export interface SparklineGradientStop {
-  offset: number;
-  color: string;
-}
-
-/** the sparkline's own content — a closed density-area `d` (`lib/map/density.ts#densityPathD`), the
- * gradient it is filled with, the marker's x position, and the two end labels (already formatted
- * by the caller — this module does no rounding of its own). */
-export interface SparklineContent {
-  pathD: string;
-  gradientStops: readonly SparklineGradientStop[];
-  markerX: number;
-  width: number;
-  height: number;
-  minLabel: string;
-  maxLabel: string;
-}
-
-/** `null` — no sparkline for this popup (a vector/presence click, or a source with nothing to
- * plot); `"loading"` — the popup is open and a distribution fetch is in flight (module header:
- * "render the popup immediately, then fill the sparkline when its promise resolves"); a
- * {@link SparklineContent} — ready to draw. */
-export type SparklineSlot = SparklineContent | "loading" | null;
 
 export interface ValuePopupContent {
   /** UI-4's shared subject line (`lib/format.ts#formatSubject`), plain text. */
@@ -103,46 +75,12 @@ export interface ValuePopupContent {
   /** small text under the value row: the layer/unit/dataset name (module header: "the layer/unit
    * name in small text"). `null`/omitted renders no third line. */
   unitLabel?: string | null;
-  sparkline?: SparklineSlot;
-}
-
-const SPARKLINE_GRADIENT_ID = "atlas-popup-sparkline-gradient";
-
-function sparklineSvg(s: SparklineContent): string {
-  const stops = s.gradientStops
-    .map((g) => `<stop offset="${g.offset}" stop-color="${escapeHtml(g.color)}"/>`)
-    .join("");
-  return (
-    `<svg class="atlas-popup-sparkline-svg" width="${s.width}" height="${s.height}" ` +
-    `viewBox="0 0 ${s.width} ${s.height}" role="img" ` +
-    `aria-label="distribution, ${escapeHtml(s.minLabel)} to ${escapeHtml(s.maxLabel)}, clicked value marked">` +
-    `<defs><linearGradient id="${SPARKLINE_GRADIENT_ID}" x1="0" y1="0" x2="1" y2="0">${stops}</linearGradient></defs>` +
-    `<path d="${s.pathD}" fill="url(#${SPARKLINE_GRADIENT_ID})" stroke="var(--text-secondary)" stroke-width="1"/>` +
-    `<line x1="${s.markerX}" y1="0" x2="${s.markerX}" y2="${s.height}" stroke="var(--text-primary)" stroke-width="1.5"/>` +
-    `</svg>` +
-    `<div class="atlas-popup-sparkline-labels" aria-hidden="true">` +
-    `<span>${escapeHtml(s.minLabel)}</span><span>${escapeHtml(s.maxLabel)}</span>` +
-    `</div>`
-  );
-}
-
-/** the sparkline block ALONE (module/skeleton/SVG), exported so a popup template that has not
- * (yet) adopted the whole {@link valuePopupHtml} shape can still append the SAME sparkline markup
- * — `lens/species/popup.ts`'s own template does exactly this, rather than re-deriving the
- * skeleton/SVG wrapper a second time. */
-export function sparklineBlock(slot: SparklineSlot | undefined): string {
-  if (!slot) return "";
-  if (slot === "loading") {
-    return `<div class="atlas-popup-sparkline atlas-popup-sparkline--loading" aria-hidden="true"></div>`;
-  }
-  return `<div class="atlas-popup-sparkline">${sparklineSvg(slot)}</div>`;
 }
 
 /**
  * The whole value popup, as HTML — the ONE template `lens/scores/popup.ts` and
  * `lens/species/popup.ts` both render through. `content.subject`/`valueLine`/`unitLabel` are
- * plain, UNESCAPED text (this function escapes them); `sparkline`'s labels are escaped by
- * {@link sparklineSvg} above.
+ * plain, UNESCAPED text (this function escapes them).
  */
 export function valuePopupHtml(content: ValuePopupContent): string {
   const swatchStyle =
@@ -164,48 +102,15 @@ export function valuePopupHtml(content: ValuePopupContent): string {
     `<span class="atlas-popup-swatch" style="${swatchStyle}"></span>` +
     `<span class="atlas-popup-value">${escapeHtml(content.valueLine)}</span>` +
     `</div>` +
-    sparklineBlock(content.sparkline) +
     unitLine +
     `</div>`
   );
 }
 
-/** the `announce()` counterpart of {@link valuePopupHtml} — plain text, no markup, no sparkline
+/** the `announce()` counterpart of {@link valuePopupHtml} — plain text, no markup
  * (a live region reads text, not an SVG). Mirrors every other popup module's own
  * `*AnnounceText` sibling in this repo. */
 export function valuePopupAnnounceText(content: ValuePopupContent): string {
   const unit = content.unitLabel ? `, ${content.unitLabel}` : "";
   return `${content.subject}: ${content.valueLine}${unit}`;
-}
-
-/** builds a {@link SparklineContent} from a raw {@link Histogram} — `lib/map/density.ts`'s own
- * curve/path/marker math, plus the gradient stops from the SAME palette a caller's swatch color
- * came from (never a second ramp). `formatLabel` defaults to a bare rounded integer; a caller with
- * its own rounding convention (e.g. `formatValueLine`'s half-even) may pass one. */
-export function popupSparkline(
-  histogram: Histogram,
-  value: number,
-  paletteStops: readonly string[],
-  opts: { width?: number; height?: number; formatLabel?: (v: number) => string } = {},
-): SparklineContent {
-  const width = opts.width ?? 120;
-  const height = opts.height ?? 28;
-  const formatLabel = opts.formatLabel ?? ((v: number) => String(Math.round(v)));
-  const curve = densityCurve(histogram);
-  const pathD = densityPathD(curve, width, height);
-  const x = markerX(value, histogram.min, histogram.max, width);
-  const n = paletteStops.length;
-  const gradientStops: SparklineGradientStop[] = paletteStops.map((color, i) => ({
-    offset: n <= 1 ? 0 : i / (n - 1),
-    color,
-  }));
-  return {
-    pathD,
-    gradientStops,
-    markerX: x,
-    width,
-    height,
-    minLabel: formatLabel(histogram.min),
-    maxLabel: formatLabel(histogram.max),
-  };
 }

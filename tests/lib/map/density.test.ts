@@ -1,13 +1,7 @@
-// Ben's ask (round-3 review, UI-4 fold-in): the popup's distribution sparkline math -- binning,
-// smoothing, the SVG path and the marker position. See src/lib/map/density.ts's own header.
+// Ben's ask (round 4, R4-A): the legend histogram's pure math -- binning, bars on the ramp's
+// x-axis, and the marker position. See src/lib/map/density.ts's own header.
 import { describe, expect, it } from "vitest";
-import {
-  binValues,
-  densityCurve,
-  densityPathD,
-  markerX,
-  smoothCounts,
-} from "../../../src/lib/map/density";
+import { binValues, histogramBars, markerX } from "../../../src/lib/map/density";
 
 describe("binValues", () => {
   it("empty input: a zero-bin histogram, never a throw", () => {
@@ -40,74 +34,78 @@ describe("binValues", () => {
   });
 });
 
-describe("smoothCounts", () => {
-  it("edges reflect rather than zero-pad -- a single spike at an edge is not pinched to zero", () => {
-    const out = smoothCounts([10, 0, 0, 0], 1);
-    expect(out[0]).toBeGreaterThan(0);
+describe("markerX (fraction of the legend's x-axis)", () => {
+  const domain = { min: 0, max: 100 };
+
+  it("the minimum, midpoint and maximum sit at 0, 0.5 and 1", () => {
+    expect(markerX(0, domain)).toBe(0);
+    expect(markerX(50, domain)).toBe(0.5);
+    expect(markerX(100, domain)).toBe(1);
   });
 
-  it("preserves total mass roughly (a smoothing pass redistributes, does not discard)", () => {
-    const counts = [0, 0, 10, 0, 0];
-    const out = smoothCounts(counts, 1);
-    const total = out.reduce((a, b) => a + b, 0);
-    expect(total).toBeCloseTo(10, 5);
-  });
-});
-
-describe("densityCurve", () => {
-  it("normalizes so the tallest bin is exactly 1", () => {
-    const curve = densityCurve({ binCount: 3, counts: [1, 10, 1], min: 0, max: 3 });
-    expect(Math.max(...curve)).toBe(1);
+  it("a value outside the range clamps to an end, never draws off the chart", () => {
+    expect(markerX(-10, domain)).toBe(0);
+    expect(markerX(110, domain)).toBe(1);
   });
 
-  it("an all-zero histogram returns an all-zero curve, never NaN", () => {
-    const curve = densityCurve({ binCount: 3, counts: [0, 0, 0], min: 0, max: 3 });
-    expect(curve.every((v) => v === 0)).toBe(true);
-  });
-});
-
-describe("densityPathD", () => {
-  it("an empty curve draws a flat, closed baseline path", () => {
-    expect(densityPathD([], 120, 28)).toBe("M0,28 L120,28 Z");
+  it("a degenerate (zero-width) domain pins to the middle", () => {
+    expect(markerX(5, { min: 5, max: 5 })).toBe(0.5);
   });
 
-  it("starts and ends on the baseline (a closed area under the curve)", () => {
-    const d = densityPathD([0, 1, 0], 120, 28);
-    expect(d.startsWith("M0,28")).toBe(true);
-    expect(d.endsWith("Z")).toBe(true);
-    expect(d).toContain("L120,28");
+  it("null-safe: no value, a non-finite value or no domain draws no marker", () => {
+    expect(markerX(null, domain)).toBeNull();
+    expect(markerX(undefined, domain)).toBeNull();
+    expect(markerX(NaN, domain)).toBeNull();
+    expect(markerX(5, null)).toBeNull();
   });
 
-  it("a peak bin reaches the top (y=0)", () => {
-    const d = densityPathD([0, 1, 0], 120, 28);
-    expect(d).toContain(",0 "); // the middle point's y coordinate is 0
+  it("a Histogram is a valid domain (markerX(value, histogram))", () => {
+    const h = { binCount: 2, counts: [1, 1], min: 0, max: 100 };
+    expect(markerX(50, h)).toBe(0.5);
   });
 });
 
-describe("markerX", () => {
-  it("the minimum value places the marker at x=0", () => {
-    expect(markerX(0, 0, 100, 120)).toBe(0);
+describe("histogramBars (bins-to-bars scaling on the ramp's axis)", () => {
+  const h = { binCount: 4, counts: [2, 4, 0, 1], min: 0, max: 100 };
+
+  it("scales counts to the tallest bin and positions bins along the domain", () => {
+    const bars = histogramBars(h, { min: 0, max: 100 });
+    expect(bars).toHaveLength(3); // the empty bin draws nothing
+    expect(bars[0]).toEqual({ x: 0, w: 0.25, h: 0.5, value: 12.5 });
+    expect(bars[1]).toEqual({ x: 0.25, w: 0.25, h: 1, value: 37.5 });
+    expect(bars[2]).toEqual({ x: 0.75, w: 0.25, h: 0.25, value: 87.5 });
   });
 
-  it("the maximum value places the marker at x=width", () => {
-    expect(markerX(100, 0, 100, 120)).toBe(120);
+  it("a wider domain (the ramp's endpoints) shrinks the bars to their share of it", () => {
+    const bars = histogramBars(h, { min: 0, max: 200 });
+    expect(bars[1].x).toBe(0.125);
+    expect(bars[1].w).toBe(0.125);
   });
 
-  it("the midpoint places the marker at x=width/2", () => {
-    expect(markerX(50, 0, 100, 120)).toBe(60);
+  it("bins outside the domain are clipped to it", () => {
+    const bars = histogramBars(h, { min: 50, max: 100 });
+    expect(bars.every((b) => b.x >= 0 && b.x + b.w <= 1)).toBe(true);
   });
 
-  it("a value outside [min, max] clamps to an end, never draws off the sparkline", () => {
-    expect(markerX(-10, 0, 100, 120)).toBe(0);
-    expect(markerX(110, 0, 100, 120)).toBe(120);
+  it("a null source gives no bars (the legend draws the ramp alone)", () => {
+    expect(histogramBars(null, { min: 0, max: 1 })).toEqual([]);
+    expect(histogramBars(undefined, { min: 0, max: 1 })).toEqual([]);
+    expect(histogramBars(h, null)).toEqual([]);
+    expect(histogramBars({ binCount: 0, counts: [], min: 0, max: 0 }, { min: 0, max: 1 })).toEqual(
+      [],
+    );
+    expect(
+      histogramBars({ binCount: 2, counts: [0, 0], min: 0, max: 1 }, { min: 0, max: 1 }),
+    ).toEqual([]);
   });
 
-  it("a degenerate [min, max] (equal) still returns a finite, clamped position", () => {
-    expect(markerX(5, 5, 5, 120)).toBeGreaterThanOrEqual(0);
-    expect(markerX(5, 5, 5, 120)).toBeLessThanOrEqual(120);
-  });
-
-  it("a non-finite value places the marker at the centre rather than throwing", () => {
-    expect(markerX(NaN, 0, 100, 120)).toBe(60);
+  it("a one-value histogram draws one thin bar at that value", () => {
+    const bars = histogramBars(
+      { binCount: 1, counts: [7], min: 50, max: 50 },
+      { min: 0, max: 100 },
+    );
+    expect(bars).toHaveLength(1);
+    expect(bars[0].h).toBe(1);
+    expect(bars[0].x + bars[0].w / 2).toBeCloseTo(0.5, 9);
   });
 });
