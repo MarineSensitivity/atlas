@@ -1810,14 +1810,14 @@ export const FAULTS = [
       "vitest gate (exact, deterministic) rather than the e2e pixel-margin check: GAA's own bbox " +
       "still lands with enough natural slack under either reserve in the hermetic fixture's " +
       "geometry for a fuzzy 5x5-grid/margin check to stay green either way, but the exact returned " +
-      "`right` value cannot -- see tests/map/chromePadding.test.ts's own 'W5 regression' case.",
+      "dock-side value cannot -- see tests/map/chromePadding.test.ts's own 'W5 regression' case.",
     gate: [
       "npx",
       "vitest",
       "run",
       "tests/map/chromePadding.test.ts",
       "-t",
-      "W5 regression: the right reserve clears the panel's real outer edge",
+      "W5 regression: the dock-side reserve clears the panel's real outer edge",
     ],
   },
   {

@@ -6,9 +6,9 @@
 <div class="stage">
   <Panel id="gallery-demo" title="Layers">
     <p>
-      One-line summary first; detail in accordions (spec.md §"Panels"). Try the three controls in
-      the upper right: collapse to a pill, half height, full height. Press <kbd>Esc</kbd> anywhere in
-      here to collapse.
+      One-line summary first; detail in accordions (spec.md §"Panels"). Try the two controls in the
+      upper right: move to the other side, and collapse to a pill. Press <kbd>Esc</kbd> anywhere in here
+      to collapse.
     </p>
     <p class="row">
       A nested popover
