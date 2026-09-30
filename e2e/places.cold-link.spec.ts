@@ -64,7 +64,9 @@ test.describe("a places link loaded cold", () => {
     await page.locator('#rail-region button[aria-label="Report"]').click();
     const list = page.getByRole("list", { name: "Places" });
     await expect(list.getByRole("listitem")).toHaveCount(2, { timeout: 15_000 });
-    await expect(list).toContainText("Cold link square");
+    // the geom place row shows its (name-less) area line, the zone row its label
+    await expect(list).toContainText("Mid Atlantic");
+    await expect(list).toContainText("12,364 km²");
 
     await page
       .getByRole("group", { name: "Report pane section" })
