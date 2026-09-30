@@ -183,6 +183,15 @@ a {
   white-space: nowrap;
 }
 
+/* R4-B: the panel is docked LEFT by default and covers the bottom-left corner, so the credit moves
+   to the opposite corner (desktop only -- `data-panel-dock` is absent on the phone); the legend
+   stacks above it, on the same side (ScoresLegend/SpeciesLegend). Docked right, it is bottom-left
+   again, as it always was. */
+.stage[data-panel-dock="left"] .map-attribution {
+  left: auto;
+  right: var(--space-2);
+}
+
 .map-attribution a {
   color: var(--text-secondary);
   text-decoration: underline;
@@ -622,11 +631,32 @@ button.chip {
 /* --- floating regions: rail, panel/sheet, about. Each src/lib/ui component sizes only itself; --- */
 /* --- this shell owns WHERE it floats (Panel.svelte/Sheet.svelte/Rail.svelte/About.svelte never --- */
 /* --- set position/top/right/bottom -- see each component's own header comment). ----------------- */
+/* R4-B (owner decision, 2026-09-30, control-grammar.md rule 4): the rail (the spine) is ATTACHED to
+   the panel -- it sits on the panel's OUTER edge (the screen edge), the panel opens beside it, and
+   both move together when the side is swapped. The panel docks LEFT by default. `.stage` carries the
+   two numbers every rule below shares: the rail card's width (60px button + 6px padding each side,
+   Rail.svelte/RailButton.svelte) and its gap to the panel; `--rail-offset` is how far the panel
+   region sits from the stage edge. chromePadding.ts's `RAIL_FOOTPRINT_PX` (80 = 72 + 8) mirrors
+   these as literals for the camera fit. */
+.stage {
+  --rail-w: 72px;
+  --rail-gap: 8px;
+  --rail-offset: calc(var(--space-3) + var(--rail-w) + var(--rail-gap));
+  /* the map-attribution chip's own footprint (22px tall + its offset) -- a full-stage tool keeps its
+     bottom edge above it so the credit stays visible (ODbL), see `.map-attribution` below */
+  --credit-clear: calc(var(--space-2) + 22px + var(--space-2));
+}
+
 .rail-region {
   position: absolute;
   left: var(--space-3);
   top: var(--space-3);
   z-index: 15;
+}
+
+.rail-region[data-dock="right"] {
+  left: auto;
+  right: var(--space-3);
 }
 
 /* R1 (docs/usability.md §7, owner decision 2026-09-24): a dockable panel. `Panel.svelte` reports
@@ -635,54 +665,55 @@ button.chip {
    never sets its own position/top/right/bottom, per this file's header rule; it is simply the
    source of truth for a plain data attribute the shell reads). The default (no attributes: the
    skeleton's own state, and the hydrated frame's state before its first geometry report) is
-   dock=right, matching `panelGeometry.ts`'s `DEFAULT_PANEL_GEOMETRY`.
+   dock=left, matching `panelGeometry.ts`'s `DEFAULT_PANEL_GEOMETRY` (R4-B).
 
-   Unlike the pre-R1 rule (content-height, top only), this now spans top-to-bottom: a resizable,
-   maximizable panel wants a FIXED frame with its own internal scroll, not a box that grows with
-   its content -- usability M6 ("wide tables scroll inside 380px"; the zones table must be usable
-   at the widest dock and in maximize), which a fixed frame + `.panel-body{overflow:auto}` (Panel.
-   svelte) solves directly. */
+   This spans top-to-bottom: a resizable panel wants a FIXED frame with its own internal scroll, not
+   a box that grows with its content -- usability M6 ("wide tables scroll inside 380px"), which a
+   fixed frame + `.panel-body{overflow:auto}` (Panel.svelte) solves directly.
+
+   R4-B: `data-maximized="true"` is no longer a user toggle -- it is DERIVED, true exactly while the
+   active tool takes the whole stage (Table). The region then fills the stage BESIDE the rail (never
+   under it) and stops above the credit chip. */
 .panel-region {
   position: absolute;
   top: var(--space-3);
   bottom: var(--space-3);
-  right: var(--space-3);
+  left: var(--rail-offset);
   z-index: 16;
   /* `min(...)`: `--panel-size` is Panel.svelte's OWN reported width (320-720px, panelGeometry.ts),
-     with the pre-hydration/pre-report fallback the skeleton also uses (`--size-panel`, 380px) --
-     the same shrink-to-fit-ambiguity fix as before (a bare `width:100%` child would otherwise
-     resolve against its own content's intrinsic width). */
-  width: min(var(--panel-size, var(--size-panel)), calc(100vw - var(--space-3) * 2));
-}
-
-.panel-region[data-dock="left"] {
-  right: auto;
-  left: var(--space-3);
-}
-
-.panel-region[data-dock="bottom"] {
-  top: auto;
-  left: var(--space-3);
-  right: var(--space-3);
-  bottom: var(--space-3);
-  width: auto;
-  height: min(
+     with the pre-hydration/pre-report fallback the skeleton also uses (`--size-panel`, 380px). The
+     viewport clamp now also leaves room for the rail. */
+  width: min(
     var(--panel-size, var(--size-panel)),
-    calc(100vh - var(--size-topbar) - var(--space-3) * 2)
+    calc(100vw - var(--rail-offset) - var(--space-3))
   );
 }
 
-/* maximize: the whole STAGE (edge to edge -- `.stage` is this element's positioned ancestor), not
-   the whole viewport -- the topbar is a separate grid row above `.stage` and stays visible. Above
-   the backdrop Panel.svelte itself renders (z-index 30, its own scoped style). */
+.panel-region[data-dock="right"] {
+  left: auto;
+  right: var(--rail-offset);
+}
+
+/* a collapsed panel leaves only its pill; the transparent region box must not swallow map clicks
+   over the whole docked strip (`:has` is baseline; the pill itself stays clickable). */
+.panel-region:has(.panel--collapsed) {
+  pointer-events: none;
+}
+.panel-region .panel--collapsed {
+  pointer-events: auto;
+}
+
 .panel-region[data-maximized="true"] {
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  bottom: var(--credit-clear);
+  left: var(--rail-offset);
+  right: var(--space-3);
   width: auto;
   height: auto;
-  z-index: 40;
+}
+
+.panel-region[data-maximized="true"][data-dock="right"] {
+  left: var(--space-3);
+  right: var(--rail-offset);
 }
 
 @media (max-width: 899px) {
@@ -962,9 +993,9 @@ button.chip {
 }
 .sk-panel-head {
   position: relative;
-  /* 188px: matches Panel.svelte's own `.panel-head` reservation for its 5 R1 controls -- see that
+  /* 84px: matches Panel.svelte's own `.panel-head` reservation for its 2 R4-B controls -- see that
      file's comment for the arithmetic. */
-  padding: var(--space-3) 188px var(--space-3) var(--space-4);
+  padding: var(--space-3) 84px var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--divider);
   flex: none;
 }

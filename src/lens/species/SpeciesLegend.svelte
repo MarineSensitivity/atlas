@@ -66,7 +66,11 @@
   .species-legend {
     position: absolute;
     right: var(--space-3);
-    bottom: var(--space-3);
+    /* R4-B: the panel docks LEFT by default, so the legend takes the bottom-RIGHT corner -- stacked
+       above the map-attribution chip, which moved there too (shell.css `.stage[data-panel-dock=
+       "left"] .map-attribution`). A legend carrying a histogram + marker is ~50px taller (R4-A);
+       it grows upward from this `bottom`, so it never reaches the chip. */
+    bottom: calc(var(--space-2) + 22px + var(--space-2));
     z-index: 5;
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-control);
@@ -87,9 +91,6 @@
     right: auto;
     left: var(--space-3);
     bottom: calc(var(--space-2) + 22px + var(--space-2));
-  }
-  :global(.stage[data-panel-dock="bottom"]) .species-legend {
-    bottom: calc(var(--panel-size, var(--size-panel)) + var(--space-3) * 2);
   }
   :global(.stage[data-panel-maximized="true"]) .species-legend {
     display: none;

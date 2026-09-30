@@ -202,3 +202,23 @@ describe("cellPopupLoadingText", () => {
     expect(text).toBe("Cell 123456 · lon -70.123, lat 41.988 · Loading value…");
   });
 });
+
+// R4-B: the click popup states the value and LINKS to Details (control-grammar.md); a click that
+// found nothing has nothing to show details for.
+describe("the popup's Details link (R4-B)", () => {
+  const LINK = "data-atlas-open-details";
+
+  it("a cell click with a value carries the Details link; a no-value click does not", () => {
+    const withValue = cellPopupText({ cellId: 1, lon: 0, lat: 0, layerLabel: "x", value: 17 });
+    expect(withValue).toContain(LINK);
+    expect(withValue).toContain(">Details<");
+    const noValue = cellPopupText({ cellId: 1, lon: 0, lat: 0, layerLabel: "x", value: null });
+    expect(noValue).not.toContain(LINK);
+  });
+
+  it("a Program Area click with a value carries the link; one with no value does not", () => {
+    const zone = { key: "GAA", name: "Gulf of America, Eastern" };
+    expect(zonePopupText({ zones: ZONES, lyr: "score", zone, stops: STOPS })).toContain(LINK);
+    expect(zonePopupText({ zones: ZONES, lyr: "nope", zone, stops: STOPS })).not.toContain(LINK);
+  });
+});

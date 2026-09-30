@@ -132,3 +132,30 @@
   color: var(--text-secondary);
   font-size: var(--text-xs);
 }
+
+/* R4-B: the popup's "Details" link -- a text-style button, at least 44px tall to tap (the popup is
+   small; the target is padded, not the glyphs). Navy on the paper theme, Gold on navy: the tab/focus
+   colour rule of control-grammar.md (Gold is never text on a light ground). */
+.atlas-popup .atlas-popup-links {
+  margin-top: var(--space-1);
+}
+
+.atlas-popup .atlas-popup-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-touch);
+  padding: 0 var(--space-2);
+  margin-left: calc(var(--space-2) * -1);
+  border: 0;
+  background: none;
+  color: var(--text-link, var(--text-primary));
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.atlas-popup .atlas-popup-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 0;
+}

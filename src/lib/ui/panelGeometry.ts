@@ -11,7 +11,14 @@
 // moved together in the same change -- there is no migration path for an old stored value, it just
 // fails the shape check below and falls back to the default (the same "chrome, not correctness"
 // rule this module has always followed for a malformed value).
-export type Dock = "left" | "right" | "bottom";
+// R4-B (2026-09-30): the panel docks LEFT by default and only ever LEFT or RIGHT -- "dock bottom"
+// and the maximize button retired with the rail attaching to the panel (control-grammar rule 4).
+// `maximized` stays in the shape, but it is no longer a user toggle or a persisted preference: it
+// is DERIVED, `true` exactly while the active tool takes the whole stage (Table, tools.ts's
+// `toolTakesFullStage`), reported by Panel.svelte through `ongeometry` so shell.css and
+// chromePadding.ts keep reading one flag. A stored `maximized: true` or `dock: "bottom"` from an
+// older build loads as `false` / `"left"` -- chrome, never an error.
+export type Dock = "left" | "right";
 export type ViewportBucket = "phone" | "desktop";
 
 /** spec.md §10: the one `matchMedia("(max-width: 899px)")` switch the whole app uses. */
@@ -33,25 +40,29 @@ export const PANEL_RESIZE_STEP_FAST = 50;
 
 export interface PanelGeometry {
   collapsed: boolean;
-  /** true while the panel fills the whole stage (R1 "maximize"); Esc restores it to `dock`/`size`. */
+  /** true while the panel fills the whole stage -- R4-B: derived from the active tool (Table), not
+   * a stored preference; see the header above. */
   maximized: boolean;
   dock: Dock;
-  /** width in px when `dock` is "left"/"right"; height in px when `dock` is "bottom". */
+  /** width in px, docked on the `dock` side. */
   size: number;
 }
 
 export const DEFAULT_PANEL_GEOMETRY: PanelGeometry = {
   collapsed: false,
   maximized: false,
-  dock: "right",
+  dock: "left",
   size: 380,
 };
 
 type ReadableStorage = Pick<Storage, "getItem">;
 type WritableStorage = Pick<Storage, "setItem">;
 
-function isDock(value: unknown): value is Dock {
-  return value === "left" || value === "right" || value === "bottom";
+/** a stored dock: "left"/"right" as-is; the retired "bottom" reads as the default side; anything
+ * else is not a dock at all (the whole stored value then fails the shape check). */
+function readDock(value: unknown): Dock | null {
+  if (value === "left" || value === "right") return value;
+  return value === "bottom" ? DEFAULT_PANEL_GEOMETRY.dock : null;
 }
 
 /** clamps a candidate size into the allowed range -- used both when loading a stored geometry and
@@ -74,17 +85,17 @@ export function loadPanelGeometry(
     const raw = storage.getItem(panelStorageKey(panelId, bucket));
     if (!raw) return DEFAULT_PANEL_GEOMETRY;
     const parsed = JSON.parse(raw) as Partial<PanelGeometry> | null;
+    const dock = readDock(parsed?.dock);
     if (
       parsed &&
       typeof parsed.collapsed === "boolean" &&
-      typeof parsed.maximized === "boolean" &&
-      isDock(parsed.dock) &&
+      dock &&
       typeof parsed.size === "number"
     ) {
       return {
         collapsed: parsed.collapsed,
-        maximized: parsed.maximized,
-        dock: parsed.dock,
+        maximized: false, // derived from the tool now, never restored (header above)
+        dock,
         size: clampPanelSize(parsed.size),
       };
     }

@@ -93,7 +93,11 @@
   .scores-legend {
     position: absolute;
     right: var(--space-3);
-    bottom: var(--space-3);
+    /* R4-B: the panel docks LEFT by default, so the legend takes the bottom-RIGHT corner -- stacked
+       above the map-attribution chip, which moved there too (shell.css `.stage[data-panel-dock=
+       "left"] .map-attribution`). A legend carrying a histogram + marker is ~50px taller (R4-A);
+       it grows upward from this `bottom`, so it never reaches the chip. */
+    bottom: calc(var(--space-2) + 22px + var(--space-2));
     z-index: 5;
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-control);
@@ -107,11 +111,11 @@
      desktop map. Shell.svelte mirrors the panel's live dock/maximized state onto `.stage` (this
      element's own positioned ancestor, `main#stage`) as `data-panel-dock`/`data-panel-maximized` --
      read here so the legend always floats over FREE map, never under the panel, at any dock side.
-     Dock=left is left alone (the default bottom-right corner above is already clear of a
-     left-docked panel, and of the rail, which is always top-left on desktop). */
+     R4-B: the default corner (bottom-right) is the LEFT-docked panel's free side; docked right, the
+     rail and panel both sit on the right, so this flips to bottom-left. */
   :global(.stage[data-panel-dock="right"]) .scores-legend {
-    /* the panel takes the whole right-side strip top-to-bottom; the rail sits top-LEFT
-       (shell.css's `.rail-region`), so bottom-left is the one corner nothing else claims --
+    /* the panel takes the whole right-side strip top-to-bottom; the rail is attached to
+       that same right edge (shell.css's `.rail-region`), so bottom-left is the one corner nothing else claims --
        EXCEPT the map-attribution chip (shell.css's `.map-attribution`: `left: var(--space-2)`,
        `bottom: var(--space-2)`, ~18px tall), which already sits in that same corner. Red-first
        caught the two overlapping (measured 14px of shared height) once this moved the legend
@@ -119,12 +123,6 @@
     right: auto;
     left: var(--space-3);
     bottom: calc(var(--space-2) + 22px + var(--space-2));
-  }
-  :global(.stage[data-panel-dock="bottom"]) .scores-legend {
-    /* the panel spans the full width at the bottom -- stay bottom-right, but clear ITS height
-       (plus a gutter) instead of the stage's own bottom edge. `--panel-size` is inherited from
-       `.stage` (Shell.svelte's own inline style, same value `.panel-region`'s height reads). */
-    bottom: calc(var(--panel-size, var(--size-panel)) + var(--space-3) * 2);
   }
   :global(.stage[data-panel-maximized="true"]) .scores-legend {
     /* maximized: the panel covers the WHOLE stage (shell.css's own `[data-maximized]` rule) --

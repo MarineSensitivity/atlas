@@ -546,6 +546,23 @@ const SHELL_STATES = [
     // default", which is dark now.
     assert: scoresRasterProbe(RASTER_RGB, SCORE_RASTER_OPACITY, BASEMAP_RGB),
   },
+  // R4-B: the spine's own states -- each is reached through the real `ui=` token (uiState.ts v4:
+  // `4.<tool>.<side>.<size>.<detent>.<row>.<reportTab>`) or, for "collapsed", the stored panel
+  // geometry the app itself writes (`init`, applied by `gotoState`). No pixel probe: a docked panel
+  // legitimately covers part of the map here; `assertLayout` (no overflow, every [data-control] on
+  // screen) and the matrix's axe pass are what these prove.
+  { name: "shell (ui=details, left)", kind: "scores", path: "/?ui=4.d.l.380.h.n.1" },
+  { name: "shell (ui=table, full stage)", kind: "scores", path: "/?ui=4.t.l.380.h.n.1" },
+  { name: "shell (ui=layers, right)", kind: "scores", path: "/?ui=4.l.r.380.h.d.1" },
+  {
+    name: "shell (collapsed)",
+    kind: "scores",
+    path: "/",
+    init: {
+      key: "atlas.panel.shell.desktop",
+      value: JSON.stringify({ collapsed: true, maximized: false, dock: "left", size: 380 }),
+    },
+  },
 ];
 
 const PROJECTIONS = ["globe", "mercator"];
@@ -881,9 +898,23 @@ async function ensureServer(baseURL) {
  * here, exactly as `assertLayout`/`VIEWPORTS` already are.
  * @param {import("@playwright/test").Page} page
  * @param {string} baseURL
- * @param {{ kind: string, path: string }} state
+ * @param {{ kind: string, path: string, init?: { key: string, value: string } }} state
  */
 export async function gotoState(page, baseURL, state) {
+  // R4-B: a state may seed one localStorage key before load (the collapsed panel is chrome, stored
+  // per browser, never the URL).
+  if (state.init) {
+    await page.addInitScript(
+      ([k, v]) => {
+        try {
+          localStorage.setItem(k, v);
+        } catch {
+          /* private mode: the state simply is not collapsed */
+        }
+      },
+      [state.init.key, state.init.value],
+    );
+  }
   const url = new URL(state.path, baseURL).toString();
   if (state.kind === "species") {
     await gotoSpecies(page, url, "v9");

@@ -267,23 +267,17 @@ test.describe("keyboard", () => {
     await expect(openBtn).toBeFocused();
   });
 
-  // R1: "Panel size" -> "Panel position and size"; three buttons -> five (dock left/bottom/right,
-  // maximize, collapse) -- see e2e/shell.a11y.spec.ts's identical fix for the real shell.
-  test("every panel-size control group has an accessible name on each of its five buttons", async ({
+  // R4-B: "Panel position" with two buttons (move to the other side, collapse) -- see
+  // e2e/shell.a11y.spec.ts's identical fix for the real shell.
+  test("the panel control group has an accessible name on each of its two buttons", async ({
     page,
   }) => {
     await gotoGallery(page, "navy");
-    const group = page.locator("#panel [role='group'][aria-label='Panel position and size']");
+    const group = page.locator("#panel [role='group'][aria-label='Panel position']");
     const names = await group
       .locator("button")
       .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
-    expect(names).toEqual([
-      "Dock left",
-      "Dock bottom",
-      "Dock right",
-      "Full screen",
-      "Collapse to a pill",
-    ]);
+    expect(names).toEqual(["Move panel to the right", "Collapse to a pill"]);
     for (const name of names) expect(name).toBeTruthy();
   });
 });

@@ -1,13 +1,13 @@
 diff --git a/src/shell/uiState.ts b/src/shell/uiState.ts
-index 28b9662..57732c7 100644
+index df3f3df..8c60099 100644
 --- a/src/shell/uiState.ts
 +++ b/src/shell/uiState.ts
-@@ -125,7 +125,7 @@ export function formatUi(ui: UiState): string {
+@@ -107,7 +107,7 @@ export function formatUi(ui: UiState): string {
+   const row = ui.expandedRow ? ROW_CODE[ui.expandedRow] : "n";
+   return [
+     UI_TOKEN_VERSION,
+-    TOOL_CODE[ui.tool],
++    TOOL_CODE.layers,
+     DOCK_CODE[ui.dock],
      size,
      DETENT_CODE[ui.detent],
-     row,
--    TAB_CODE[ui.tab],
-+    TAB_CODE.layers,
-     REPORT_TAB_CODE[ui.reportTab],
-   ].join(".");
- }

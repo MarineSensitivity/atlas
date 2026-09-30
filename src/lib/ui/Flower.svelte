@@ -60,6 +60,9 @@
   interface Props {
     /** flower_panel_title equivalent: "Cell 123", a zone name, or "Full study area (default)" */
     title: string;
+    /** R4-B: a panel header already names this subject -- the caption stays in the DOM (screen
+     * readers, hover target) but is visually hidden so the subject is shown once. */
+    titleInHeader?: boolean;
     components: FlowerComponentInput[];
     /** labels the CALLER already dropped before handing `components` to this component (the
      * real-world case: `flower.ts`'s `dedupeFlowerComponents`, atlas-4 fix round 2's v8/v9
@@ -94,6 +97,7 @@
 
   let {
     title,
+    titleInHeader = false,
     components,
     droppedLabels = [],
     size = 480,
@@ -200,7 +204,7 @@
 </script>
 
 <figure class="flower" style={`--flower-size: ${size}px`} aria-describedby={summaryId}>
-  <figcaption class="flower-title">{title}</figcaption>
+  <figcaption class="flower-title" class:sr-only={titleInHeader}>{title}</figcaption>
 
   <div class="flower-body">
     <div class="flower-chart">

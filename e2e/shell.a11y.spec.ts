@@ -259,31 +259,22 @@ test.describe("sheet size controls: visual state matches the actual detent (SC 1
   });
 });
 
-// R1: desktop's Panel.svelte replaced "collapse/half/full" with "dock left/bottom/right/maximize/
-// collapse" -- the SAME underlying bug (a static aria-expanded/aria-pressed painting the WRONG
-// control as active) is now about `aria-pressed` alone (Panel's collapse control carries no
-// aria-pressed at all, only aria-expanded, so nothing here can paint it "pressed" by accident) --
-// this proves only the DOCK actually chosen is painted pressed, not every dock button at once.
-test.describe("panel dock controls: visual state matches the actual dock (SC 1.4.1)", () => {
-  test("at desktop, only the chosen dock is painted pressed", async ({ page }) => {
+// R4-B: the desktop Panel keeps two header controls (move to the other side, collapse). Neither
+// carries `aria-pressed` (the side is a one-shot action whose label names its destination), so
+// nothing can be painted "pressed" by accident -- both must look alike at rest (SC 1.4.1: a look
+// must never claim a state the control does not have).
+test.describe("panel header controls: neither is painted as a pressed toggle (SC 1.4.1)", () => {
+  test("at desktop, the move-side and collapse controls look alike and carry no aria-pressed", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await gotoShell(page, "navy");
     const panel = page.locator("#panel-region");
-    await panel.getByRole("button", { name: "Dock left" }).click();
-
-    const left = await computedButtonStyle(panel.getByRole("button", { name: "Dock left" }));
-    const right = await computedButtonStyle(panel.getByRole("button", { name: "Dock right" }));
-    const bottom = await computedButtonStyle(panel.getByRole("button", { name: "Dock bottom" }));
-    const collapse = await computedButtonStyle(
-      panel.getByRole("button", { name: "Collapse to a pill" }),
-    );
-
-    expect(left, "the chosen dock (left) should DIFFER from an unchosen one").not.toEqual(right);
-    expect(right, "unchosen docks should look alike").toEqual(bottom);
-    expect(
-      collapse,
-      "the collapse control carries no aria-pressed at all, so it must never be painted like one",
-    ).toEqual(right);
+    const move = panel.getByRole("button", { name: "Move panel to the right" });
+    const collapse = panel.getByRole("button", { name: "Collapse to a pill" });
+    await expect(move).not.toHaveAttribute("aria-pressed", /.*/);
+    await expect(collapse).not.toHaveAttribute("aria-pressed", /.*/);
+    expect(await computedButtonStyle(move)).toEqual(await computedButtonStyle(collapse));
   });
 });
 
@@ -343,7 +334,10 @@ test.describe("keyboard", () => {
     await rail.locator("button[aria-label='Layers']").focus();
 
     await page.keyboard.press("ArrowDown");
+    await expect(page.locator(":focus")).toHaveAttribute("aria-label", "Details");
+    await page.keyboard.press("ArrowDown");
     await expect(page.locator(":focus")).toHaveAttribute("aria-label", "Table");
+    await page.keyboard.press("ArrowUp");
     await page.keyboard.press("ArrowUp");
     await expect(page.locator(":focus")).toHaveAttribute("aria-label", "Layers");
     // wrap backward past the first item to the last ("Report")
@@ -371,25 +365,16 @@ test.describe("keyboard", () => {
     await expect(panelRegion.locator('[data-panel-control="collapse"]')).toBeFocused();
   });
 
-  // R1: "Panel size" -> "Panel position and size" (dock is now part of what this group controls);
-  // three buttons -> five (dock left/bottom/right, maximize, collapse).
-  test("every panel-size control group has an accessible name on each of its five buttons", async ({
+  // R4-B: the group is "Panel position" and holds two buttons (move to the other side, collapse).
+  test("the panel control group has an accessible name on each of its two buttons", async ({
     page,
   }) => {
     await gotoShell(page, "navy");
-    const group = page.locator(
-      "#panel-region [role='group'][aria-label='Panel position and size']",
-    );
+    const group = page.locator("#panel-region [role='group'][aria-label='Panel position']");
     const names = await group
       .locator("button")
       .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
-    expect(names).toEqual([
-      "Dock left",
-      "Dock bottom",
-      "Dock right",
-      "Full screen",
-      "Collapse to a pill",
-    ]);
+    expect(names).toEqual(["Move panel to the right", "Collapse to a pill"]);
   });
 
   // atlas-3 closing review, item 2 (SC 2.1.4, Level A): there was a global `/` keydown that stole
@@ -439,9 +424,8 @@ test.describe("keyboard", () => {
     await page.locator('[data-control="theme"]').click();
     await page.locator('[data-control="help"]').click();
     const rail = page.locator("#rail-region [role='toolbar']");
-    // R3-W8 item 4/5: the rail is now three tools -- the Flower plot moved into the Layers pane's
-    // own second tab, and Places moved into the Report pane's own first tab.
-    for (const label of ["Layers", "Table", "Report"]) {
+    // R4-B: the spine is four entries (Layers, Details, Table, Report).
+    for (const label of ["Layers", "Details", "Table", "Report"]) {
       await rail.locator(`button[aria-label="${label}"]`).click();
     }
     const panel = page.locator("#panel-region");

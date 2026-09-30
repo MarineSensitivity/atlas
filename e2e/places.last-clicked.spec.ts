@@ -149,7 +149,8 @@ test.describe("R3-W8 item 5: a map click never wipes the explicit Places list", 
     // and the Table/Report still report on the explicit list, not the just-clicked cell
     // (reportSubjects()'s own "a non-empty list always wins" rule, tests/state/subjects.test.ts).
     await page.locator("#rail-region button[aria-label='Table']").click();
-    await expect(page.locator("h2, h3").filter({ hasText: "Species for 1 place" })).toBeVisible({
+    // R4-B: the panel header carries the Table subject line too (the table keeps its own h3)
+    await expect(page.locator(".panel-title")).toHaveText("Species for 1 place", {
       timeout: 10_000,
     });
   });

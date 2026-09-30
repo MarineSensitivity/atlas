@@ -1,3 +1,27 @@
+# atlas 0.10.81
+
+Round 4, R4-B: the tool rail attaches to the panel and becomes four tabs, docked left by default.
+
+- **The rail is attached to the panel** (desktop): it sits on the panel's outer edge and both move
+  together. The panel docks on the **left** by default; one header button moves it (and the rail) to
+  the other side, and the choice is remembered per browser. "Dock bottom" and "Full screen" are gone.
+  Clicking the active tool collapses the panel (the rail stays); clicking any tool opens it.
+- **Four tools: Layers, Details, Table, Report.** The flower plot (Scores) and the species information
+  (Species) moved out of the Layers pane's second tab into their own **Details** tool, the same in
+  both lenses. Details opens with the last clicked place, an "Add to report" button and an "Open
+  table" button; a map click updates it in place and never switches tools. The phone's bottom bar has
+  the same four entries.
+- **Table takes the whole stage** beside the rail; leaving it restores the side panel.
+- **The panel header says what is shown**: "Score · Raster cells", "Cell 3058375" or the species'
+  name, the table's subject line, "3 places" - not the name of the tool. Same on the phone sheet.
+- **The click popup links to Details** (Scores cells and Program Areas, Species).
+- **The legend and the map credit follow the side**: with the panel on the left they sit bottom-right
+  (the credit under the legend); on the right they mirror to bottom-left.
+- **Shared links**: the `ui=` token is version 4 (tool includes Details, side left|right). Older links
+  still open: `tab=info` opens Details, a bottom dock or maximized panel opens on the side dock, and
+  `?tool=flower` / `?tool=places` open Details / Report.
+- The welcome tour gains a **Details** step.
+
 # atlas 0.10.80
 
 Round 4, R4-A: the histogram moves from the click popup into the legend.

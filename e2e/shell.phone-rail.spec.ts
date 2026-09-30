@@ -51,9 +51,13 @@ test.describe("B4: the phone tool rail is reachable at every sheet detent", () =
     }) => {
       await gotoPhoneShell(page);
 
-      // the sheet's own title starts on "Layers" (the default tool) -- confirms the starting
-      // state before the tap this test is actually about.
-      await expect(page.locator(".sheet-title")).toHaveText("Layers");
+      // Layers is the default tool -- confirms the starting state before the tap this test is
+      // actually about. (R4-B: the sheet title is the header context, "<layer> · <unit>", not the
+      // tool's name, so the ACTIVE RAIL ENTRY is what says which tool is open.)
+      await expect(page.locator("#rail-region button[aria-label='Layers']")).toHaveAttribute(
+        "aria-current",
+        "true",
+      );
 
       await setDetent(page, buttonLabel);
 
@@ -61,9 +65,13 @@ test.describe("B4: the phone tool rail is reachable at every sheet detent", () =
       // this alone reproduces the bug (a timeout) on unfixed CSS -- no custom hit-testing needed.
       await page.locator("#rail-region button[aria-label='Report']").click({ timeout: 5_000 });
 
-      // R3-W8 item 5: the Report pane opens on its default "Places" tab, and the sheet's own title
-      // says so ("Report · Places", Shell.svelte's `panelTitle`).
-      await expect(page.locator(".sheet-title")).toHaveText("Report · Places");
+      // R4-B: Report is now the active entry, and its header context with no place added and
+      // nothing clicked is the tool's own label ("Report").
+      await expect(page.locator("#rail-region button[aria-label='Report']")).toHaveAttribute(
+        "aria-current",
+        "true",
+      );
+      await expect(page.locator(".sheet-title")).toHaveText("Report");
     });
   }
 

@@ -41,7 +41,7 @@ test.describe("shell smoke", () => {
     for (const label of ["Scores", "Species"]) {
       await expect(page.locator(".topbar").getByRole("button", { name: label })).toBeVisible();
     }
-    for (const label of ["Table", "Report"]) {
+    for (const label of ["Details", "Table", "Report"]) {
       await expect(page.locator("#rail-region").getByRole("button", { name: label })).toBeVisible();
     }
 

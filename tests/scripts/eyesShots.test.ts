@@ -117,9 +117,9 @@ describe("scripts/eyes-shots.mjs: the V5 fixes stay in place (fourth pass)", () 
 
   it("marks the shot filename with -MISSED when tapScoredCell found no scored cell", () => {
     expect(src).toMatch(/const missed = hit \? "" : "-MISSED";/);
-    expect(src).toContain("06-flower-half${missed}");
-    expect(src).toContain("07-flower-petal${missed}");
-    expect(src).toContain("08-flower-full${missed}");
+    expect(src).toContain("06-details-half${missed}");
+    expect(src).toContain("07-details-petal${missed}");
+    expect(src).toContain("08-details-full${missed}");
     expect(src).toContain("09-table-half${missed}");
     expect(src).toContain("10-table-full${missed}");
   });
@@ -135,7 +135,7 @@ describe("scripts/eyes-shots.mjs: the V5 fixes stay in place (fourth pass)", () 
     // `openFlowerTab()` (Layers, then the "Flower plot" tab) rather than a bare `tool(p, "Flower
     // plot")` rail click.
     const paState = src.slice(src.indexOf('id: "programarea"'));
-    expect(paState).toContain("openFlowerTab");
+    expect(paState).toContain("openDetails");
     expect(paState).toContain("Table");
     expect(paState).not.toMatch(/if \(vp !== "phone"\) return;/);
   });
@@ -168,7 +168,7 @@ describe("scripts/eyes-shots.mjs: R3-B17 adds a desktop programarea shot with th
     const iDesktopGuard = state.indexOf('vp === "desktop"');
     const iCollapse = state.indexOf("collapseSheet(p)");
     const iCollapsedShot = state.indexOf("`19b-programarea-popup-collapsed${missed}`");
-    const iFlower = state.indexOf("`20-programarea-flower${missed}`");
+    const iFlower = state.indexOf("`20-programarea-details${missed}`");
     expect(iPopup, "19-programarea-popup shot not found").toBeGreaterThanOrEqual(0);
     expect(iDesktopGuard, "no desktop-only guard found").toBeGreaterThanOrEqual(0);
     expect(iCollapse, "collapseSheet(p) not called").toBeGreaterThanOrEqual(0);
@@ -245,6 +245,33 @@ describe("scripts/eyes-shots.mjs: the W5 fix stays in place (fifth pass)", () =>
     expect(src).toContain("process.env.ONLY");
     expect(src).toMatch(
       /ATLAS_URL=http:\/\/localhost:\d+ OUT=\.tmp\/eyes \[ONLY=map,layers\] \[SHEET=1\] node scripts\/eyes-shots\.mjs/,
+    );
+  });
+});
+
+// R4-B: the spine -- the Flower/Species info tab became the "Details" rail entry, the desktop panel
+// lost its maximize button, and the rail attaches to the panel. The harness follows.
+describe("scripts/eyes-shots.mjs: R4-B state list follows the four-entry spine", () => {
+  it("opens Details with one spine click (no Layers + 'Flower plot' tab hop any more)", () => {
+    const body = src.slice(
+      src.indexOf("async function openDetails"),
+      src.indexOf("async function sheet"),
+    );
+    expect(body).toContain('tool(page, "Details")');
+    expect(body).not.toContain("Flower plot");
+    expect(src).not.toContain("openFlowerTab");
+  });
+
+  it("has a details state, a species-details shot, and a collapsed state", () => {
+    expect(src).toContain('id: "details"');
+    expect(src).toContain('id: "collapsed"');
+    expect(src).toContain('"18b-species-details"');
+  });
+
+  it("never clicks a desktop 'Full screen' button (retired) and shoots '-full' frames only when the phone sheet expanded", () => {
+    expect(src).not.toContain('"Full screen"');
+    expect(src).toMatch(
+      /if \(await sheet\(p, "Full height"\)\) await shot\(p, vp, "04-layers-full"\)/,
     );
   });
 });

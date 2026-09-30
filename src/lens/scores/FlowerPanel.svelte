@@ -49,6 +49,8 @@
      * detent); `undefined`/`false` (desktop, and the phone's "full" detent) keeps `Flower.svelte`'s
      * own bigger default untouched -- "full detent keeps the big flower" (the brief's own words). */
     compactFlower?: boolean;
+    /** R4-B: the Details panel header already shows the clicked subject -- show it once. */
+    subjectInHeader?: boolean;
   }
 
   let {
@@ -59,6 +61,7 @@
     cellComponentsError,
     cellCoords,
     compactFlower = false,
+    subjectInHeader = false,
   }: Props = $props();
 
   /** the flower's own size cap at the phone's "half" detent (see `compactFlower`'s own header
@@ -103,6 +106,7 @@
   {#if components}
     <Flower
       {title}
+      titleInHeader={subjectInHeader}
       {components}
       {droppedLabels}
       {maxScore}

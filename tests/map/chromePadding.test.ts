@@ -7,6 +7,7 @@ import {
   phoneLiveChromePadding,
   phonePadding,
   phonePaddingFromMeasured,
+  RAIL_FOOTPRINT_PX,
 } from "../../src/lib/map/chromePadding";
 import { DEFAULT_PANEL_GEOMETRY } from "../../src/lib/ui/panelGeometry";
 
@@ -21,22 +22,18 @@ const TOPBAR = 48;
 // `--space-3`: 12px) PLUS the fit's own breathing gutter (`FIT_GUTTER_PX`) -- see
 // `chromePadding.ts#desktopPanelPadding`'s own header for the desktop-19 measurement this fixes.
 const PANEL_OUTER_INSET = 12;
+// R4-B: the rail is attached to the panel's outer edge, so every dock-side reserve starts with it
+// (72 px card + 8 px gap = RAIL_FOOTPRINT_PX); collapsed/full-stage still reserve the rail alone.
 function panelReserve(size: number): number {
-  return size + PANEL_OUTER_INSET + FIT_GUTTER_PX;
+  return size + PANEL_OUTER_INSET + RAIL_FOOTPRINT_PX + FIT_GUTTER_PX;
 }
+const RAIL_ONLY = RAIL_FOOTPRINT_PX - 8 + PANEL_OUTER_INSET + FIT_GUTTER_PX;
+const RIGHT = { ...DEFAULT_PANEL_GEOMETRY, dock: "right" } as const;
 
-describe("desktopPanelPadding (usability M4)", () => {
-  it("default geometry (dock right, 380px, not collapsed) reserves the right edge (panel + its outer inset + gutter) and the top bar", () => {
+describe("desktopPanelPadding (usability M4, R4-B: rail + panel on the dock side)", () => {
+  it("default geometry (dock LEFT, 380px, not collapsed) reserves the left edge (rail + panel + inset + gutter) and the top bar", () => {
+    expect(DEFAULT_PANEL_GEOMETRY.dock).toBe("left");
     expect(desktopPanelPadding(DEFAULT_PANEL_GEOMETRY)).toEqual({
-      top: TOPBAR,
-      right: panelReserve(380),
-      bottom: 0,
-      left: 0,
-    });
-  });
-
-  it("dock left reserves the left edge (panel + its outer inset + gutter) and the top bar", () => {
-    expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, dock: "left" })).toEqual({
       top: TOPBAR,
       right: 0,
       bottom: 0,
@@ -44,70 +41,57 @@ describe("desktopPanelPadding (usability M4)", () => {
     });
   });
 
-  it("dock bottom reserves the bottom edge (panel + its outer inset + gutter) and the top bar", () => {
-    expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, dock: "bottom" })).toEqual({
+  it("dock right reserves the right edge (rail + panel + inset + gutter) and the top bar", () => {
+    expect(desktopPanelPadding(RIGHT)).toEqual({
       top: TOPBAR,
-      right: 0,
-      bottom: panelReserve(380),
+      right: panelReserve(380),
+      bottom: 0,
       left: 0,
     });
   });
 
-  it("a resized panel reserves its OWN size (plus the fixed inset+gutter), not the default", () => {
-    expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, size: 600 }).right).toBe(
+  it("a resized panel reserves its OWN size (plus the fixed rail+inset+gutter), not the default", () => {
+    expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, size: 600 }).left).toBe(
       panelReserve(600),
     );
   });
 
   // W5 fix regression (desktop-19/20/21, "GAA's east outline... under the panel's edge"): the old
   // `right: geometry.size` (380) left the panel's own outer inset (12px) AND the fit gutter
-  // entirely uncounted -- a fit computed against 380 alone lands INSIDE the panel's real 392px+
-  // footprint. Named so this can never silently regress back to the bare `geometry.size`.
-  it("W5 regression: the right reserve clears the panel's real outer edge, not just its content width", () => {
-    const { right } = desktopPanelPadding(DEFAULT_PANEL_GEOMETRY);
-    const panelOuterEdgeFromStageEdge = DEFAULT_PANEL_GEOMETRY.size + PANEL_OUTER_INSET; // 392
+  // entirely uncounted. Named so this can never silently regress back to the bare `geometry.size`.
+  // R4-B: the rail's footprint joins the same sum, on whichever side the panel is docked.
+  it("W5 regression: the dock-side reserve clears the panel's real outer edge (rail + inset included), not just its content width", () => {
+    const { left } = desktopPanelPadding(DEFAULT_PANEL_GEOMETRY);
+    const panelOuterEdgeFromStageEdge =
+      DEFAULT_PANEL_GEOMETRY.size + PANEL_OUTER_INSET + RAIL_FOOTPRINT_PX;
+    expect(left).toBeGreaterThan(panelOuterEdgeFromStageEdge);
+    const { right } = desktopPanelPadding(RIGHT);
     expect(right).toBeGreaterThan(panelOuterEdgeFromStageEdge);
   });
 
-  it("collapsed still reserves the top bar (the pill is small; the map is otherwise fully visible)", () => {
+  it("collapsed still reserves the top bar and the rail (the pill is small; the rail stays)", () => {
     expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, collapsed: true })).toEqual({
       top: TOPBAR,
       right: 0,
       bottom: 0,
-      left: 0,
+      left: RAIL_ONLY,
     });
+    expect(desktopPanelPadding({ ...RIGHT, collapsed: true }).right).toBe(RAIL_ONLY);
   });
 
-  it("maximized still reserves the top bar (the panel covers the rest of the stage -- no other 'visible remainder' to frame)", () => {
+  it("full stage (Table) reserves the top bar and the rail only -- no other 'visible remainder' to frame", () => {
     expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, maximized: true })).toEqual({
       top: TOPBAR,
       right: 0,
       bottom: 0,
-      left: 0,
+      left: RAIL_ONLY,
     });
   });
 
-  // V4 fix (owner phone report, 2026-09-24, desktop-18): "the walrus model view's south-west
-  // corner sits under the legend card" -- desktopPanelPadding used to reserve the docked panel's
-  // own side only, blind to SpeciesLegend.svelte/ScoresLegend.svelte floating into the OPPOSITE
-  // corner (or, for a bottom-docked panel, just above it).
-  //
-  // W5 fix (desktop-19/20/21): the legend card no longer reserves a full-width SIDE column
-  // (`DESKTOP_LEGEND_WIDTH_PX`) -- only its own `bottom: DESKTOP_LEGEND_HEIGHT_PX` -- because the
-  // card is a short (~75px) corner box, and reserving its full 320px width as a column pushed a
-  // fit's centre away from that corner and into the panel on the OPPOSITE side (see
-  // `desktopPanelPadding`'s own header).
-  it("a legend showing at the default dock (right) reserves bottom (for the legend card), not a left column", () => {
+  // V4 fix (owner phone report, 2026-09-24, desktop-18): the legend card floats into the corner
+  // OPPOSITE the panel; W5: only its own `bottom` height is reserved, never a side column.
+  it("a legend showing at the default dock (left) reserves bottom (for the legend card), not a right column", () => {
     expect(desktopPanelPadding(DEFAULT_PANEL_GEOMETRY, true)).toEqual({
-      top: TOPBAR,
-      right: panelReserve(380),
-      bottom: DESKTOP_LEGEND_HEIGHT_PX,
-      left: 0,
-    });
-  });
-
-  it("a legend showing with the panel docked left reserves bottom (for the legend card), not a right column", () => {
-    expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, dock: "left" }, true)).toEqual({
       top: TOPBAR,
       right: 0,
       bottom: DESKTOP_LEGEND_HEIGHT_PX,
@@ -115,11 +99,11 @@ describe("desktopPanelPadding (usability M4)", () => {
     });
   });
 
-  it("a legend showing with the panel docked bottom adds the legend's height ON TOP of the panel's (incl. its inset+gutter)", () => {
-    expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, dock: "bottom" }, true)).toEqual({
+  it("a legend showing with the panel docked right reserves bottom (for the legend card), not a left column", () => {
+    expect(desktopPanelPadding(RIGHT, true)).toEqual({
       top: TOPBAR,
-      right: 0,
-      bottom: panelReserve(380) + DESKTOP_LEGEND_HEIGHT_PX,
+      right: panelReserve(380),
+      bottom: DESKTOP_LEGEND_HEIGHT_PX,
       left: 0,
     });
   });
@@ -130,13 +114,10 @@ describe("desktopPanelPadding (usability M4)", () => {
     );
   });
 
-  it("collapsed/maximized never reserves the legend's footprint either (it is hidden by the same CSS rule)", () => {
-    expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, maximized: true }, true)).toEqual({
-      top: TOPBAR,
-      right: 0,
-      bottom: 0,
-      left: 0,
-    });
+  it("collapsed/full-stage never reserves the legend's footprint either (it is hidden by the same CSS rule)", () => {
+    expect(desktopPanelPadding({ ...DEFAULT_PANEL_GEOMETRY, maximized: true }, true).bottom).toBe(
+      0,
+    );
   });
 });
 

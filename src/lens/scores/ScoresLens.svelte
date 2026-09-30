@@ -73,11 +73,12 @@
      * pair — see SpeciesLens.svelte's identical prop for the full header. */
     expandedRow?: LayerGroupId | null;
     onExpandedRowChange?: (id: LayerGroupId | null) => void;
-    /** R3-W8 item 4: forwarded straight through to `LibLayersPanel`'s own controlled two-tab pair
-     * ("layers" | "info" -- this lens' "info" tab is "Flower plot", see `infoTab` below). Shell
-     * owns the value (one Layers pane, shared across lenses). */
-    tab?: "layers" | "info";
-    onTabChange?: (tab: "layers" | "info") => void;
+    /** R4-B: the Details tool's header row -- the last-clicked label (`lastClicked.ts`), the
+     * "Add to report" action (Shell's `onAddLastClicked`, the SAME place-append the Report pane's
+     * own "Add to places" row calls) and "Open table" (a spine hop, never a tool switch on click). */
+    lastClickedLabel?: string | null;
+    onAddLastClicked?: () => void;
+    onOpenTable?: () => void;
     /** R3-W8 item 5 fix round: forwarded straight through to `TablePanel`'s own prop of the same
      * name -- switches the rail to the Report tool's Places tab (the empty-state hand-off, "Select
      * places under Report → Places"). */
@@ -99,8 +100,9 @@
     compactFlower = false,
     expandedRow,
     onExpandedRowChange,
-    tab,
-    onTabChange,
+    lastClickedLabel = null,
+    onAddLastClicked,
+    onOpenTable,
     onOpenPlaces,
   }: Props = $props();
 
@@ -291,21 +293,6 @@
 </script>
 
 {#if activeTool === "layers"}
-  {#snippet flowerContent()}
-    <!-- R3-W8 item 4: "drop the Flower plot from the toolbar" -- the SAME FlowerPanel, same props,
-         same behaviour, moved from its own rail tool into the Layers pane's second tab. Declared
-         BEFORE `<LibLayersPanel>` below (not as its child) so the `infoTab` prop value can
-         reference it directly -- a snippet is a plain block-scoped binding, not hoisted. -->
-    <FlowerPanel
-      {boot}
-      {manifest}
-      {selection}
-      cellComponents={cellFlowerRows}
-      cellComponentsError={cellFlowerError}
-      {cellCoords}
-      {compactFlower}
-    />
-  {/snippet}
   <LibLayersPanel
     stack={layerStack}
     onChange={onLayerStackChange}
@@ -316,9 +303,6 @@
     {rowState}
     {expandedRow}
     {onExpandedRowChange}
-    infoTab={{ label: "Flower plot", content: flowerContent }}
-    {tab}
-    {onTabChange}
   >
     {#snippet dataControls()}
       <ScoresLayersPanel
@@ -332,6 +316,34 @@
       />
     {/snippet}
   </LibLayersPanel>
+{:else if activeTool === "details"}
+  <!-- R4-B: the Flower plot, moved out of the Layers pane's second tab into its own spine entry.
+       A map click updates it in place (`selection`/`cellFlowerRows` are the lens' own reactive
+       state); a click never switches tools. -->
+  <div class="details" data-testid="details-tool">
+    {#if lastClickedLabel}
+      <div class="details-head" data-testid="details-head">
+        <div class="details-actions">
+          <button type="button" data-testid="details-add" onclick={() => onAddLastClicked?.()}>
+            Add to report
+          </button>
+          <button type="button" data-testid="details-open-table" onclick={() => onOpenTable?.()}>
+            Open table
+          </button>
+        </div>
+      </div>
+    {/if}
+    <FlowerPanel
+      {boot}
+      {manifest}
+      {selection}
+      cellComponents={cellFlowerRows}
+      cellComponentsError={cellFlowerError}
+      {cellCoords}
+      {compactFlower}
+      subjectInHeader={!!lastClickedLabel}
+    />
+  </div>
 {:else if activeTool === "table"}
   <TablePanel
     {sel}
@@ -348,3 +360,45 @@
 {:else}
   <p>{fallbackBody}</p>
 {/if}
+
+<style>
+  .details {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .details-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-card);
+    background: var(--surface-raised);
+  }
+
+  .details-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .details-actions button {
+    display: inline-flex;
+    align-items: center;
+    height: var(--size-touch);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-control);
+    background: var(--fill-control);
+    color: var(--text-primary);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .details-actions button:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+</style>

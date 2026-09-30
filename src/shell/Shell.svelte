@@ -15,10 +15,20 @@
   // bring their own scoped styles and are used only by import, per this step's instructions.
   import { onMount, tick, type Component } from "svelte";
   import "./shell.css";
-  import { buildRailItems, TOOL_BODY, TOOL_LABEL, type ToolName } from "./tools";
+  import {
+    buildRailItems,
+    panelHeaderTitle,
+    TOOL_BODY,
+    toolTakesFullStage,
+    type PanelContext,
+    type ToolName,
+  } from "./tools";
+  import { placesSubjectHeader } from "../lens/scores/species";
+  import { legacyToolFromParams } from "../lib/state/legacy";
+  import { DETAILS_LINK_ATTR } from "../lib/map/popup";
   // R3-W8 item 3: the `ui=` token's parse/format core — see that module's own header for what it
   // carries and why it is a separate token from Sel's own query keys.
-  import { formatUi, parseUi, type UiExpandedRow, type UiReportTab, type UiTab } from "./uiState";
+  import { formatUi, parseUi, type UiExpandedRow, type UiReportTab } from "./uiState";
   import type { LayerGroupId } from "../lib/map/layerStack";
   // R5: the wave-in-hexagon mark replaces the old two-file "wave in a circle" pair
   // (mst-mark.svg/mst-mark-dark.svg, kept vendored only for history -- Report.svelte moved to
@@ -79,7 +89,12 @@
   // MANIFEST (never `boot.units[]`, which stays exactly one row per D17) -- a plain `.ts` reader,
   // not a `.svelte` SFC, so it is exempt from `tests/shell/lazy-lens-imports.test.ts`'s static-
   // import ban the same way `state.svelte.ts` already is (that file's own header explains why).
-  import { ecoregionZoneUnitFromManifest, fullSubregion, layerByKey } from "../lens/scores/boot";
+  import {
+    ecoregionZoneUnitFromManifest,
+    fullSubregion,
+    layerByKey,
+    unitOptions,
+  } from "../lens/scores/boot";
   // R3-W2: the Download menu's `?lyr=` fallback -- the SAME rule `state.svelte.ts#lyr` applies
   // (an unset/unknown metric key resolves to the release's own composite default), a plain `.ts`
   // reader like `boot.ts` above, exempt from the lazy-lens-runtime-import ban for the same reason.
@@ -245,33 +260,21 @@
   // URL view state.
   // R3-W8 item 3: restored from a shared link's `ui=` token when present (`initialUi`, above) —
   // "layers" (unchanged) otherwise.
-  let activeTool = $state<ToolName>(initialUi?.tool ?? "layers");
+  // R4-B: a legacy `?tool=flower` / `?tool=places` (legacy.ts) opens Details / Report when no `ui=`
+  // token supplied a tool.
+  let activeTool = $state<ToolName>(
+    initialUi?.tool ?? legacyToolFromParams(new URLSearchParams(location.search)) ?? "layers",
+  );
   const railItems = $derived(buildRailItems());
-
-  // R3-W8 item 4: which of the Layers pane's own two tabs is showing ("layers" | "info" -- the
-  // Scores lens' Flower plot / the Species lens' Species info). Lifted here (not left as
-  // `LibLayersPanel`'s own internal state) for the same reason `expandedRow` is: Share reads it
-  // (`shareUrl()`, below) and a `ui=` link restores it before first interaction.
-  let activeTab = $state<UiTab>(initialUi?.tab ?? "layers");
 
   // R3-W8 item 5: which of the Report pane's own two tabs is showing ("places" | "report" --
   // Places is the default, folded in from its own former rail tool). Same "chrome, restorable
   // from a link, Share reads it back" treatment as `activeTab` above.
   let activeReportTab = $state<UiReportTab>(initialUi?.reportTab ?? "places");
 
-  // the phone sheet / desktop panel title: normally the active tool's label, but while the Layers
-  // pane's "info" tab is showing, the tab names itself instead ("Flower plot" for Scores, "Species
-  // info" for Species) -- item 4: "the sheet's title shows the active tab's name." Item 5: while
-  // the Report pane's own "Places" tab is showing, the title reads "Report · Places" (Ben:
-  // discoverability mitigation for a tool that used to have its own rail button).
-  const infoTabLabel = $derived(sel.lens === "species" ? "Species info" : "Flower plot");
-  const panelTitle = $derived(
-    activeTool === "layers" && activeTab === "info"
-      ? infoTabLabel
-      : activeTool === "report" && activeReportTab === "places"
-        ? "Report · Places"
-        : TOOL_LABEL[activeTool],
-  );
+  // R4-B: the panel/sheet header says what is being SHOWN, not the spine entry's name
+  // (control-grammar.md rule 6) -- `panelHeaderTitle` (tools.ts, unit-tested) is the one rule; the
+  // context it reads is assembled just below `lastClickedRowLabel`, where those values exist.
 
   // R3-W8 item 5 fix round: "The Table: when there is no selection, add a line... with a button
   // that opens that tab" -- the SAME tab-open the Report tool's own "Draw, enter coordinates or
@@ -355,6 +358,17 @@
     return () => railFocusObserver?.disconnect();
   });
 
+  // R4-B: a click on a spine entry -- the ACTIVE one collapses the panel (the rail stays), any other
+  // opens it. Desktop only: the phone's bottom bar keeps its sheet detents (`selectTool` alone).
+  function onRailSelect(name: string) {
+    if (!isPhone && name === activeTool && !panelGeom.collapsed) {
+      armRailFocusRestore(name);
+      void panelRef?.collapse(false);
+      return;
+    }
+    selectTool(name);
+  }
+
   function selectTool(name: string) {
     activeTool = name as ToolName;
     armRailFocusRestore(name);
@@ -403,7 +417,6 @@
         size: panelGeom.size,
         detent: sheetGeom.detent,
         expandedRow: toUiExpandedRow(expandedRow),
-        tab: activeTab,
         reportTab: activeReportTab,
       }),
     );
@@ -767,6 +780,19 @@
     lastClickedLabelFn ? lastClickedLabelFn(lastClickedSelection, boot) : null,
   );
 
+  // R4-B: the popup's "Details" link opens the Details tool. The popup is a MapLibre-owned div
+  // outside Svelte, so ONE delegated click handler on `document` covers every popup of either lens.
+  onMount(() => {
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target instanceof Element ? e.target : null;
+      if (!target?.closest(`[${DETAILS_LINK_ATTR}]`)) return;
+      e.preventDefault();
+      selectTool("details");
+    };
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  });
+
   async function onAddLastClicked() {
     const selection = lastClickedSelection;
     if (!selection) return;
@@ -797,6 +823,31 @@
   const phoneLegend = $derived(
     sel.lens === "species" ? speciesLens.mapInputs.legend : (scoresLens?.mapExtra.legend ?? null),
   );
+
+  // R4-B: the header context (`panelHeaderTitle`, tools.ts). Scores: the layer's short legend title
+  // and the spatial unit's label ("Score · Raster cells"); Species: the model's legend title alone.
+  // Details: the last-clicked label (Scores) or the species' name (Species). Table: its subject
+  // line. Report: the explicit place count, else the last click.
+  const panelContext = $derived<PanelContext>({
+    layer: phoneLegend?.title ?? null,
+    unit:
+      sel.lens === "scores" && scoresLens
+        ? (unitOptions(boot).find((o) => o.value === scoresLens?.unit)?.label ?? null)
+        : null,
+    subject:
+      sel.lens === "species"
+        ? speciesLens.card?.common || speciesLens.card?.sci || null
+        : lastClickedRowLabel,
+    tableSubject:
+      sel.lens === "species"
+        ? speciesLens.card?.common || speciesLens.card?.sci || null
+        : reportSubject.kind === "places"
+          ? placesSubjectHeader(reportSubject.items.length)
+          : lastClickedRowLabel,
+    placeCount: reportPlaces.length,
+    lastClicked: lastClickedRowLabel,
+  });
+  const panelTitle = $derived(panelHeaderTitle(activeTool, panelContext));
 
   // UI-1 (round 3): `<Toast>`'s own phone bottom-offset PROP -- see its mount point (below) for why
   // this is a prop, never a wrapping `<div>`. Same "rail row + sheet's real height while floating"
@@ -2088,12 +2139,13 @@
     tabindex="-1"
     data-tour="rail"
     data-control="rail"
+    data-dock={isPhone ? undefined : panelGeom.dock}
   >
     <Rail
       items={railItems}
       active={activeTool}
       orientation={isPhone ? "horizontal" : "vertical"}
-      onSelect={selectTool}
+      onSelect={onRailSelect}
       onAnnounce={announce}
     />
   </nav>
@@ -2180,7 +2232,7 @@
           lastClickedLabel={lastClickedRowLabel}
           {onAddLastClicked}
         />
-      {:else if sel.lens === "species" && activeTool === "layers"}
+      {:else if sel.lens === "species" && (activeTool === "layers" || activeTool === "details")}
         {#if SpeciesLensPanelComp}
           {@const Comp = SpeciesLensPanelComp}
           <!-- P round deliverable 1 / orchestrator hand-off (2026-09-25): `boot` used to feed
@@ -2202,8 +2254,7 @@
             {mapHandle}
             {expandedRow}
             onExpandedRowChange={(id: LayerGroupId | null) => (expandedRow = id)}
-            tab={activeTab}
-            onTabChange={(t: UiTab) => (activeTab = t)}
+            part={activeTool === "details" ? "details" : "layers"}
           />
         {:else}
           <p>{TOOL_BODY[activeTool]}</p>
@@ -2241,8 +2292,9 @@
             compactFlower={isPhone && sheetGeom.detent === "half"}
             {expandedRow}
             onExpandedRowChange={(id: LayerGroupId | null) => (expandedRow = id)}
-            tab={activeTab}
-            onTabChange={(t: UiTab) => (activeTab = t)}
+            lastClickedLabel={lastClickedRowLabel}
+            onAddLastClicked={() => void onAddLastClicked()}
+            onOpenTable={() => selectTool("table")}
             onOpenPlaces={openReportPlaces}
           />
         {:else}
@@ -2268,6 +2320,7 @@
       <Panel
         id="shell"
         title={panelTitle}
+        fullStage={toolTakesFullStage(activeTool)}
         bind:this={panelRef}
         ongeometry={(g) => (panelGeom = g)}
         initialGeometryOverride={initialUi ? { dock: initialUi.dock, size: initialUi.size } : null}

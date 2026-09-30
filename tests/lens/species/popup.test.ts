@@ -340,3 +340,20 @@ describe("popupHtml: sparkline (Ben's ask, round-3 review)", () => {
     expect(html).not.toContain("atlas-popup-sparkline");
   });
 });
+
+// R4-B: the species popup links to Details whenever the click found this species.
+describe("the popup's Details link (R4-B)", () => {
+  const base = { sci: "Dermochelys coriacea", lon: -70, lat: 30, cellId: 1 };
+  it("value and presence clicks carry the Details link; a no-value click does not", () => {
+    const value = popupHtml(
+      popupContent({ ...base, kind: "value", value: 1, rescale: [1, 100], stops: STOPS }),
+    );
+    expect(value).toContain("data-atlas-open-details");
+    expect(popupHtml(popupContent({ ...base, kind: "presence" }))).toContain(
+      "data-atlas-open-details",
+    );
+    expect(popupHtml(popupContent({ ...base, kind: "no-value" }))).not.toContain(
+      "data-atlas-open-details",
+    );
+  });
+});

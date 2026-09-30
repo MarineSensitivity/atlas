@@ -9,12 +9,14 @@
 
   interface Props {
     info: SpeciesCard;
+    /** R4-B: the Details panel header already shows this name -- do not repeat it. */
+    hideName?: boolean;
     /** the asset actually on screen — Download needs its URL; Share just copies `location.href`. */
     asset: TaxonAsset | null;
     onSelect: (key: string) => void;
   }
 
-  let { info, asset, onSelect }: Props = $props();
+  let { info, asset, onSelect, hideName = false }: Props = $props();
 
   async function share() {
     try {
@@ -64,7 +66,7 @@
 {/snippet}
 
 <div class="species-card" data-testid="species-card">
-  <h3>{info.sci}</h3>
+  {#if !hideName}<h3>{info.sci}</h3>{/if}
   {#if info.noSurfaceNotice}
     <p class="notice" role="status">{info.noSurfaceNotice}</p>
   {/if}

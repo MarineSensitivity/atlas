@@ -5,7 +5,7 @@
 //   ATLAS_URL=http://localhost:4386 OUT=.tmp/eyes [ONLY=map,layers] [SHEET=1] node scripts/eyes-shots.mjs
 // SHEET=1 also writes <OUT>/contact-{desktop,phone}[-N].png: this run's shots in one labelled grid (R4-0).
 // 2026-09-24 second pass (Opus review of the first set): welcome needs a BARE url (any query counts as a
-// deep link and suppresses the modal); the desktop maximize button is "Full screen"; one browser context
+// deep link and suppresses the modal); the desktop panel has no maximize button any more (R4-B); one browser context
 // per state (the sheet detent persists in localStorage); the report opens in a NEW TAB; taps on ocean.
 // 2026-09-24 third pass (Opus review, "process" finding #5 -- 3 false results in the second-pass set):
 // (a) the flower-petal selector (`svg path` nth(3)) never hit a real petal -- petals are `path.petal`,
@@ -84,27 +84,22 @@ async function tool(page, name) {
   await page.getByRole("button", { name, exact: true }).first().click({ timeout: 20_000 });
   await page.waitForTimeout(3000);
 }
-// R3-W8 item 4: the Flower plot is no longer its own rail tool -- it moved into the Layers pane as
-// that pane's own second tab (`src/lib/ui/LayersPanel.svelte`'s `infoTab`, labelled "Flower plot"
-// for the Scores lens). Opening it is now "Layers" (the rail tool) then "Flower plot" (the tab).
-async function openFlowerTab(page) {
-  await tool(page, "Layers");
-  await page
-    .getByRole("button", { name: "Flower plot", exact: true })
-    .first()
-    .click({ timeout: 20_000 });
+// R4-B: the Flower plot (Scores) and the species information (Species) are the rail's own
+// "Details" entry -- opening it is one spine click (it was Layers + a "Flower plot" tab in R3).
+async function openDetails(page) {
+  await tool(page, "Details");
   await page.waitForTimeout(1000);
 }
+// phone only: "Full height" (Sheet.svelte). R4-B retired the desktop panel's maximize button --
+// Table takes the whole stage by itself there -- so on desktop this is a no-op and returns false; a
+// caller shoots its "-full" frame only when it returns true (a second identical frame would be a
+// check that cannot fail).
 async function sheet(page, name) {
-  // phone: "Full height"; desktop (R1 panel): "Full screen"
-  for (const n of [name, name === "Full height" ? "Full screen" : name]) {
-    const b = page.getByRole("button", { name: n, exact: true }).first();
-    if (await b.count()) {
-      await b.click({ timeout: 10_000 }).catch(() => {});
-      await page.waitForTimeout(800);
-      return;
-    }
-  }
+  const b = page.getByRole("button", { name, exact: true }).first();
+  if (!(await b.count())) return false;
+  await b.click({ timeout: 10_000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  return true;
 }
 // third pass (c): collapses the default-open Layers panel/sheet down to its smallest detent, so the
 // "map" state (02) shows a clean map instead of Layers at its default "half" detent -- byte-identical
@@ -295,8 +290,7 @@ const STATES = [
       await explore(p);
       await tool(p, "Layers");
       await shot(p, vp, "03-layers-half");
-      await sheet(p, "Full height");
-      await shot(p, vp, "04-layers-full");
+      if (await sheet(p, "Full height")) await shot(p, vp, "04-layers-full");
     },
   },
   {
@@ -314,7 +308,7 @@ const STATES = [
     },
   },
   {
-    id: "flower",
+    id: "details",
     run: async (p, vp) => {
       await go(p, "?ver=v7&theme=dark");
       await explore(p);
@@ -323,8 +317,8 @@ const STATES = [
       // clean-looking log hiding four untested states the way it did before this fix.
       const hit = await tapScoredCell(p, vp);
       const missed = hit ? "" : "-MISSED";
-      await openFlowerTab(p);
-      await shot(p, vp, `06-flower-half${missed}`);
+      await openDetails(p);
+      await shot(p, vp, `06-details-half${missed}`);
       // third pass (a): petals are `path.petal` (Flower.svelte), never a bare `svg path` -- and a
       // real petal can be a zero-score DEGENERATE path (`d=""`, flowerGeometry.ts) with no area to
       // click, so this also skips those. A low-score petal is still a real (non-degenerate) path,
@@ -349,9 +343,8 @@ const STATES = [
           .catch(() => false);
       }
       if (!labelShown) log("WARN flower petal tap produced no visible label");
-      await shot(p, vp, `07-flower-petal${missed}`);
-      await sheet(p, "Full height");
-      await shot(p, vp, `08-flower-full${missed}`);
+      await shot(p, vp, `07-details-petal${missed}`);
+      if (await sheet(p, "Full height")) await shot(p, vp, `08-details-full${missed}`);
     },
   },
   {
@@ -366,9 +359,11 @@ const STATES = [
       // shooting mid-"Loading species…" (bounded; WARNs and shoots anyway if it never resolves).
       await waitForSpeciesLoaded(p);
       await shot(p, vp, `09-table-half${missed}`);
-      await sheet(p, "Full height");
-      await waitForSpeciesLoaded(p);
-      await shot(p, vp, `10-table-full${missed}`);
+      // phone: the sheet's own "Full height"; desktop: Table already took the whole stage (R4-B)
+      if (await sheet(p, "Full height")) {
+        await waitForSpeciesLoaded(p);
+        await shot(p, vp, `10-table-full${missed}`);
+      }
     },
   },
   {
@@ -382,8 +377,7 @@ const STATES = [
       await tool(p, "Report");
       await tool(p, "Places");
       await shot(p, vp, "11-places");
-      await sheet(p, "Full height");
-      await shot(p, vp, "12-places-full");
+      if (await sheet(p, "Full height")) await shot(p, vp, "12-places-full");
     },
   },
   {
@@ -463,6 +457,30 @@ const STATES = [
       await explore(p);
       await p.waitForTimeout(6000);
       await shot(p, vp, "18-species-model");
+      // R4-B: the species information is the Details entry now
+      await openDetails(p);
+      await shot(p, vp, "18b-species-details");
+    },
+  },
+  {
+    // R4-B: the panel collapsed to its pill with the rail still attached -- desktop: a click on the
+    // ACTIVE rail entry ("Layers" is the default tool) collapses it; phone: the sheet's own
+    // collapse. The phone's four-entry bottom bar is in every phone shot (this one shows it
+    // clearest, with the sheet at its smallest).
+    id: "collapsed",
+    run: async (p, vp) => {
+      await go(p, "?ver=v7&theme=dark");
+      await explore(p);
+      if (vp === "desktop") {
+        await p
+          .getByRole("button", { name: "Layers", exact: true })
+          .first()
+          .click({ timeout: 20_000 });
+        await p.waitForTimeout(800);
+      } else {
+        await collapseSheet(p);
+      }
+      await shot(p, vp, "22-collapsed");
     },
   },
   {
@@ -487,8 +505,8 @@ const STATES = [
         await collapseSheet(p);
         await shot(p, vp, `19b-programarea-popup-collapsed${missed}`);
       }
-      await openFlowerTab(p);
-      await shot(p, vp, `20-programarea-flower${missed}`);
+      await openDetails(p);
+      await shot(p, vp, `20-programarea-details${missed}`);
       await tool(p, "Table");
       await waitForSpeciesLoaded(p);
       await shot(p, vp, `21-programarea-table${missed}`);

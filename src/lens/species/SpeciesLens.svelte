@@ -45,11 +45,9 @@
      * across lenses). */
     expandedRow?: LayerGroupId | null;
     onExpandedRowChange?: (id: LayerGroupId | null) => void;
-    /** R3-W8 item 4: forwarded straight through to `LibLayersPanel`'s own controlled two-tab pair
-     * ("layers" | "info" -- this lens' "info" tab is "Species info", see `infoTab` below). Shell
-     * owns the value (one Layers pane, shared across lenses). */
-    tab?: "layers" | "info";
-    onTabChange?: (tab: "layers" | "info") => void;
+    /** R4-B: which spine entry this lens is rendering -- "layers" (the controls) or "details" (the
+     * species card's descriptive content, formerly the Layers pane's "Species info" tab). */
+    part?: "layers" | "details";
   }
 
   // `boot` stays a declared prop (Shell.svelte always passes it, and a lens prop this narrow is
@@ -65,8 +63,7 @@
     mapHandle,
     expandedRow,
     onExpandedRowChange,
-    tab,
-    onTabChange,
+    part = "layers",
   }: Props = $props();
 
   // Orchestrator hand-off (Opus UI review of main, 2026-09-25): "in the Species lens HIDE the
@@ -111,18 +108,17 @@
 </script>
 
 {#snippet speciesInfoContent()}
-  <!-- R3-W8 item 4: "Species info" tab -- everything that is INFORMATION rather than a control
-       (the species card's descriptive content: names, listing, categories, inputs table…). The
-       controls themselves (the model-input picker, zoom-to-layer checkbox, title/zoom actions)
-       stay on the "Layers" tab below -- only `SpeciesCardView` moved here. Declared BEFORE
-       `<LibLayersPanel>` (not as its child) so the `infoTab` prop value can reference it directly
-       -- a snippet is a plain block-scoped binding, not hoisted. -->
+  <!-- R4-B: the Details tool's Species content (formerly R3-W8 item 4's "Species info" tab) --
+       everything that is INFORMATION rather than a control (names, listing, categories, inputs
+       table…). The controls themselves (the model-input picker, zoom-to-layer checkbox, title/zoom
+       actions) stay in the Layers tool. -->
   <div class="species-info" data-testid="species-info-tab">
     {#if lens.cardError}
       <p class="error" role="alert">{speciesCardErrorText(lens.cardError.kind, lens.ver)}</p>
     {:else if lens.info}
       <SpeciesCardView
         info={lens.info}
+        hideName={!lens.card?.common}
         asset={lens.mapInputs.asset}
         onSelect={(key) => lens.selectLayer(key)}
       />
@@ -131,66 +127,67 @@
     {/if}
   </div>
 {/snippet}
-<LibLayersPanel
-  stack={layerStack}
-  onChange={onLayerStackChange}
-  {outline}
-  {projection}
-  {rowState}
-  {expandedRow}
-  {onExpandedRowChange}
-  infoTab={{ label: "Species info", content: speciesInfoContent }}
-  {tab}
-  {onTabChange}
->
-  {#snippet speciesField()}
-    <!-- R3-W8 item 1 (Ben, 2026-09-25): "promote the main data selection up" — the layer bar
+{#if part === "details"}
+  {@render speciesInfoContent()}
+{:else}
+  <LibLayersPanel
+    stack={layerStack}
+    onChange={onLayerStackChange}
+    {outline}
+    {projection}
+    {rowState}
+    {expandedRow}
+    {onExpandedRowChange}
+  >
+    {#snippet speciesField()}
+      <!-- R3-W8 item 1 (Ben, 2026-09-25): "promote the main data selection up" — the layer bar
          (Merged + each input pill, the representation toggle) moved here from the Data row's own
          body, labelled the same way the scores lens' promoted "Layer" field is. -->
-    {#if lens.bar}
-      <div class="model-input-field" data-testid="model-input-field">
-        <span class="field-label">Model input</span>
-        <LayerBarView
-          bar={lens.bar}
-          {rep}
-          onSelectLayer={(key) => lens.selectLayer(key)}
-          onSetRepresentation={(r) => lens.setRepresentation(r)}
-        />
-        <label class="zoom-to-layer-check">
-          <input
-            type="checkbox"
-            data-testid="zoom-to-layer-toggle"
-            checked={lens.zoomToLayerOnChange}
-            onchange={(e) => onZoomToLayerChange(e.currentTarget.checked)}
+      {#if lens.bar}
+        <div class="model-input-field" data-testid="model-input-field">
+          <span class="field-label">Model input</span>
+          <LayerBarView
+            bar={lens.bar}
+            {rep}
+            onSelectLayer={(key) => lens.selectLayer(key)}
+            onSetRepresentation={(r) => lens.setRepresentation(r)}
           />
-          <span>Zoom to layer on change</span>
-        </label>
-      </div>
-    {/if}
-  {/snippet}
-  {#snippet dataControls()}
-    <div class="species-panel" data-testid="species-panel">
-      {#if lens.cardError}
-        <!-- UI-9 (round-3 review): "Couldn't load this species (not-found)." printed the raw error
+          <label class="zoom-to-layer-check">
+            <input
+              type="checkbox"
+              data-testid="zoom-to-layer-toggle"
+              checked={lens.zoomToLayerOnChange}
+              onchange={(e) => onZoomToLayerChange(e.currentTarget.checked)}
+            />
+            <span>Zoom to layer on change</span>
+          </label>
+        </div>
+      {/if}
+    {/snippet}
+    {#snippet dataControls()}
+      <div class="species-panel" data-testid="species-panel">
+        {#if lens.cardError}
+          <!-- UI-9 (round-3 review): "Couldn't load this species (not-found)." printed the raw error
              code -- a genuine not-found now names the release and points back at search; every
              other (transient/infra) failure gets a plain retry hint. -->
-        <p class="error" role="alert">{speciesCardErrorText(lens.cardError.kind, lens.ver)}</p>
-      {:else if lens.card}
-        <SpeciesTitle
-          sci={lens.card.sci}
-          common={lens.card.common}
-          wideRange={lens.wideRange}
-          onSetZoomTarget={(target) => lens.setZoomTarget(target)}
-        />
-        {#if lens.mapInputs.notice}
-          <p class="notice" role="status">{lens.mapInputs.notice}</p>
+          <p class="error" role="alert">{speciesCardErrorText(lens.cardError.kind, lens.ver)}</p>
+        {:else if lens.card}
+          <SpeciesTitle
+            sci={lens.card.sci}
+            common={lens.card.common}
+            wideRange={lens.wideRange}
+            onSetZoomTarget={(target) => lens.setZoomTarget(target)}
+          />
+          {#if lens.mapInputs.notice}
+            <p class="notice" role="status">{lens.mapInputs.notice}</p>
+          {/if}
+        {:else if lens.loading}
+          <p>Loading…</p>
         {/if}
-      {:else if lens.loading}
-        <p>Loading…</p>
-      {/if}
-    </div>
-  {/snippet}
-</LibLayersPanel>
+      </div>
+    {/snippet}
+  </LibLayersPanel>
+{/if}
 
 <style>
   .species-panel,

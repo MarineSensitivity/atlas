@@ -346,7 +346,7 @@ test.describe("step 0: every tab stop announces itself", () => {
   // `Sheet.svelte`'s `.sheet-body`, already carried `role="region" aria-label="{title} details"`;
   // this one lost its label when atlas-3's handover item (a) removed the nested landmark and kept
   // the `tabindex="0"` (which axe's own `scrollable-region-focusable` rule requires). SC 4.1.2
-  // Name, Role, Value (A). Now `role="group" aria-label="Layers details"` (a `group`, not a
+  // Name, Role, Value (A). Now `role="group" aria-label="<panel title> details"` (a `group`, not a
   // `region`, so the near-duplicate-landmark problem that atlas-3 fix addressed does not come
   // back -- see Panel.svelte's own header comment). REVERTED (this fix alone) -> RED: this test
   // fails with "no accessible name" the moment `role`/`aria-label` are removed from
@@ -360,7 +360,8 @@ test.describe("step 0: every tab stop announces itself", () => {
       (await body.ariaSnapshot()).split("\n")[0],
       "a focusable scroll container must carry a role and a name",
     ).toMatch(/^-\s+\S+\s+"/);
-    expect(await body.getAttribute("aria-label")).toBe("Layers details");
+    // R4-B: the panel title is the header context now ("Score · Raster cells"), not the tool name
+    expect(await body.getAttribute("aria-label")).toMatch(/\S details$/);
   });
 });
 
@@ -436,10 +437,12 @@ test.describe("step 0: static ARIA fixes #9, #10, #11 (no test existed before th
     page,
   }) => {
     await gotoWalk(page);
-    const panelRegion = page.getByRole("region", { name: "Layers" });
-    await expect(panelRegion).toHaveCount(1);
-    // getByRole with an ancestor locator only matches WITHIN that ancestor's subtree.
-    await expect(panelRegion.getByRole("region")).toHaveCount(0);
+    // R4-B: the panel's own region is named by its header context ("<layer> · <unit>"), not the
+    // tool's name -- so it is found structurally, and the invariant is "the panel is the ONE
+    // region in its subtree" (getByRole with an ancestor locator matches WITHIN that subtree).
+    const panelRegion = page.locator("#panel-region");
+    await expect(panelRegion.getByRole("region")).toHaveCount(1);
+    await expect(panelRegion.locator(".panel-surface")).toHaveAttribute("aria-labelledby", /.+/);
     await expect(panelRegion.locator(".layers-control h3")).toHaveText("Layers on the map");
   });
 
@@ -807,21 +810,22 @@ test.describe("step 3: open the report and export it", () => {
 // STEP 4 -- R1 (docs/usability.md §7): the panel's dock/resize/maximize controls, keyboard only
 // =================================================================================================
 
-test.describe("step 4: R1 panel controls (dock/resize/maximize) are keyboard reachable and operable", () => {
-  test("Full screen maximizes the panel; Esc restores it and returns focus to the control", async ({
+test.describe("step 4: panel controls (move to the other side, resize, collapse) are keyboard reachable and operable", () => {
+  // R4-B: dock-bottom and Full screen retired; the header keeps one "move to the other side" button
+  // and collapse. The rail is attached to the panel, so swapping the side moves BOTH.
+  test("Move panel to the right swaps the side (rail included) and keeps focus on the control", async ({
     page,
     browserName,
   }) => {
     await gotoWalk(page);
-    await tabTo(page, browserName, "Full screen", { step: "step 4: the Full screen control" });
+    await expect(page.locator("#panel-region")).toHaveAttribute("data-dock", "left");
+    await tabTo(page, browserName, "Move panel to the right", {
+      step: "step 4: the move-to-the-other-side control",
+    });
     await page.keyboard.press("Enter");
-    await expect(page.locator("#panel-region")).toHaveAttribute("data-maximized", "true");
-    await assertFocusUsable(page, "step 4: after maximizing");
-
-    await page.keyboard.press("Escape");
-    await expect(page.locator("#panel-region")).toHaveAttribute("data-maximized", "false");
-    const restored = await assertFocusUsable(page, "step 4: after Esc restores");
-    expect(restored, "focus must return to the control that opened maximize").toBe("Full screen");
+    await expect(page.locator("#panel-region")).toHaveAttribute("data-dock", "right");
+    await expect(page.locator("#rail-region")).toHaveAttribute("data-dock", "right");
+    await assertFocusUsable(page, "step 4: after moving the panel");
   });
 
   test("the resize handle is reachable and resizes with arrow keys (10px, 50px with Shift)", async ({
@@ -830,9 +834,9 @@ test.describe("step 4: R1 panel controls (dock/resize/maximize) are keyboard rea
   }) => {
     await gotoWalk(page);
     await tabTo(page, browserName, "Resize panel", { step: "step 4: the resize handle" });
-    await page.keyboard.press("ArrowLeft"); // dock=right (default): ArrowLeft grows the panel
+    await page.keyboard.press("ArrowRight"); // dock=left (default): ArrowRight grows the panel
     await expect(page.locator(":focus")).toHaveAttribute("aria-valuenow", "390");
-    await page.keyboard.press("Shift+ArrowLeft");
+    await page.keyboard.press("Shift+ArrowRight");
     await expect(page.locator(":focus")).toHaveAttribute("aria-valuenow", "440");
   });
 });

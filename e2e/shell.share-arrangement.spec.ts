@@ -50,7 +50,7 @@ async function clickShareAndCapture(page: Page): Promise<string> {
 }
 
 test.describe("R3-W8 item 3: Share reproduces the UI arrangement", () => {
-  test("dock bottom + Outlines expanded + FWS Range + zoom-to-layer off round-trip through a shared link", async ({
+  test("dock right + Outlines expanded + FWS Range + zoom-to-layer off round-trip through a shared link", async ({
     page,
     context,
   }) => {
@@ -58,10 +58,12 @@ test.describe("R3-W8 item 3: Share reproduces the UI arrangement", () => {
     await routeZonesPmtiles(page, FWS_RANGE_URL);
     await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
 
-    // arrange 1: dock bottom (Panel.svelte's own dock control -- chrome, never the URL, per U1).
+    // arrange 1: move the panel to the right (Panel.svelte's own move-to-the-other-side control --
+    // chrome, never the URL, per U1; R4-B: the default side is LEFT, so RIGHT is the arrangement
+    // worth sharing).
     const panelSurface = page.locator("#panel-region .panel-surface");
-    await panelSurface.getByRole("button", { name: "Dock bottom" }).click();
-    await expect(page.locator("#panel-region")).toHaveAttribute("data-dock", "bottom");
+    await panelSurface.getByRole("button", { name: "Move panel to the right" }).click();
+    await expect(page.locator("#panel-region")).toHaveAttribute("data-dock", "right");
 
     // arrange 2: expand the "Outlines" row (LayersPanel.svelte's second expandable row).
     const outlinesRow = page.getByRole("button", { name: "Outlines", exact: true });
@@ -78,10 +80,9 @@ test.describe("R3-W8 item 3: Share reproduces the UI arrangement", () => {
     await expect(page).toHaveURL(/[?&]zl=0(&|$)/);
 
     const shared = await clickShareAndCapture(page);
-    // R3-W8 item 4 bumped the `ui=` token to version 2 (a 7th `tab` field for the Layers pane's
-    // own two tabs); item 5 bumped it again to version 3 (an 8th `reportTab` field for the Report
-    // pane's own two tabs) -- see uiState.ts's own header.
-    expect(shared).toMatch(/[?&]ui=3\./);
+    // R4-B: the `ui=` token is version 4 (the Details tool is a `tool` code, the `tab` field is
+    // gone, the side is left|right) -- see uiState.ts's own header.
+    expect(shared).toMatch(/[?&]ui=4\./);
     expect(shared).toMatch(/[?&]in=rng_fws(&|$)/);
     expect(shared).toMatch(/[?&]zl=0(&|$)/);
 
@@ -94,7 +95,8 @@ test.describe("R3-W8 item 3: Share reproduces the UI arrangement", () => {
       const url = new URL(shared);
       await gotoSpecies(page2, `${url.pathname}${url.search}${url.hash}`);
 
-      await expect(page2.locator("#panel-region")).toHaveAttribute("data-dock", "bottom");
+      await expect(page2.locator("#panel-region")).toHaveAttribute("data-dock", "right");
+      await expect(page2.locator("#rail-region")).toHaveAttribute("data-dock", "right");
       await expect(page2.getByRole("button", { name: "Outlines", exact: true })).toHaveAttribute(
         "aria-expanded",
         "true",
@@ -103,6 +105,43 @@ test.describe("R3-W8 item 3: Share reproduces the UI arrangement", () => {
       await expect(page2.locator('[data-testid="layer-pill"][data-key="rng_fws"]')).toHaveClass(
         /active/,
       );
+    } finally {
+      await freshContext.close();
+    }
+  });
+});
+
+test.describe("R4-B: Share carries the Details tool and the side", () => {
+  test("Details open on the right round-trips as ui=4.d.r...", async ({ page, context }) => {
+    await armClipboardCapture(page);
+    await routeZonesPmtiles(page, FWS_RANGE_URL);
+    await gotoSpecies(page, `/?sp=${LEATHERBACK_SP}&ver=v9`);
+
+    await page
+      .locator("#panel-region .panel-surface")
+      .getByRole("button", { name: "Move panel to the right" })
+      .click();
+    await page
+      .locator('#rail-region [role="toolbar"]')
+      .getByRole("button", { name: "Details" })
+      .click();
+    await expect(
+      page.locator('#rail-region [role="toolbar"]').getByRole("button", { name: "Details" }),
+    ).toHaveAttribute("aria-current", "true");
+
+    const shared = await clickShareAndCapture(page);
+    expect(new URL(shared).searchParams.get("ui")).toMatch(/^4\.d\.r\./);
+
+    const freshContext = await context.browser()!.newContext();
+    const page2 = await freshContext.newPage();
+    try {
+      await routeZonesPmtiles(page2, FWS_RANGE_URL);
+      const url = new URL(shared);
+      await gotoSpecies(page2, `${url.pathname}${url.search}${url.hash}`);
+      await expect(page2.locator("#panel-region")).toHaveAttribute("data-dock", "right");
+      await expect(
+        page2.locator('#rail-region [role="toolbar"]').getByRole("button", { name: "Details" }),
+      ).toHaveAttribute("aria-current", "true");
     } finally {
       await freshContext.close();
     }

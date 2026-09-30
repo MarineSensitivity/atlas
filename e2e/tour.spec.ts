@@ -110,7 +110,7 @@ test.describe("every step's anchor actually exists on the lens it belongs to", (
     await expect(popover(page)).toHaveCount(0);
   }
 
-  test("scores: all 8 steps", async ({ page }) => {
+  test("scores: all 9 steps", async ({ page }) => {
     await gotoScores(page, "/?tour=on");
     await walkAndAssertAnchors(page, SCORES_TOUR_STEPS);
   });

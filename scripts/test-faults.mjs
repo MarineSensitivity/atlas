@@ -492,7 +492,7 @@ export const FAULTS = [
     id: "panel-geometry-in-url",
     patch: "tests/faults/panel-geometry-in-url.patch",
     describe:
-      "Panel.svelte's persist() also writes the chosen dock into the URL (?panelDock=) -- R1's " +
+      "Panel.svelte's persist() also writes the chosen side into the URL (?panelDock=) -- R1's " +
       "'layout is chrome, never the URL' rule, broken",
     gate: [
       "npx",
@@ -501,7 +501,7 @@ export const FAULTS = [
       "--project=chromium",
       "e2e/shell.panel.spec.ts",
       "-g",
-      "dock left: the button is pressed, and #panel-region reports it",
+      "the swap button moves both, and back",
       "--workers=1",
     ],
     env: { PW_PORT: "4373" },
@@ -819,8 +819,9 @@ export const FAULTS = [
     id: "legend-fixed-corner",
     patch: "tests/faults/legend-fixed-corner.patch",
     describe:
-      "ScoresLegend.svelte drops its dock=right override -- the legend sits back under the " +
-      "default right-docked panel (D1's real defect, replayed)",
+      "ScoresLegend.svelte drops its dock=right override -- the legend stays bottom-right and " +
+      "sits under a panel moved to the right, where the rail is attached too (D1's real defect, " +
+      "replayed for R4-B's left-by-default layout)",
     gate: [
       "npx",
       "playwright",
@@ -828,7 +829,7 @@ export const FAULTS = [
       "--project=chromium",
       "e2e/shell.legend-position.spec.ts",
       "-g",
-      "dock=right \\(the default\\)",
+      "dock=right: the legend mirrors",
       "--workers=1",
     ],
     env: { PW_PORT: "4379" },
@@ -1291,9 +1292,9 @@ export const FAULTS = [
     id: "panel-maximize-cap-restored",
     patch: "tests/faults/panel-maximize-cap-restored.patch",
     describe:
-      "Panel.svelte's `.panel--maximized { max-width: none }` rule is dropped -- the maximized " +
-      "panel's own content box reverts to R1's 720px docked-width ceiling even though " +
-      "`#panel-region` itself already spans the whole stage",
+      "Panel.svelte's `.panel--full { max-width: none }` rule is dropped -- the full-stage " +
+      "(Table) panel's own content box reverts to R1's 720px docked-width ceiling even though " +
+      "`#panel-region` itself already spans the stage beside the rail",
     gate: [
       "npx",
       "playwright",
@@ -1301,7 +1302,7 @@ export const FAULTS = [
       "--project=chromium",
       "e2e/shell.panel.spec.ts",
       "-g",
-      "drops its 720px cap when maximized",
+      "Table fills the stage beside the rail",
       "--workers=1",
     ],
     env: { PW_PORT: "4431" },
@@ -1809,14 +1810,14 @@ export const FAULTS = [
       "vitest gate (exact, deterministic) rather than the e2e pixel-margin check: GAA's own bbox " +
       "still lands with enough natural slack under either reserve in the hermetic fixture's " +
       "geometry for a fuzzy 5x5-grid/margin check to stay green either way, but the exact returned " +
-      "`right` value cannot -- see tests/map/chromePadding.test.ts's own 'W5 regression' case.",
+      "dock-side value cannot -- see tests/map/chromePadding.test.ts's own 'W5 regression' case.",
     gate: [
       "npx",
       "vitest",
       "run",
       "tests/map/chromePadding.test.ts",
       "-t",
-      "W5 regression: the right reserve clears the panel's real outer edge",
+      "W5 regression: the dock-side reserve clears the panel's real outer edge",
     ],
   },
   {
@@ -1976,9 +1977,10 @@ export const FAULTS = [
     id: "ui-token-tab-dropped",
     patch: "tests/faults/ui-token-tab-dropped.patch",
     describe:
-      "uiState.ts's formatUi() hardcodes the tab field to 'layers' instead of encoding the live " +
-      "Layers-pane tab -- a Share link built from the info tab (Flower plot / Species info) " +
-      "silently reopens on the Layers tab instead of reproducing what was showing",
+      "uiState.ts's formatUi() hardcodes the tool field to 'layers' instead of encoding the live " +
+      "tool (R4-B: regenerated from the retired `tab` field, whose info tab is now the Details " +
+      "tool) -- a Share link built from Details silently reopens on Layers instead of " +
+      "reproducing what was showing",
     gate: ["npx", "vitest", "run", "tests/shell/uiState.test.ts"],
   },
   // R3-W8 item 5 (Ben, verbatim: "some care should be given to not wiping out existing selections
@@ -2011,6 +2013,26 @@ export const FAULTS = [
       "same layer builds its own histogram, so the legend's shape varies from click to click " +
       "(Ben: it must represent the whole layer; only the marker follows a click)",
     gate: ["npx", "vitest", "run", "tests/lib/map/distribution.test.ts"],
+  },
+  // --- round 4, R4-B (the rail attaches to the panel; four tabs; left by default) ---------------
+  {
+    id: "table-tool-not-full-stage",
+    patch: "tests/faults/table-tool-not-full-stage.patch",
+    describe:
+      "tools.ts's toolTakesFullStage() never returns true -- Table opens at the side-dock width " +
+      "instead of taking the whole stage (control-grammar rule 5), so the table is squeezed back " +
+      "into a 380px column",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/shell.panel.spec.ts",
+      "-g",
+      "Table fills the stage beside the rail",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4522" },
   },
 ];
 

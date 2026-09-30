@@ -1,16 +1,18 @@
 <script lang="ts">
-  // R1 (docs/usability.md §7, owner decision 2026-09-24): ONE dockable panel -- dock left / right /
-  // bottom (a control in the header), drag-resize on the panel's map-facing edge (320-720 px),
-  // maximize to the whole stage (backdrop, Esc restores, focus trapped while maximized, the map
-  // stays mounted underneath) and collapse to the edge pill. Replaces the old three-button
-  // "collapse / half / full" model (0.10.28 and earlier) -- "full" used to mean "content height
-  // inside the same 380px-wide card"; maximize now means the whole stage, which is the usability
-  // M6 fix ("panels do not resize, move or maximize... wide tables scroll inside 380px").
+  // R1 (docs/usability.md §7, owner decision 2026-09-24): ONE dockable panel with drag-resize on the
+  // panel's map-facing edge (320-720 px) and collapse to the edge pill.
   //
-  // Geometry (collapsed + dock + size + maximized) is chrome, remembered per viewport size in
-  // localStorage (src/lib/ui/panelGeometry.ts), never the URL. Esc means "back off one level": it
-  // restores from maximized, or (not maximized) collapses to the pill -- the innermost meaning for
-  // whichever state the panel is actually in.
+  // R4-B (owner decision, 2026-09-30): the rail (the spine) is attached to this panel's outer edge
+  // and moves with it; the panel docks LEFT by default and swaps to RIGHT with one header button
+  // ("dock bottom" and "maximize / full screen" retired -- control-grammar.md rules 4 and 5). A
+  // tool that needs the whole stage (Table) passes `fullStage`: the panel then reports
+  // `maximized: true` through `ongeometry` (shell.css reads it to fill the stage beside the rail),
+  // hides the resize handle, and keeps every other behaviour -- no backdrop, no focus trap, it is
+  // an ordinary surface, not a modal. Leaving that tool restores the side dock automatically,
+  // because the stored dock/size were never touched.
+  //
+  // Geometry (collapsed + dock + size) is chrome, remembered per viewport size in localStorage
+  // (src/lib/ui/panelGeometry.ts), never the URL. Esc collapses the panel to its pill.
   import { onMount, tick, type Snippet } from "svelte";
   import Icon from "./Icon.svelte";
   import Pill from "./Pill.svelte";
@@ -46,14 +48,22 @@
      * overrides `collapsed`/`maximized` (chrome habits the link does not try to reproduce). `null`/
      * omitted keeps the ordinary localStorage-only load (every existing caller). */
     initialGeometryOverride?: { dock: Dock; size: number } | null;
+    /** R4-B: the active tool takes the whole stage (Table) -- reported as `maximized: true`. */
+    fullStage?: boolean;
   }
 
-  let { id, title, children, ongeometry, initialGeometryOverride }: Props = $props();
+  let {
+    id,
+    title,
+    children,
+    ongeometry,
+    initialGeometryOverride,
+    fullStage = false,
+  }: Props = $props();
 
   const bodyId = $derived(`panel-body-${id}`);
   const titleId = $derived(`panel-title-${id}`);
   let rootEl: HTMLDivElement | undefined;
-  let surfaceEl: HTMLElement | undefined = $state();
   let geometry = $state<PanelGeometry>(DEFAULT_PANEL_GEOMETRY);
 
   function storage(): Storage | null {
@@ -73,7 +83,7 @@
           size: clampPanelSize(initialGeometryOverride.size),
         }
       : loaded;
-    ongeometry?.(geometry);
+    report();
     // Esc-inside-a-panel is a keyboard shortcut for the whole panel, not a per-element widget
     // interaction, so it is wired imperatively (not a template `onkeydown` on a non-interactive
     // element, which svelte-check's a11y rule flags -- rightly, for the usual case of a fake
@@ -83,21 +93,35 @@
     // `focusin` on `document`, not `rootEl` -- a WebKit-only escape (see `onFocusEscape`'s own
     // header) lands the NEW focus target OUTSIDE `rootEl` entirely, so listening on `rootEl` itself
     // would never see it bubble (a `focusin` only bubbles up the TARGET's own ancestor chain).
-    document.addEventListener("focusin", onFocusEscape);
     return () => {
       el?.removeEventListener("keydown", handleKeydown);
-      document.removeEventListener("focusin", onFocusEscape);
     };
   });
 
+  // what the shell sees: the stored geometry, with `maximized` DERIVED from `fullStage` (R4-B).
+  // `mounted` keeps the effect from reporting before the loaded geometry exists.
+  let mounted = false;
+  function report() {
+    mounted = true;
+    ongeometry?.({ ...geometry, maximized: fullStage });
+  }
+  $effect(() => {
+    void fullStage;
+    if (mounted) report();
+  });
+
   function persist(next: PanelGeometry) {
-    geometry = next;
-    savePanelGeometry(storage(), id, viewportBucket(window.innerWidth), next);
-    ongeometry?.(next);
+    // `maximized` is never stored (panelGeometry.ts header) -- the stored copy is always false.
+    geometry = { ...next, maximized: false };
+    savePanelGeometry(storage(), id, viewportBucket(window.innerWidth), geometry);
+    report();
   }
 
-  async function collapse() {
-    persist({ ...geometry, collapsed: true, maximized: false });
+  /** collapse the panel to its pill. `moveFocus: false` (a click on the ACTIVE rail entry) leaves
+   * focus on that rail button, matching `expand()`. */
+  export async function collapse(moveFocus = true) {
+    persist({ ...geometry, collapsed: true });
+    if (!moveFocus) return;
     await tick();
     rootEl?.querySelector<HTMLButtonElement>(".panel-pill")?.focus();
   }
@@ -117,23 +141,9 @@
     rootEl?.querySelector<HTMLButtonElement>('[data-panel-control="collapse"]')?.focus();
   }
 
-  function setDock(dock: Dock) {
-    persist({ ...geometry, dock, maximized: false });
-  }
-
-  async function toggleMaximize() {
-    const next = !geometry.maximized;
-    persist({ ...geometry, maximized: next });
-    if (next) {
-      await tick();
-      // focus enters the maximized surface (SC 2.4.3) -- the title is the least surprising first
-      // stop, matching how a native dialog's showModal() lands focus on the dialog itself when it
-      // carries no autofocus control.
-      surfaceEl?.focus();
-    } else {
-      await tick();
-      rootEl?.querySelector<HTMLButtonElement>('[data-panel-control="maximize"]')?.focus();
-    }
+  /** the one "move to the other side" control (R4-B) -- the rail moves with the panel. */
+  function swapSide() {
+    persist({ ...geometry, dock: geometry.dock === "left" ? "right" : "left" });
   }
 
   function setSize(size: number) {
@@ -147,19 +157,19 @@
   let dragging = false;
 
   function pointerPos(e: PointerEvent): number {
-    return geometry.dock === "bottom" ? e.clientY : e.clientX;
+    return e.clientX;
   }
 
   // the sign a drag delta must be multiplied by so that dragging the handle TOWARD the map always
   // grows the panel, regardless of which edge it sits on (left dock: right edge, growing size as
   // the pointer moves right = "+1"; right dock: left edge, growing size as the pointer moves left
-  // = "-1"; bottom dock: top edge, growing size as the pointer moves up = "-1").
+  // = "-1").
   function dragSign(): 1 | -1 {
     return geometry.dock === "left" ? 1 : -1;
   }
 
   function onHandlePointerDown(e: PointerEvent) {
-    if (geometry.maximized) return;
+    if (fullStage) return;
     dragging = true;
     dragStartPos = pointerPos(e);
     dragStartSize = geometry.size;
@@ -187,14 +197,8 @@
 
   function onHandleKeydown(e: KeyboardEvent) {
     const step = e.shiftKey ? PANEL_RESIZE_STEP_FAST : PANEL_RESIZE_STEP;
-    // ArrowRight/ArrowLeft resize a left/right-docked panel; ArrowUp/ArrowDown resize a
-    // bottom-docked one -- whichever pair matches this handle's own orientation is a no-op, so
-    // both are always wired (a keyboard user need not first learn the dock to guess the pair).
     let delta = 0;
-    if (geometry.dock === "bottom") {
-      if (e.key === "ArrowUp") delta = step;
-      else if (e.key === "ArrowDown") delta = -step;
-    } else if (geometry.dock === "left") {
+    if (geometry.dock === "left") {
       if (e.key === "ArrowRight") delta = step;
       else if (e.key === "ArrowLeft") delta = -step;
     } else {
@@ -206,110 +210,20 @@
     setSize(geometry.size + delta);
   }
 
-  // R1 "focus trapped in the panel while maximized": the same Tab-cycle trap Modal.svelte's native
-  // dialog element gets for free -- a plain section, even one that fills the stage, has no such
-  // platform behaviour, so it is hand-rolled here, scoped to `geometry.maximized`.
-  const FOCUSABLE_SELECTOR =
-    "button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), " +
-    "textarea:not(:disabled), [tabindex]:not([tabindex='-1'])";
-
-  function isVisible(el: HTMLElement): boolean {
-    return typeof el.checkVisibility === "function"
-      ? el.checkVisibility()
-      : el.offsetParent !== null;
-  }
-
-  function trapTab(event: KeyboardEvent) {
-    if (!geometry.maximized || !surfaceEl) return;
-    const focusable = [...surfaceEl.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
-      isVisible,
-    );
-    if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    const active = document.activeElement;
-    // focus starting OUTSIDE the surface (e.g. still on the rail button that opened it) is pulled
-    // back in rather than left to escape on the very next Tab.
-    const insideSurface = active instanceof Node && surfaceEl.contains(active);
-    if (!insideSurface) {
-      event.preventDefault();
-      (event.shiftKey ? last : first).focus();
-      return;
-    }
-    // `active === surfaceEl` itself -- the programmatic focus target on maximize (SC 2.4.3's "the
-    // title is the least surprising first stop"), `tabindex="-1"` so it never appears in
-    // `focusable` above. `surfaceEl.contains(surfaceEl)` is true (a node contains itself), so this
-    // fell through `insideSurface` uncaught -- neither boundary check below ever matches it (it is
-    // not `last` NOR `first`), so a Shift+Tab from the very first keypress after maximizing hit no
-    // branch at all and fell through to the browser's OWN native focus move, which (WebKit only --
-    // Chromium/Firefox happened not to expose this on the same DOM) escaped straight to the rail
-    // button that opened the panel. Treat it as its own boundary: always intercepted, wrapping to
-    // `last` on Shift+Tab (mirroring "arrived at the end, moving backward") or `first` on Tab.
-    if (active === surfaceEl) {
-      event.preventDefault();
-      (event.shiftKey ? last : first).focus();
-      return;
-    }
-    if (!event.shiftKey && active === last) {
-      event.preventDefault();
-      first.focus();
-    } else if (event.shiftKey && active === first) {
-      event.preventDefault();
-      last.focus();
-    }
-  }
-
-  // safety net for a WebKit-only quirk `trapTab`'s keydown interception cannot see coming: this
-  // panel's own scrollable BODY region is a `tabindex="0"` container (`.panel-body` below, the
-  // "scrollable-region-focusable" a11y fix) that also holds many real focusable descendants (a
-  // long table's row/sort/filter controls). Chromium/Firefox visit that container in plain DOM
-  // order -- BEFORE its descendants, same as `querySelectorAll` -- so it is never `focusable`'s
-  // own `last` element and the ordinary boundary check above is enough. WebKit's native forward-
-  // tab order instead revisits the SAME container AFTER exhausting its descendants (its own
-  // "leaving a scrollable region" stop), which is a real element `trapTab` never predicts as a
-  // boundary because it is not array-last -- so a plain Tab from it fell through untouched and
-  // native WebKit then moved focus straight out of `surfaceEl` entirely, with no `keydown` this
-  // component ever sees again (proven by direct instrumentation: 15 forward Tabs from a real
-  // ~50-control maximized table repeated the escape every ~5 presses). Reacting to `focusin`
-  // rather than guessing every engine's own boundary geometry ahead of time is the standard
-  // focus-trap correction for exactly this class of quirk: whatever focus lands on, if it ends up
-  // outside `surfaceEl` while still maximized, snap it back -- to `last` if the escape happened on
-  // a backward (Shift+Tab) press, `first` otherwise, mirroring `trapTab`'s own wrap direction.
-  function onFocusEscape() {
-    if (!geometry.maximized || !surfaceEl) return;
-    const active = document.activeElement;
-    if (active instanceof Node && surfaceEl.contains(active)) return; // still inside -- nothing to do
-    const focusable = [...surfaceEl.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
-      isVisible,
-    );
-    if (focusable.length === 0) return;
-    (lastTabShiftKey ? focusable[focusable.length - 1] : focusable[0]).focus();
-  }
-
-  // the innermost open layer handles Esc first: if some other open layer (a Select, a Popover)
-  // already handled this SAME keydown and called preventDefault() on it, this panel must not
-  // ALSO react to it. Esc means "back off one level": restore from maximized, else collapse.
-  // last Tab keydown's direction, read by `onFocusEscape` below (a `focusin` fires with no
-  // shiftKey of its own to consult).
-  let lastTabShiftKey = false;
-
   function handleKeydown(event: KeyboardEvent) {
-    if (event.key === "Tab") {
-      lastTabShiftKey = event.shiftKey;
-      trapTab(event);
-      return;
-    }
+    // the innermost open layer handles Esc first: if some other open layer (a Select, a Popover)
+    // already handled this SAME keydown and called preventDefault() on it, this panel must not
+    // ALSO react to it. Esc means "back off one level" -- for the panel, collapse.
     if (event.key !== "Escape" || event.defaultPrevented || geometry.collapsed) return;
     event.preventDefault();
-    if (geometry.maximized) toggleMaximize();
-    else collapse();
+    collapse();
   }
 </script>
 
 <div
   class="panel"
   class:panel--collapsed={geometry.collapsed}
-  class:panel--maximized={geometry.maximized}
+  class:panel--full={fullStage}
   data-dock={geometry.dock}
   bind:this={rootEl}
 >
@@ -318,13 +232,12 @@
   {:else}
     <section
       class="panel-surface"
-      class:panel-surface--maximized={geometry.maximized}
+      class:panel-surface--full={fullStage}
       data-dock={geometry.dock}
       aria-labelledby={titleId}
-      bind:this={surfaceEl}
       tabindex="-1"
     >
-      {#if !geometry.maximized}
+      {#if !fullStage}
         <!-- the APG "window splitter" pattern: role=separator, tabindex, aria-value*, arrow-key
              operable -- a legitimate custom widget, not a plain div a11y's rule assumes it is. -->
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -333,7 +246,7 @@
           class="resize-handle"
           role="separator"
           aria-label="Resize panel"
-          aria-orientation={geometry.dock === "bottom" ? "horizontal" : "vertical"}
+          aria-orientation="vertical"
           aria-valuenow={geometry.size}
           aria-valuemin={PANEL_SIZE_MIN}
           aria-valuemax={PANEL_SIZE_MAX}
@@ -345,48 +258,19 @@
       {/if}
       <div class="panel-head">
         <h2 class="panel-title" id={titleId}>{title}</h2>
-        <div class="panel-controls" role="group" aria-label="Panel position and size">
-          <!-- UI-11 (round 3): `data-tooltip` equal to `aria-label` -- these five icon-only
-               controls had no tooltip mechanism at all before this round. -->
+        <div class="panel-controls" role="group" aria-label="Panel position">
+          <!-- R4-B: two controls -- "move to the other side" and collapse. `data-tooltip` equal to
+               `aria-label` (UI-11). The swap button's icon points at the side it will move TO. -->
           <button
             type="button"
-            aria-pressed={geometry.dock === "left"}
-            aria-label="Dock left"
-            data-tooltip="Dock left"
-            disabled={geometry.maximized}
-            onclick={() => setDock("left")}
+            data-panel-control="swap-side"
+            aria-label={geometry.dock === "left"
+              ? "Move panel to the right"
+              : "Move panel to the left"}
+            data-tooltip={geometry.dock === "left" ? "Move to the right" : "Move to the left"}
+            onclick={swapSide}
           >
-            <Icon name="dockLeft" size={18} />
-          </button>
-          <button
-            type="button"
-            aria-pressed={geometry.dock === "bottom"}
-            aria-label="Dock bottom"
-            data-tooltip="Dock bottom"
-            disabled={geometry.maximized}
-            onclick={() => setDock("bottom")}
-          >
-            <Icon name="dockBottom" size={18} />
-          </button>
-          <button
-            type="button"
-            aria-pressed={geometry.dock === "right"}
-            aria-label="Dock right"
-            data-tooltip="Dock right"
-            disabled={geometry.maximized}
-            onclick={() => setDock("right")}
-          >
-            <Icon name="dockRight" size={18} />
-          </button>
-          <button
-            type="button"
-            data-panel-control="maximize"
-            aria-pressed={geometry.maximized}
-            aria-label={geometry.maximized ? "Restore" : "Full screen"}
-            data-tooltip={geometry.maximized ? "Restore" : "Full screen"}
-            onclick={toggleMaximize}
-          >
-            <Icon name={geometry.maximized ? "restore" : "maximize"} size={18} />
+            <Icon name={geometry.dock === "left" ? "dockRight" : "dockLeft"} size={18} />
           </button>
           <button
             type="button"
@@ -395,46 +279,23 @@
             aria-controls={bodyId}
             aria-label="Collapse to a pill"
             data-tooltip="Collapse to a pill"
-            onclick={collapse}
+            onclick={() => collapse()}
           >
-            <Icon name="collapseSide" size={18} />
+            <Icon name={geometry.dock === "left" ? "collapseSideLeft" : "collapseSide"} size={18} />
           </button>
         </div>
       </div>
-      <!-- atlas-8 fix: this used to ALSO be given the region landmark role plus its own aria-label
-           -- a second landmark nested directly inside the section element above, which is already
-           the panel's ONE region (named by the h2 via aria-labelledby). Two nested regions with
-           near-duplicate names ("Layers" / "Layers details") is worse for a screen-reader user
-           than one, so this is a plain `group` (NOT a landmark role -- `group` is never one),
-           still reachable by keyboard (tabindex, the scrollable-region-focusable fix Sheet.svelte's
-           own body carries; svelte-check's a11y rule does not know that exception).
-
-           fix list #7 (SC 4.1.2): that earlier fix dropped the name along with the landmark --
-           `tabindex="0"` with no role and no accessible name at all, a tab stop a screen reader
-           announces as nothing (KNOWN_UNNAMED_STOPS in e2e/keyboard-walk.spec.ts, finding A11Y-7).
-           `role="group"` + `aria-label` restores a name WITHOUT reintroducing the landmark this
-           file's own atlas-8 fix removed -- exactly Sheet.svelte's `.sheet-body` pattern
-           (`region "{title} details"`), just with `group` in place of `region`. -->
+      <!-- atlas-8 fix: a plain `group` (NOT a landmark role) named by aria-label, still reachable by
+           keyboard (tabindex, the scrollable-region-focusable fix Sheet.svelte's own body carries;
+           svelte-check's a11y rule does not know that exception). fix list #7 (SC 4.1.2): the name
+           is what keeps this tab stop from being announced as nothing. -->
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div
-        class="panel-body"
-        id={bodyId}
-        role="group"
-        aria-label={`${title} details`}
-        class:panel-body--maximized={geometry.maximized}
-        tabindex="0"
-      >
+      <div class="panel-body" id={bodyId} role="group" aria-label={`${title} details`} tabindex="0">
         {@render children()}
       </div>
     </section>
   {/if}
 </div>
-{#if geometry.maximized}
-  <!-- backdrop only, for a clear affordance that the stage is temporarily all-panel; the map stays
-       mounted underneath (docs/map.md: a lens' composeStyle inputs are a lens-level store, never
-       gated on whether the panel/sheet happens to be mounted) -- clicking it restores, same as Esc. -->
-  <div class="panel-backdrop" onclick={toggleMaximize} aria-hidden="true"></div>
-{/if}
 
 <style>
   .panel {
@@ -455,13 +316,10 @@
     height: 100%;
   }
 
-  /* V1 fix (Opus eyes-on review, 2026-09-24): "desktop Full screen panel is capped at 720px" --
-     `#panel-region[data-maximized="true"]` (shell.css) already spans the whole stage edge to edge,
-     but THIS element's own 720px ceiling (above, R1's docked-width cap) still applied on top of
-     it, so a maximized panel's content box stayed 720px wide inside a full-stage frame. Lifting
-     the cap only while maximized keeps the 720px docked/half-width ceiling intact (this rule does
-     not touch `.panel--collapsed`, which sets its own `width: fit-content`). */
-  .panel--maximized {
+  /* R4-B: a full-stage tool (Table) lifts the 720px docked-width cap -- `#panel-region[data-maximized=
+     "true"]` (shell.css) spans the stage beside the rail, and this element's own ceiling would
+     otherwise keep the content box 720px wide inside that frame. */
+  .panel--full {
     max-width: none;
   }
 
@@ -478,10 +336,13 @@
     height: fit-content;
     margin-left: auto;
   }
+  .panel--collapsed[data-dock="right"] {
+    margin-left: auto;
+    margin-right: 0;
+  }
 
-  /* dock=left: `.panel-region` is anchored to the STAGE's left edge, so the pill flushes left
-     instead (mirrors the default's flush-right, above -- the `margin-left: auto` on dock=right/
-     bottom pushes the pill to whichever side the region's own outer edge is on). */
+  /* R4-B: the default side is LEFT, so the pill flushes to the rail (the region's left edge);
+     dock=right flips it (below). */
   .panel--collapsed[data-dock="left"] {
     margin-left: 0;
     margin-right: auto;
@@ -506,30 +367,10 @@
     outline-offset: -2px;
   }
 
-  /* R1 maximize: the panel fills the whole stage. shell.css positions `.panel-region` itself
-     (dock/size); this rule only needs to override the CONTENT box, since `.panel-region` already
-     switches to `inset: 0` at this state (see shell.css's own `[data-maximized]` rule).
-     `z-index: 31` (U1 fix round, CI run 35956406448 on 0.10.39): shell.css's `#panel-region
-     [data-maximized="true"]` z-index (40) only orders `#panel-region` against ITS OWN SIBLINGS
-     (the rail region, the legend-chip region) -- it does nothing for the stacking order BETWEEN
-     `.panel-surface` and `.panel-backdrop` below, which are both `#panel-region`'s own CHILDREN,
-     compared in their OWN local stacking context. `.panel-backdrop` carries an explicit z-index
-     (30); `.panel-surface` did not, so its effective z-index was `auto` -- and an explicit
-     z-index beats `auto` regardless of DOM order, so the backdrop painted (and intercepted
-     clicks) OVER the panel's own header controls the whole time this comment claimed the
-     opposite. Caught by e2e/shell.url-state.spec.ts's interaction walk: `locator.click` on
-     "Restore" timed out with "panel-backdrop intercepts pointer events", on three engines. */
-  .panel-surface--maximized {
-    border-radius: 0;
-    z-index: 31;
-  }
-
-  .panel-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 30;
-    background: var(--scrim);
-    opacity: 0.4;
+  /* R4-B full stage: square corners are NOT wanted (the panel stays a card beside the rail);
+     shell.css sizes `.panel-region` itself. */
+  .panel-surface--full {
+    box-shadow: var(--elev-2);
   }
 
   /* the resize handle sits ON the panel's map-facing edge -- shell.css decides WHICH edge (`[data-
@@ -555,44 +396,35 @@
     width: 6px;
     cursor: ew-resize;
   }
+  /* INSIDE the surface's own edge (not straddling it): `.panel-surface` is `overflow: hidden`, so a
+     handle centred ON the edge had its outer half clipped -- a pointer at the handle's own
+     bounding-box centre hit the map underneath instead (R4-B: the left-docked default put the
+     handle's centre just outside the surface's right edge). */
   [data-dock="left"] .resize-handle {
-    right: -3px;
+    right: 0;
   }
   [data-dock="right"] .resize-handle {
-    left: -3px;
-  }
-  [data-dock="bottom"] .resize-handle {
     left: 0;
-    right: 0;
-    top: -3px;
-    height: 6px;
-    cursor: ns-resize;
   }
-
   @media (pointer: coarse) {
     [data-dock="left"] .resize-handle,
     [data-dock="right"] .resize-handle {
       width: var(--size-touch);
     }
     [data-dock="left"] .resize-handle {
-      right: calc(var(--size-touch) / -2);
+      right: 0;
     }
     [data-dock="right"] .resize-handle {
-      left: calc(var(--size-touch) / -2);
-    }
-    [data-dock="bottom"] .resize-handle {
-      height: var(--size-touch);
-      top: calc(var(--size-touch) / -2);
+      left: 0;
     }
   }
 
   .panel-head {
     position: relative;
-    /* 188px: 5 controls (32px + var(--space-1)/4px gap each = 176px) plus the group's own `right:
-       var(--space-2)`/8px offset, plus a small buffer -- the same margin the old 3-control 116px
-       reservation kept (112px used, +4px buffer). index.html/shell.css's `.sk-panel-head` mirrors
-       this number for the CLS gate. */
-    padding: var(--space-3) 188px var(--space-3) var(--space-4);
+    /* 84px: R4-B's 2 controls (32px + var(--space-1)/4px gap each = 72px) plus the group's own
+       `right: var(--space-2)`/8px offset, plus a small buffer. index.html/shell.css's
+       `.sk-panel-head` mirrors this number for the CLS gate. */
+    padding: var(--space-3) 84px var(--space-3) var(--space-4);
     border-bottom: 1px solid var(--divider);
     flex: none;
   }
@@ -651,16 +483,6 @@
     cursor: not-allowed;
   }
 
-  /* SC 1.4.1: aria-expanded="true" is NOT in this selector -- the collapse control (Panel.svelte's
-     own header button, above) is always expanded whenever these controls are visible at all, so
-     matching on it here painted collapse as if it were the currently-selected dock/maximize state
-     permanently, with no relation to which is actually active (atlas-3 closing review, item 1). */
-  .panel-controls button[aria-pressed="true"] {
-    color: var(--text-primary);
-    border-color: var(--border-control);
-    background: var(--fill-control);
-  }
-
   @media (pointer: coarse) {
     .panel-controls button {
       width: var(--size-touch);
@@ -672,15 +494,5 @@
     flex: 1;
     overflow: auto;
     padding: var(--space-3) var(--space-4) var(--space-4);
-  }
-
-  /* usability M6: "wide content (the zones table) must be usable at the widest dock and in
-     maximize" -- the body scrolls the full height of whatever the surface actually is (the
-     `max-height: 60vh` the old "half" detent needed no longer applies at all: height now comes
-     from the dock/size shell.css sets on `.panel-region`, and `.panel-surface` is `height: 100%`
-     of that). Kept as its own class (rather than deleting the rule entirely) so a future detent
-     mode has somewhere to hang a height override again without re-deriving this. */
-  .panel-body--maximized {
-    max-height: none;
   }
 </style>
