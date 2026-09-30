@@ -1,7 +1,7 @@
 // Ben's ask (round 4, R4-A): the legend histogram's pure math -- binning, bars on the ramp's
 // x-axis, and the marker position. See src/lib/map/density.ts's own header.
 import { describe, expect, it } from "vitest";
-import { binValues, histogramBars, markerX } from "../../../src/lib/map/density";
+import { binValues, formatMarkerValue, histogramBars, markerX } from "../../../src/lib/map/density";
 
 describe("binValues", () => {
   it("empty input: a zero-bin histogram, never a throw", () => {
@@ -107,5 +107,21 @@ describe("histogramBars (bins-to-bars scaling on the ramp's axis)", () => {
     expect(bars).toHaveLength(1);
     expect(bars[0].h).toBe(1);
     expect(bars[0].x + bars[0].w / 2).toBeCloseTo(0.5, 9);
+  });
+});
+
+describe("formatMarkerValue (matches the popup's value line)", () => {
+  it("a Program-area value prints the popup's integer, not the raw float", () => {
+    expect(formatMarkerValue(33.0930431598879)).toBe("33");
+  });
+  it("a raster cell value and a species value print their integers", () => {
+    expect(formatMarkerValue(50)).toBe("50");
+    expect(formatMarkerValue(71.5)).toBe("72");
+    expect(formatMarkerValue(0.4)).toBe("0");
+  });
+  it("null / non-finite -> no label", () => {
+    expect(formatMarkerValue(null)).toBeNull();
+    expect(formatMarkerValue(undefined)).toBeNull();
+    expect(formatMarkerValue(NaN)).toBeNull();
   });
 });

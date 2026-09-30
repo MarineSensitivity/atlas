@@ -5,7 +5,7 @@
   // 3:1 stop-to-stop (spec.md §8), which is why it is labelled with tick VALUES rather than relying
   // on color alone.
   import { legendTicks, colorForValue, type LegendStop } from "../raster/ramps";
-  import { histogramBars, markerX, type Histogram } from "../map/density";
+  import { formatMarkerValue, histogramBars, markerX, type Histogram } from "../map/density";
   import { uid } from "./uid";
 
   interface Props {
@@ -75,7 +75,8 @@
     });
   });
   const markerFrac = $derived(markerX(marker, domain));
-  const markerLabel = $derived(marker === null ? "" : formatValue(marker));
+  // the popup's own rounding, not the ramp-end formatter (which keeps decimals)
+  const markerLabel = $derived(formatMarkerValue(marker) ?? "");
   const histogramName = $derived(
     `Distribution of ${title} across the whole layer, ${unit} from ${
       stops.length ? formatValue(stops[0].value) : ""

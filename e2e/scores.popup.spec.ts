@@ -310,6 +310,9 @@ test.describe("scores lens -- legend histogram + marker (R4-A)", () => {
     await fireMapClick(page, { lng: CELL_1.lon, lat: CELL_1.lat });
     await expect(legend.getByTestId("legend-marker")).toBeVisible({ timeout: 15_000 });
     await expect(legend.getByTestId("legend-marker")).toContainText("50");
+    // the marker label is the popup's own value text ("Overall score 50" -> "50")
+    await expect.poll(() => popupText(page), { timeout: 15_000 }).toContain("Overall score 50");
+    expect((await legend.getByTestId("legend-marker").innerText()).trim()).toBe("50");
 
     const CELL_2 = cellLonLat(2, GRID, true);
     await fireMapClick(page, { lng: CELL_2.lon, lat: CELL_2.lat });

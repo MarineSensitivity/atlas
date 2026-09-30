@@ -107,3 +107,14 @@ export function histogramBars(
   }
   return bars;
 }
+
+/**
+ * The marker's label: the SAME rounding the click popup's value line uses (`lib/format.ts#
+ * formatValueLine`, `Math.round` -- Scores zones, Scores cells and Species all print an integer
+ * there), so the legend never shows a raw "33.0930431598879" beside a popup that says "Score 33".
+ * `null` (no marker) for a non-finite/absent value.
+ */
+export function formatMarkerValue(value: number | null | undefined): string | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) return null;
+  return String(Math.round(value));
+}
