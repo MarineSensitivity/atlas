@@ -90,7 +90,16 @@ export const SCORES_TOUR_STEPS: TourStep[] = [
     side: "left",
     align: "start",
     title: "Click",
-    description: "Click a cell or a Program Area for its score and its flower.",
+    description: "Click a cell or a Program Area for its score and a link to its details.",
+  },
+  {
+    // R4-B: the Flower tab left the Layers pane and became the spine's own "Details" entry.
+    id: "details",
+    element: '[data-tour="rail-details"]',
+    side: "right",
+    title: "Details",
+    description: "The flower for what you clicked; add it to your report or open its table.",
+    before: (a) => a.selectTool("details"),
   },
   {
     id: "table",
@@ -156,7 +165,7 @@ export const SPECIES_TOUR_STEPS: TourStep[] = [
   {
     id: "card",
     element: '[data-tour="panel"]',
-    side: "left",
+    side: "right", // R4-B: the panel docks left by default
     align: "start",
     title: "The card",
     description: "The merged model and the inputs it combines.",

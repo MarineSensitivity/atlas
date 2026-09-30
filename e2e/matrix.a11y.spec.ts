@@ -2,7 +2,7 @@
 // (zero serious/critical) on every matrix state + the gallery + the report", and until this file
 // the axe coverage was four shell states (e2e/shell.a11y.spec.ts: 2 themes x 2 widths), four
 // gallery states (e2e/gallery.spec.ts) and one report state (e2e/report.spec.ts) -- nine of the
-// 174 runs (58 named view states x 3 viewports) `scripts/verify.mjs` enumerates. A lens panel, a
+// 186 runs (62 named view states x 3 viewports) `scripts/verify.mjs` enumerates. A lens panel, a
 // legend, a popup or a table that only appears under one `?lyr=`/`?unit=`/`?sp=` combination was
 // never audited at all.
 //
@@ -15,7 +15,7 @@
 // computed accessibility tree in every engine, and the per-engine differences this repo actually
 // cares about are KEYBOARD ones (e2e/keyboard-walk.spec.ts, which does run on all three). The
 // webkit/firefox projects skip this file via playwright.config.ts's per-project `testIgnore`, so a
-// full run reports 179 audits, not 179 audits plus 358 skips.
+// full run reports 191 audits, not 191 audits plus 382 skips.
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { gotoState, STATE_MATRIX, VIEWPORTS } from "../scripts/verify.mjs";
@@ -53,7 +53,7 @@ function summarize(bad: Awaited<ReturnType<typeof seriousOrCritical>>): string {
   );
 }
 
-// every state x every viewport `scripts/verify.mjs` itself runs -- the same 58 x 3 = 174 runs its
+// every state x every viewport `scripts/verify.mjs` itself runs -- the same 58 x 3 = 186 runs its
 // own summary line reports, so "axe on every matrix state" means the same set of pages `npm run
 // verify` means by it, not a desktop-only subset. Width is not cosmetic here: below 900 px the
 // panel is a `Sheet`, not a `Panel` (different DOM, different controls), and the floating legends

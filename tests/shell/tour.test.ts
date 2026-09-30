@@ -37,20 +37,21 @@ function fakeActions(currentLens: "scores" | "species" = "scores"): TourActions 
   };
 }
 
-describe("SCORES_TOUR_STEPS: 8 steps, docs/usability.md §5", () => {
-  it("has exactly 8 steps, unique ids, in the documented order", () => {
-    expect(SCORES_TOUR_STEPS).toHaveLength(8);
+describe("SCORES_TOUR_STEPS: 9 steps, docs/usability.md §5 (R4-B added Details)", () => {
+  it("has exactly 9 steps, unique ids, in the documented order", () => {
+    expect(SCORES_TOUR_STEPS).toHaveLength(9);
     expect(SCORES_TOUR_STEPS.map((s) => s.id)).toEqual([
       "map",
       "release",
       "lenses",
       "layers",
       "click",
+      "details",
       "table",
       "places",
       "report",
     ]);
-    expect(new Set(SCORES_TOUR_STEPS.map((s) => s.id)).size).toBe(8);
+    expect(new Set(SCORES_TOUR_STEPS.map((s) => s.id)).size).toBe(9);
   });
 
   it("every step has a non-empty selector, title and description (≤ 2 sentences)", () => {
@@ -69,12 +70,13 @@ describe("SCORES_TOUR_STEPS: 8 steps, docs/usability.md §5", () => {
     }
   });
 
-  it("the layers/table/report steps each open exactly their own rail tool via selectTool()", () => {
+  it("the layers/details/table steps each open exactly their own rail tool via selectTool()", () => {
     // owner review item 3 (live 0.10.62): "report" moved from the removed desktop topbar button
     // to the rail's own Report tool (tour.ts's own header) -- it now needs the SAME before() hook
     // its rail siblings already had, not the "always mounted" exemption above.
     for (const [id, tool] of [
       ["layers", "layers"],
+      ["details", "details"],
       ["table", "table"],
     ] as const) {
       const a = fakeActions();
