@@ -4,7 +4,7 @@
 // reachability, not labels or the active marker; tools.test.ts is a pure-data test with no DOM):
 //   1. every tool's label is VISIBLE text on desktop (not tooltip-only -- the usability finding
 //      this decision answers: "meaning only in tooltips ... a first-timer has to hover each").
-//   2. the phone rail is a labelled ROW (tab bar), same three tools, at every sheet detent.
+//   2. the phone spine is a labelled ROW (tab bar), same four tools, at every sheet detent.
 //   3. the active tool's marker (`aria-current`, plus the accent fill/ring CSS) follows clicks.
 //   4. arrow keys (+ Home/End) move the roving-tabindex focus stop, per roving.ts.
 //

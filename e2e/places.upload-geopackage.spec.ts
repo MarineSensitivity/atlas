@@ -82,9 +82,8 @@ async function gotoPlacesWithRealRelease(page: Page): Promise<void> {
   // spatial extension from extensions.duckdb.org (not mirrored, S4 rule 2), is the whole point.
   await page.goto("/");
   await page.waitForSelector("#rail-region .rail", { state: "attached" });
-  // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- open the
-  // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
-  // even if a PRIOR step on this page already switched to the Report tab).
+  // R4-D: Report pane is one flow, Places at the top -- opening the Report tool shows
+  // Places by default (the flow scrolls to the Places section if needed).
   await page.locator("#rail-region button[aria-label='Report']").click();
 }
 

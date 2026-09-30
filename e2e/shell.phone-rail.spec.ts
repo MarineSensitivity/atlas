@@ -14,8 +14,8 @@
 // timed out with the sheet's content intercepting the tap").
 //
 // The phone species search (m1-adjacent, a different owner) is out of scope here -- this spec only
-// taps the Report rail item (R3-W8 item 5: Places folded into the Report pane as its own default
-// tab) and reads the sheet's own title, never species state.
+// taps the Report tool (R4-D: Places section at the top of the one-flow Report pane) and
+// reads the sheet's own title, never species state.
 import { expect, test, type Page } from "@playwright/test";
 import { gotoPublicShell, waitForHydration } from "./hermetic";
 
