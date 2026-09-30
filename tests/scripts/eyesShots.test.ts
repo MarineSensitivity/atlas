@@ -69,7 +69,7 @@ describe("scripts/eyes-shots.mjs: the third-pass fixes stay in place", () => {
     expect(src).toContain("process.env.OUT");
     expect(src).toContain("process.env.ONLY");
     expect(src).toMatch(
-      /ATLAS_URL=http:\/\/localhost:\d+ OUT=\.tmp\/eyes \[ONLY=map,layers\] node scripts\/eyes-shots\.mjs/,
+      /ATLAS_URL=http:\/\/localhost:\d+ OUT=\.tmp\/eyes \[ONLY=map,layers\] \[SHEET=1\] node scripts\/eyes-shots\.mjs/,
     );
   });
 });
@@ -145,7 +145,7 @@ describe("scripts/eyes-shots.mjs: the V5 fixes stay in place (fourth pass)", () 
     expect(src).toContain("process.env.OUT");
     expect(src).toContain("process.env.ONLY");
     expect(src).toMatch(
-      /ATLAS_URL=http:\/\/localhost:\d+ OUT=\.tmp\/eyes \[ONLY=map,layers\] node scripts\/eyes-shots\.mjs/,
+      /ATLAS_URL=http:\/\/localhost:\d+ OUT=\.tmp\/eyes \[ONLY=map,layers\] \[SHEET=1\] node scripts\/eyes-shots\.mjs/,
     );
   });
 });
@@ -244,7 +244,7 @@ describe("scripts/eyes-shots.mjs: the W5 fix stays in place (fifth pass)", () =>
     expect(src).toContain("process.env.OUT");
     expect(src).toContain("process.env.ONLY");
     expect(src).toMatch(
-      /ATLAS_URL=http:\/\/localhost:\d+ OUT=\.tmp\/eyes \[ONLY=map,layers\] node scripts\/eyes-shots\.mjs/,
+      /ATLAS_URL=http:\/\/localhost:\d+ OUT=\.tmp\/eyes \[ONLY=map,layers\] \[SHEET=1\] node scripts\/eyes-shots\.mjs/,
     );
   });
 });

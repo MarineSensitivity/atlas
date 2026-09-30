@@ -2,7 +2,8 @@
 // phone (390x844 @2x) + desktop (1280x800), dark theme. Part of every merge since 2026-09-24 (Ben found
 // seven obvious phone bugs on a tree every automated gate had passed).
 //   npm run build && npx vite preview --port 4386 --strictPort &
-//   ATLAS_URL=http://localhost:4386 OUT=.tmp/eyes [ONLY=map,layers] node scripts/eyes-shots.mjs
+//   ATLAS_URL=http://localhost:4386 OUT=.tmp/eyes [ONLY=map,layers] [SHEET=1] node scripts/eyes-shots.mjs
+// SHEET=1 also writes <OUT>/contact-{desktop,phone}[-N].png: this run's shots in one labelled grid (R4-0).
 // 2026-09-24 second pass (Opus review of the first set): welcome needs a BARE url (any query counts as a
 // deep link and suppresses the modal); the desktop maximize button is "Full screen"; one browser context
 // per state (the sheet detent persists in localStorage); the report opens in a NEW TAB; taps on ocean.
@@ -48,6 +49,9 @@
 // viewports -- then shoots it, on both viewports (no phone-only/desktop-only guard).
 import { chromium } from "@playwright/test";
 import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { contactSheetHtml, paginate } from "./contact-sheet.mjs";
 const BASE = process.env.ATLAS_URL ?? "http://localhost:4380/atlas";
 const OUT = process.env.OUT ?? ".tmp/eyes";
 mkdirSync(OUT, { recursive: true });
@@ -204,9 +208,11 @@ async function waitForSpeciesLoaded(page, timeoutMs = 30_000) {
     );
   }
 }
+const shots = [];
 async function shot(page, vp, name) {
   const p = `${OUT}/${vp}-${name}.png`;
   await page.screenshot({ path: p, timeout: 30_000 });
+  shots.push({ vp, name: `${name}`, path: p });
   log("shot", p);
 }
 // V5 fix (new state): selects a real Program Area through the Scores-lens search field
@@ -502,6 +508,30 @@ for (const [vp, opts] of Object.entries(VIEWPORTS)) {
       log("FAIL", vp, st.id, String(e).split("\n")[0]);
     }
     await ctx.close();
+  }
+}
+// SHEET=1: this run's shots only (the `shots` list), one labelled grid per viewport (R4-0)
+if (process.env.SHEET === "1") {
+  for (const vp of Object.keys(VIEWPORTS)) {
+    const tiles = shots
+      .filter((s) => s.vp === vp)
+      .map((s) => ({ name: s.name, src: pathToFileURL(resolve(s.path)).href }));
+    if (!tiles.length) continue;
+    const pages = paginate(tiles);
+    for (const [i, pg] of pages.entries()) {
+      const ctx = await browser.newContext({ deviceScaleFactor: 1 });
+      const page = await ctx.newPage();
+      const file = `${OUT}/contact-${vp}${i ? `-${i + 1}` : ""}.png`;
+      const html = contactSheetHtml(pg, vp);
+      // file:// images need a file:// origin; setContent on about:blank blocks them, so write + goto
+      const htmlPath = resolve(OUT, `.contact-${vp}-${i + 1}.html`);
+      (await import("node:fs")).writeFileSync(htmlPath, html);
+      await page.goto(pathToFileURL(htmlPath).href);
+      await page.waitForFunction(() => [...document.images].every((im) => im.complete));
+      await page.locator("#sheet").screenshot({ path: file });
+      await ctx.close();
+      log("sheet", file);
+    }
   }
 }
 await browser.close();
