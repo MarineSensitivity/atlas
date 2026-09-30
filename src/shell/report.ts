@@ -67,6 +67,13 @@ export function reportAction(sel: Pick<Sel, "pl" | "t" | "sel">, ver: string | n
   return { kind: "chooser" };
 }
 
+/** R4-D: the pinned "Open report" button is enabled exactly when `reportAction()` has somewhere to
+ * go -- a place list, or a selected Program Area. With nothing selected it stays disabled (the
+ * footer sentence says "Add a place to open a report."), never a live button that does nothing. */
+export function reportOpenEnabled(action: ReportAction): boolean {
+  return action.kind === "open";
+}
+
 /** a single zone -> a report href, for the chooser's own "pick a Program Area" list -- the exact
  * same encoding `reportAction()`'s zone branch above uses, exposed separately so the chooser can
  * build a link for a zone that is not (yet) the current `sel=`. */

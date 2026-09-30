@@ -44,16 +44,26 @@ export function reportSubjects(sel: Pick<Sel, "sel">, places: readonly Place[]):
   return { kind: "last-clicked", selection: parseScoresSelection(sel.sel) };
 }
 
-/** R3-W8 item 5 fix round: the Report tab's own one-sentence explanation of what it is about to
- * report on, driven by the SAME `reportSubjects()` result the Places tab's "Last clicked" row and
- * the Table's subject line already read -- so the three can never disagree. Verbatim wording from
- * the brief; the "last-clicked" case reads the same whether or not anything has actually been
- * clicked yet (the Report tool's own chooser, `ReportTool.svelte`, already covers "nothing to
- * report on" with its own UI -- this sentence is about what WOULD govern, not a substitute for
- * that). */
+/** R4-D: is the last-clicked cell/Program Area already an explicit place? Then the Report tool's
+ * "Last clicked" row is hidden (it would offer to add what is already listed). A zone matches by key;
+ * a cell matches the `Cell <id>` geometry place `placeFromLastClicked()` appends for it. */
+export function lastClickedInPlaces(selection: ScoresSelection, places: readonly Place[]): boolean {
+  if (!selection) return false;
+  if (selection.kind === "zone") {
+    return places.some((p) => p.kind === "zone" && p.keys.includes(selection.key));
+  }
+  return places.some((p) => p.kind === "geom" && p.name === `Cell ${selection.cellId}`);
+}
+
+/** R4-D (Ben, 2026-09-30): the Report tool's pinned footer sentence, driven by the SAME
+ * `reportSubjects()` result the Last-clicked row and the Table's subject line read, so the three can
+ * never disagree. Three cases: an explicit list ("Reporting on 2 places."), a last click not yet in
+ * the list, and nothing at all (the Open report button is disabled, and this sentence says why). */
 export function reportSubjectSentence(subject: ReportSubject): string {
   if (subject.kind === "places") {
     return `Reporting on ${subject.items.length} place${subject.items.length === 1 ? "" : "s"}.`;
   }
-  return "Reporting on the last clicked place — add it to Places to keep it, or add more places below.";
+  return subject.selection
+    ? "Reporting on the last clicked place. Add it to keep it."
+    : "Add a place to open a report.";
 }

@@ -68,10 +68,6 @@ test.describe("a places link loaded cold", () => {
     await expect(list).toContainText("Mid Atlantic");
     await expect(list).toContainText("12,364 km²");
 
-    await page
-      .getByRole("group", { name: "Report pane section" })
-      .getByRole("button", { name: "Report", exact: true })
-      .click();
     await expect(page.getByTestId("report-subject-sentence")).toHaveText("Reporting on 2 places.");
 
     // never cleared/rewritten by the lazy model resolving

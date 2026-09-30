@@ -8,6 +8,7 @@ import {
   loadRecentReports,
   recordRecentReport,
   reportAction,
+  reportOpenEnabled,
   zoneReportHref,
 } from "../../src/shell/report";
 import { DEFAULT_SEL } from "../../src/lib/state/types";
@@ -84,6 +85,18 @@ describe("reportAction: nothing selected -> the chooser, never a dead link", () 
     expect(reportAction({ ...DEFAULT_SEL, pl: undefined, sel: undefined }, "v9")).toEqual({
       kind: "chooser",
     });
+  });
+});
+
+// R4-D: the pinned Open report button. Seeded fault `report-open-enabled-with-nothing` flips this
+// to always-true; the e2e "nothing selected" case in report.flow.spec.ts catches it in a browser.
+describe("reportOpenEnabled: Open report is disabled with nothing to open", () => {
+  it("a chooser action (no place, no selected zone) is disabled", () => {
+    expect(reportOpenEnabled({ kind: "chooser" })).toBe(false);
+  });
+
+  it("an open action is enabled", () => {
+    expect(reportOpenEnabled({ kind: "open", href: "./report.html", label: "x" })).toBe(true);
   });
 });
 

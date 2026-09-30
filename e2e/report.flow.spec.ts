@@ -66,26 +66,20 @@ async function gotoShell(page: Page, path: string): Promise<void> {
   await waitForHydration(page);
 }
 
-// R3-W8 item 5: the Report rail tool now opens on its PLACES tab (Places folded in as the first
-// tab); ReportTool.svelte's "Open report"/chooser live on the second, "Report", tab.
-async function openReportTab(page: Page): Promise<void> {
+// R4-D: the Report tool is one flow with no sub-tabs -- opening the rail tool is all it takes to
+// reach "Open report" (pinned in the pane's footer).
+async function openReportTool(page: Page): Promise<void> {
   await page.locator('#rail-region button[aria-label="Report"]').click();
-  await page
-    .getByRole("group", { name: "Report pane section" })
-    .getByRole("button", { name: "Report", exact: true })
-    .click();
 }
 
 test.describe("Report: a zone selected on the map", () => {
   test("Report opens report.html for that Program Area, in a new tab", async ({ page }) => {
     await gotoShell(page, "/?sel=zone:programarea:GAA");
 
-    // the rail tool OPENS THE PANEL (Shell.svelte's `<Rail onSelect={selectTool}>`, every rail
-    // tool's own behaviour) -- with a zone already selected, `ReportTool.svelte` shows an "Open
-    // report" shortcut (`action.kind === "open"`, reportAction()) rather than opening a tab by
-    // itself; that shortcut's own click is what must run SYNCHRONOUSLY for the popup blocker
-    // (ReportTool.svelte's own header). Two clicks where the removed `report-top` button took one.
-    await openReportTab(page);
+    // the rail tool OPENS THE PANEL -- with a zone already selected, the pinned footer's "Open
+    // report" is enabled (`action.kind === "open"`, reportAction()); its click is what must run
+    // SYNCHRONOUSLY for the popup blocker (ReportPane.svelte's `openReport`).
+    await openReportTool(page);
     const [reportPage] = await Promise.all([
       page.context().waitForEvent("page"),
       page.getByRole("button", { name: "Open report" }).click(),
@@ -138,7 +132,7 @@ test.describe("Report: a place list present", () => {
     // same two-click shape as the zone-selected test above -- a non-empty place list is ALSO
     // `action.kind === "open"` (reportAction()'s own rule, `onReport`'s header comment: "a place
     // list in #pl=, or a zone selected").
-    await openReportTab(page);
+    await openReportTool(page);
     const [reportPage] = await Promise.all([
       page.context().waitForEvent("page"),
       page.getByRole("button", { name: "Open report" }).click(),
@@ -161,23 +155,43 @@ test.describe("Report: a place list present", () => {
 });
 
 test.describe("Report: nothing selected", () => {
-  test("shows the chooser instead of a dead button, and opens no new tab", async ({ page }) => {
+  test("Open report is disabled with the third sentence, and opens no new tab", async ({
+    page,
+  }) => {
     await gotoShell(page, "/");
 
     let opened = false;
     page.context().on("page", () => (opened = true));
-    await openReportTab(page);
+    await openReportTool(page);
 
-    // the chooser (ReportTool.svelte, lazy) -- give it a moment to load, then assert its content,
-    // never a bare `activeTool==="report"` internal check (that would pass even on the old
-    // placeholder, which also just set `activeTool`).
-    await expect(page.getByText("Pick an area to report on")).toBeVisible({ timeout: 10_000 });
-    await expect(
-      page.getByRole("button", { name: "Draw, enter coordinates or upload a file" }),
-    ).toBeVisible();
+    // the flow (Places.svelte, lazy) -- wait for its empty sentence, then assert the pinned
+    // footer: the third subject sentence and a DISABLED primary button.
+    await expect(page.getByText("No places yet. Click the map, or add one below.")).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByTestId("report-subject-sentence")).toHaveText(
+      "Add a place to open a report.",
+    );
+    const open = page.getByRole("button", { name: "Open report" });
+    await expect(open).toBeVisible();
+    await expect(open).toBeDisabled();
 
     // give a stray popup a moment to have shown up, then confirm it never did.
     await page.waitForTimeout(500);
     expect(opened).toBe(false);
+  });
+});
+
+test.describe("Report: one flow, no sub-tabs", () => {
+  test("Places (with its count) and Add a place share one pane; no section tabs", async ({
+    page,
+  }) => {
+    await gotoShell(page, "/");
+    await openReportTool(page);
+    await expect(page.getByTestId("places-heading")).toHaveText(/Places\s*0 \/ 20/, {
+      timeout: 10_000,
+    });
+    await expect(page.getByRole("heading", { name: "Add a place" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Report pane section" })).toHaveCount(0);
   });
 });

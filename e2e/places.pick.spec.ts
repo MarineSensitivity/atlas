@@ -87,7 +87,6 @@ async function gotoPlacesOverGaa(page: Page) {
   // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
   // even if a PRIOR step on this page already switched to the Report tab).
   await page.locator("#rail-region button[aria-label='Report']").click();
-  await page.getByRole("button", { name: "Places", exact: true }).click();
 }
 
 /** the viewport-absolute pixel `GAA_CENTER` projects to -- `map.project()` is canvas-relative, so
@@ -176,7 +175,6 @@ for (const unitMode of [
       // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
       // even if a PRIOR step on this page already switched to the Report tab).
       await page.locator("#rail-region button[aria-label='Report']").click();
-      await page.getByRole("button", { name: "Places", exact: true }).click();
     }
 
     const addButton = page.getByRole("button", { name: /^Add to places/ });

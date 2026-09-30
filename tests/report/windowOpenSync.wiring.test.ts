@@ -1,6 +1,6 @@
 // Wiring gate, fix round 1 (item 3): "an `await` before `window.open`" is the seeded fault this
-// file exists to make impossible by construction. Both report entry points (Places.svelte's
-// "Report", TablePanel.svelte's "Report on selected") MUST call `window.open()` as the first thing
+// file exists to make impossible by construction. Both report entry points (ReportPane.svelte's
+// "Open report", TablePanel.svelte's "Report on selected") MUST call `window.open()` as the first thing
 // their click handler does -- every browser's popup blocker treats a `window.open()` reached only
 // after an `await` as no longer user-initiated (this repo's own header comments on both handlers
 // cite exactly this). A unit test on SOURCE TEXT, not a live browser, because the failure mode is
@@ -35,10 +35,10 @@ export function sliceUpToWindowOpen(source: string, fnName: string): string | nu
 }
 
 describe("window.open() runs synchronously (no `await` before it) in both report entry points", () => {
-  it("Places.svelte's onReport()", () => {
-    const source = readFileSync(`${ROOT}/src/places/Places.svelte`, "utf8");
-    const slice = sliceUpToWindowOpen(source, "onReport");
-    expect(slice, "onReport() or its window.open( call was not found").not.toBeNull();
+  it("ReportPane.svelte's openReport() (R4-D: the pinned Open report button)", () => {
+    const source = readFileSync(`${ROOT}/src/shell/ReportPane.svelte`, "utf8");
+    const slice = sliceUpToWindowOpen(source, "openReport");
+    expect(slice, "openReport() or its window.open( call was not found").not.toBeNull();
     expect(slice).not.toMatch(/\bawait\b/);
   });
 

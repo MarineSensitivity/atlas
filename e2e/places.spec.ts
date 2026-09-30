@@ -35,11 +35,8 @@ test.describe.configure({ mode: "serial" });
 async function openPlaces(page: Page, path = "/") {
   await gotoPublicShell(page, path);
   await page.waitForSelector("#rail-region .rail", { state: "attached" });
-  // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- open the
-  // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
-  // even if a PRIOR step on this page already switched to the Report tab).
+  // R4-D: the Report tool is one flow (Places first) -- opening the rail tool is all it takes.
   await page.locator("#rail-region button[aria-label='Report']").click();
-  await page.getByRole("button", { name: "Places", exact: true }).click();
 }
 
 async function addByCoordinates(page: Page, text = "-124.5, 40.0, -123.0, 41.5") {
@@ -258,11 +255,8 @@ async function gotoPlacesWithZones(page: Page): Promise<void> {
   await page.goto("/?unit=programarea");
   await waitForHydration(page);
   await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
-  // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- open the
-  // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
-  // even if a PRIOR step on this page already switched to the Report tab).
+  // R4-D: the Report tool is one flow (Places first) -- opening the rail tool is all it takes.
   await page.locator("#rail-region button[aria-label='Report']").click();
-  await page.getByRole("button", { name: "Places", exact: true }).click();
 }
 
 test("Pick mode highlights the clicked zone as a real selection-line feature (m6)", async ({
@@ -390,11 +384,8 @@ async function gotoPlacesWithRoundtripRelease(page: Page, path = "/") {
   await routeSealFixture(page);
   await page.goto(path);
   await waitForHydration(page);
-  // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- open the
-  // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
-  // even if a PRIOR step on this page already switched to the Report tab).
+  // R4-D: the Report tool is one flow (Places first) -- opening the rail tool is all it takes.
   await page.locator("#rail-region button[aria-label='Report']").click();
-  await page.getByRole("button", { name: "Places", exact: true }).click();
 }
 
 /** the ResultsPanel's own rendered numbers for the one selected place -- read from the DOM (no new
@@ -650,11 +641,8 @@ test("the 'Show analysis cells' toggle survives a tool switch + remount, matchin
   await expect(page.locator(".place-row")).toHaveCount(0); // the Places panel body is gone
 
   // switch back -- Places.svelte remounts from scratch.
-  // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- open the
-  // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
-  // even if a PRIOR step on this page already switched to the Report tab).
+  // R4-D: the Report tool is one flow (Places first) -- opening the rail tool is all it takes.
   await page.locator("#rail-region button[aria-label='Report']").click();
-  await page.getByRole("button", { name: "Places", exact: true }).click();
   await expect(page.locator(".place-row")).toHaveCount(1);
 
   // the toggle still reads "on" (not reset to the component's own default), and the cells it
@@ -808,7 +796,6 @@ test.describe("P7: places drawn in sequence stay on the map, survive a reload, a
     // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
     // even if a PRIOR step on this page already switched to the Report tab).
     await page.locator("#rail-region button[aria-label='Report']").click();
-    await page.getByRole("button", { name: "Places", exact: true }).click();
     await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
   }
 
@@ -827,7 +814,6 @@ test.describe("P7: places drawn in sequence stay on the map, survive a reload, a
     // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
     // even if a PRIOR step on this page already switched to the Report tab).
     await page.locator("#rail-region button[aria-label='Report']").click();
-    await page.getByRole("button", { name: "Places", exact: true }).click();
   }
 
   test("draw AK1 (polygon) then CA circle: both stay on the map, survive a reload, and deleting one leaves the other", async ({
@@ -868,11 +854,8 @@ test.describe("P7: places drawn in sequence stay on the map, survive a reload, a
     await expect(page.locator(".place-row")).toHaveCount(2); // the reload reproduced BOTH rows too
 
     // --- delete shape A: shape B stays drawn, shape A's own spot goes empty --------------------
-    // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- open the
-    // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
-    // even if a PRIOR step on this page already switched to the Report tab).
-    await page.locator("#rail-region button[aria-label='Report']").click();
-    await page.getByRole("button", { name: "Places", exact: true }).click();
+    // (the Report tool is already open from `gotoFramedOn`; clicking its active rail entry again
+    // would COLLAPSE the panel -- R4-B -- so this goes straight to the row's button.)
     await page.locator(".place-row .row-actions button[aria-label='Delete place']").first().click();
     await expect(page.locator(".place-row")).toHaveCount(1);
     const hashAfterDelete = await page.evaluate(() => location.hash);
@@ -946,8 +929,10 @@ test.describe("P7: places drawn in sequence stay on the map, survive a reload, a
 
     // a real rectangle: click-move-click at opposite corners (terra-draw's default "click-move"
     // gesture, the same shape drawCircleAt already uses for circle mode).
-    const CORNER_A: [number, number] = [-150, 52];
-    const CORNER_B: [number, number] = [-140, 44];
+    // R4-D: east of the old [-150, 52] / [-140, 44] -- with the panel docked LEFT (R4-B) those
+    // corners sat under it, so the clicks hit the panel instead of the map.
+    const CORNER_A: [number, number] = [-124, 44];
+    const CORNER_B: [number, number] = [-114, 36];
     await page.getByRole("button", { name: "Rectangle" }).click();
     await page.waitForTimeout(300);
     const cornerA = await mapPoint(page, CORNER_A);
@@ -1079,11 +1064,8 @@ test("P8 item 2: a Program Area row shows its published composite, read from the
   await routeSealFixture(page);
   await page.goto("/");
   await waitForHydration(page);
-  // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- open the
-  // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
-  // even if a PRIOR step on this page already switched to the Report tab).
+  // R4-D: the Report tool is one flow (Places first) -- opening the rail tool is all it takes.
   await page.locator("#rail-region button[aria-label='Report']").click();
-  await page.getByRole("button", { name: "Places", exact: true }).click();
 
   await page.getByLabel("Add a Program Area").selectOption("GAA");
   await page.getByRole("button", { name: "Add this Program Area" }).click();
@@ -1162,11 +1144,8 @@ async function gotoPlacesWithZoneResultsFixture(page: Page): Promise<void> {
   await routeSealFixture(page);
   await page.goto("/");
   await waitForHydration(page);
-  // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- open the
-  // Report rail tool, then make sure the Places tab is the one showing (defensive: correct
-  // even if a PRIOR step on this page already switched to the Report tab).
+  // R4-D: the Report tool is one flow (Places first) -- opening the rail tool is all it takes.
   await page.locator("#rail-region button[aria-label='Report']").click();
-  await page.getByRole("button", { name: "Places", exact: true }).click();
   await page.getByLabel("Add a Program Area").selectOption("GAA");
   await page.getByRole("button", { name: "Add this Program Area" }).click();
   await expect(page.locator(".place-row")).toHaveCount(1);

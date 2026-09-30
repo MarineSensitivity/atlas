@@ -2043,6 +2043,25 @@ export const FAULTS = [
     ],
     env: { PW_PORT: "4522" },
   },
+  // --- round 4, R4-D (the Report tool is one flow, no sub-tabs) ---------------------------------
+  {
+    id: "report-open-enabled-with-nothing",
+    patch: "tests/faults/report-open-enabled-with-nothing.patch",
+    describe:
+      "report.ts's reportOpenEnabled() is always true -- the pinned Open report button is live " +
+      "with no place and no last click, a button that opens nothing",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/report.flow.spec.ts",
+      "-g",
+      "nothing selected",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4541" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

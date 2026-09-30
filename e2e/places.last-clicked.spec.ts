@@ -125,7 +125,6 @@ test.describe("R3-W8 item 5: a map click never wipes the explicit Places list", 
 
     // R3-W8 item 5: Places folded into the Report pane as its own (default) tab.
     await page.locator("#rail-region button[aria-label='Report']").click();
-    await page.getByRole("button", { name: "Places", exact: true }).click();
     await page.getByRole("button", { name: "Enter coordinates" }).click();
     const textarea = page.getByLabel("Coordinates, bounding box, or WKT/GeoJSON");
     await expect(textarea).toBeVisible();
@@ -157,7 +156,7 @@ test.describe("R3-W8 item 5: a map click never wipes the explicit Places list", 
 
   // R3-W8 item 5 fix round (Ben, verbatim): "(a) At the top of the Places tab, add a 'Last
   // clicked' row... an 'Add to places' button that appends it to the explicit list."
-  test("click a cell, then 'Add to places': #pl= gets exactly one entry, and the row still shows", async ({
+  test("click a cell, then 'Add': #pl= gets exactly one entry, and the row hides", async ({
     page,
   }) => {
     await gotoScores(page);
@@ -175,17 +174,17 @@ test.describe("R3-W8 item 5: a map click never wipes the explicit Places list", 
     await expect(row).toBeVisible({ timeout: 10_000 });
     await expect(row).toContainText("Last clicked: Cell 500");
 
-    // scoped to the row itself: Places.svelte's own pick-mode panel has an unrelated "Add to
-    // places" button of its own (disabled, no pick made) that would otherwise make this ambiguous.
-    await row.getByRole("button", { name: "Add to places" }).click();
+    // R4-D: the row's button is just "Add" (Places.svelte's own pick-mode "Add to places" is a
+    // different, disabled control).
+    await row.getByRole("button", { name: "Add", exact: true }).click();
 
     await expect
       .poll(() => page.evaluate(() => location.hash).then((h) => placesFromHash(plFromHash(h))))
       .toHaveLength(1);
 
-    // the row itself keeps showing the SAME last-clicked subject afterward (item 5's own selection
-    // model: "a most recently selected slot that can be updated with subsequent selection" -- the
-    // add does not clear `sel.sel`, so this is not a coincidence of timing).
-    await expect(row).toBeVisible();
+    // R4-D: once the clicked cell is in the list the row has nothing left to offer, so it hides
+    // (the add still does not clear `sel.sel` -- the list row itself carries the cell now).
+    await expect(row).toHaveCount(0);
+    await expect(page.getByRole("list", { name: "Places" }).getByRole("listitem")).toHaveCount(1);
   });
 });
