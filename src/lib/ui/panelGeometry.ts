@@ -86,7 +86,12 @@ export function loadPanelGeometry(
     if (!raw) return DEFAULT_PANEL_GEOMETRY;
     const parsed = JSON.parse(raw) as Partial<PanelGeometry> | null;
     const dock = readDock(parsed?.dock);
-    if (parsed && typeof parsed.collapsed === "boolean" && dock && typeof parsed.size === "number") {
+    if (
+      parsed &&
+      typeof parsed.collapsed === "boolean" &&
+      dock &&
+      typeof parsed.size === "number"
+    ) {
       return {
         collapsed: parsed.collapsed,
         maximized: false, // derived from the tool now, never restored (header above)

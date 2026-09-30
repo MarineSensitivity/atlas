@@ -37,6 +37,8 @@ const SPEC_ICON_NAMES = [
   "chevronDown",
   "chevronUp",
   "collapseSide",
+  // R4-B: the left-docked panel's collapse chevron points at ITS edge (the default side is left).
+  "collapseSideLeft",
   "collapseDown",
   // UI-19 (round 3): the phone sheet's "peek" detent -- the collapse control's own flipped
   // direction ("Expand to half") instead of a dead "Collapse to a peek" no-op there.

@@ -92,7 +92,9 @@ export interface PanelContext {
 export function panelHeaderTitle(tool: ToolName, ctx: PanelContext): string {
   switch (tool) {
     case "layers":
-      return ctx.layer && ctx.unit ? `${ctx.layer} · ${ctx.unit}` : (ctx.layer ?? TOOL_LABEL.layers);
+      return ctx.layer && ctx.unit
+        ? `${ctx.layer} · ${ctx.unit}`
+        : (ctx.layer ?? TOOL_LABEL.layers);
     case "details":
       return ctx.subject ?? TOOL_LABEL.details;
     case "table":

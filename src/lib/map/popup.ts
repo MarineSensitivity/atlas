@@ -62,6 +62,18 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** R4-B: the click popup states the value and LINKS to Details (control-grammar.md, "Data graphics
+ * that belong to a layer"). The link is a plain button carrying this attribute; the popup is a
+ * MapLibre-owned div outside Svelte, so Shell.svelte listens once on `document` for a click on
+ * `[${DETAILS_LINK_ATTR}]` and opens the Details tool -- one delegated handler, never one per popup. */
+export const DETAILS_LINK_ATTR = "data-atlas-open-details";
+
+/** the link's markup, shared by the value popup below and the species popup
+ * (`lens/species/popup.ts`) so the two can never disagree on the attribute. */
+export function detailsLinkHtml(): string {
+  return `<div class="atlas-popup-links"><button type="button" class="atlas-popup-link" ${DETAILS_LINK_ATTR}>Details</button></div>`;
+}
+
 export interface ValuePopupContent {
   /** UI-4's shared subject line (`lib/format.ts#formatSubject`), plain text. */
   subject: string;
@@ -75,6 +87,8 @@ export interface ValuePopupContent {
   /** small text under the value row: the layer/unit/dataset name (module header: "the layer/unit
    * name in small text"). `null`/omitted renders no third line. */
   unitLabel?: string | null;
+  /** R4-B: add the "Details" link (only when there is a subject to show details for). */
+  detailsLink?: boolean;
 }
 
 /**
@@ -103,6 +117,7 @@ export function valuePopupHtml(content: ValuePopupContent): string {
     `<span class="atlas-popup-value">${escapeHtml(content.valueLine)}</span>` +
     `</div>` +
     unitLine +
+    (content.detailsLink ? detailsLinkHtml() : "") +
     `</div>`
   );
 }

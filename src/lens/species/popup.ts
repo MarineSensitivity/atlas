@@ -14,6 +14,7 @@
 // real value into the bottom two stops.
 import { roundHalfEven } from "../../lib/geo/round";
 import { RANGE_FILL_COLOR } from "../../lib/map/colors";
+import { detailsLinkHtml } from "../../lib/map/popup";
 import { binColor, luminance, textColorFor, type PaletteStops } from "../../lib/raster/ramps";
 
 // R3-W7 (round-3 review, Ben's "colour coding" ask): `luminance`/`textColorFor` moved to
@@ -180,6 +181,8 @@ export function popupHtml(content: PopupContent): string {
     `Lon: ${lon}<br>` +
     `Lat: ${lat}<br>` +
     `<span class="species-popup-swatch" style="${swatchStyle}">${escapeHtml(content.text)}</span>` +
+    // R4-B: the Details link, whenever the click found this species (not a no-value click)
+    (content.kind === "no-value" ? "" : detailsLinkHtml()) +
     `</div>`
   );
 }

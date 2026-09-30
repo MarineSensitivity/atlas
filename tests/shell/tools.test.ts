@@ -90,9 +90,7 @@ describe("panelHeaderTitle: the header says what is shown, not the tool name", (
     expect(panelHeaderTitle("report", ctx)).toBe("3 places");
     expect(panelHeaderTitle("report", { ...ctx, placeCount: 1 })).toBe("1 place");
     expect(panelHeaderTitle("report", { ...ctx, placeCount: 0 })).toBe("Last clicked place");
-    expect(panelHeaderTitle("report", { ...ctx, placeCount: 0, lastClicked: null })).toBe(
-      "Report",
-    );
+    expect(panelHeaderTitle("report", { ...ctx, placeCount: 0, lastClicked: null })).toBe("Report");
   });
   it("falls back to the tool label when nothing is known", () => {
     const empty: PanelContext = {

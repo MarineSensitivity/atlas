@@ -78,6 +78,7 @@ function cellPopupContent(input: CellPopupInput): ValuePopupContent {
     swatchColor: swatch?.color ?? null,
     textColor: swatch?.textColor ?? null,
     unitLabel: input.value === null ? null : input.layerLabel,
+    detailsLink: input.value !== null, // R4-B: nothing to show details for on a no-value click
   };
 }
 
@@ -143,6 +144,7 @@ function zonePopupContent(input: ZonePopupInput): ValuePopupContent {
     valueLine: formatValueLine("Score", value.value),
     swatchColor,
     textColor: swatchColor ? textColorFor(swatchColor) : null,
+    detailsLink: true, // R4-B
   };
 }
 
