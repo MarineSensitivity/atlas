@@ -242,6 +242,13 @@ test.describe("scores lens — click popup (fix round 3, real engine)", () => {
 test.describe("scores lens -- legend histogram + marker (R4-A)", () => {
   const COG_BOOT = {
     ...BOOT,
+    // an 11-stop ramp (generated, not literal hexes) so the legend has something to draw
+    palettes: {
+      spectral_r: Array.from(
+        { length: 11 },
+        (_, i) => `#${(i * 20).toString(16).padStart(2, "0")}80c0`,
+      ),
+    },
     layers: [
       {
         ...BOOT.layers[0],

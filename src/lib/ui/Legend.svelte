@@ -60,19 +60,20 @@
   const domain = $derived(
     stops.length >= 2 ? { min: stops[0].value, max: stops[stops.length - 1].value } : null,
   );
-  const bars = $derived(
-    domain
-      ? histogramBars(histogram, domain).map((b) => ({
-          ...b,
-          color: colorForValue(
-            stops.map((s) => s.color),
-            b.value,
-            domain.min,
-            domain.max,
-          ),
-        }))
-      : [],
-  );
+  const bars = $derived.by(() => {
+    if (!domain) return [];
+    const colors = stops.map((s) => s.color);
+    return histogramBars(histogram, domain).map((b) => {
+      // a non-hex stop (the ramp draws fine from any CSS colour) must not take the legend down
+      let color = "var(--text-secondary)";
+      try {
+        color = colorForValue(colors, b.value, domain.min, domain.max);
+      } catch {
+        /* keep the neutral fill */
+      }
+      return { ...b, color };
+    });
+  });
   const markerFrac = $derived(markerX(marker, domain));
   const markerLabel = $derived(marker === null ? "" : formatValue(marker));
   const histogramName = $derived(

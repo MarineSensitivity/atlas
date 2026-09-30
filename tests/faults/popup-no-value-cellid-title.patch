@@ -1,13 +1,13 @@
 diff --git a/src/lens/scores/popup.ts b/src/lens/scores/popup.ts
-index 5cb39de..c8e6efc 100644
+index 8acef39..706d866 100644
 --- a/src/lens/scores/popup.ts
 +++ b/src/lens/scores/popup.ts
-@@ -78,14 +78,15 @@ function cellPopupContent(input: CellPopupInput): ValuePopupContent {
+@@ -71,13 +71,14 @@ function cellPopupContent(input: CellPopupInput): ValuePopupContent {
        ? formatLatLon(input.lat, input.lon)
        : formatSubject({ kind: "cell", cellId: input.cellId, lon: input.lon, lat: input.lat });
    const swatch = cellSwatch(input.value, input.ramp);
-+  // SEEDED FAULT (tests/faults/popup-no-value-cellid-title.patch): back to the full layer label +
-+  // sparkline on a no-value cell -- must turn tests/lens/scores/popup.test.ts red.
++  // SEEDED FAULT (tests/faults/popup-no-value-cellid-title.patch): back to the full layer label on
++  // a no-value cell -- must turn tests/lens/scores/popup.test.ts red.
    return {
      subject,
 -    valueLine:
@@ -16,9 +16,7 @@ index 5cb39de..c8e6efc 100644
      swatchColor: swatch?.color ?? null,
      textColor: swatch?.textColor ?? null,
 -    unitLabel: input.value === null ? null : input.layerLabel,
--    sparkline: input.value === null ? null : input.sparkline,
 +    unitLabel: input.layerLabel,
-+    sparkline: input.sparkline,
    };
  }
  

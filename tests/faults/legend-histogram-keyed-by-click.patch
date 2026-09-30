@@ -1,0 +1,16 @@
+diff --git a/src/lib/map/distribution.ts b/src/lib/map/distribution.ts
+index ceadb07..66ce524 100644
+--- a/src/lib/map/distribution.ts
++++ b/src/lib/map/distribution.ts
+@@ -69,7 +69,10 @@ export interface LayerHistogramArgs {
+ 
+ /** the cache key: (ver, lens, layer) plus the range/bins the bars were drawn for. */
+ export function layerHistogramKey(a: LayerHistogramArgs): string {
+-  return [a.ver, a.lens, a.layer, a.range[0], a.range[1], a.bins ?? DEFAULT_BINS].join("|");
++  // SEEDED FAULT (tests/faults/legend-histogram-keyed-by-click.patch): the cache key now includes
++  // the clicked element, so every click on the same layer refetches/rebuilds "its own" histogram --
++  // must turn tests/lib/map/distribution.test.ts (legend-histogram-stable-across-clicks) red.
++  return [a.ver, a.lens, a.layer, a.range[0], a.range[1], a.bins ?? DEFAULT_BINS, a.click].join("|");
+ }
+ 
+ /**

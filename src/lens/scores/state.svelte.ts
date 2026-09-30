@@ -263,34 +263,39 @@ export function createScoresLens(deps: ScoresLensDeps): ScoresLens {
         : null;
   }
 
-  $effect(() => {
-    const ver = deps.ver();
-    const boot = deps.boot();
-    const layerKey = lyr;
-    if (!ver || !boot || !layerKey || unit !== "cell") {
-      rasterHistogram = null;
-      return;
-    }
-    const layer = layerByKey(boot, layerKey);
-    const full = layer ? fullSubregion(layer) : null;
-    if (!full?.cog || !full.rescale) {
-      rasterHistogram = null;
-      return;
-    }
-    let cancelled = false;
-    rasterHistogram = null; // never show the previous layer's shape while this one loads
-    void layerHistogramFor(histogramSource, {
-      ver,
-      lens: "scores",
-      layer: layerKey,
-      cogUrl: full.cog,
-      range: full.rescale,
-    }).then((h) => {
-      if (!cancelled) rasterHistogram = h;
+  // this factory runs from an async `import().then()` in Shell.svelte, OUTSIDE any component
+  // initialisation, where a bare `$effect` throws `effect_orphan` -- so it gets its own root, whose
+  // lifetime is the page's (the factory runs exactly once per page load).
+  $effect.root(() => {
+    $effect(() => {
+      const ver = deps.ver();
+      const boot = deps.boot();
+      const layerKey = lyr;
+      if (!ver || !boot || !layerKey || unit !== "cell") {
+        rasterHistogram = null;
+        return;
+      }
+      const layer = layerByKey(boot, layerKey);
+      const full = layer ? fullSubregion(layer) : null;
+      if (!full?.cog || !full.rescale) {
+        rasterHistogram = null;
+        return;
+      }
+      let cancelled = false;
+      rasterHistogram = null; // never show the previous layer's shape while this one loads
+      void layerHistogramFor(histogramSource, {
+        ver,
+        lens: "scores",
+        layer: layerKey,
+        cogUrl: full.cog,
+        range: full.rescale,
+      }).then((h) => {
+        if (!cancelled) rasterHistogram = h;
+      });
+      return () => {
+        cancelled = true;
+      };
     });
-    return () => {
-      cancelled = true;
-    };
   });
 
   const mapExtra: ScoresMapInputs = $derived.by(() =>
