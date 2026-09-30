@@ -390,3 +390,48 @@ export async function blockWasm(page: Page) {
     safeRoute((route) => route.abort()),
   );
 }
+
+/**
+ * How many features of one layer the map draws right now, robust on the globe (R4-ci).
+ * `queryRenderedFeatures({ layers })` with no geometry answers `[]` on the globe whenever a
+ * viewport corner is off the sphere, whatever is painted -- the round-4 left-dock fit centre is
+ * such a camera -- so when it says 0 this falls back to the layer's loaded tiles (same steps as
+ * `src/lib/map/queryLayers.ts#queryLayerFeatures`, which has the unit tests; this copy runs
+ * in-page and cannot import it). `-1` while the layer or its source is not there yet.
+ */
+export function renderedLayerCount(page: Page, layerId: string, sourceId: string) {
+  return page.evaluate(
+    ([lyr, src]) => {
+      const map = (
+        window as unknown as {
+          __atlasMap: { handle: { map: Record<string, (...a: unknown[]) => unknown> } };
+        }
+      ).__atlasMap.handle.map as unknown as {
+        getLayer(
+          id: string,
+        ): { sourceLayer?: string; minzoom?: number; maxzoom?: number } | undefined;
+        isSourceLoaded(id: string): boolean;
+        queryRenderedFeatures(o: { layers: string[] }): unknown[];
+        getLayoutProperty(id: string, n: string): unknown;
+        getFilter(id: string): unknown;
+        getZoom(): number;
+        querySourceFeatures(s: string, o: object): unknown[];
+      };
+      const layer = map.getLayer(lyr);
+      if (!layer) return -1;
+      if (!map.isSourceLoaded(src)) return -1;
+      const n = map.queryRenderedFeatures({ layers: [lyr] }).length;
+      if (n > 0) return n;
+      if (map.getLayoutProperty(lyr, "visibility") === "none") return 0;
+      const z = map.getZoom();
+      if (typeof layer.minzoom === "number" && z < layer.minzoom) return 0;
+      if (typeof layer.maxzoom === "number" && z >= layer.maxzoom) return 0;
+      const opts: { sourceLayer?: string; filter?: unknown } = {};
+      if (layer.sourceLayer) opts.sourceLayer = layer.sourceLayer;
+      const filter = map.getFilter(lyr);
+      if (filter) opts.filter = filter;
+      return map.querySourceFeatures(src, opts).length;
+    },
+    [layerId, sourceId],
+  );
+}

@@ -27,6 +27,7 @@ import {
   RASTER_RGB,
   SCORE_COG_URL,
   blockWasm,
+  renderedLayerCount,
   routeBasemapStyle,
   routeGlyphs,
   routeTitilerTiles,
@@ -100,12 +101,7 @@ async function gotoMap(page: Page) {
  * is unweakened: the layer must exist, its source must be loaded, AND it must render a feature.
  */
 function zoneFeatureCount(page: Page) {
-  return page.evaluate(() => {
-    const map = window.__atlasMap!.handle.map;
-    if (!map.getLayer("programarea_ln")) return -1;
-    if (!map.isSourceLoaded("programarea_src")) return -1;
-    return map.queryRenderedFeatures({ layers: ["programarea_ln"] }).length;
-  });
+  return renderedLayerCount(page, "programarea_ln", "programarea_src");
 }
 
 /** the REAL applied style (`map.getStyle()`), not a recomposed `composeStyle(inputs())` object —
@@ -170,6 +166,43 @@ test.describe("map module, first paint with **/*.wasm blocked", () => {
     expect(requests.filter((u) => /\.wasm(\?|$)/.test(u))).toEqual([]);
     expect(requests.filter((u) => /duckdb/i.test(u))).toEqual([]);
     expect(errors).toEqual([]);
+  });
+
+  // regression: zone-layer-renders-with-left-dock (R4-ci, 2026-10-01). Round 4 docked the panel
+  // LEFT by default, which moved the fit's centre from lng -69 to -140; on the globe MapLibre's
+  // no-geometry viewport query then answered [] for the painted zone lines, so four specs, the
+  // verify matrix and the pick-mode highlight all read "no zone layer". This pins the real
+  // property: under the default left dock the Program Area lines ARE drawn where the fixture says
+  // (a box query around Central California's rectangle hits), and the probe + the app's
+  // `renderedZoneOutline` both see them.
+  test("zone-layer-renders-with-left-dock: the zone lines are drawn and countable under the default left dock", async ({
+    page,
+  }) => {
+    await gotoMap(page);
+    await expect.poll(() => zoneFeatureCount(page), { timeout: 20_000 }).toBeGreaterThan(0);
+    const dock = await page.evaluate(() =>
+      document.querySelector("[data-panel-dock]")?.getAttribute("data-panel-dock"),
+    );
+    expect(dock, "the default desktop dock is left (R4-B)").toBe("left");
+    const hits = await page.evaluate(() => {
+      const map = window.__atlasMap!.handle.map as unknown as {
+        project(l: [number, number]): { x: number; y: number };
+        queryRenderedFeatures(
+          g: [[number, number], [number, number]],
+          o: { layers: string[] },
+        ): unknown[];
+      };
+      // CAA fixture rectangle (-129..-121 x 34..42): its west edge midpoint
+      const p = map.project([-129, 38]);
+      return map.queryRenderedFeatures(
+        [
+          [p.x - 12, p.y - 12],
+          [p.x + 12, p.y + 12],
+        ],
+        { layers: ["programarea_ln"] },
+      ).length;
+    });
+    expect(hits, "the CAA line must be hit-testable at its drawn position").toBeGreaterThan(0);
   });
 
   test("paints a raster at two ocean probe points", async ({ page }) => {

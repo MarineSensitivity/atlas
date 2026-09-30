@@ -25,6 +25,7 @@ import {
 import {
   BOOT_FIXTURE,
   blockWasm,
+  renderedLayerCount,
   routeBasemapStyle,
   routeGlyphs,
   routeZonesPmtiles,
@@ -181,12 +182,7 @@ test("the hash is absent from every request the browser makes during the whole f
 // e2e/places.deeplink-outline.spec.ts's own gate does for the (different) deep-link-restore case.
 
 async function selectionLineFeatureCount(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const map = window.__atlasMap!.handle.map;
-    if (!map.getLayer("selection-line")) return -1;
-    if (!map.isSourceLoaded("selection")) return -1;
-    return map.queryRenderedFeatures({ layers: ["selection-line"] }).length;
-  });
+  return renderedLayerCount(page, "selection-line", "selection");
 }
 
 test("a drawn/entered place renders its outline as a real selection-line feature (m6)", async ({
@@ -269,12 +265,11 @@ test("Pick mode highlights the clicked zone as a real selection-line feature (m6
   await expect
     .poll(
       () =>
-        page.evaluate(() => {
-          const map = window.__atlasMap!.handle.map;
-          if (!map.getLayer("programarea_ln") || !map.getLayer("programarea_fill")) return -1;
-          if (!map.isSourceLoaded("programarea_src")) return -1;
-          return map.queryRenderedFeatures({ layers: ["programarea_ln"] }).length;
-        }),
+        page
+          .evaluate(() => !!window.__atlasMap!.handle.map.getLayer("programarea_fill"))
+          .then((fill) =>
+            fill ? renderedLayerCount(page, "programarea_ln", "programarea_src") : -1,
+          ),
       { message: "the programarea_ln/programarea_fill layers never rendered", timeout: 20_000 },
     )
     .toBeGreaterThan(0);
@@ -289,7 +284,28 @@ test("Pick mode highlights the clicked zone as a real selection-line feature (m6
   // rectangle, lon -96..-84 / lat 24..30 -- (-90, 30) is its top edge's exact midpoint), not its
   // centroid: `zoneAtPoint` here only ever queries the LINE layer (see this test's own goto
   // helper), and a click inside the polygon's interior never lands on it.
-  const point = await page.evaluate(() => window.__atlasMap!.handle.map.project([-90, 30]));
+  // R4-ci: the projected edge point is fractional (964.85, 383.71 under the left dock's fit) and a
+  // real mouse event reports the INTEGER pixel, which can fall one pixel off a 1 px line -- the
+  // point query then misses and nothing is picked. Scan the integer pixels around the edge for one
+  // MapLibre itself confirms is on the line and click exactly that.
+  const point = await page.evaluate(() => {
+    const map = window.__atlasMap!.handle.map as unknown as {
+      project(l: [number, number]): { x: number; y: number };
+      queryRenderedFeatures(g: [number, number], o: { layers: string[] }): unknown[];
+    };
+    const p = map.project([-90, 30]);
+    for (let r = 0; r <= 6; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const x = Math.round(p.x) + dx;
+          const y = Math.round(p.y) + dy;
+          if (map.queryRenderedFeatures([x, y], { layers: ["programarea_ln"] }).length > 0)
+            return { x, y };
+        }
+      }
+    }
+    return p;
+  });
   await page.locator("#map").click({ position: { x: point.x, y: point.y } });
 
   await expect(page.getByRole("button", { name: /Add to places \(1\)/ })).toBeVisible({
