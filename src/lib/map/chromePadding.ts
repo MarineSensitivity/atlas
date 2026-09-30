@@ -34,6 +34,13 @@ const TOPBAR_HEIGHT_PX = 48;
  * "estimate, not measured" convention `PHONE_RAIL_ROW_PX`/`TOPBAR_HEIGHT_PX` already use. */
 const PANEL_OUTER_INSET_PX = 12;
 
+/** R4-B: the rail (the spine) is attached to the panel's OUTER edge, so every desktop reserve on the
+ * dock side starts with it: 72 px of rail card (60 px button + 6 px padding each side, Rail.svelte/
+ * RailButton.svelte) plus the 8 px gap to the panel (shell.css `--rail-gap`). Same
+ * estimate-not-import convention as the constants above. It is still there when the panel is
+ * collapsed or the tool takes the whole stage, so those states reserve it too. */
+export const RAIL_FOOTPRINT_PX = 80;
+
 /** W5 fix (same review, phone-19/20/21 + desktop-19/20/21): a small breathing gutter added around
  * every fit so its outermost pixel is never flush against the map's edge or a chrome boundary --
  * the phone zone fit reserved NO side padding at all (`NO_PADDING`'s left/right, both 0: GAA's east
@@ -53,9 +60,9 @@ export const FIT_GUTTER_PX = 20;
 export const DESKTOP_LEGEND_WIDTH_PX = 320;
 export const DESKTOP_LEGEND_HEIGHT_PX = 140;
 
-/** desktop: the top bar, plus the docked panel's own reservation (none if collapsed/maximized -- a
- * maximized panel covers the whole stage below the bar, so there is no "visible remainder" left to
- * frame a study area within beyond the bar itself), plus the floating legend card's own footprint
+/** desktop: the top bar, plus the rail and the docked panel's own reservation (only the rail if
+ * collapsed/maximized -- a full-stage panel covers the whole stage below the bar, so there is no
+ * "visible remainder" left to frame a study area within beyond the bar and rail), plus the floating legend card's own footprint
  * when the current lens is showing one.
  *
  * V4 fix (owner phone report, 2026-09-24, desktop-18): the walrus model view's south-west corner
@@ -77,20 +84,16 @@ export const DESKTOP_LEGEND_HEIGHT_PX = 140;
  */
 export function desktopPanelPadding(geometry: PanelGeometry, legendShowing = false): ChromePadding {
   const topbar = { ...NO_PADDING, top: TOPBAR_HEIGHT_PX };
-  if (geometry.collapsed || geometry.maximized) return topbar;
+  // R4-B: the rail always sits on the dock side (attached to the panel, `RAIL_FOOTPRINT_PX`); a
+  // collapsed panel or a full-stage tool (Table) leaves only the rail as that side's chrome, and no
+  // legend card is drawn then, so nothing else is reserved.
+  const railReserve = RAIL_FOOTPRINT_PX - 8 + PANEL_OUTER_INSET_PX + FIT_GUTTER_PX;
+  const onDockSide = (px: number) =>
+    geometry.dock === "left" ? { left: px, right: 0 } : { right: px, left: 0 };
+  if (geometry.collapsed || geometry.maximized) return { ...topbar, ...onDockSide(railReserve) };
   const legendH = legendShowing ? DESKTOP_LEGEND_HEIGHT_PX : 0;
-  const panelReserve = geometry.size + PANEL_OUTER_INSET_PX + FIT_GUTTER_PX;
-  switch (geometry.dock) {
-    case "left":
-      return { ...topbar, left: panelReserve, right: 0, bottom: legendH };
-    case "bottom":
-      // the legend floats ABOVE the bottom-docked panel (its own `data-panel-dock="bottom"` rule),
-      // so the reserved bottom strip is the panel's height plus the legend's.
-      return { ...topbar, bottom: panelReserve + legendH };
-    default:
-      // dock="right" (the default, and the case desktop-18/19 actually measured).
-      return { ...topbar, right: panelReserve, left: 0, bottom: legendH };
-  }
+  const panelReserve = geometry.size + PANEL_OUTER_INSET_PX + RAIL_FOOTPRINT_PX + FIT_GUTTER_PX;
+  return { ...topbar, ...onDockSide(panelReserve), bottom: legendH };
 }
 
 /** phone: the top bar, plus the sheet's own height at its current detent and the bottom tab bar it

@@ -72,29 +72,34 @@ describe("panel geometry persistence (chrome only, per viewport size, never the 
     savePanelGeometry(storage, "layers", "desktop", {
       collapsed: true,
       maximized: false,
-      dock: "left",
+      dock: "right",
       size: 420,
     });
     expect(loadPanelGeometry(storage, "layers", "desktop")).toEqual({
       collapsed: true,
       maximized: false,
-      dock: "left",
+      dock: "right",
       size: 420,
     });
   });
 
-  it("round-trips a maximized, bottom-docked geometry", () => {
-    const storage = fakeStorage();
-    savePanelGeometry(storage, "layers", "desktop", {
-      collapsed: false,
-      maximized: true,
-      dock: "bottom",
-      size: 500,
+  it("the default side is LEFT (R4-B)", () => {
+    expect(DEFAULT_PANEL_GEOMETRY.dock).toBe("left");
+  });
+
+  it("a stored bottom dock loads as the default side, and a stored maximized loads as false", () => {
+    const storage = fakeStorage({
+      "atlas.panel.layers.desktop": JSON.stringify({
+        collapsed: false,
+        maximized: true,
+        dock: "bottom",
+        size: 500,
+      }),
     });
     expect(loadPanelGeometry(storage, "layers", "desktop")).toEqual({
       collapsed: false,
-      maximized: true,
-      dock: "bottom",
+      maximized: false,
+      dock: "left",
       size: 500,
     });
   });
@@ -122,7 +127,7 @@ describe("panel geometry persistence (chrome only, per viewport size, never the 
     savePanelGeometry(storage, "layers", "phone", {
       collapsed: true,
       maximized: false,
-      dock: "bottom",
+      dock: "left",
       size: 500,
     });
     expect(loadPanelGeometry(storage, "layers", "desktop")).toEqual({
@@ -134,7 +139,7 @@ describe("panel geometry persistence (chrome only, per viewport size, never the 
     expect(loadPanelGeometry(storage, "layers", "phone")).toEqual({
       collapsed: true,
       maximized: false,
-      dock: "bottom",
+      dock: "left",
       size: 500,
     });
   });
