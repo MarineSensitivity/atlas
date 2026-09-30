@@ -471,9 +471,11 @@ test.describe("step 1: select a Program Area and read its score from the zones t
     await gotoWalk(page);
     await openTool(page, browserName, "Table", "step 1");
 
-    // into the panel, then the Table panel's own Segmented switch: Species | Zones | Composition.
-    await tabTo(page, browserName, "Zones", { step: "step 1: the Zones sub-tab" });
-    await page.keyboard.press("Enter");
+    // into the panel, then the Table panel's `Tabs` (R4-C): Species | Zones | Composition. Only the
+    // selected tab is a Tab stop (roving); ArrowRight moves AND selects.
+    await tabTo(page, browserName, "Species", { step: "step 1: the table view tabs" });
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByRole("tab", { name: "Zones", selected: true })).toBeFocused();
 
     const table = page.getByRole("table", { name: `Zones ranked by ${COMPOSITE_LABEL}` });
     await expect(table).toBeVisible();
@@ -500,8 +502,8 @@ test.describe("step 1: select a Program Area and read its score from the zones t
   }) => {
     await gotoWalk(page);
     await openTool(page, browserName, "Table", "step 1b");
-    await tabTo(page, browserName, "Zones", { step: "step 1b: the Zones sub-tab" });
-    await page.keyboard.press("Enter");
+    await tabTo(page, browserName, "Species", { step: "step 1b: the table view tabs" });
+    await page.keyboard.press("ArrowRight");
 
     const table = page.getByRole("table", { name: `Zones ranked by ${COMPOSITE_LABEL}` });
     const row = table.locator("tbody tr", { hasText: TOP_ZONE.name });

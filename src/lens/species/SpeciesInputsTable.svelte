@@ -7,6 +7,9 @@
   // inputs, and a fixed-height virtualized grid would be the wrong tool for it).
   import type { LayerBar } from "./data/layerBar";
   import { inputsTableRows } from "./data/inputsTable";
+  import Icon from "../../lib/ui/Icon.svelte";
+  import { collapseToMap } from "../../lib/ui/backToMap";
+  import { csvFilename, toCsv } from "../scores/species";
 
   interface Props {
     bar: LayerBar | null;
@@ -16,9 +19,39 @@
 
   let { bar, loading, cardError }: Props = $props();
   const rows = $derived(inputsTableRows(bar));
+
+  // R4-C: the download is the table as shown (same rows, same four columns).
+  function onExportCsv() {
+    const csv = toCsv(rows, [
+      { key: "input", value: (r) => r.input },
+      { key: "dataset", value: (r) => r.dataset },
+      { key: "representation", value: (r) => r.representation },
+      { key: "available", value: (r) => (r.available ? "Available" : "Not available") },
+    ]);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    a.download = csvFilename("model-inputs");
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
 </script>
 
 <div class="inputs-tool" data-testid="species-inputs-table">
+  <!-- R4-C: the same header-row pattern as the Scores table (← Map, subject, download); no tabs. -->
+  <div class="header-row">
+    <button type="button" class="back-btn" onclick={() => collapseToMap()}>← Map</button>
+    <h3 class="header-text">Model inputs</h3>
+    <button
+      type="button"
+      class="icon-btn"
+      aria-label="Download CSV"
+      data-tooltip="Download CSV"
+      disabled={rows.length === 0}
+      onclick={onExportCsv}
+    >
+      <Icon name="download" size={16} />
+    </button>
+  </div>
   {#if cardError}
     <p class="empty" role="alert">Couldn't load this species' model inputs.</p>
   {:else if loading}
@@ -60,6 +93,66 @@
 </div>
 
 <style>
+  .inputs-tool {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .header-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+  }
+
+  .header-text {
+    flex: 1;
+    margin: 0;
+    font-size: var(--text-md);
+  }
+
+  .back-btn {
+    min-height: var(--size-touch);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+
+  .icon-btn {
+    display: inline-grid;
+    place-items: center;
+    width: var(--size-touch);
+    height: var(--size-touch);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--icon-muted);
+    cursor: pointer;
+  }
+
+  .icon-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .back-btn:focus-visible,
+  .icon-btn:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* the phone's sheet has its own detents; the map is reached by dragging it down */
+  @media (max-width: 899px) {
+    .back-btn {
+      display: none;
+    }
+  }
+
   .empty {
     color: var(--text-secondary);
   }

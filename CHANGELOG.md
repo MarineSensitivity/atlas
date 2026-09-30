@@ -1,3 +1,18 @@
+# atlas 0.10.82
+
+Round 4, R4-C: the Table at full stage, and a real tabs control.
+
+- **New underline tabs** (`Tabs`) for "same data, different view" inside one surface: plain labels on
+  a hairline, the active one bold with a 3 px underline; Left/Right/Home/End move and select. The
+  gold pill switch stays for choices that change the data (Scores | Species, Raster cells | Program
+  areas, Feedback kind, US waters | Whole range).
+- **Table header is one row**: a "← Map" button (collapses the panel; desktop), what is shown, the
+  Species · Zones · Composition tabs, the column glossary and the CSV download. Table cells now wrap
+  instead of ending in an ellipsis.
+- **Empty Table** says how selection works (click a cell or Program Area, or add places) with an
+  "Add places in Report" button.
+- **Species lens table** has the same header (← Map, "Model inputs", CSV download of the inputs).
+
 # atlas 0.10.81
 
 Round 4, R4-B: the tool rail attaches to the panel and becomes four tabs, docked left by default.

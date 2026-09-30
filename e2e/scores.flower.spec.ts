@@ -50,7 +50,7 @@ async function openFlower(page: Page) {
  * is attached to it. */
 async function selectZoneViaTable(page: Page, zoneKey: string) {
   await page.getByRole("button", { name: "Table", exact: true }).click();
-  await page.getByRole("button", { name: "Zones", exact: true }).click();
+  await page.getByRole("tab", { name: "Zones", exact: true }).click();
   await page.getByRole("button", { name: new RegExp(`\\(${zoneKey}\\)$`) }).click();
   await openFlower(page);
 }

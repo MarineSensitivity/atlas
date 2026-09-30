@@ -1700,7 +1700,7 @@ export const FAULTS = [
     describe:
       "Segmented.svelte's `.seg button` (W3 item 3: the segments filled only part of the pill, " +
       "~283 of 1245px on desktop) drops `flex: 1 1 0%` -- a caller whose own layout stretches " +
-      "`.seg` (the Table Species|Zones|Composition switch) leaves dead space past the last " +
+      "`.seg` (the Feedback kind switch; R4-C: the Table's own view switch became `Tabs`) leaves dead space past the last " +
       "segment again",
     // R3-CI (CI run 36158947685: this gate stayed GREEN with the fault applied -- "it cannot
     // fail, so it is not a check"). Root cause: R3's redesign gave the Layers unit toggle
@@ -1719,7 +1719,7 @@ export const FAULTS = [
       "--project=chromium",
       "e2e/layers.spec.ts",
       "-g",
-      "the Table view switch's segments fill the pill's own width",
+      "the Feedback kind switch's segments fill the pill's own width",
       "--workers=1",
     ],
     env: { PW_PORT: "4533" },

@@ -595,9 +595,9 @@
   td {
     padding: var(--space-1) var(--space-2);
     border-bottom: 1px solid var(--divider);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    /* R4-C: at full stage a cell wraps instead of truncating (the readable column minimum + the
+       table's own horizontal scroll still cover a phone). */
+    overflow-wrap: anywhere;
   }
 
   td.num {
@@ -608,8 +608,6 @@
      is what actually overflows -- an inline element's text does not ellipsis on its own). */
   td a {
     display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .empty {
