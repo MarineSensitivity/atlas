@@ -66,6 +66,16 @@ async function gotoShell(page: Page, path: string): Promise<void> {
   await waitForHydration(page);
 }
 
+// R3-W8 item 5: the Report rail tool now opens on its PLACES tab (Places folded in as the first
+// tab); ReportTool.svelte's "Open report"/chooser live on the second, "Report", tab.
+async function openReportTab(page: Page): Promise<void> {
+  await page.locator('#rail-region button[aria-label="Report"]').click();
+  await page
+    .getByRole("group", { name: "Report pane section" })
+    .getByRole("button", { name: "Report", exact: true })
+    .click();
+}
+
 test.describe("Report: a zone selected on the map", () => {
   test("Report opens report.html for that Program Area, in a new tab", async ({ page }) => {
     await gotoShell(page, "/?sel=zone:programarea:GAA");
@@ -75,7 +85,7 @@ test.describe("Report: a zone selected on the map", () => {
     // report" shortcut (`action.kind === "open"`, reportAction()) rather than opening a tab by
     // itself; that shortcut's own click is what must run SYNCHRONOUSLY for the popup blocker
     // (ReportTool.svelte's own header). Two clicks where the removed `report-top` button took one.
-    await page.locator('#rail-region button[aria-label="Report"]').click();
+    await openReportTab(page);
     const [reportPage] = await Promise.all([
       page.context().waitForEvent("page"),
       page.getByRole("button", { name: "Open report" }).click(),
@@ -128,7 +138,7 @@ test.describe("Report: a place list present", () => {
     // same two-click shape as the zone-selected test above -- a non-empty place list is ALSO
     // `action.kind === "open"` (reportAction()'s own rule, `onReport`'s header comment: "a place
     // list in #pl=, or a zone selected").
-    await page.locator('#rail-region button[aria-label="Report"]').click();
+    await openReportTab(page);
     const [reportPage] = await Promise.all([
       page.context().waitForEvent("page"),
       page.getByRole("button", { name: "Open report" }).click(),
@@ -156,7 +166,7 @@ test.describe("Report: nothing selected", () => {
 
     let opened = false;
     page.context().on("page", () => (opened = true));
-    await page.locator('#rail-region button[aria-label="Report"]').click();
+    await openReportTab(page);
 
     // the chooser (ReportTool.svelte, lazy) -- give it a moment to load, then assert its content,
     // never a bare `activeTool==="report"` internal check (that would pass even on the old

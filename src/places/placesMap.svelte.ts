@@ -59,7 +59,12 @@
 // `allGeomPlacesOutline`'s and `composeOutline`'s own headers in model.ts.
 import type { FeatureCollection } from "geojson";
 import type { SelStore } from "../lib/state/sel.svelte";
-import { allGeomPlacesOutline, composeOutline } from "./model";
+// 0.10.79 size-budget fix round: `./model` drags the whole g1 codec (`placeCodec`, ~3.3 KB gzip)
+// onto the static critical path, so it is a type-only import here and the runtime module loads via
+// a dynamic `import()` below (same convention as Shell.svelte's `placesModel`). Until it resolves
+// the baseline is `null` and the outline is just the interaction override -- a link with places in
+// the hash paints its outlines one tick after the chunk arrives, never missing.
+import type { allGeomPlacesOutline as AllGeomFn, composeOutline as ComposeFn } from "./model";
 
 export interface PlacesMapStore {
   /** every `kind: "geom"` place in the list, PLUS (layered on top) an interaction override when
@@ -95,6 +100,10 @@ export function createPlacesMapStore(deps: PlacesMapDeps): PlacesMapStore {
   let cells = $state<FeatureCollection | null>(null);
   let showCells = $state(false);
   let interactionOwned = $state(false);
+  let model = $state<{ all: typeof AllGeomFn; compose: typeof ComposeFn } | null>(null);
+  void import("./model").then((m) => {
+    model = { all: m.allGeomPlacesOutline, compose: m.composeOutline };
+  });
 
   // the baseline (this module's own header comment) -- a pure `$derived`, never an effect: it has
   // no side effect to race, so reading it can never disagree with a concurrent writer the way two
@@ -104,7 +113,7 @@ export function createPlacesMapStore(deps: PlacesMapDeps): PlacesMapStore {
   // not just the selected row -- `model.ts#allGeomPlacesOutline`'s own header has the root cause.
   // Depends on `sel.pl` alone (never `sel.sel`): which place is selected no longer decides what is
   // drawn, only which places EXIST decides that.
-  const baseline = $derived.by(() => allGeomPlacesOutline(deps.selStore.sel.pl));
+  const baseline = $derived.by(() => (model ? model.all(deps.selStore.sel.pl) : null));
 
   // a place/pl selection change drops any interaction override left over from a PREVIOUS
   // selection (this module header's own rule, unchanged by the P7 fix) -- `Places.svelte`'s
@@ -117,7 +126,7 @@ export function createPlacesMapStore(deps: PlacesMapDeps): PlacesMapStore {
   });
 
   // composed ONCE, here (item m3), through the unit-tested `model.ts#composeOutline`.
-  const outline = $derived(composeOutline(interaction, baseline));
+  const outline = $derived(model ? model.compose(interaction, baseline) : interaction);
 
   return {
     get outline() {

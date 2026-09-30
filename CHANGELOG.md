@@ -1,3 +1,16 @@
+# atlas 0.10.79
+
+Round 3, W8 CI-red fix round (size budget, stale specs, gallery baselines). No new features.
+
+- **Static critical path back under budget** (445.3 KB gzip vs the 450 KB cap; it was 451.4 KB on
+  0.10.78, so that release was never published). The places model (the g1 place codec) is now a
+  lazy chunk in `Shell.svelte` and `placesMap.svelte.ts`. A link that carries places in its hash
+  still shows them (Places tab list, Report sentence, Table subject line, map outlines) as soon as
+  that chunk arrives, and nothing rewrites `#pl=` in the meantime (`e2e/places.cold-link.spec.ts`).
+- **Specs updated for the Report tool** (Places is now its first tab; the rail is Layers, Table,
+  Report): `e2e/report.flow.spec.ts` and `e2e/keyboard-walk.spec.ts` go through the Report rail tool.
+- **Gallery linux baselines** for the `legend` section regenerated from CI (155 px tall since W7).
+
 # atlas 0.10.78
 
 Round 3, W8 (species Layers pane: promote the data selection, zoom-to-layer, Share reproduces the

@@ -324,7 +324,9 @@ async function openTool(
   step: string,
 ): Promise<void> {
   await enterRail(page, browserName, step);
-  await railArrowTo(page, label, step);
+  // R3-W8 item 5: Places folded into the Report tool as its first tab (the rail is now Layers,
+  // Table, Report) -- "Places" is reached through the Report rail button, which opens on it.
+  await railArrowTo(page, label === "Places" ? "Report" : label, step);
   await page.keyboard.press("Enter");
   await expect(page.locator("#panel-region")).toContainText(label);
   // On webkit the tool swap drops focus to <body> about 100 ms later -- finding A11Y-5, gated by
@@ -396,13 +398,15 @@ test.describe("step 0: the rail itself keeps the caret", () => {
   test("activating a rail tool leaves focus on that tool", async ({ page, browserName }) => {
     await gotoWalk(page);
     await enterRail(page, browserName, "step 0");
-    await railArrowTo(page, "Places", "step 0");
+    // R3-W8 item 5: no "Places" rail tool any more -- the Report tool (which opens on its Places
+    // tab) is the third rail stop; the focus rule under test is the same for any tool.
+    await railArrowTo(page, "Report", "step 0");
     await page.keyboard.press("Enter");
     await expect(page.locator("#panel-region")).toContainText("Places");
     // settle past the lazy panel chunk resolving, which is when webkit used to lose it.
     await page.waitForTimeout(500);
     const name = await assertFocusUsable(page, "step 0: after activating a rail tool");
-    expect(name).toBe("Places");
+    expect(name).toBe("Report");
   });
 });
 

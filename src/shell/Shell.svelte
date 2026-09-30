@@ -136,7 +136,20 @@
   // R3-W8 item 5 fix round: the SAME decode also feeds `reportSubjects()` below (`addPlace` is the
   // generic mutation `addZonePlace`/a drawn place both bottom out in -- see `lastClicked.ts`'s own
   // header for why "Add to places" reuses it rather than a bespoke cell-place path).
-  import { addPlace, hashFromPlaces, placesFromHash } from "../places/model";
+  //
+  // 0.10.79 size-budget fix round: `places/model.ts` pulls in the FULL `geo/placeCodec.ts` (the
+  // g1 codec, incl. `simplify.ts`'s Douglas-Peucker + `unwrap.ts`) as a VALUE import -- that whole
+  // chunk was landing on the static critical path (`placeCodec-*.js` in `size-budget.mjs`'s own
+  // static-file list) because this file imported `addPlace`/`hashFromPlaces`/`placesFromHash`
+  // statically, even though none of it is needed before the Places tab/Download menu/"Add to
+  // places" click ever happens. Type-only import here (erased at build time); the runtime module
+  // loads through `loadPlacesModel()` below, the SAME dynamic-import-cached-behind-a-`$state`
+  // convention `lastClickedLabelFn` already uses.
+  import type {
+    addPlace as AddPlaceFn,
+    hashFromPlaces as HashFromPlacesFn,
+    placesFromHash as PlacesFromHashFn,
+  } from "../places/model";
   import { reportSubjects } from "../lib/state/subjects";
   // `lastClicked.ts`/`lastClickedPlace.ts` are BOTH reached only through a dynamic `import()`
   // (`lastClickedLabelFn`, below, and `onAddLastClicked()`'s own `import()`) -- `lastClicked.ts`
@@ -701,12 +714,36 @@
   // the old `{}` default did.
   let scoresLens = $state<ScoresLensState | null>(null);
 
+  // 0.10.79 size-budget fix round: the RUNTIME `places/model.ts` module (see the type-only import
+  // above), loaded once, right after mount -- same convention as `lastClickedLabelFn` below. `null`
+  // until it resolves; every reader below falls back to "no explicit places yet", which is the same
+  // state `sel.pl` being absent already produces, so there is no new empty-state to design for.
+  let placesModel = $state<{
+    addPlace: typeof AddPlaceFn;
+    hashFromPlaces: typeof HashFromPlacesFn;
+    placesFromHash: typeof PlacesFromHashFn;
+  } | null>(null);
+  async function loadPlacesModel() {
+    if (!placesModel) {
+      const mod = await import("../places/model");
+      placesModel = {
+        addPlace: mod.addPlace,
+        hashFromPlaces: mod.hashFromPlaces,
+        placesFromHash: mod.placesFromHash,
+      };
+    }
+    return placesModel;
+  }
+  $effect(() => {
+    void loadPlacesModel();
+  });
+
   // R3-W8 item 5 fix round (Ben, verbatim): the ONE `reportSubjects()` result the Places tab's own
   // "Last clicked" row, the Report tab's own sentence, and the Table's subject line all read --
   // `reportPlaces` is a fresh `placesFromHash(sel.pl)` decode (the same pattern ScoresLens.svelte/
   // SpeciesLens.svelte/TablePanel.svelte already each call independently, never a shared cache
   // that could silently go stale against a later `sel.pl` write).
-  const reportPlaces = $derived(placesFromHash(sel.pl));
+  const reportPlaces = $derived(placesModel ? placesModel.placesFromHash(sel.pl) : []);
   const reportSubject = $derived(reportSubjects(sel, reportPlaces));
   // the Last-clicked slot is a SCORES-lens concept only (a clicked cell/Program Area) -- the
   // Species lens' own map click sets a different kind of selection entirely (which species surface
@@ -733,7 +770,10 @@
   async function onAddLastClicked() {
     const selection = lastClickedSelection;
     if (!selection) return;
-    const { placeFromLastClicked } = await import("../lens/scores/lastClickedPlace");
+    const [{ placeFromLastClicked }, model] = await Promise.all([
+      import("../lens/scores/lastClickedPlace"),
+      loadPlacesModel(),
+    ]);
     const place = placeFromLastClicked(selection, boot);
     if (!place) return;
     // R3-W8 item 5 fix round: appends through the SAME generic `addPlace()` mutation
@@ -742,12 +782,12 @@
     // Places.svelte's own `writePlaces()`, which also selects the newly-added place): the
     // Last-clicked row must keep showing the SAME subject afterward, per item 5's own selection
     // model ("a most recently selected slot that can be updated with subsequent selection").
-    const result = addPlace(reportPlaces, place);
+    const result = model.addPlace(reportPlaces, place);
     if (!result.ok) {
       notify(result.reason ?? "Couldn't add that to places.", { tone: "error" });
       return;
     }
-    selStore.set({ pl: hashFromPlaces(result.places) || undefined });
+    selStore.set({ pl: model.hashFromPlaces(result.places) || undefined });
     notify("Added to places.");
   }
 
@@ -818,7 +858,7 @@
       ? (speciesLens.bar?.pills.find((p) => p.active)?.mdlKey ?? null)
       : downloadLyr,
   );
-  const downloadPlaces = $derived(placesFromHash(sel.pl));
+  const downloadPlaces = $derived(placesModel ? placesModel.placesFromHash(sel.pl) : []);
   // `typeof DownloadMenu` (not `Component<any>`, unlike the other lazy chunks below) -- this is the
   // ONE lazy chunk in this file `bind:this` calls a method on (`downloadMenuRef?.openPhoneModal()`);
   // `Component<any>`'s implicit empty Exports would make `bind:this` yield a shape lacking
