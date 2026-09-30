@@ -81,7 +81,21 @@ async function explore(page) {
   }
 }
 async function tool(page, name) {
-  await page.getByRole("button", { name, exact: true }).first().click({ timeout: 20_000 });
+  const btn = page.getByRole("button", { name, exact: true }).first();
+  // R4-B: clicking the ACTIVE tool collapses the panel (the spine's own toggle), and Layers is
+  // already open on a desktop first view -- so a state that "opens" a tool must not click it when
+  // it is current AND its panel is showing, or the shot is of a collapsed panel (round-4 final
+  // eyes run: 03-layers-half was the bare map on desktop while the phone, whose sheet starts at
+  // peek, opened fine).
+  const current = (await btn.getAttribute("aria-current")) === "true";
+  const showing =
+    current &&
+    (await page
+      .locator(".panel-title")
+      .first()
+      .isVisible()
+      .catch(() => false));
+  if (!showing) await btn.click({ timeout: 20_000 });
   await page.waitForTimeout(3000);
 }
 // R4-B: the Flower plot (Scores) and the species information (Species) are the rail's own
