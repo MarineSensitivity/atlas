@@ -2062,6 +2062,23 @@ export const FAULTS = [
     ],
     env: { PW_PORT: "4541" },
   },
+  // --- round 4 CI-red follow-up (R4-ci): the globe's empty viewport query ----------------------
+  {
+    id: "zone-layer-globe-query-fallback-dropped",
+    patch: "tests/faults/zone-layer-globe-query-fallback-dropped.patch",
+    describe:
+      "queryLayerFeatures() returns the renderer's answer even when empty -- on the globe the " +
+      "no-geometry viewport query is [] at the left dock's fit centre while the zone lines are " +
+      "painted, so the pick highlight (and every probe built on it) reads 'no zone layer'",
+    gate: [
+      "npx",
+      "vitest",
+      "run",
+      "tests/map/queryLayers.test.ts",
+      "-t",
+      "zone-layer-renders-with-left-dock",
+    ],
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

@@ -200,7 +200,22 @@ export async function zoneFeatureCount(
     ([src, lyr]) => {
       const map = window.__atlasMap?.handle.map;
       if (!map || !map.isSourceLoaded(src)) return -1;
-      return map.queryRenderedFeatures({ layers: [lyr] }).length;
+      const n = map.queryRenderedFeatures({ layers: [lyr] }).length;
+      if (n > 0) return n;
+      // R4-ci: on the globe the no-geometry viewport query answers [] whenever a viewport corner
+      // is off the sphere, whatever is painted (see src/lib/map/queryLayers.ts). Fall back to the
+      // layer's loaded tiles, never for an absent / hidden / out-of-zoom layer.
+      const layer = map.getLayer(lyr);
+      if (!layer) return 0;
+      if (map.getLayoutProperty(lyr, "visibility") === "none") return 0;
+      const z = map.getZoom();
+      if (typeof layer.minzoom === "number" && z < layer.minzoom) return 0;
+      if (typeof layer.maxzoom === "number" && z >= layer.maxzoom) return 0;
+      const opts = {};
+      if (layer.sourceLayer) opts.sourceLayer = layer.sourceLayer;
+      const filter = map.getFilter(lyr);
+      if (filter) opts.filter = filter;
+      return map.querySourceFeatures(src, opts).length;
     },
     [sourceId, layerId],
   );

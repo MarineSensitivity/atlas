@@ -8,15 +8,19 @@
 // interactive, click-driven pick session.
 import type { Feature, FeatureCollection, Geometry } from "geojson";
 import { zoneFillId, zoneKeyProperty, zoneLineId } from "../lib/map/layers/zones";
+import { queryLayerFeatures, type LayerQueryMap } from "../lib/map/queryLayers";
 
 export interface RenderedFeatureLike {
   properties?: Record<string, unknown> | null;
   geometry?: Geometry;
 }
 
-export interface RenderedFeatureMap {
+/** `queryRenderedFeatures` alone is enough for a caller that never needs the globe fallback (the
+ * unit tests' fake); a real MapLibre `Map` also carries the rest of `LayerQueryMap`, which
+ * `renderedZoneOutline` uses when the viewport query comes back empty on the globe (R4-ci). */
+export type RenderedFeatureMap = {
   queryRenderedFeatures(options?: { layers?: string[] }): RenderedFeatureLike[];
-}
+} & Partial<Omit<LayerQueryMap, "queryRenderedFeatures">>;
 
 export const EMPTY_FEATURE_COLLECTION: FeatureCollection = {
   type: "FeatureCollection",
@@ -36,7 +40,11 @@ export function renderedZoneOutline(
   const keyProp = zoneKeyProperty(unit);
   const seen = new Set<string>();
   const features: Feature[] = [];
-  for (const f of map.queryRenderedFeatures({ layers: [zoneFillId(unit), zoneLineId(unit)] })) {
+  const layers = [zoneFillId(unit), zoneLineId(unit)];
+  const found: readonly RenderedFeatureLike[] = isLayerQueryMap(map)
+    ? queryLayerFeatures(map, layers)
+    : map.queryRenderedFeatures({ layers });
+  for (const f of found) {
     const key = f.properties?.[keyProp];
     if (typeof key !== "string" && typeof key !== "number") continue;
     if (!wanted.has(String(key))) continue;
@@ -47,4 +55,13 @@ export function renderedZoneOutline(
     features.push({ type: "Feature", geometry: f.geometry, properties: { ...f.properties } });
   }
   return { type: "FeatureCollection", features };
+}
+
+function isLayerQueryMap(map: RenderedFeatureMap): map is RenderedFeatureMap & LayerQueryMap {
+  return (
+    typeof map.getLayer === "function" &&
+    typeof map.getLayoutProperty === "function" &&
+    typeof map.getZoom === "function" &&
+    typeof map.querySourceFeatures === "function"
+  );
 }

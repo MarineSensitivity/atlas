@@ -1,3 +1,12 @@
+# atlas 0.10.84
+
+Round 4 CI-red follow-up.
+
+- **Picking a Program Area on the globe now always shows its outline.** MapLibre answers a
+  whole-viewport feature query with nothing on the globe when a corner of the view is off the
+  sphere; the new left-docked default view is such a view, so the pick-mode highlight could stay
+  empty while the zone lines were plainly drawn. It now falls back to the loaded zone tiles.
+
 # atlas 0.10.83
 
 Round 4, R4-D: the Report tool is one flow with no sub-tabs.

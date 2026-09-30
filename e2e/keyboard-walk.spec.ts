@@ -776,7 +776,23 @@ test.describe("step 3: open the report and export it", () => {
     await page.keyboard.press("Enter");
     await expect(page.locator(".place-row").first()).toBeVisible();
 
-    await tabTo(page, browserName, "Open in report", { step: "step 3c: the report link" });
+    // R4-ci: since R4-D the Places list sits ABOVE the "Add a place" form, so the new row's link
+    // is BEFORE the Add button in Tab order. Where a forward Tab starts after the Add button unmounts
+    // is engine-specific (chromium re-enters near the row; firefox from the end of the pane and then
+    // runs off the document, 60 presses of Download places), so: a short forward try, then Shift+Tab
+    // -- both purely keyboard, both asserting every intermediate stop.
+    try {
+      await tabTo(page, browserName, "Open in report", {
+        step: "step 3c: the report link",
+        max: 6,
+      });
+    } catch {
+      await tabTo(page, browserName, "Open in report", {
+        step: "step 3c: the report link (Shift+Tab)",
+        back: true,
+        max: 40,
+      });
+    }
     await page.keyboard.press("Enter");
 
     await page.waitForURL(/report\.html/);

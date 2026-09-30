@@ -14,6 +14,7 @@ import {
   BASEMAP_RGB_BY_THEME,
   BOOT_FIXTURE,
   blockWasm,
+  renderedLayerCount,
   routeBasemapStyle,
   routeGlyphs,
   routeTitilerTiles,
@@ -53,12 +54,7 @@ async function gotoMap(page: Page, theme: "navy" | "paper") {
 }
 
 function zoneFeatureCount(page: Page) {
-  return page.evaluate(() => {
-    const map = window.__atlasMap!.handle.map;
-    if (!map.getLayer("programarea_ln")) return -1;
-    if (!map.isSourceLoaded("programarea_src")) return -1;
-    return map.queryRenderedFeatures({ layers: ["programarea_ln"] }).length;
-  });
+  return renderedLayerCount(page, "programarea_ln", "programarea_src");
 }
 
 /**
