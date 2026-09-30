@@ -16,6 +16,8 @@ import {
 } from "./raster";
 import { zoneChoropleth, zoneLegendStops, zoneValuesFor } from "./zoneFill";
 import type { LegendStop, PaletteName } from "../../lib/raster/ramps";
+import type { Histogram } from "../../lib/map/density";
+import { valueListDistribution } from "../../lib/map/distribution";
 
 /**
  * The scores lens' floating legend (atlas-4 defect fix: the scores lens had NO floating legend at
@@ -26,8 +28,20 @@ import type { LegendStop, PaletteName } from "../../lib/raster/ramps";
  * layer has resolved at all (no boot yet).
  */
 export type ScoresLegend =
-  | { kind: "raster"; title: string; stops: LegendStop[] }
-  | { kind: "zone"; title: string; stops: LegendStop[] }
+  | {
+      kind: "raster";
+      title: string;
+      stops: LegendStop[];
+      histogram?: Histogram | null;
+      marker?: number | null;
+    }
+  | {
+      kind: "zone";
+      title: string;
+      stops: LegendStop[];
+      histogram?: Histogram | null;
+      marker?: number | null;
+    }
   | { kind: "unavailable"; title: string }
   | { kind: "empty"; title: string }
   | null;
@@ -57,6 +71,12 @@ export interface ScoresMapState {
   lyr: string | null; // resolved metric_key (never undefined at call time — the caller defaults it)
   palette: PaletteName;
   showOutsidePra: boolean;
+  /** R4-A: the Raster-cells layer's WHOLE-layer histogram (`/cog/statistics`, resolved async by the
+   * lens state and cached by (ver, lens, layer) -- never per click); `null`/absent -> ramp alone. */
+  rasterHistogram?: Histogram | null;
+  /** R4-A: the last clicked element's value, for the legend's marker line (the cell's value comes
+   * from Parquet, a Program area's from the boot bundle). `null`/absent -> no marker. */
+  marker?: number | null;
   /** a cell ring (lon/lat centre + half-cell size) or a zone key to outline, or null. */
   selection:
     | { kind: "cell"; lon: number; lat: number; halfW: number; halfH: number }
@@ -129,6 +149,7 @@ export function scoresMapInputs(state: ScoresMapState): ScoresMapInputs {
   // release's real zone counts run into the hundreds).
   let zoneLegend: ReturnType<typeof zoneChoropleth>["legend"] = null;
   let zoneEmpty = false;
+  let zoneHistogram: Histogram | null = null; // R4-A: every zone's value, binned
   const zones: ZoneUnitSpec[] = baseUnits.map((u) => {
     let out = u;
     if (!isCellBranch && u.unit === state.unit) {
@@ -141,6 +162,7 @@ export function scoresMapInputs(state: ScoresMapState): ScoresMapInputs {
       );
       if (choro.fill) out = { ...out, fill: choro.fill };
       zoneLegend = choro.legend;
+      zoneHistogram = valueListDistribution(values.map((v) => v.value));
       zoneEmpty = choro.empty;
     }
     if (state.selection?.kind === "zone" && state.selection.unit === u.unit) {
@@ -199,12 +221,24 @@ export function scoresMapInputs(state: ScoresMapState): ScoresMapInputs {
         );
         return rl.unavailable
           ? { kind: "unavailable", title }
-          : { kind: "raster", title, stops: rl.stops };
+          : {
+              kind: "raster",
+              title,
+              stops: rl.stops,
+              histogram: state.rasterHistogram ?? null,
+              marker: state.marker ?? null,
+            };
       })()
     : zoneEmpty
       ? { kind: "empty", title }
       : zoneLegend
-        ? { kind: "zone", title, stops: zoneLegendStops(zoneLegend) }
+        ? {
+            kind: "zone",
+            title,
+            stops: zoneLegendStops(zoneLegend),
+            histogram: zoneHistogram,
+            marker: state.marker ?? null,
+          }
         : { kind: "unavailable", title };
 
   return { zones, raster, overlays: overlay ? [overlay] : [], selection, legend };

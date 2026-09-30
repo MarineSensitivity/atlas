@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 import { routeBucket, routeSealFixture, routeSession, waitForHydration, BUCKET } from "./hermetic";
-import { routeBasemapStyle, routeGlyphs } from "./map-hermetic";
+import { routeBasemapStyle, routeGlyphs, routeTitilerTiles } from "./map-hermetic";
 import { cellLonLat, type GridSpec } from "../src/lib/grid/grid";
 import { formatLatLon } from "../src/lib/format";
 
@@ -231,5 +231,121 @@ test.describe("scores lens — click popup (fix round 3, real engine)", () => {
 
     // and it DOES fill in, once the delayed fetch finally answers.
     await expect.poll(() => popupText(page), { timeout: 10_000 }).toContain("Overall score 50");
+  });
+});
+
+// R4-A (Ben, 2026-09-30): the histogram lives in the LEGEND -- the whole layer's density, from
+// titiler's `/cog/statistics` on the layer's own COG, so it never changes with a click; only the
+// marker line does. This variant's composite layer HAS a COG (the fixture above deliberately has
+// none), so the tile + statistics routes below are exercised. Hermetic: every titiler URL is
+// fulfilled here.
+test.describe("scores lens -- legend histogram + marker (R4-A)", () => {
+  const COG_BOOT = {
+    ...BOOT,
+    // an 11-stop ramp (generated, not literal hexes) so the legend has something to draw
+    palettes: {
+      spectral_r: Array.from(
+        { length: 11 },
+        (_, i) => `#${(i * 20).toString(16).padStart(2, "0")}80c0`,
+      ),
+    },
+    layers: [
+      {
+        ...BOOT.layers[0],
+        by_subregion: { FULL: { cog: "https://example.test/score.tif", rescale: [0, 100] } },
+      },
+    ],
+  };
+  const STATS = {
+    b1: {
+      min: 0,
+      max: 100,
+      histogram: [
+        [5, 20, 40, 10],
+        [0, 25, 50, 75, 100],
+      ],
+    },
+  };
+
+  async function gotoCogScores(page: Page, statistics: "ok" | "500"): Promise<() => number> {
+    let statsCalls = 0;
+    await routeBucket(page, VER, COG_BOOT);
+    await routeCellTile(page);
+    await routeSession(page, null);
+    await routeSealFixture(page);
+    await routeBasemapStyle(page);
+    await routeTitilerTiles(page);
+    await routeGlyphs(page);
+    // registered AFTER routeTitilerTiles -> wins for this path (reverse registration order)
+    await page.route(
+      (url) =>
+        url.hostname === "titiler-v8.marinesensitivity.org" &&
+        url.pathname.startsWith("/cog/statistics"),
+      (route) => {
+        statsCalls++;
+        if (statistics === "500") return route.fulfill({ status: 500, body: "boom" });
+        return route.fulfill({ status: 200, contentType: "application/json", json: STATS });
+      },
+    );
+    await page.goto("/?proj=mercator");
+    await waitForHydration(page);
+    await page.waitForFunction(
+      () => !!(window as unknown as { __atlasMap?: unknown }).__atlasMap,
+      undefined,
+      { timeout: 15_000 },
+    );
+    return () => statsCalls;
+  }
+
+  test("the histogram shows above the ramp before any click; a click adds only a marker", async ({
+    page,
+  }) => {
+    const calls = await gotoCogScores(page, "ok");
+    const legend = page.getByTestId("scores-legend");
+    await expect(legend.getByTestId("legend-histogram")).toBeVisible({ timeout: 15_000 });
+    await expect(legend.getByTestId("legend-histogram").locator("rect")).toHaveCount(4);
+    await expect(legend.getByTestId("legend-marker")).toHaveCount(0);
+    const before = await legend.getByTestId("legend-histogram").innerHTML();
+
+    await fireMapClick(page, { lng: CELL_1.lon, lat: CELL_1.lat });
+    await expect(legend.getByTestId("legend-marker")).toBeVisible({ timeout: 15_000 });
+    await expect(legend.getByTestId("legend-marker")).toContainText("50");
+    // the marker label is the popup's own value text ("Overall score 50" -> "50")
+    await expect.poll(() => popupText(page), { timeout: 15_000 }).toContain("Overall score 50");
+    expect((await legend.getByTestId("legend-marker").innerText()).trim()).toBe("50");
+
+    const CELL_2 = cellLonLat(2, GRID, true);
+    await fireMapClick(page, { lng: CELL_2.lon, lat: CELL_2.lat });
+    await expect.poll(() => popupText(page), { timeout: 15_000 }).toContain("Overall score 50");
+    // legend-histogram-stable-across-clicks: the bars are byte-identical, fetched exactly once
+    expect(await legend.getByTestId("legend-histogram").innerHTML()).toBe(before);
+    expect(calls()).toBe(1);
+    // the popup no longer carries a sparkline
+    await expect(page.locator(".atlas-popup svg")).toHaveCount(0);
+  });
+
+  test("Esc closes the popup and takes the marker with it; the histogram stays", async ({
+    page,
+  }) => {
+    await gotoCogScores(page, "ok");
+    const legend = page.getByTestId("scores-legend");
+    await fireMapClick(page, { lng: CELL_1.lon, lat: CELL_1.lat });
+    await expect(legend.getByTestId("legend-marker")).toBeVisible({ timeout: 15_000 });
+    await page.keyboard.press("Escape");
+    await expect(legend.getByTestId("legend-marker")).toHaveCount(0);
+    await expect(legend.getByTestId("legend-histogram")).toBeVisible();
+  });
+
+  test("/cog/statistics 500s -> the legend still renders its ramp, with no histogram", async ({
+    page,
+  }) => {
+    const calls = await gotoCogScores(page, "500");
+    const legend = page.getByTestId("scores-legend");
+    await expect(legend.getByRole("img", { name: /ramp from/ })).toBeVisible({ timeout: 15_000 });
+    await expect.poll(calls, { timeout: 15_000 }).toBeGreaterThan(0);
+    await expect(legend.getByTestId("legend-histogram")).toHaveCount(0);
+    // a click still works and still draws its marker on the bare ramp
+    await fireMapClick(page, { lng: CELL_1.lon, lat: CELL_1.lat });
+    await expect(legend.getByTestId("legend-marker")).toBeVisible({ timeout: 15_000 });
   });
 });

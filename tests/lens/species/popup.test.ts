@@ -339,46 +339,4 @@ describe("popupHtml: sparkline (Ben's ask, round-3 review)", () => {
     );
     expect(html).not.toContain("atlas-popup-sparkline");
   });
-
-  it("'loading': renders the skeleton block", () => {
-    const html = popupHtml(
-      popupContent({
-        sci: "x",
-        lon: 1,
-        lat: 2,
-        cellId: 1,
-        kind: "value",
-        value: 1,
-        rescale: [1, 100],
-        stops: STOPS,
-      }),
-      "loading",
-    );
-    expect(html).toContain("atlas-popup-sparkline--loading");
-  });
-
-  it("a resolved SparklineContent renders the SVG", () => {
-    const html = popupHtml(
-      popupContent({
-        sci: "x",
-        lon: 1,
-        lat: 2,
-        cellId: 1,
-        kind: "value",
-        value: 1,
-        rescale: [1, 100],
-        stops: STOPS,
-      }),
-      {
-        pathD: "M0,28 L120,28 Z",
-        gradientStops: [{ offset: 0, color: "#000000" }],
-        markerX: 60,
-        width: 120,
-        height: 28,
-        minLabel: "1",
-        maxLabel: "100",
-      },
-    );
-    expect(html).toContain("<svg");
-  });
 });

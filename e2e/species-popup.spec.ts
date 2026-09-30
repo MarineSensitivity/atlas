@@ -30,7 +30,11 @@ async function routeSpeciesPointValue(page: Page, value: number) {
   );
 }
 
-async function gotoSpeciesTheme(page: Page, theme: "dark" | "light") {
+async function gotoSpeciesTheme(
+  page: Page,
+  theme: "dark" | "light",
+  beforeGoto?: () => Promise<void>,
+) {
   await blockWasm(page);
   await routeBucket(page, "v9", bootFor("v9"));
   await routeSpeciesShards(page);
@@ -40,6 +44,7 @@ async function gotoSpeciesTheme(page: Page, theme: "dark" | "light") {
   await routeTitilerTiles(page);
   await routeGlyphs(page);
   await routeSpeciesPointValue(page, 50);
+  await beforeGoto?.(); // registered last -> wins over the titiler catch-all above
   await page.goto(`/?sp=${LEATHERBACK_SP}&ver=v9&theme=${theme}`);
   await waitForHydration(page);
   await page.waitForFunction(
@@ -130,3 +135,46 @@ for (const theme of ["dark", "light"] as const) {
     expect(ratio).toBeGreaterThanOrEqual(4.5);
   });
 }
+
+// R4-A (Ben, 2026-09-30): the species legend carries the whole-layer histogram (`/cog/statistics`
+// on the drawn COG, `histogram_range` = the asset's rescale) and the click's `/cog/point` value as
+// a marker -- and the popup itself no longer carries a sparkline.
+test("the species legend shows the layer histogram; a click adds a marker at the /cog/point value", async ({
+  page,
+}) => {
+  const urls: string[] = [];
+  await gotoSpeciesTheme(page, "dark", async () => {
+    await page.route(
+      (url) =>
+        url.hostname === "titiler-v8.marinesensitivity.org" &&
+        url.pathname.startsWith("/cog/statistics"),
+      (route) => {
+        urls.push(route.request().url());
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          json: {
+            b1: {
+              min: 1,
+              max: 100,
+              histogram: [
+                [4, 12, 30, 8],
+                [1, 25.75, 50.5, 75.25, 100],
+              ],
+            },
+          },
+        });
+      },
+    );
+  });
+  const legend = page.getByTestId("species-legend");
+  await expect(legend.getByTestId("legend-histogram")).toBeVisible({ timeout: 15_000 });
+  await expect(legend.getByTestId("legend-marker")).toHaveCount(0);
+  expect(urls.length).toBeGreaterThan(0);
+  expect(urls[0]).toContain("histogram_range=");
+
+  await fireMapClick(page, { lng: -70, lat: 40 });
+  await expect(page.locator(".atlas-popup")).toContainText("Value: 50", { timeout: 15_000 });
+  await expect(legend.getByTestId("legend-marker")).toContainText("50");
+  await expect(page.locator(".atlas-popup svg")).toHaveCount(0);
+});

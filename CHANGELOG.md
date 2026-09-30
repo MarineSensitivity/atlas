@@ -1,3 +1,16 @@
+# atlas 0.10.80
+
+Round 4, R4-A: the histogram moves from the click popup into the legend.
+
+- **The legend shows the whole layer's histogram above the colour ramp**, on the ramp's own x-axis
+  with bars coloured by the ramp. It is the density of values across the whole layer, so it no
+  longer changes from click to click; a click only adds a vertical marker line (with the value as a
+  label, and as text for screen readers) through the histogram and the ramp. Works in the phone
+  legend modal too. Scores / Raster cells and Species (COG inputs) read the shape from the layer's
+  own COG (display-only); Scores / Program areas bin every area's value; a species range (presence
+  only) has none. If the tile server is down or answers an error, the legend is just the ramp.
+- **The click popup is title, swatch and value only**: its sparkline is gone.
+
 # atlas 0.10.79
 
 Round 3, W8 CI-red fix round (size budget, stale specs, gallery baselines). No new features.

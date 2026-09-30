@@ -2,20 +2,21 @@
 // the "second sanctioned tile-server read" (plan D4) alongside `raster/point.ts`'s `/cog/point`.
 import { describe, expect, it } from "vitest";
 import {
-  assertSpeciesHistogramRequest,
+  assertHistogramRequest,
   createTitilerHistogramSource,
   parseTitilerStatistics,
   titilerStatisticsUrl,
 } from "../../src/lib/raster/histogram";
 import { DEFAULT_TITILER_CONFIG } from "../../src/lib/raster/tiles";
 
-describe("assertSpeciesHistogramRequest", () => {
-  it("passes for domain 'species'", () => {
-    expect(() => assertSpeciesHistogramRequest({ domain: "species" })).not.toThrow();
+describe("assertHistogramRequest", () => {
+  it("passes for the species and scores (Raster cells) domains", () => {
+    expect(() => assertHistogramRequest({ domain: "species" })).not.toThrow();
+    expect(() => assertHistogramRequest({ domain: "scores" })).not.toThrow();
   });
 
-  it("throws for any other domain -- scores distributions never read a tile endpoint", () => {
-    expect(() => assertSpeciesHistogramRequest({ domain: "scores" })).toThrow(/plan D4/);
+  it("throws for any other domain -- Program-area distributions never read a tile endpoint", () => {
+    expect(() => assertHistogramRequest({ domain: "zones" })).toThrow(/plan D4/);
   });
 });
 
@@ -25,6 +26,51 @@ describe("titilerStatisticsUrl", () => {
     expect(url).toContain("/cog/statistics?url=");
     expect(url).toContain("histogram_bins=20");
     expect(url).toContain(encodeURIComponent("https://x/y.tif"));
+  });
+});
+
+describe("histogram_range (R4-A: bins line up with the legend ramp)", () => {
+  it("is appended to the URL when a range is given, omitted otherwise", () => {
+    const withRange = titilerStatisticsUrl(
+      DEFAULT_TITILER_CONFIG,
+      "https://x/y.tif",
+      40,
+      [0, 55.5],
+    );
+    expect(withRange).toContain("&histogram_range=0,55.5");
+    expect(titilerStatisticsUrl(DEFAULT_TITILER_CONFIG, "https://x/y.tif", 40)).not.toContain(
+      "histogram_range",
+    );
+  });
+
+  it("the parsed min/max are the bin EDGES (the requested range), not the band's own min/max", () => {
+    const raw = {
+      b1: {
+        min: 3,
+        max: 90,
+        histogram: [
+          [5, 10],
+          [0, 50, 100],
+        ],
+      },
+    };
+    expect(parseTitilerStatistics(raw)).toEqual({ binCount: 2, counts: [5, 10], min: 0, max: 100 });
+  });
+
+  it("the source sends the range and serves the scores domain", async () => {
+    let seen = "";
+    const source = createTitilerHistogramSource(async (url) => {
+      seen = url;
+      return { b1: { min: 0, max: 1, histogram: [[1], [0, 1]] } };
+    });
+    const h = await source.histogram({
+      domain: "scores",
+      cogUrl: "https://x/y.tif",
+      bins: 40,
+      range: [0, 80],
+    });
+    expect(seen).toContain("histogram_range=0,80");
+    expect(h?.binCount).toBe(1);
   });
 });
 
@@ -95,14 +141,14 @@ describe("createTitilerHistogramSource", () => {
     expect(got).toBeNull();
   });
 
-  it("refuses a non-species domain before ever fetching", async () => {
+  it("refuses an unknown domain before ever fetching", async () => {
     let fetched = false;
     const source = createTitilerHistogramSource(async () => {
       fetched = true;
       return {};
     });
     await expect(
-      source.histogram({ domain: "scores" as never, cogUrl: "https://x/y.tif" }),
+      source.histogram({ domain: "zones" as never, cogUrl: "https://x/y.tif" }),
     ).rejects.toThrow(/plan D4/);
     expect(fetched).toBe(false);
   });

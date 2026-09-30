@@ -5,11 +5,11 @@
 // {round(value)}" -- `zoneFill.ts`'s `zoneTooltip()` already spells that exactly, written for a
 // HOVER tooltip that was never wired to anything; this module wires the same text to a CLICK.
 //
-// R3-W7 (round-3 review, Ben's "colour coding + sparkline" ask, 2026-09-25): both branches now go
+// R3-W7 (round-3 review, Ben's "colour coding" ask, 2026-09-25): both branches now go
 // through the SAME `lib/map/popup.ts#valuePopupHtml` template the species popup renders through
-// (UI-4's `formatSubject`/`formatValueLine` for the subject/value lines, a ramp-colour swatch, and
-// an optional distribution sparkline) — a scored cell and a Program Area popup finally look like
-// the SAME kind of thing, which they were not before this round (the scores lens had no colour
+// (UI-4's `formatSubject`/`formatValueLine` for the subject/value lines and a ramp-colour swatch;
+// R4-A moved the distribution histogram out of the popup and into the legend) — a scored cell
+// and a Program Area popup finally look like the SAME kind of thing, which they were not before this round (the scores lens had no colour
 // coding of its own at all).
 //
 // Pure text builders only -- `ScoresLens.svelte`/`state.svelte.ts` are the callers that touch
@@ -22,7 +22,6 @@ import { formatLatLon, formatSubject, formatValueLine } from "../../lib/format";
 import {
   valuePopupAnnounceText,
   valuePopupHtml,
-  type SparklineSlot,
   type ValuePopupContent,
 } from "../../lib/map/popup";
 import { colorForValue, textColorFor, type PaletteStops } from "../../lib/raster/ramps";
@@ -45,21 +44,15 @@ export interface CellPopupInput {
   /** `null` when the cell carries no row for this layer (off-grid, or unscored) -- `cellValue()`'s
    * own "no value" answer, never a guess. */
   value: number | null;
-  /** R3-W7: the ramp stops + rescale range to colour the swatch/sparkline gradient against
+  /** R3-W7: the ramp stops + rescale range to colour the swatch against
    * (`raster/ramps.ts#paletteStopsWithFallback` + the layer's own `rescale`, resolved by the
    * caller — this module never guesses a ramp). `undefined`/`null` when no palette is available
-   * yet (degrades to a grey swatch, no sparkline gradient — never a guessed colour). */
+   * yet (degrades to a grey swatch — never a guessed colour). */
   ramp?: { stops: PaletteStops; min: number; max: number } | null;
-  /** the popup's distribution sparkline slot (module header: "render now, fill in later" —
-   * `lib/map/popup.ts`'s own `SparklineSlot`). `undefined`/`null` renders no sparkline block at
-   * all (not even a skeleton) — a caller that has not started a distribution fetch yet. */
-  sparkline?: SparklineSlot;
 }
 
 /** the swatch colour + text contrast for a cell popup's value, or `null` when there is nothing to
- * colour against (no value, or no ramp resolved yet). Exported so the caller
- * (`state.svelte.ts#showCellPopup`) can build the SAME colour for its own sparkline gradient
- * without re-deriving the ramp lookup a second time. */
+ * colour against (no value, or no ramp resolved yet). */
 export function cellSwatch(
   value: number | null,
   ramp: CellPopupInput["ramp"],
@@ -85,15 +78,14 @@ function cellPopupContent(input: CellPopupInput): ValuePopupContent {
     swatchColor: swatch?.color ?? null,
     textColor: swatch?.textColor ?? null,
     unitLabel: input.value === null ? null : input.layerLabel,
-    sparkline: input.value === null ? null : input.sparkline,
   };
 }
 
 /**
  * The scores lens' cell popup, through the shared `valuePopupHtml()` template (UI-4's subject/
- * value lines, R3-W7's colour swatch + optional sparkline). A click OUTSIDE the scored area
+ * value lines, R3-W7's colour swatch). A click OUTSIDE the scored area
  * (`value === null` — off-grid, unscored, e.g. land) reads "No scored cell here" as the value
- * line, with a neutral grey swatch and no sparkline (D3, Opus 5.5 eyes-on, 2026-09-24: never a
+ * line, with a neutral grey swatch (D3, Opus 5.5 eyes-on, 2026-09-24: never a
  * cell id or the layer title for a click that found nothing).
  */
 export function cellPopupText(input: CellPopupInput): string {
@@ -102,7 +94,7 @@ export function cellPopupText(input: CellPopupInput): string {
 
 /**
  * fix list #12 (SC 4.1.3): the `announce()` counterpart of {@link cellPopupText} -- the SAME
- * text, unescaped, no sparkline (a live region reads text, not an SVG).
+ * text, unescaped (a live region reads text, not an SVG).
  */
 export function cellPopupAnnounceText(input: CellPopupInput): string {
   return valuePopupAnnounceText(cellPopupContent(input));
@@ -130,13 +122,10 @@ export interface ZonePopupInput {
   zones: readonly ZoneRow[];
   lyr: string | null;
   zone: { key: string; name: string };
-  /** R3-W7: the ramp stops to colour the swatch/sparkline gradient against — computed by the
+  /** R3-W7: the ramp stops to colour the swatch against — computed by the
    * caller from the SAME `zoneChoropleth()` call that already builds the fill (`mapInputs.ts`),
    * never a second ramp lookup here. `undefined`/`null` degrades to a grey swatch. */
   stops?: PaletteStops | null;
-  /** the popup's distribution sparkline slot — one bin per value range across ALL zones of the
-   * unit (module header). */
-  sparkline?: SparklineSlot;
 }
 
 function zonePopupContent(input: ZonePopupInput): ValuePopupContent {
@@ -154,7 +143,6 @@ function zonePopupContent(input: ZonePopupInput): ValuePopupContent {
     valueLine: formatValueLine("Score", value.value),
     swatchColor,
     textColor: swatchColor ? textColorFor(swatchColor) : null,
-    sparkline: input.sparkline,
   };
 }
 
@@ -162,8 +150,8 @@ function zonePopupContent(input: ZonePopupInput): ValuePopupContent {
  * The scores lens' Program-Area popup, through the SAME shared template the cell popup (above) and
  * the species popup use. Replaces the old bespoke "{name}: {round(value)}" hover-tooltip text
  * (parity doc §6.4) — the wording is now UI-4's shared subject/value lines, with a ramp-colour
- * swatch matching the choropleth fill and an optional distribution sparkline over all zones of the
- * unit.
+ * swatch matching the choropleth fill. (The distribution histogram lives in the legend since round
+ * 4 R4-A, never in the popup.)
  */
 export function zonePopupText(input: ZonePopupInput): string {
   return valuePopupHtml(zonePopupContent(input));

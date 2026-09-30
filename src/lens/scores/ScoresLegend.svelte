@@ -63,6 +63,8 @@
       stops={legend.stops}
       unit="score"
       formatValue={formatScoresLegendValue}
+      histogram={legend.histogram ?? null}
+      marker={legend.marker ?? null}
     />
   </div>
 {:else if legend?.kind === "unavailable"}

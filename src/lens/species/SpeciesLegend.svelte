@@ -40,6 +40,8 @@
       stops={legend.stops}
       unit={legend.unit}
       formatValue={formatSpeciesLegendValue}
+      histogram={legend.histogram ?? null}
+      marker={legend.marker ?? null}
     />
   </div>
 {:else if legend?.kind === "categorical"}

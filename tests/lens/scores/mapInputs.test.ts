@@ -254,3 +254,51 @@ describe("formatScoresLegendValue — the scores legend's own formatValue (defec
     expect(formatScoresLegendValue(98.8)).toBe("98.8");
   });
 });
+
+// R4-A (Ben, 2026-09-30): the legend carries the whole-layer histogram + the clicked value's marker.
+describe("scoresMapInputs -- legend histogram + marker (R4-A)", () => {
+  const base = {
+    boot: BOOT_V7,
+    overlays: MANIFEST_OVERLAYS_V7,
+    lyr: defaultLayerKey(BOOT_V7),
+    palette: "spectral_r" as const,
+    showOutsidePra: false,
+    selection: null,
+  };
+  const hist = { binCount: 3, counts: [1, 8, 2], min: 0, max: 96 };
+
+  it("raster: the passed-in histogram travels in the legend object, by identity", () => {
+    const out = scoresMapInputs({ ...base, unit: "cell", rasterHistogram: hist, marker: 40 });
+    expect(out.legend?.kind).toBe("raster");
+    if (out.legend?.kind === "raster") {
+      expect(out.legend.histogram).toBe(hist);
+      expect(out.legend.marker).toBe(40);
+    }
+  });
+
+  it("legend-histogram-stable-across-clicks: only the marker differs between two clicks", () => {
+    const a = scoresMapInputs({ ...base, unit: "cell", rasterHistogram: hist, marker: 12 });
+    const b = scoresMapInputs({ ...base, unit: "cell", rasterHistogram: hist, marker: 77 });
+    if (a.legend?.kind !== "raster" || b.legend?.kind !== "raster") throw new Error("raster");
+    expect(b.legend.histogram).toBe(a.legend.histogram);
+    expect(a.legend.marker).not.toBe(b.legend.marker);
+    expect({ ...a.legend, marker: null }).toEqual({ ...b.legend, marker: null });
+  });
+
+  it("zone: the histogram bins every zone's value and is identical whichever zone is clicked", () => {
+    const a = scoresMapInputs({ ...base, unit: "programarea", marker: 10 });
+    const b = scoresMapInputs({ ...base, unit: "programarea", marker: 90 });
+    if (a.legend?.kind !== "zone" || b.legend?.kind !== "zone") throw new Error("zone");
+    expect(a.legend.histogram?.binCount).toBeGreaterThan(0);
+    expect(b.legend.histogram).toEqual(a.legend.histogram);
+    expect(a.legend.marker).toBe(10);
+    expect(b.legend.marker).toBe(90);
+  });
+
+  it("no histogram source and no click: the legend is the bare ramp (null, null)", () => {
+    const out = scoresMapInputs({ ...base, unit: "cell" });
+    if (out.legend?.kind !== "raster") throw new Error("raster");
+    expect(out.legend.histogram).toBeNull();
+    expect(out.legend.marker).toBeNull();
+  });
+});

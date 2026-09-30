@@ -18,6 +18,7 @@ import {
   type LegendStop,
   type PaletteName,
 } from "../../lib/raster/ramps";
+import type { Histogram } from "../../lib/map/density";
 import type { Representation } from "../../lib/state/types";
 import { noSurfaceNotice } from "./data/card";
 import type { LayerBar, LayerPill } from "./data/layerBar";
@@ -60,6 +61,10 @@ export type SpeciesLegend =
       subtitle: string | null;
       unit: string;
       stops: LegendStop[];
+      /** R4-A: the whole-layer histogram + the last click's value, both filled in by the lens
+       * state (`state.svelte.ts`) around this pure builder; absent -> the ramp alone. */
+      histogram?: Histogram | null;
+      marker?: number | null;
     }
   | { kind: "categorical"; title: string; subtitle: string | null; label: string; color: string }
   | null;

@@ -1940,8 +1940,9 @@ export const FAULTS = [
     patch: "tests/faults/sparkline-marker-unclamped.patch",
     describe:
       "density.ts's markerX() drops its clamp to [0, 1] -- a clicked value outside the " +
-      "distribution's own [min, max] (a stale/rounding edge case) now places the popup " +
-      "sparkline's marker line OFF the visible SVG instead of pinned to the nearest end",
+      "legend axis's own range (a stale/rounding edge case) now places the legend " +
+      "marker line OFF the chart instead of pinned to the nearest end (R4-A: retargeted from " +
+      "the retired popup sparkline)",
     gate: ["npx", "vitest", "run", "tests/lib/map/density.test.ts"],
   },
   // round-3 tooling fix: scripts/gallery-baselines-from-ci-core.mjs's baselineNameFor() reverted to
@@ -2000,6 +2001,16 @@ export const FAULTS = [
       "--workers=1",
     ],
     env: { PW_PORT: "4496" },
+  },
+  // --- round 4, R4-A (the histogram moves into the legend) -------------------------------------
+  {
+    id: "legend-histogram-keyed-by-click",
+    patch: "tests/faults/legend-histogram-keyed-by-click.patch",
+    describe:
+      "distribution.ts's layerHistogramKey() appends the clicked element -- every click on the " +
+      "same layer builds its own histogram, so the legend's shape varies from click to click " +
+      "(Ben: it must represent the whole layer; only the marker follows a click)",
+    gate: ["npx", "vitest", "run", "tests/lib/map/distribution.test.ts"],
   },
 ];
 

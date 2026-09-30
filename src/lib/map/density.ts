@@ -1,14 +1,11 @@
-// Ben's ask (2026-09-25, round-3 review UI-4 fold-in): "it would be really awesome to have a
-// sparkline style histogram showing the range of values and a vertical line where that given
-// clicked element exists wrt to the full distribution actually in the popup" -- clarified as "a
-// smooth DENSITY curve, not individual bars". This module is the pure math: bin a value list into
-// counts, smooth those counts into a density curve (a small triangular kernel over ~40 bins reads
-// as "smooth" without a real KDE's bandwidth-selection cost), and turn that into the closed SVG
-// area path + marker x-position the sparkline component draws. Nothing here touches the DOM, a
-// palette, or a network/engine call -- see `distribution.ts` for where the raw values come from,
-// and `popup.ts` for how this gets turned into markup (the gradient fill is built there, from
-// `raster/ramps.ts`'s own stops, never a second ramp here).
-import { roundHalfEven } from "../geo/round";
+// Ben's ask (2026-09-30, round 4 R4-A): "the histogram should represent the density of values
+// across the whole layer ... and so not vary across clicks of the same layer, just the vertical
+// line indicating the clicked element's value ... better suited in the Legend above the color
+// ramp". This module is the pure math: bin a value list into counts, place those bins on the
+// legend ramp's own x-axis (`histogramBars`), and place the clicked value's marker on it
+// (`markerX`). Nothing here touches the DOM, a palette, or a network/engine call -- see
+// `distribution.ts` for where the bins come from and `lib/ui/Legend.svelte` for the drawing (the
+// bar colours come from the ramp's own stops there, never a second ramp here).
 
 export interface Histogram {
   /** the bin count actually used (may be less than requested if the value range degenerates). */
@@ -46,77 +43,78 @@ export function binValues(values: readonly number[], binCount = 40): Histogram {
   return { binCount: n, counts, min, max };
 }
 
+/** the x-axis a legend draws on: the ramp's first and last stop values. A {@link Histogram}
+ * satisfies it structurally, so `markerX(value, histogram)` reads naturally. */
+export interface AxisDomain {
+  min: number;
+  max: number;
+}
+
 /**
- * A small triangular kernel (`[1, 2, 1] / 4` at the interior, clamped at the edges) applied `passes`
- * times — this is what turns the raw per-bin counts into a curve that reads as a smooth density
- * rather than individual bars, without a real KDE's bandwidth search. Two passes approximates a
- * wider Gaussian kernel closely enough for a ~120px-wide sparkline; the edges reflect rather than
- * zero-pad, so a distribution with real mass at its extreme bins is not artificially pinched to
- * zero at the ends.
+ * The clicked value's position along `domain` as a fraction in `[0, 1]` -- clamped to the ends for
+ * a value outside the range (a marker is never placed off the chart). `null` (draw no marker) for
+ * a non-finite/absent value or an absent domain; a zero-width domain pins to the middle.
  */
-export function smoothCounts(counts: readonly number[], passes = 2): number[] {
-  let out = [...counts];
-  for (let p = 0; p < passes; p++) {
-    const next = new Array<number>(out.length);
-    for (let i = 0; i < out.length; i++) {
-      const left = out[i - 1] ?? out[i];
-      const right = out[i + 1] ?? out[i];
-      next[i] = (left + 2 * out[i] + right) / 4;
-    }
-    out = next;
+export function markerX(
+  value: number | null | undefined,
+  domain: AxisDomain | null | undefined,
+): number | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) return null;
+  if (!domain || !Number.isFinite(domain.min) || !Number.isFinite(domain.max)) return null;
+  const span = domain.max - domain.min;
+  if (span < 1e-12) return 0.5;
+  return Math.min(1, Math.max(0, (value - domain.min) / span));
+}
+
+/** one histogram bar, every field a fraction of the chart: `x`/`w` along the axis, `h` of the
+ * chart height (tallest bin = 1), and `value` (the bin centre) for the caller to colour by. */
+export interface HistogramBar {
+  x: number;
+  w: number;
+  h: number;
+  value: number;
+}
+
+/**
+ * The bars of `histogram` on `domain`'s x-axis (the legend ramp's own endpoints, so bar x lines up
+ * with the ramp underneath). Counts scale linearly to the tallest bin. Bins outside the domain are
+ * clipped to it. `[]` for an empty/absent histogram or domain (nothing to draw), never a throw.
+ */
+export function histogramBars(
+  histogram: Histogram | null | undefined,
+  domain: AxisDomain | null | undefined,
+): HistogramBar[] {
+  if (!histogram || histogram.binCount < 1 || histogram.counts.length === 0) return [];
+  if (!domain || !Number.isFinite(domain.min) || !Number.isFinite(domain.max)) return [];
+  const peak = Math.max(0, ...histogram.counts);
+  if (peak <= 0) return [];
+  const span = domain.max - domain.min;
+  if (span < 1e-12) return [];
+  const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+  const n = histogram.counts.length;
+  const width = (histogram.max - histogram.min) / n;
+  const bars: HistogramBar[] = [];
+  for (let i = 0; i < n; i++) {
+    const count = histogram.counts[i];
+    if (!(count > 0)) continue;
+    // a degenerate one-value histogram (min === max): a thin bar at that value
+    const lo = width < 1e-12 ? histogram.min - span * 0.005 : histogram.min + i * width;
+    const hi = width < 1e-12 ? histogram.min + span * 0.005 : lo + width;
+    const x0 = clamp01((lo - domain.min) / span);
+    const x1 = clamp01((hi - domain.min) / span);
+    if (x1 <= x0) continue;
+    bars.push({ x: x0, w: x1 - x0, h: count / peak, value: (lo + hi) / 2 });
   }
-  return out;
+  return bars;
 }
 
 /**
- * The normalized [0, 1] density curve for `histogram` — smoothed counts, scaled so the tallest bin
- * is exactly 1 (the sparkline's own height is applied by the caller). An empty/zero-count
- * histogram returns an all-zero curve (a flat line, never `NaN` from a divide-by-zero).
+ * The marker's label: the SAME rounding the click popup's value line uses (`lib/format.ts#
+ * formatValueLine`, `Math.round` -- Scores zones, Scores cells and Species all print an integer
+ * there), so the legend never shows a raw "33.0930431598879" beside a popup that says "Score 33".
+ * `null` (no marker) for a non-finite/absent value.
  */
-export function densityCurve(histogram: Histogram): number[] {
-  const smoothed = smoothCounts(histogram.counts);
-  const peak = Math.max(0, ...smoothed);
-  if (peak <= 0) return smoothed.map(() => 0);
-  return smoothed.map((c) => c / peak);
-}
-
-/**
- * The sparkline's closed SVG `<path>` `d` attribute — a filled area under `curve` (already [0, 1]
- * normalized, `densityCurve()`'s own output), `width`x`height` px, baseline at the bottom. One
- * point per bin, connected with straight lines (the smoothing already happened in `densityCurve`;
- * a second curve-fit here would just be decoration on decoration). An empty curve draws a flat
- * baseline rectangle of zero height — a closed, valid (if invisible) path, never a broken `d`.
- */
-export function densityPathD(curve: readonly number[], width: number, height: number): string {
-  if (curve.length === 0) return `M0,${height} L${width},${height} Z`;
-  const n = curve.length;
-  const stepX = n > 1 ? width / (n - 1) : 0;
-  const points = curve.map((v, i) => {
-    const x = n > 1 ? i * stepX : width / 2;
-    const y = height - v * height;
-    return `${round2(x)},${round2(y)}`;
-  });
-  const first = points[0];
-  const last = points[points.length - 1];
-  const firstX = first.split(",")[0];
-  const lastX = last.split(",")[0];
-  return `M${firstX},${height} L${points.join(" L")} L${lastX},${height} Z`;
-}
-
-function round2(v: number): number {
-  return roundHalfEven(v * 100) / 100;
-}
-
-/**
- * The marker's x position (px, within `[0, width]`) for `value` against `[min, max]` — clamped to
- * the ends for a value at or outside the observed range (the clicked cell is always ON the curve
- * it is plotted against, by construction, but a caller building this from a slightly different
- * source than the histogram itself — e.g. the raw click value vs. a resampled tile — should not be
- * able to place the marker off the sparkline entirely).
- */
-export function markerX(value: number, min: number, max: number, width: number): number {
-  if (!Number.isFinite(value)) return width / 2;
-  const denom = Math.max(max - min, 1e-12);
-  const t = Math.min(1, Math.max(0, (value - min) / denom));
-  return round2(t * width);
+export function formatMarkerValue(value: number | null | undefined): string | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) return null;
+  return String(Math.round(value));
 }

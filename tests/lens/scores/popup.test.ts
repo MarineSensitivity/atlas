@@ -81,28 +81,17 @@ describe("cellPopupText", () => {
     expect(text).toContain("&lt;b&gt;x&lt;/b&gt;");
   });
 
-  it("carries the sparkline block when one is supplied, only for a scored value", () => {
-    const withSparkline = cellPopupText({
+  it("R4-A: the popup carries no sparkline/histogram -- that lives in the legend now", () => {
+    const html = cellPopupText({
       cellId: 1,
       lon: 0,
       lat: 0,
       layerLabel: "x",
       value: 42,
       ramp: { stops: STOPS, min: 0, max: 100 },
-      sparkline: "loading",
     });
-    expect(withSparkline).toContain("atlas-popup-sparkline--loading");
-
-    // a no-value popup never shows a sparkline, even if the caller happened to pass one along
-    const noValue = cellPopupText({
-      cellId: 1,
-      lon: 0,
-      lat: 0,
-      layerLabel: "x",
-      value: null,
-      sparkline: "loading",
-    });
-    expect(noValue).not.toContain("atlas-popup-sparkline");
+    expect(html).not.toContain("sparkline");
+    expect(html).not.toContain("<svg");
   });
 });
 
