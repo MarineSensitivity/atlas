@@ -6,6 +6,12 @@
 </script>
 
 <script lang="ts">
+  // R4-C (control grammar, branding/control-grammar.md): this is the SWITCH -- a gold pill that
+  // changes the DATA (Scores | Species, Raster cells | Program areas, a model input). If the same
+  // selection is only shown a different way inside one surface, use `Tabs.svelte` (an underline
+  // tablist) instead; never style one as the other. Two to four options, always one selected.
+  // Remaining callers, all data switches: the top bar's lens, the Layers unit toggle, the species
+  // "US waters | Whole range" zoom target (re-frames the map), the Feedback kind picker.
   // atlas-3 spec.md §5.4 ("Segmented (lens)"): the top bar's Scores | Species switch. Plain Tab
   // order (not roving tabindex) -- spec.md §5.3 makes the same call for the panel-size group:
   // two or three targets do not justify it.

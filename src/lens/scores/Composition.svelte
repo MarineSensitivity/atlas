@@ -49,6 +49,10 @@
       });
     }
   });
+
+  // R4-C: at full stage (desktop) the treemap takes the pane's width (capped 960 px, 2:1); the
+  // phone keeps the compact 480x280. The header row above already states the subject.
+  const wide = typeof matchMedia === "function" && matchMedia("(min-width: 900px)").matches;
 </script>
 
 <div class="composition">
@@ -64,7 +68,12 @@
          it small (few, high-suitability species inflate a suitability x ER x area sum without
          inflating a species count). The suit_er_area measure still exists in composition.ts as an
          internal option, not wired to any control here yet. -->
-    <Comp {title} data={tree} valueLabel="species" />
+    <Comp
+      {title}
+      data={tree}
+      valueLabel="species"
+      {...wide ? { fluid: true, width: 960, height: 480 } : {}}
+    />
   {:else}
     <p class="note">Loading the treemap…</p>
   {/if}

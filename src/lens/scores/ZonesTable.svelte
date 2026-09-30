@@ -287,9 +287,9 @@
   td {
     padding: var(--space-1) var(--space-2);
     border-bottom: 1px solid var(--divider);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    /* R4-C: at full stage a cell wraps instead of truncating (the readable column minimum + the
+       table's own horizontal scroll still cover a phone). */
+    overflow-wrap: anywhere;
   }
 
   .num {
@@ -299,9 +299,8 @@
   .zone-link {
     display: block;
     width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    text-align: left;
+    overflow-wrap: anywhere;
     border: 0;
     background: none;
     color: var(--text-link);

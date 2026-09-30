@@ -91,7 +91,7 @@ async function gotoZonesTable(page: Page) {
   await page.goto("/");
   await waitForHydration(page);
   await page.getByRole("button", { name: "Table", exact: true }).click();
-  await page.getByRole("button", { name: "Zones", exact: true }).click();
+  await page.getByRole("tab", { name: "Zones", exact: true }).click();
   await expect(page.getByRole("table", { name: /^Zones ranked by/ })).toBeVisible();
 }
 

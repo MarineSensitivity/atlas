@@ -1068,7 +1068,7 @@ test.describe("P round deliverable 1: the Layers panel's spatial-unit toggle (sc
   // 0%` no longer changes what this test measures (confirmed directly: reapplying the fault by
   // hand and reprobing this exact group still showed its buttons' combined width matching the
   // group's own, because BOTH shrink to the same content size together). Kept as a plain layout
-  // regression test for this toggle's own geometry; `"the Table view switch..."` below (same
+  // regression test for this toggle's own geometry; `"the Feedback kind switch..."` below (same
   // `Segmented` component, `fit` omitted, still parent-stretched) is the fault's new gate.
   test("the two segments fill the pill's own width -- no dead space past the last segment", async ({
     page,
@@ -1096,26 +1096,31 @@ test.describe("P round deliverable 1: the Layers panel's spatial-unit toggle (sc
     ).toBeGreaterThanOrEqual(groupBox.x + groupBox.width - 1);
   });
 
-  // R3-CI (CI run 36158947685): `segmented-flex-fill-dropped`'s own real gate, replacing "the two
-  // segments fill the pill's own width" above (that one's own header explains why it stopped
-  // depending on `.seg button`'s `flex: 1 1 0%` rule once the Spatial-units toggle got `fit`).
-  // `TablePanel.svelte`'s "Table view" switch (Species | Zones | Composition) is the OTHER
-  // `Segmented` caller `Segmented.svelte`'s own `fit` prop doc names as still using the
-  // P-round stretched look (`fit` omitted): its wrapping `.table-panel` is the SAME
-  // `display: flex; flex-direction: column` shape that stretches `.seg`'s outer box wider than
-  // its content, so a missing `flex: 1 1 0%` on `.seg button` still leaves real dead space here.
-  // Measured directly (fault reapplied by hand): group 346px wide, the three segments' combined
-  // width landing ~130px short of the group's own right edge.
-  test("the Table view switch's segments fill the pill's own width -- no dead space past the last segment", async ({
+  // R4-C: `segmented-flex-fill-dropped`'s gate moved again -- the Table view is now `Tabs` (an
+  // underline tablist, not a `Segmented`), so the remaining parent-stretched `Segmented` (`fit`
+  // omitted) is the Feedback dialog's kind picker: its `fieldset.f` is the same `display: flex;
+  // flex-direction: column` shape that stretches `.seg`'s outer box wider than its content, so a
+  // missing `flex: 1 1 0%` on `.seg button` still leaves dead space past the last segment.
+  test("the Feedback kind switch's segments fill the pill's own width -- no dead space past the last segment", async ({
     page,
   }) => {
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.setItem(
+          "atlas.feedback_url",
+          "https://script.google.com/macros/s/x/exec",
+        );
+      } catch {
+        /* private mode */
+      }
+    });
     await gotoLayersScores(page, "");
-    await page.getByRole("button", { name: "Table", exact: true }).click();
-    const group = page.getByRole("group", { name: "Table view" });
+    await page.locator('[data-control="feedback"]').click();
+    const group = page.getByRole("group", { name: "Feedback kind" });
     await expect(group).toBeVisible({ timeout: 10_000 });
     const groupBox = (await group.boundingBox())!;
-    const firstBox = (await group.getByRole("button", { name: "Species" }).boundingBox())!;
-    const lastBox = (await group.getByRole("button", { name: "Composition" }).boundingBox())!;
+    const firstBox = (await group.getByRole("button", { name: "Bug" }).boundingBox())!;
+    const lastBox = (await group.getByRole("button", { name: "Data" }).boundingBox())!;
 
     expect(
       firstBox.x,

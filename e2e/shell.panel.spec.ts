@@ -72,7 +72,7 @@ function railButton(page: Page, name: string) {
 async function gotoTable(page: Page, path = "/") {
   await gotoApp(page, path);
   await railButton(page, "Table").click();
-  await page.getByRole("button", { name: "Zones", exact: true }).click();
+  await page.getByRole("tab", { name: "Zones", exact: true }).click();
   await expect(page.getByRole("table", { name: /^Zones ranked by/ })).toBeVisible();
 }
 

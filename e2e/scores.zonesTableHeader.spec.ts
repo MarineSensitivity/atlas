@@ -52,7 +52,7 @@ async function gotoZonesTable(page: Page) {
   await waitForHydration(page);
   await page.waitForFunction(() => !!window.__atlasMap, undefined, { timeout: 15_000 });
   await page.getByRole("button", { name: "Table", exact: true }).click();
-  await page.getByRole("button", { name: "Zones", exact: true }).click();
+  await page.getByRole("tab", { name: "Zones", exact: true }).click();
 }
 
 test.describe("scores lens — zones table score column header (G-24)", () => {

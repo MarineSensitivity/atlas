@@ -145,7 +145,7 @@ test.describe("axe: zero serious/critical with each rail tool open (and the zone
     baseURL,
   }) => {
     await openRailTool(page, baseURL!, "Table");
-    await page.getByRole("button", { name: "Zones", exact: true }).click();
+    await page.getByRole("tab", { name: "Zones", exact: true }).click();
     const table = page.getByRole("table");
     await expect(table).toBeVisible();
     // atlas-8 phase review M8 (SC 1.3.1): docs/accessibility.md's `<th scope="col">` claim for

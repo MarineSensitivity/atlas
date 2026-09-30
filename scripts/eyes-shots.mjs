@@ -367,6 +367,31 @@ const STATES = [
     },
   },
   {
+    // R4-C: the Table's Zones and Composition tabs (the "table" state above shoots Species only).
+    id: "table-tabs",
+    run: async (p, vp) => {
+      await go(p, "?ver=v7&theme=dark");
+      await explore(p);
+      const hit = await tapScoredCell(p, vp);
+      const missed = hit ? "" : "-MISSED";
+      await tool(p, "Table");
+      await sheet(p, "Full height");
+      await p.getByRole("tab", { name: "Zones", exact: true }).click();
+      await shot(p, vp, `10b-table-zones${missed}`);
+      await p.getByRole("tab", { name: "Composition", exact: true }).click();
+      // composition loads AFTER the species rows (TablePanel's sequential reload): wait for a
+      // real treemap cell, not just the loading text to go (30 s, then -MISSED like a missed tap)
+      const drawn = await p
+        .locator(".treemap .cell")
+        .first()
+        .waitFor({ state: "visible", timeout: 30_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!drawn) log("WARN composition treemap did not render within 30000 ms");
+      await shot(p, vp, `10c-table-composition${missed}${drawn ? "" : "-MISSED"}`);
+    },
+  },
+  {
     // R3-W8 item 5: Places folded into the Report pane as its own (default) tab -- opening it is
     // "Report" (the rail tool) then, defensively, the "Places" tab (in case a prior state on this
     // page left it on "Report").

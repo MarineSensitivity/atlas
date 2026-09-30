@@ -356,7 +356,7 @@ export const STATES = [
         // turned every one of these three states (species/composition/zones tables) into a FAILED
         // pair on the parity page instead of a stale-selector error.
         await page.getByRole("button", { name: "Full screen", exact: true }).first().click();
-        await page.getByRole("button", { name: "Composition" }).first().click({ timeout: 20_000 });
+        await page.getByRole("tab", { name: "Composition" }).first().click({ timeout: 20_000 });
         // the treemap is a lazy chunk over an engine query: wait for a drawn cell, not a timer
         await page.waitForSelector(".table-panel svg rect, .table-panel canvas", {
           timeout: 60_000,
@@ -387,7 +387,7 @@ export const STATES = [
         // turned every one of these three states (species/composition/zones tables) into a FAILED
         // pair on the parity page instead of a stale-selector error.
         await page.getByRole("button", { name: "Full screen", exact: true }).first().click();
-        await page.getByRole("button", { name: "Zones" }).first().click({ timeout: 20_000 });
+        await page.getByRole("tab", { name: "Zones" }).first().click({ timeout: 20_000 });
         // Tier 0 only (boot.zones): rows appear without the engine, so this wait is short
         await page.waitForSelector("table tbody tr", { timeout: 30_000 });
         await page.waitForTimeout(1500);

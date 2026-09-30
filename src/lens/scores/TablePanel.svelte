@@ -1,11 +1,12 @@
 <script lang="ts">
   // atlas-4 step 2/3 — the "table" rail tool: the species table + CSV + glossary + composition
   // treemap (parity doc §7.3-§7.6), plus the zones table (the atlas-4 subplan's "New" bullet, the
-  // keyboard/screen-reader equivalent of the choropleth). One Segmented switch among the three;
+  // keyboard/screen-reader equivalent of the choropleth). One `Tabs` underline tablist among the three (R4-C: same data, different view -- control grammar);
   // species/composition data loads lazily through the engine (`speciesLoad.ts`) only once this
   // panel is actually open.
   import { untrack, type Component } from "svelte";
-  import Segmented from "../../lib/ui/Segmented.svelte";
+  import Tabs from "../../lib/ui/Tabs.svelte";
+  import { collapseToMap } from "../../lib/ui/backToMap";
   import Icon from "../../lib/ui/Icon.svelte";
   import { manifestCapability, type Manifest } from "../../lib/release/manifest";
   import { componentMetricKeys, type SpeciesRow } from "../../lib/analysis/queries";
@@ -259,8 +260,22 @@
 </script>
 
 <div class="table-panel">
+  <!-- R4-C: ONE header row at full stage -- back to the map, what is shown, the view tabs, info,
+       download. "← Map" collapses the panel through the spine's own active-entry click (R4-B), so
+       it never needs a Shell hook; hidden on the phone, where the sheet has its own detents. -->
   <div class="header-row">
+    <button type="button" class="back-btn" onclick={() => collapseToMap()}>← Map</button>
     <h3 class="header-text">{unavailable ? `${header} — unavailable` : header}</h3>
+    <Tabs
+      ariaLabel="Table view"
+      value={subTab}
+      options={[
+        { value: "species", label: "Species" },
+        { value: "zones", label: "Zones" },
+        { value: "composition", label: "Composition" },
+      ]}
+      onchange={(v) => (subTab = v as typeof subTab)}
+    />
     <!-- UI-11 (round 3): `data-tooltip` equal to `aria-label` -- these icon-only buttons had no
          tooltip before this round. -->
     <button
@@ -285,26 +300,15 @@
   </div>
 
   {#if noSelectionAtAll}
-    <!-- R3-W8 item 5 fix round (Ben, verbatim): "when there is no selection, add a line... next to
-         the existing all-US-waters aggregate and don't replace that aggregate." -->
+    <!-- R4-C empty state: one sentence on how selection works and one button into Report. The
+         all-US-waters aggregate below stays (R3-W8 item 5: "don't replace that aggregate"). -->
     <p class="note select-places-hint" data-testid="select-places-hint">
-      Select places under Report → Places
+      Click a cell or a Program Area on the map, or add places, to see what lives there.
       <button type="button" class="select-places-link" onclick={() => onOpenPlaces?.()}>
-        Open Report → Places
+        Add places in Report
       </button>
     </p>
   {/if}
-
-  <Segmented
-    ariaLabel="Table view"
-    value={subTab}
-    options={[
-      { value: "species", label: "Species" },
-      { value: "zones", label: "Zones" },
-      { value: "composition", label: "Composition" },
-    ]}
-    onchange={(v) => (subTab = v as typeof subTab)}
-  />
 
   {#if subTab === "species"}
     {#if unavailable}
@@ -356,13 +360,38 @@
   .header-row {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
   }
 
   .header-text {
-    flex: 1;
+    flex: 1 1 12rem;
     margin: 0;
     font-size: var(--text-md);
+  }
+
+  .back-btn {
+    min-height: var(--size-touch);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+
+  .back-btn:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* the phone's sheet has its own detents; the map is reached by dragging it down */
+  @media (max-width: 899px) {
+    .back-btn {
+      display: none;
+    }
   }
 
   .icon-btn {

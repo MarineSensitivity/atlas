@@ -48,9 +48,12 @@
     /** SVG px */
     width?: number;
     height?: number;
+    /** R4-C: take the pane's width (the SVG scales via its viewBox, capped by `width`) and keep the
+     * title visually hidden when the caller's own header already states the subject. */
+    fluid?: boolean;
   }
 
-  let { title, data, valueLabel, width = 480, height = 280 }: Props = $props();
+  let { title, data, valueLabel, width = 480, height = 280, fluid = false }: Props = $props();
 
   const summaryId = nextUid();
 
@@ -127,8 +130,8 @@
   );
 </script>
 
-<figure class="treemap" aria-describedby={summaryId}>
-  <figcaption class="treemap-title">{title}</figcaption>
+<figure class="treemap" class:treemap--fluid={fluid} aria-describedby={summaryId}>
+  <figcaption class="treemap-title" class:sr-only={fluid}>{title}</figcaption>
 
   {#if !loading && leaves.length === 0}
     <p class="empty">No species data for this selection.</p>
@@ -147,8 +150,8 @@
         class="treemap-svg"
         class:sr-only={showTable}
         viewBox={`0 0 ${width} ${height}`}
-        width={Math.min(width, 480)}
-        height={Math.min(height, 280)}
+        width={fluid ? undefined : Math.min(width, 480)}
+        height={fluid ? undefined : Math.min(height, 280)}
         aria-hidden={showTable ? "true" : undefined}
       >
         {#each cells as c (c.rect.id)}
@@ -214,6 +217,15 @@
     gap: var(--space-2);
     margin: 0;
     max-width: 520px;
+  }
+
+  .treemap--fluid {
+    max-width: none;
+  }
+
+  .treemap--fluid .treemap-svg {
+    width: 100%;
+    max-width: var(--treemap-max, 960px);
   }
 
   .treemap-title {
