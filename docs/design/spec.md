@@ -102,21 +102,16 @@ status text.
 Everything below is a requirement for the component build, not a suggestion;
 `tests/mockup-shell.test.ts` asserts the ones a mockup can prove.
 
-### 5.1 The tool rail is THREE controls, the same three, in the same order, on every viewport and lens
+### 5.1 The spine is FOUR tools, the same four, in the same order, on every viewport and lens
 
-`Layers · Table · Report` (Ben, 2026-09-21; **R3-W8 item 4, 2026-09-25**: "drop the Flower plot from
-the toolbar" — the flower plot moved INTO the Layers pane as its own second tab, §5.1a below;
-**R3-W8 item 5, 2026-09-25**: "Places folds into the Report tool as its first tab" — Places moved
-INTO the Report pane as its own first tab, §5.1b below — so the rail no longer carries either a
-Scores-only control or a second "pick where" control alongside Report). Desktop: a floating
-honeycomb column on the left. Phone: the identical three as a bottom bar. 44 px targets everywhere,
-no words on the control itself (the tooltip carries them), roving `tabindex` inside the group.
+The **spine** is an icon-over-label vertical strip (or bottom bar on a phone) that changes the surface — see `MarineSensitivity.github.io/branding/control-grammar.md` for what a spine is and how it differs from tabs and switches. The four tools (R4-B, 2026-09-24): `Layers · Details · Table · Report`. Desktop: a floating column on the left; phone: the identical four at the bottom. 44 px targets everywhere, no words on the tool itself (the tooltip carries them), roving `tabindex` inside the group. The active tool has a Gold fill with a Navy icon; all interact with the docked side panel (§5.3 below), and the spine stays visible when the panel docks, collapses or resizes.
 
-| control    | opens                                                                                                                                                                               | icon                     |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| **Layers** | the LAYERS panel: score layer (or species surface), palette, zone outlines, bathymetry, OBIS occurrences, other related layers, PLUS a second tab of read-only information (§5.1a). | `mdiLayers`              |
-| **Table**  | the data table (species or zones, per lens)                                                                                                                                         | `mdiTable`               |
-| **Report** | select · draw · upload (its own first tab, §5.1b) · the report builder (its second tab)                                                                                             | `mdiFileDocumentOutline` |
+| tool        | opens                                                                                                                                                    | icon                     |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| **Layers**  | the LAYERS panel (interactive): score layer (or species surface), palette, zone outlines, bathymetry, OBIS occurrences, other related layers (§5.1a).    | `mdiLayers`              |
+| **Details** | the DETAILS panel (read-only information): the Scores lens shows the flower plot (§5.1a); the Species lens shows the species card's descriptive content. | bespoke `flower.svg`     |
+| **Table**   | the data table (species or zones, per lens); takes the whole stage beside the spine (§5.2).                                                              | `mdiTable`               |
+| **Report**  | one scrolling flow: Places (default, with pick/draw/upload options), then the report builder below (§5.1b).                                              | `mdiFileDocumentOutline` |
 
 Two controls that used to be in the rail are **gone**:
 
@@ -126,44 +121,18 @@ Two controls that used to be in the rail are **gone**:
   field are how a species is chosen, and the species card is what the Species lens' panel shows. In
   the Scores lens a species is reached from the species table's row link, which switches the lens.
 
-### 5.1a The Layers pane is a two-tab panel: interactive controls, then read-only information
+### 5.1a The Layers pane: interactive controls only
 
-R3-W8 item 4 (Ben, 2026-09-25): "differentiating the extra information about the species in another
-tabset from the interactive control of the layers in its own default tab." The Layers pane (opened
-by the rail's **Layers** control, either lens) shows a `Segmented` tab switch at its top, styled
-like the Table tool's own Species|Zones|Composition sub-tab:
+The Layers pane (opened by the spine's **Layers** tool, either lens) shows every interactive control in one surface: unit toggle (Scores lens) or the species Model-input picker (Species lens), the layer bar, the stack rows (score layers / species inputs + the Sphere, Reset), zone outlines, bathymetry, OBIS, and other related layer visibility/opacity/ordering controls. The flower plot and the species descriptive card moved to their own **Details** tool (§5.1 above), so their read-only information no longer lives here. A tapped cell or zone shows the value in a popup; tapping Details shows the breakdown there in place (never switching the Layers tool itself).
 
-- **"Layers"** (default): every interactive control exactly as §5.1 already describes it (unit
-  toggle, Layer picker / the species Model-input picker, the stack rows, Sphere, Reset).
-- The second tab is **information only**, never a control, and its label names what it shows: the
-  Scores lens calls it **"Flower plot"** (today's `FlowerPanel.svelte` — title/subject line, the
-  flower, the component table); the Species lens calls it **"Species info"** (the species card's
-  descriptive content — names, listing, categories, the inputs table — `SpeciesCardView.svelte`).
+### 5.1b The Report pane is one scrolling flow: Places, then the report
 
-Tapping a scored cell while the "Layers" tab is showing does not switch tabs — the popup already
-shows the value; the info tab is where a viewer goes to see the breakdown. If the info tab is
-already open, a new tap updates it in place. On the phone, the sheet's own title tracks whichever
-tab is active ("Layers" vs. the info tab's own label). The active tab is carried in the `ui=` share
-token (§9's `tool`/`dock`/`size`/`detent`/`expandedRow`/`tab`/`reportTab` fields) so a shared link
-reopens on the same tab.
+R4-D (Ben, 2026-09-30): the Report pane is now a single flow with no sub-tabs. The Report pane (opened by the spine's **Report** tool, either lens) scrolls from top to bottom:
 
-### 5.1b The Report pane is a two-tab panel: Places (default), then the report builder
+- **Places section** (default): "Places N / 20" header; a "Last clicked" row (pink, hidden when nothing clicked); an "Add a place" section (Program Area picker, map click, draw, polygon, rectangle, circle, coordinates, upload); the explicit places list. Each row shows the subject line and an **Add** or **Remove** button.
+- **Footer** (pinned to the bottom): one sentence driven by `reportSubjects()` ("Reporting on the last clicked place — add it to Places to keep it." / "Reporting on N places." / "Add a place to open a report."), the gold **Open report** button (disabled with nothing to report), and Share / Download buttons.
 
-R3-W8 item 5 (Ben, 2026-09-25, proposed by him and not objected to): "Places folds into the Report
-tool as its first tab." The Report pane (opened by the rail's **Report** control, either lens) shows
-the same `Segmented` tab switch shape as the Layers pane (§5.1a):
-
-- **"Places"** (default): today's Places content, unchanged behaviour — pick a Program Area, draw,
-  enter coordinates, upload a file; the per-place results list; Share and Download places. Its own
-  **"Last clicked"** row sits at the top (item 5's selection model, below).
-- **"Report"**: today's report builder — options, generate, exports. Opening it from the "Places"
-  tab's own "Open the report builder" link switches this tab in place (`ReportPane.svelte`'s
-  `onOpenPlaces`/tab-switch pair — same mechanics `LayersPanel.svelte`'s `infoTab` prop uses).
-
-The pane title reads **"Report · Places"** while the Places tab is active (discoverability: Places
-used to have its own rail button/tooltip), and the tour's own "Places" step anchors this tab switch
-rather than a rail button that no longer exists. The active tab is carried in the `ui=` share
-token's `reportTab` field (§5.1a's own list, above).
+The pane title reads **"Report"** (no longer "Report · Places" — the Places section below the title is what conveys the scope). The tour's "Places" step anchors the top of the Places section instead of a spine button that no longer exists.
 
 **Selection model** (Ben, 2026-09-25, verbatim): "still allow clickable selection (highlighted in
 pink as now) of either Cell or Program Area depending on Scores layer chosen, such that the last
@@ -208,6 +177,14 @@ multi-place list is a larger feature left to a later round.
 
 `e2e/places.last-clicked.spec.ts` proves clicking a cell then "Add to places" leaves `#pl=` with
 exactly one entry and the row still shows afterward.
+
+### 5.2 Control grammar: spine, tabs, and switches
+
+The MMA branding establishes a control grammar: what each visual pattern means so that the shape is the meaning, never arbitrary. See `/MarineSensitivity.github.io/branding/control-grammar.md` for the full glossary. In brief:
+
+- **Spine** (vertical icon-over-label buttons): changes the **surface** (which tool/pane is active). Four tools here, in order: Layers · Details · Table · Report.
+- **Tabs** (plain text labels on a hairline, active one bold with an underline): changes the **view** of the same data inside one surface. Atlas uses Tabs for Table sub-views (Species · Zones · Composition) and the legend modal's own navigation.
+- **Segmented** (pill with a Gold fill on the active segment): changes the **data**. Atlas uses it for Scores | Species (lens switch), Raster cells | Program areas, a species' model input, and Delivered | As-ingested.
 
 ### 5.3 Panel header controls: collapse · half · full, upper right
 

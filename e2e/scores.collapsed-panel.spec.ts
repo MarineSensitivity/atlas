@@ -131,7 +131,7 @@ test.describe("review M1: a scores click works with no panel mounted at all", ()
     page,
   }) => {
     await gotoScoresMap(page, "v7");
-    // switch to Places (R3-W8 item 5: folded into the Report pane as its own default tab) --
+    // open Report (R4-D: Places section is at the top of the Report flow) --
     // ScoresLens.svelte (the scores panel body) never mounts while the Report tool is active, the
     // SAME "no panel body" condition the collapsed case above reproduces a different way (M1's
     // review text: "or the Places tool open").

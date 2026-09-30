@@ -324,8 +324,8 @@ async function openTool(
   step: string,
 ): Promise<void> {
   await enterRail(page, browserName, step);
-  // R3-W8 item 5: Places folded into the Report tool as its first tab (the rail is now Layers,
-  // Table, Report) -- "Places" is reached through the Report rail button, which opens on it.
+  // R4-D: Report pane is one flow, Places at the top. R4-B: the spine is now Layers, Details,
+  // Table, Report (four tools) -- "Places" is reached through the Report tool, which opens to it.
   await railArrowTo(page, label === "Places" ? "Report" : label, step);
   await page.keyboard.press("Enter");
   await expect(page.locator("#panel-region")).toContainText(label);

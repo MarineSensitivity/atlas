@@ -123,7 +123,7 @@ test.describe("R3-W8 item 5: a map click never wipes the explicit Places list", 
   }) => {
     await gotoScores(page);
 
-    // R3-W8 item 5: Places folded into the Report pane as its own (default) tab.
+    // R4-D: Report pane is one flow, Places at the top.
     await page.locator("#rail-region button[aria-label='Report']").click();
     await page.getByRole("button", { name: "Enter coordinates" }).click();
     const textarea = page.getByLabel("Coordinates, bounding box, or WKT/GeoJSON");

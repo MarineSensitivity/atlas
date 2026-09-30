@@ -35,9 +35,9 @@ test.describe("shell smoke", () => {
     await expect(page.locator("#rail-region")).toBeVisible();
     await expect(page.locator("#panel-region")).toBeVisible();
     await expect(page.locator("#map")).toBeVisible();
-    // "Scores"/"Species" (the lens switch, top bar) and "Table"/"Report" (two of the rail's three
-    // tools -- R3-W8 items 4/5 folded the Flower plot and Places into Layers/Report as their own
-    // tabs) are each a real, visible, accessibly-named control in the hydrated shell.
+    // "Scores"/"Species" (the lens switch, top bar) and "Table"/"Report" (two of the spine's four
+    // tools — R4-B: the spine is Layers, Details, Table, Report; R4-D: Report is one flow with Places
+    // at top) are each a real, visible, accessibly-named control in the hydrated shell.
     for (const label of ["Scores", "Species"]) {
       await expect(page.locator(".topbar").getByRole("button", { name: label })).toBeVisible();
     }
