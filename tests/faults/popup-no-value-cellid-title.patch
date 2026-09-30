@@ -1,5 +1,5 @@
 diff --git a/src/lens/scores/popup.ts b/src/lens/scores/popup.ts
-index 8acef39..706d866 100644
+index f3ff17b..ced6352 100644
 --- a/src/lens/scores/popup.ts
 +++ b/src/lens/scores/popup.ts
 @@ -71,13 +71,14 @@ function cellPopupContent(input: CellPopupInput): ValuePopupContent {
@@ -17,6 +17,6 @@ index 8acef39..706d866 100644
      textColor: swatch?.textColor ?? null,
 -    unitLabel: input.value === null ? null : input.layerLabel,
 +    unitLabel: input.layerLabel,
+     detailsLink: input.value !== null, // R4-B: nothing to show details for on a no-value click
    };
  }
- 

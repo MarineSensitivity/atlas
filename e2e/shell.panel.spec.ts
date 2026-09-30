@@ -218,6 +218,10 @@ test.describe("R4-B: Table takes the full stage; leaving it restores the side do
       rail.x + rail.width,
     );
     expect(box.width).toBeGreaterThan(800);
+    // the panel's OWN content box (one level in) drops the 720px docked ceiling too -- not just the
+    // frame around it (R1's V1 regression, now for the full-stage Table)
+    const panelBox = (await page.locator(".panel").boundingBox())!;
+    expect(panelBox.width, "the panel's own box is capped below the stage").toBeGreaterThan(800);
   });
 
   test("leaving Table restores the side dock at the size the panel had", async ({ page }) => {
