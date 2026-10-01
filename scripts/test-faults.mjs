@@ -2079,6 +2079,26 @@ export const FAULTS = [
       "zone-layer-renders-with-left-dock",
     ],
   },
+  // R4 rep-switch (0.10.85): the representation switch's "Show <input> as" label
+  {
+    id: "representation-switch-label-dropped",
+    patch: "tests/faults/representation-switch-label-dropped.patch",
+    describe:
+      "the Species layer bar's Original|Interpolated (Delivered|As ingested) switch loses its " +
+      "'Show <input> as' label (and its group's accessible name falls back to 'Representation') -- " +
+      "it reads as one more model-input pill again",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/species.smoke.spec.ts",
+      "-g",
+      "AquaX 'Delivered'",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4589" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

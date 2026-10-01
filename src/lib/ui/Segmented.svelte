@@ -2,6 +2,8 @@
   export interface SegmentedOption {
     value: string;
     label: string;
+    /** optional native tooltip for this segment (R4 rep-switch: the representation's two hints). */
+    title?: string;
   }
 </script>
 
@@ -45,6 +47,7 @@
       type="button"
       aria-pressed={value === opt.value}
       {disabled}
+      title={opt.title}
       onclick={() => onchange?.(opt.value)}
     >
       {opt.label}

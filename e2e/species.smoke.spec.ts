@@ -107,6 +107,15 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
         timeout: 10_000,
       })
       .toBe(true);
+    // R4 rep-switch: the Delivered | As ingested control is a labelled switch tied to the selected
+    // input ("Show <input> as"), not one more pill after the model-input pills.
+    const inputLabel = (await page.locator('[data-testid="layer-pill"].active').innerText()).trim();
+    const sw = page.getByTestId("representation").getByRole("group");
+    await expect(sw).toHaveAccessibleName(`Show ${inputLabel} as`);
+    await expect(sw.getByRole("button", { name: "Delivered" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   test("a struck-through pill is not focusable-as-button and carries the reason as its title", async ({

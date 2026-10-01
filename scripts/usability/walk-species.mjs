@@ -85,10 +85,10 @@ try {
       )
       .slice(0, 20),
   );
-  const rep = await page.locator("[data-testid=representation] button").allTextContents();
+  const rep = await page.locator("[data-testid=representation] .seg button").allTextContents();
   log.note("inputs", { pills, rep });
   if (rep.length > 1) {
-    await page.locator("[data-testid=representation] button").nth(1).click();
+    await page.locator("[data-testid=representation] .seg button").nth(1).click();
     await settle(page);
     log.note("rep-toggle", { url: await search(page) });
     await shot(page, "species-rep-1280-dark");
