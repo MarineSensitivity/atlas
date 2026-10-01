@@ -1,3 +1,7 @@
+# atlas 0.10.85
+
+- **The Species Layers tab now shows "Original | Interpolated" (and "Delivered | As ingested") as a labelled switch**, on its own row under the input pills and reading "Show <selected input> as", so it no longer looks like one more model-input layer.
+
 # atlas 0.10.84
 
 Round 4 CI-red follow-up.

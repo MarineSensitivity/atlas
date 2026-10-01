@@ -7,7 +7,8 @@
   // component keeps a real, focusable <button> (aria-disabled only), but the atlas-5 gate requires
   // "not focusable-as-button" — a plain <span title="..."> satisfies that and the native `title`
   // tooltip at once, with no extra wiring.
-  import type { LayerBar, LayerPill, RepresentationOption } from "./data/layerBar";
+  import Segmented from "../../lib/ui/Segmented.svelte";
+  import type { LayerBar, LayerPill } from "./data/layerBar";
   import type { Representation } from "../../lib/state/types";
 
   interface Props {
@@ -23,10 +24,6 @@
   function pillClick(p: LayerPill) {
     if (!p.hasSurface) return; // struck-through pills are spans; this is defensive only
     onSelectLayer(p.key);
-  }
-
-  function repOption(opt: RepresentationOption) {
-    onSetRepresentation(opt.value);
   }
 </script>
 
@@ -84,23 +81,20 @@
   </div>
 
   {#if bar.representation.available}
-    <div
-      class="representation"
-      role="group"
-      aria-label="Representation"
-      data-testid="representation"
-    >
-      {#each bar.representation.options as opt (opt.value)}
-        <button
-          type="button"
-          class="rep-pill"
-          class:active={rep === opt.value}
-          title={opt.tooltip}
-          onclick={() => repOption(opt)}
-        >
-          {opt.label}
-        </button>
-      {/each}
+    <!-- R4 rep-switch (owner 2026-10-01): a SWITCH (Segmented), on its own labelled row below a
+       hairline, so it never reads as one more model-input pill (control-grammar.md). -->
+    <div class="representation" data-testid="representation">
+      <span class="field-label">{bar.representation.fieldLabel}</span>
+      <Segmented
+        options={bar.representation.options.map((o) => ({
+          value: o.value,
+          label: o.label,
+          title: o.tooltip,
+        }))}
+        value={rep}
+        ariaLabel={bar.representation.fieldLabel}
+        onchange={(v) => onSetRepresentation(v as Representation)}
+      />
     </div>
   {/if}
 </div>
@@ -210,31 +204,24 @@
 
   .representation {
     display: flex;
-    gap: var(--space-2);
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-top: var(--space-1);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border-control);
   }
 
-  .rep-pill {
-    height: 24px;
-    padding: 0 var(--space-2);
-    border: 1px solid var(--border-control);
-    border-radius: var(--radius-pill);
-    background: none;
-    color: var(--text-primary);
-    font: inherit;
+  .field-label {
     font-size: var(--text-xs);
-    cursor: pointer;
-  }
-
-  .rep-pill.active {
-    background: var(--fill-control);
-    font-weight: 700;
+    color: var(--text-secondary);
   }
 
   @media (max-width: 575.98px) {
     .layer-toggle {
       display: inline-flex;
     }
-    .layer-bar:not(.expanded) .layer-links {
+    .layer-bar:not(.expanded) .layer-links,
+    .layer-bar:not(.expanded) .representation {
       display: none;
     }
   }

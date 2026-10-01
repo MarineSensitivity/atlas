@@ -101,6 +101,14 @@ export interface RepresentationToggle {
   /** only when the selected input publishes BOTH representations (§7.2). */
   available: boolean;
   options: [RepresentationOption, RepresentationOption];
+  /** the switch's field label, tying it to the selected input: "Show AquaMaps SDM as" (R4 rep-switch). */
+  fieldLabel: string;
+}
+
+/** `Show <input label> as` — the representation switch's label (control grammar: it changes the
+ * data of the input chosen above, so it must read as belonging to that input). */
+export function representationFieldLabel(inputLabel: string): string {
+  return `Show ${inputLabel} as`;
 }
 
 // ---- pills --------------------------------------------------------------------------------------
@@ -231,6 +239,7 @@ export function layerBar(card: TaxonCard, opts: LayerBarOptions): LayerBar {
   const representation: RepresentationToggle = {
     available: reps.size > 1,
     options: REPRESENTATION_LABELS[onGrid ? "onGrid" : "offGrid"],
+    fieldLabel: representationFieldLabel(selected?.label ?? selectedInput),
   };
 
   const mergedLabel =

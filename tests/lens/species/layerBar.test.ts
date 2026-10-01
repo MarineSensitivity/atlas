@@ -6,6 +6,7 @@ import {
   REPRESENTATION_LABELS,
   datasetLabel,
   layerBar,
+  representationFieldLabel,
   noSurfaceTooltip,
 } from "../../../src/lens/species/data/layerBar";
 import { MERGED_IN } from "../../../src/lens/species/data/resolve";
@@ -124,6 +125,12 @@ describe("the bar's variant and title", () => {
 });
 
 describe("the representation toggle", () => {
+  it("its field label names the selected input (R4 rep-switch)", () => {
+    const bar = layerBar(CARDS.leatherback(), { ver: "v9", selectedInput: "ax", datasets: v9() });
+    expect(bar.representation.fieldLabel).toBe(`Show ${bar.pills.find((p) => p.active)!.label} as`);
+    expect(representationFieldLabel("AquaMaps SDM")).toBe("Show AquaMaps SDM as");
+  });
+
   it("is available only when the input publishes both representations", () => {
     const walrus = CARDS.walrus();
     expect(
