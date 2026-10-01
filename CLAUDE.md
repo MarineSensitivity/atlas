@@ -324,3 +324,18 @@ gallery-test-results`, copy each final-attempt `*-actual.png` over `*-chromium-l
   CI or cancels the in-flight slow jobs. GA4's Enhanced Measurement history setting and the two
   Apps Scripts (`feedback` vs the usage-log Sheet behind `VITE_LOG_URL`, which is the Shiny apps'
   `MSENS_LOG_URL`) are documented in `docs/feedback.md` and `docs/analytics.md`.
+
+## Round-4 lessons (2026-09-30/10-01)
+
+- **MapLibre globe: a whole-viewport `queryRenderedFeatures({layers})` returns `[]` whenever a viewport
+  corner is off the sphere**, even though the layer is painted. The left-docked default camera (R4-B)
+  exposed it: every zone-feature probe went to 0 on all three engines while the eyes shots showed the
+  outlines. Count features through `src/lib/map/queryLayers.ts#queryLayerFeatures()` (falls back to the
+  layer's loaded tiles), never a bare viewport query; the pick-mode highlight had the same bug.
+- **A spine entry toggles.** Clicking the active tool collapses the panel, so a harness or spec that
+  "opens" a tool must check `aria-current` + a visible `.panel-title` first (`eyes-shots.mjs#tool()`);
+  the desktop Layers shot was a bare map for one wave because of this.
+- **A camera assertion must not assume the dock side.** With the panel on the left the padded
+  "US waters" and "Whole range" centres can coincide (Δ 0.5°); assert the zoom delta as well.
+- **Gallery section heights must be integer.** A 13 px × 1.5 line-height made the treemap section
+  578.5 px tall and the screenshot size flapped between runs; pin such line-heights in the section.
