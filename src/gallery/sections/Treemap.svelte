@@ -39,4 +39,13 @@
     gap: var(--space-5);
     align-items: flex-start;
   }
+
+  /* R4-ci2: the section's screenshot height jittered 579 vs 580 px between CI runs at 320 px:
+     the summary/empty lines inherit a fractional line-height (13px x 1.5 = 19.5px), so the total
+     lands on a .5 boundary and rounds either way. An integer line-height makes every line-count
+     an integer height (gallery-only; the component itself is untouched). */
+  .row :global(.summary),
+  .row :global(.empty) {
+    line-height: 20px;
+  }
 </style>

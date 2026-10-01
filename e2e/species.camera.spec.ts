@@ -910,10 +910,16 @@ test.describe("R3-A1: a wide-range model frames its IN-US portion, with a Zoom-t
       `Whole range's visible span (±${visibleHalfSpanDeg.toFixed(1)}deg around ${wholeContinuous.toFixed(1)}) does not contain lon 145 (Guam/CNMI)`,
     ).toBe(true);
     const usContinuous = usWaters.center.lng < 0 ? usWaters.center.lng + 360 : usWaters.center.lng;
+    // R4-ci2: the camera must differ MATERIALLY, but not by centre alone. With the panel docked
+    // LEFT (R4-B) the US-waters fit's padded centre (~-140.2) and the whole-range arc's centre
+    // (~-140.5, Linux WebKit trace, CI run 36791588294) coincide, while the zoom still differs by
+    // ~0.26 (2.16 vs 1.89): 'Whole range' is a real, wider fit, never a no-op. Gate on the pair.
+    const centreDelta = Math.abs(wholeContinuous - usContinuous);
+    const zoomDelta = usWaters.zoom - wholeRange.zoom;
     expect(
-      Math.abs(wholeContinuous - usContinuous),
-      "'Whole range' centre is nearly identical to 'US waters' -- the exact live bug (item B)",
-    ).toBeGreaterThan(20);
+      centreDelta > 20 || zoomDelta > 0.15,
+      `'Whole range' camera is nearly identical to 'US waters' (centre delta ${centreDelta.toFixed(2)}deg, zoom delta ${zoomDelta.toFixed(2)}) -- the exact live bug (item B)`,
+    ).toBe(true);
   });
 
   // R3-rr fix 1, round 4 (Opus 5.5 eyes-on review round 3, real-build eyes-on, 2026-09-25): live-
