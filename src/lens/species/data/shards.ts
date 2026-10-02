@@ -61,6 +61,10 @@ export interface TaxonAsset {
   rescale: [number, number] | null;
   colormap: string | null;
   sourceLayer: string | null;
+  /** the `mdl_key` value the PMTiles features are stored under, when the release keys the input
+   * differently from its tile (v7 backfill: input `"17626"`, features `bl|22694870`). Optional in
+   * the shard; absent/empty -> null. */
+  sourceKey: string | null;
   bbox: Bbox | null;
 }
 
@@ -213,6 +217,7 @@ function parseAsset(raw: unknown): TaxonAsset | null {
     rescale: pair(raw.rescale),
     colormap: optStr(raw.colormap),
     sourceLayer: optStr(raw.source_layer),
+    sourceKey: optStr(raw.source_key) || null,
     bbox: bbox(raw.bbox),
   };
 }

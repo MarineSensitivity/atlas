@@ -2,6 +2,7 @@
 // COG branch (with the asset's OWN colormap/rescale, AquaX 0-1000 vs everything else 1-100), the
 // PMTiles ranges branch, and the two render-time notices (§7.4).
 import { describe, expect, it } from "vitest";
+import { parseTaxonShard } from "../../../src/lens/species/data/shards";
 import { layerBar } from "../../../src/lens/species/data/layerBar";
 import { MERGED_IN } from "../../../src/lens/species/data/resolve";
 import {
@@ -13,6 +14,7 @@ import {
   formatSpeciesLegendValue,
   noNativeSurfaceNotice,
   pickAsset,
+  rangeFeatureKey,
   speciesMapInputs,
 } from "../../../src/lens/species/mapInputs";
 import { RANGE_FILL_COLOR, RANGE_FILL_OPACITY } from "../../../src/lib/map/layers/ranges";
@@ -31,6 +33,7 @@ describe("pickAsset", () => {
         rescale: null,
         colormap: null,
         sourceLayer: null,
+        sourceKey: null,
         bbox: null,
       },
       {
@@ -40,6 +43,7 @@ describe("pickAsset", () => {
         rescale: null,
         colormap: null,
         sourceLayer: null,
+        sourceKey: null,
         bbox: null,
       },
     ];
@@ -56,6 +60,7 @@ describe("pickAsset", () => {
         rescale: null,
         colormap: null,
         sourceLayer: null,
+        sourceKey: null,
         bbox: null,
       },
     ];
@@ -68,6 +73,7 @@ describe("pickAsset", () => {
         rescale: null,
         colormap: null,
         sourceLayer: null,
+        sourceKey: null,
         bbox: null,
       },
     ];
@@ -227,5 +233,64 @@ describe("speciesMapInputs — the struck-through-pill state", () => {
     expect(out.notice).toBe(noNativeSurfaceNotice());
     expect(out.raster).toBeNull();
     expect(out.range).toBeNull();
+  });
+});
+
+describe("rangeFeatureKey (v7-range-draws-with-source-key)", () => {
+  it("v8/v9 shape: no source_key -> the input's own mdl_key", () => {
+    expect(rangeFeatureKey({ sourceKey: null }, { mdlKey: "bl|22694870" })).toBe("bl|22694870");
+  });
+  it("v7 shape: source_key wins over the legacy numeric input key", () => {
+    expect(rangeFeatureKey({ sourceKey: "bl|22694870" }, { mdlKey: "17626" })).toBe("bl|22694870");
+  });
+  it("an empty source_key falls back to the input's key", () => {
+    expect(rangeFeatureKey({ sourceKey: "" }, { mdlKey: "17626" })).toBe("17626");
+  });
+});
+
+describe("source_key parsing", () => {
+  const shard = (extra: Record<string, unknown>) => ({
+    schema: 1,
+    ver: "v7",
+    shard: "28",
+    taxa: {
+      "ms_merge|X:1": {
+        key: "ms_merge|X:1",
+        sci: "X y",
+        common: null,
+        sp_cat: "bird",
+        taxon_id: "1",
+        taxon_authority: "botw",
+        merged: null,
+        inputs: [
+          {
+            ds_key: "bl",
+            mdl_key: "17626",
+            is_mask: true,
+            assets: [
+              {
+                rep: "native",
+                type: "pmtiles",
+                url: "u",
+                source_layer: "bl",
+                bbox: null,
+                ...extra,
+              },
+            ],
+          },
+        ],
+      },
+    },
+  });
+  const key = (extra: Record<string, unknown>) => {
+    const r = parseTaxonShard(shard(extra));
+    if (typeof r === "string") throw new Error(r);
+    return r.taxa.get("ms_merge|X:1")?.inputs[0]?.assets[0]?.sourceKey;
+  };
+  it("parses a string, and treats absent / empty / non-string as null (never a schema error)", () => {
+    expect(key({ source_key: "bl|22694870" })).toBe("bl|22694870");
+    expect(key({})).toBeNull();
+    expect(key({ source_key: "" })).toBeNull();
+    expect(key({ source_key: 5 })).toBeNull();
   });
 });

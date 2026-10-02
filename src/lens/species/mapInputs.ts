@@ -35,6 +35,15 @@ export const SPECIES_RASTER_OPACITY = 0.8;
 /** the property every range's vector tile carries the model id under (§6.2's PMTiles branch). */
 export const RANGE_KEY_PROPERTY = "mdl_key";
 
+/** the `mdl_key` value to filter a range tile's features on: the asset's `source_key` when the
+ * release keys the input differently from its tile (v7 backfill), else the input's own key (v8/v9). */
+export function rangeFeatureKey(
+  asset: { sourceKey: string | null },
+  pill: { mdlKey: string },
+): string {
+  return asset.sourceKey ? asset.sourceKey : pill.mdlKey;
+}
+
 /** used only when an asset's own `colormap` is null (every real fixture sets one) — the app's own
  * default ramp (`cols_r`, §6.2 step 3: reversed Spectral, the same ramp `pal: "spectral_r"` names). */
 export const DEFAULT_SPECIES_COLORMAP: PaletteName = "spectral_r";
@@ -177,7 +186,7 @@ export function speciesMapInputs(bar: LayerBar, opts: SpeciesMapInputsOptions): 
     pmtiles: asset.url,
     sourceLayer: asset.sourceLayer,
     keyProperty: RANGE_KEY_PROPERTY,
-    key: pill.mdlKey,
+    key: rangeFeatureKey(asset, pill),
     fillColor: RANGE_FILL_COLOR,
     opacity: RANGE_FILL_OPACITY,
   };
