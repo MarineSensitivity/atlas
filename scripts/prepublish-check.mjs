@@ -15,6 +15,11 @@
 //   of every non-zone `.pmtiles` response, the representation switch's text and pressed option, the
 //   legend text; writes a screenshot. Exit 1 when no staged file was served (the check proved nothing).
 //
+// - `--live`: AFTER a release is published, the same look with nothing intercepted (no `--stage`):
+//   the app reads the published bundle. Exit 1 unless the representation switch is on the page and,
+//   when an original range was requested, a non-zone `.pmtiles` answered 206.
+//     node scripts/prepublish-check.mjs --live --ver v7 --q "lens=species&sp=54272&in=bl" --name bl
+//
 // why it exists (round 4, 2026-10-02): the staged v7 backfill passed every table/shard diff and still
 // drew NOTHING for an original range -- the tile was fetched (206) and the feature filter matched no
 // feature (`source_key`, atlas 0.10.86 + msens 0.50.0). Only a browser on the real app showed it.
@@ -35,7 +40,12 @@ const query = arg("q", "lens=species&sp=54272&in=bl");
 const mapCsv = arg("map");
 const out = arg("out", ".tmp/prepub");
 const name = arg("name", "check");
-if (!stage || !existsSync(`${stage}/${ver}`)) {
+const live = process.argv.includes("--live");
+if (live && stage) {
+  console.error("prepublish-check: --live reads the published bundle; drop --stage");
+  process.exit(2);
+}
+if (!live && (!stage || !existsSync(`${stage}/${ver}`))) {
   console.error(`prepublish-check: --stage must hold a ${ver}/ directory (got ${stage})`);
   process.exit(2);
 }
@@ -58,18 +68,19 @@ const tiles = new Set();
 const stagedRe = new RegExp(
   `marine-atlas/${ver}/(app/(taxon|alias)/[0-9a-f]{2}\\.json|manifest\\.json)(\\?.*)?$`,
 );
-await page.route(stagedRe, async (route) => {
-  const rel = new URL(route.request().url()).pathname.split(`/marine-atlas/${ver}/`)[1];
-  const file = `${stage}/${ver}/${rel}`;
-  if (!existsSync(file)) return route.continue();
-  staged.add(rel);
-  await route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    headers: { "access-control-allow-origin": "*" },
-    body: readFileSync(file),
+if (!live)
+  await page.route(stagedRe, async (route) => {
+    const rel = new URL(route.request().url()).pathname.split(`/marine-atlas/${ver}/`)[1];
+    const file = `${stage}/${ver}/${rel}`;
+    if (!existsSync(file)) return route.continue();
+    staged.add(rel);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "access-control-allow-origin": "*" },
+      body: readFileSync(file),
+    });
   });
-});
 if (copyMap.size) {
   await page.route(/marine-atlas\/(native|cog\/global05)\//, async (route) => {
     const key = new URL(route.request().url()).pathname.split("/marine-atlas/")[1];
@@ -117,4 +128,6 @@ const result = {
 await page.screenshot({ path: result.screenshot });
 console.log(JSON.stringify(result));
 await browser.close();
-process.exit(staged.size ? 0 : 1);
+const drew = !result.tiles.length || result.tiles.some((t) => t.startsWith("206 "));
+const liveOk = /Original/.test(result.representation ?? "") && drew;
+process.exit((live ? liveOk : staged.size) ? 0 : 1);
