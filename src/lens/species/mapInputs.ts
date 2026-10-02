@@ -207,14 +207,30 @@ export function speciesMapInputs(bar: LayerBar, opts: SpeciesMapInputsOptions): 
   return { raster: null, range, legend, notice: null, asset };
 }
 
+/** the caption of a single-representation COG input (R5-2): the one layer an input publishes is its
+ * GRIDDED surface (v1-v7 inputs carry exactly one COG on the 0.05 deg scoring grid, labelled
+ * `rep: "native"` by the legacy adapter), so "as delivered" misdescribed it -- there is no other
+ * layer for it to be "as delivered" against. Names what the layer is, like the Interpolated tooltip
+ * ("resampled to the 0.05 deg scoring grid") does. */
+export const SINGLE_LAYER_CAPTION = "on the 0.05° scoring grid";
+
+/** an input publishes ONE representation when every asset it carries has the same `rep` (the
+ * representation switch is only offered for two, `layerBar.ts`). */
+function hasSingleRepresentation(pill: LayerPill): boolean {
+  return new Set(pill.assets.map((a) => a.rep)).size === 1;
+}
+
 /** Ben's UI-L2 ask, species form: the legend subtitle's value-semantics clause -- "habitat
  * suitability 1-100" for the merged model (always rescaled 0/1-100, the merge's whole point) or an
  * input pill whose picked asset is already on the ingest/model rescale (`rep === "model"`,
  * `REPRESENTATION_LABELS`'s "As ingested"/"Interpolated" row); "as delivered" for an input pill
  * whose picked asset is its own raw, undelivered band (`rep === "native"`, that table's "Delivered"/
  * "Original" row) -- matches the brief's own two examples verbatim ("Merged model · habitat
- * suitability 1–100", "AquaMaps · as delivered"). */
+ * suitability 1–100", "AquaMaps · as delivered"). R5-2: an input with only ONE representation has
+ * nothing to be "as delivered" against, so it is captioned for what it is ({@link
+ * SINGLE_LAYER_CAPTION}) whichever `rep` label it carries. */
 function rasterValueSemantics(pill: LayerPill, assetRep: string): string {
   if (pill.key === "merged") return "habitat suitability 1-100";
+  if (hasSingleRepresentation(pill)) return SINGLE_LAYER_CAPTION;
   return assetRep === "native" ? "as delivered" : "habitat suitability 1-100";
 }

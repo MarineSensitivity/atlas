@@ -7,6 +7,7 @@ import { layerBar } from "../../../src/lens/species/data/layerBar";
 import { MERGED_IN } from "../../../src/lens/species/data/resolve";
 import {
   DEFAULT_SPECIES_COLORMAP,
+  SINGLE_LAYER_CAPTION,
   SPECIES_RANGE_ID,
   SPECIES_RASTER_ID,
   SPECIES_RASTER_OPACITY,
@@ -170,6 +171,97 @@ describe("speciesMapInputs — COG branch", () => {
     expect(out.notice).toBe("No surface published for this taxon in v1");
     expect(out.raster).toBeNull();
     expect(out.range).toBeNull();
+  });
+});
+
+// R5-2: the legend subtitle's value-semantics clause. An input with ONE representation has nothing to
+// be "as delivered" against -- v1-v7 inputs publish a single COG on the scoring grid, labelled
+// `rep: "native"` by the legacy adapter. Pinned for: both representations, original only, gridded only.
+describe("speciesMapInputs — the legend caption of a single-representation input (R5-2)", () => {
+  // without `boot.palettes` a COG draws but has no legend at all
+  const BOOT = {
+    palettes: { spectral_r: Array.from({ length: 11 }, (_, i) => `#${i}${i}${i}${i}${i}${i}`) },
+  };
+  const cogAsset = (rep: string, url: string) => ({
+    rep,
+    type: "cog" as const,
+    url,
+    rescale: [1, 100] as [number, number],
+    colormap: "spectral_r",
+    sourceLayer: null,
+    sourceKey: null,
+    bbox: null,
+  });
+  const pmtilesAsset = (url: string) => ({
+    rep: "native",
+    type: "pmtiles" as const,
+    url,
+    rescale: null,
+    colormap: null,
+    sourceLayer: "rng_bl",
+    sourceKey: null,
+    bbox: null,
+  });
+  const subtitleOf = (
+    assets: ReturnType<typeof cogAsset>[] | unknown[],
+    rep: "native" | "model",
+  ) => {
+    const walrus = CARDS.walrus();
+    const card = {
+      ...walrus,
+      inputs: walrus.inputs.map((i) =>
+        i.dsKey === "am" ? { ...i, assets: assets as typeof i.assets } : i,
+      ),
+    };
+    const bar = layerBar(card, { ver: "v9", selectedInput: "am", datasets: v9() });
+    const out = speciesMapInputs(bar, {
+      rep,
+      ver: "v9",
+      scientificName: card.sci,
+      commonName: card.common,
+      boot: BOOT,
+    });
+    return out.legend?.subtitle;
+  };
+
+  it("both representations: Original reads 'as delivered', Interpolated reads 'habitat suitability 1-100' (unchanged)", () => {
+    const both = [
+      cogAsset("native", "https://x/native/am/a.tif"),
+      cogAsset("model", "https://x/cog/global05/b.tif"),
+    ];
+    expect(subtitleOf(both, "native")).toBe("AquaMaps SDM · as delivered");
+    expect(subtitleOf(both, "model")).toBe("AquaMaps SDM · habitat suitability 1-100");
+  });
+
+  it("gridded only (v7: one COG labelled native): 'on the 0.05° scoring grid', NOT 'as delivered'", () => {
+    const only = [cogAsset("native", "https://x/v7/native/am/a.tif")];
+    expect(subtitleOf(only, "native")).toBe(`AquaMaps SDM · ${SINGLE_LAYER_CAPTION}`);
+    expect(subtitleOf(only, "native")).toBe("AquaMaps SDM · on the 0.05° scoring grid");
+    expect(subtitleOf(only, "native")).not.toContain("as delivered");
+  });
+
+  it("gridded only, labelled model (the backfilled v7 'model-only' inputs): the same caption", () => {
+    expect(subtitleOf([cogAsset("model", "https://x/cog/global05/b.tif")], "native")).toBe(
+      "AquaMaps SDM · on the 0.05° scoring grid",
+    );
+  });
+
+  it("original only (a PMTiles range): presence, never the grid caption", () => {
+    expect(subtitleOf([pmtilesAsset("https://x/native/am/c.pmtiles")], "native")).toBe(
+      "AquaMaps SDM · presence",
+    );
+  });
+
+  it("the merged model is never relabelled (its caption does not depend on the pill's assets)", () => {
+    const card = CARDS.walrus();
+    const bar = layerBar(card, { ver: "v9", selectedInput: MERGED_IN, datasets: v9() });
+    const out = speciesMapInputs(bar, {
+      rep: "native",
+      ver: "v9",
+      scientificName: card.sci,
+      boot: BOOT,
+    });
+    expect(out.legend?.subtitle).toContain("habitat suitability 1-100");
   });
 });
 
