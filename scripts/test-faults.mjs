@@ -2099,6 +2099,25 @@ export const FAULTS = [
     ],
     env: { PW_PORT: "4589" },
   },
+  {
+    id: "range-source-key-ignored",
+    patch: "tests/faults/range-source-key-ignored.patch",
+    describe:
+      "the species range layer always filters its tile on the input's own mdl_key and ignores the " +
+      "asset's source_key -- a v7-keyed input (bare legacy number) over a tile whose features carry " +
+      "the original key draws nothing",
+    gate: [
+      "npx",
+      "playwright",
+      "test",
+      "--project=chromium",
+      "e2e/species.smoke.spec.ts",
+      "-g",
+      "v7-range-draws-with-source-key: asset",
+      "--workers=1",
+    ],
+    env: { PW_PORT: "4592" },
+  },
 ];
 
 /** usability B1: a fault whose gate boots a real DuckDB-WASM needs the gitignored extension mirror

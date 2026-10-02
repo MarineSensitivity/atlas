@@ -143,8 +143,12 @@ export const RASTER_RGB: [number, number, number] = [255, 127, 42];
  * header, then the directory, then each tile with a `Range` header, and a handler that ignored it
  * would hand back the whole file for every read and decode garbage.
  */
-export async function routeZonesPmtiles(page: Page, url = ZONES_PMTILES_URL) {
-  const file = readFileSync(ZONES_PMTILES_PATH);
+export async function routeZonesPmtiles(
+  page: Page,
+  url = ZONES_PMTILES_URL,
+  path = ZONES_PMTILES_PATH,
+) {
+  const file = readFileSync(path);
   await page.route(
     url,
     safeRoute((route) => {

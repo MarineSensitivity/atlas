@@ -123,11 +123,12 @@ const SHARD_FILES: Record<string, string> = {
 /** exported so a spec that needs to compose its OWN route order (e.g. registering a hung titiler
  * handler that must win over `gotoSpecies`'s own `routeTitilerTiles`) can call every other piece
  * of this setup without duplicating it — see species.smoke.spec.ts's hung-tile-fallback test. */
-export async function routeSpeciesShards(page: Page) {
+export async function routeSpeciesShards(page: Page, overrides: Record<string, unknown> = {}) {
   await page.route(
     (url) => url.href.startsWith(BUCKET) && url.href.includes("/app/"),
     safeRoute((route) => {
       const path = route.request().url().slice(BUCKET.length);
+      if (path in overrides) return route.fulfill({ status: 200, json: overrides[path] });
       const file = SHARD_FILES[path];
       // NOT a known species shard path (e.g. app/boot.json) — fall through to routeBucket's
       // handler (registered BEFORE this one; Playwright tries routes newest-first, and
@@ -139,10 +140,15 @@ export async function routeSpeciesShards(page: Page) {
   );
 }
 
-export async function gotoSpecies(page: Page, path: string, ver: "v9" | "v7" = "v9") {
+export async function gotoSpecies(
+  page: Page,
+  path: string,
+  ver: "v9" | "v7" = "v9",
+  shardOverrides: Record<string, unknown> = {},
+) {
   await blockWasm(page);
   await routeBucket(page, ver, bootFor(ver));
-  await routeSpeciesShards(page);
+  await routeSpeciesShards(page, shardOverrides);
   // e2e/hermetic.ts's VERSIONS_FIXTURE (routeBucket's versions.json) marks v9 restricted (matching
   // the live registry) — a PUBLIC (no-session) load of v9 is correctly DENIED by plan D6's access
   // gate and renders nothing at all (measured: this is what a first attempt at this spec, with
@@ -155,4 +161,22 @@ export async function gotoSpecies(page: Page, path: string, ver: "v9" | "v7" = "
   await routeGlyphs(page);
   await page.goto(path);
   await waitForHydration(page);
+}
+
+/** the v9 Wrybill shard (one `bl` PMTiles input) re-keyed the way a backfilled v7 release does it:
+ * the input's `mdl_key` is a bare legacy number while the tile's features still carry
+ * `bl|22693928`; `sourceKey` (the asset's `source_key`) says which value they are stored under
+ * (omit it for the pre-fix shard shape). The asset points at `rangeUrl`, the one-polygon
+ * `range.pmtiles` fixture (layer `bl`, `mdl_key = "bl|22693928"`), over the Gulf. */
+export function v7ShapedWrybillShard(rangeUrl: string, sourceKey?: string): unknown {
+  const shard = readFixture("v9/taxon/28.json") as {
+    taxa: Record<string, { inputs: { mdl_key: string; assets: Record<string, unknown>[] }[] }>;
+  };
+  const input = shard.taxa["ms_merge|BOTW:22693928"]!.inputs[0]!;
+  input.mdl_key = "17626";
+  const asset = input.assets[0]!;
+  asset.url = rangeUrl;
+  asset.bbox = [-96, 24, -84, 30];
+  if (sourceKey !== undefined) asset.source_key = sourceKey;
+  return shard;
 }

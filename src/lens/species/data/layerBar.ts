@@ -209,6 +209,7 @@ export function layerBar(card: TaxonCard, opts: LayerBarOptions): LayerBar {
             rescale: card.merged.rescale,
             colormap: card.merged.colormap,
             sourceLayer: null,
+            sourceKey: null,
             bbox: card.merged.bbox,
           },
         ]

@@ -1,0 +1,21 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "mdl_key": "bl|22693928" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-96, 24],
+            [-84, 24],
+            [-84, 30],
+            [-96, 30],
+            [-96, 24]
+          ]
+        ]
+      }
+    }
+  ]
+}

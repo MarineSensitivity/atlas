@@ -1,3 +1,7 @@
+# atlas 0.10.86
+
+- **A species input that its release keys differently from its map tile now draws its original range.** Backfilled v7 inputs carry a legacy number while the tile's features carry the original key; the shard's optional `source_key` now says which, so the range no longer comes up blank.
+
 # atlas 0.10.85
 
 - **The Species Layers tab now shows "Original | Interpolated" (and "Delivered | As ingested") as a labelled switch**, on its own row under the input pills and reading "Show <selected input> as", so it no longer looks like one more model-input layer.

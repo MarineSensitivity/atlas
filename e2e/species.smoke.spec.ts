@@ -20,10 +20,18 @@ import {
   routeSession,
   waitForHydration,
 } from "./hermetic";
-import { blockWasm, routeGlyphs, routeTitilerTiles, routeZonesPmtiles } from "./map-hermetic";
+import { fileURLToPath } from "node:url";
+import {
+  blockWasm,
+  renderedLayerCount,
+  routeGlyphs,
+  routeTitilerTiles,
+  routeZonesPmtiles,
+} from "./map-hermetic";
 import { DEFAULT_STYLE_FALLBACK_MS } from "../src/lib/map/styleQueue";
 import {
   LEATHERBACK_SP,
+  v7ShapedWrybillShard,
   WALRUS_AM_MDL_KEY,
   WRYBILL_SP,
   bootFor,
@@ -271,6 +279,41 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
         },
       )
       .toBeGreaterThan(0);
+  });
+
+  // R4-skey: a species input whose release keys it differently from its tile (v7 backfill) must
+  // still draw its range. The tile (e2e/fixtures/map/range.pmtiles) carries mdl_key "bl|22693928"
+  // on one Gulf polygon; the shard's input key is the bare legacy number "17626".
+  const RANGE_FIXTURE = fileURLToPath(new URL("./fixtures/map/range.pmtiles", import.meta.url));
+  const V7_RANGE_URL = "https://file.marinesensitivity.org/pmtiles/v9/bl/22693928.pmtiles?v=1";
+  const rangeCount = (page: import("@playwright/test").Page) =>
+    renderedLayerCount(page, "species-range", "species-range");
+
+  test("v7-range-draws-with-source-key: asset source_key picks the tile's features", async ({
+    page,
+  }) => {
+    await routeZonesPmtiles(page, V7_RANGE_URL, RANGE_FIXTURE);
+    await gotoSpecies(page, `/?sp=${WRYBILL_SP}&in=bl&ver=v9`, "v9", {
+      "v9/app/taxon/28.json": v7ShapedWrybillShard(V7_RANGE_URL, "bl|22693928"),
+    });
+    await expect
+      .poll(() => rangeCount(page), { timeout: 15_000, message: "range never drew a feature" })
+      .toBeGreaterThan(0);
+  });
+
+  test("v7-range-draws-with-source-key (control): the same shard WITHOUT source_key draws none", async ({
+    page,
+  }) => {
+    await routeZonesPmtiles(page, V7_RANGE_URL, RANGE_FIXTURE);
+    await gotoSpecies(page, `/?sp=${WRYBILL_SP}&in=bl&ver=v9`, "v9", {
+      "v9/app/taxon/28.json": v7ShapedWrybillShard(V7_RANGE_URL),
+    });
+    // the layer must exist and its source finish loading (>= 0) before "0 features" means anything
+    await expect
+      .poll(() => rangeCount(page), { timeout: 15_000, message: "range layer never loaded" })
+      .toBeGreaterThanOrEqual(0);
+    await page.waitForTimeout(1500);
+    expect(await rangeCount(page)).toBe(0);
   });
 
   test("fix round 3 #4: a hung titiler tile does not strand a species switch forever (the bounded fallback)", async ({
