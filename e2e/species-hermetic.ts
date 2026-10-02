@@ -145,6 +145,10 @@ export async function gotoSpecies(
   path: string,
   ver: "v9" | "v7" = "v9",
   shardOverrides: Record<string, unknown> = {},
+  // R5-3: routes registered AFTER routeBucket and BEFORE the navigation, so a spec can serve a URL
+  // under the release bucket (a store-shaped `native/..`/`cog/..` key) that routeBucket's own
+  // catch-all would otherwise 404 (Playwright tries the newest route first).
+  beforeGoto?: (page: Page) => Promise<void>,
 ) {
   await blockWasm(page);
   await routeBucket(page, ver, bootFor(ver));
@@ -159,6 +163,7 @@ export async function gotoSpecies(
   await routeBasemapStyle(page);
   await routeTitilerTiles(page);
   await routeGlyphs(page);
+  if (beforeGoto) await beforeGoto(page);
   await page.goto(path);
   await waitForHydration(page);
 }
@@ -178,5 +183,41 @@ export function v7ShapedWrybillShard(rangeUrl: string, sourceKey?: string): unkn
   asset.url = rangeUrl;
   asset.bbox = [-96, 24, -84, 30];
   if (sourceKey !== undefined) asset.source_key = sourceKey;
+  return shard;
+}
+
+/** R5-3: the content-addressed store's URL shapes (asset-store migration, 2026-10): a PMTiles
+ * original at `native/{ds_key}/{hash}.pmtiles` and a gridded COG at `cog/{grid_id}/{hash}.tif`,
+ * both on the bucket origin, both unversioned (no `{ver}/` segment, no `?v=`). */
+export const STORE_PMTILES_URL = `${BUCKET}native/bl/0b1c2d3e4f5a6b7c.pmtiles`;
+export const STORE_COG_URL = `${BUCKET}cog/global05/9f8e7d6c5b4a3921.tif`;
+/** the feature key the shared tile stores the range under (the fixture's one Gulf polygon). */
+export const STORE_SOURCE_KEY = "bl|22693928";
+/** the input's own key in the shard -- deliberately NOT the tile's key, so only `source_key` can
+ * make the range draw. */
+export const STORE_INPUT_KEY = "bl|store-input-17626";
+
+/** the v9 Wrybill shard (one `bl` input) re-shaped the way the store-backed releases publish it:
+ * an Original PMTiles asset at {@link STORE_PMTILES_URL} carrying `source_key` (different from the
+ * input's own key) and an Interpolated COG at {@link STORE_COG_URL}. */
+export function storeShapedWrybillShard(): unknown {
+  const shard = readFixture("v9/taxon/28.json") as {
+    taxa: Record<string, { inputs: { mdl_key: string; assets: Record<string, unknown>[] }[] }>;
+  };
+  const input = shard.taxa["ms_merge|BOTW:22693928"]!.inputs[0]!;
+  input.mdl_key = STORE_INPUT_KEY;
+  const original = input.assets[0]!;
+  original.url = STORE_PMTILES_URL;
+  original.source_key = STORE_SOURCE_KEY;
+  original.bbox = [-96, 24, -84, 30];
+  input.assets.push({
+    rep: "model",
+    type: "cog",
+    url: STORE_COG_URL,
+    rescale: [1, 100],
+    colormap: "spectral_r",
+    source_layer: null,
+    bbox: [-96, 24, -84, 30],
+  });
   return shard;
 }
