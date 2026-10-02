@@ -297,6 +297,61 @@ describe("the fit target (section 6.3, fix round 1's chain)", () => {
       expect(cogUrlForBoundsFallback(walrus, "not_a_dataset")).toBe(walrus.merged?.url);
     });
 
+    // R5-1: an "Original" PMTiles range whose bbox the bundle builder nulled (a dateline-crossing
+    // range: the table bbox spans the globe). Picking it used to ask `/cog/info` about the MERGED
+    // COG (the whole taxon), or about nothing; the same input's gridded sibling is the right ask.
+    describe("R5-1: a null-bbox original with a gridded sibling", () => {
+      const asset = (rep: string, type: "cog" | "pmtiles", url: string) => ({
+        rep,
+        type,
+        url,
+        rescale: type === "cog" ? ([1, 100] as [number, number]) : null,
+        colormap: type === "cog" ? "spectral_r" : null,
+        sourceLayer: type === "pmtiles" ? "rng_bl" : null,
+        sourceKey: null,
+        bbox: null,
+      });
+      const withInput = (assets: ReturnType<typeof asset>[]) => {
+        const card = CARDS.walrus();
+        return {
+          ...card,
+          inputs: [{ dsKey: "bl", mdlKey: "bl|1", isMask: false, assets }, ...card.inputs],
+        };
+      };
+
+      it("selecting the PMTiles original (rep native) asks about the input's own gridded COG, not the merged COG", () => {
+        const card = withInput([
+          asset("native", "pmtiles", "https://x/native/bl/aaa.pmtiles"),
+          asset("model", "cog", "https://x/cog/global05/bbb.tif"),
+        ]);
+        expect(inputBbox(card, "bl")).toBeNull();
+        expect(cogUrlForBoundsFallback(card, "bl", "native")).toBe(
+          "https://x/cog/global05/bbb.tif",
+        );
+        expect(cogUrlForBoundsFallback(card, "bl", "native")).not.toBe(card.merged?.url);
+      });
+
+      it("the gridded asset is used even when it is not the first one listed", () => {
+        const card = withInput([
+          asset("model", "cog", "https://x/cog/global05/ccc.tif"),
+          asset("native", "pmtiles", "https://x/native/bl/ddd.pmtiles"),
+        ]);
+        expect(cogUrlForBoundsFallback(card, "bl", "native")).toBe(
+          "https://x/cog/global05/ccc.tif",
+        );
+      });
+
+      it("NO gridded sibling: behaviour unchanged (falls through to the merged COG)", () => {
+        const card = withInput([asset("native", "pmtiles", "https://x/native/bl/eee.pmtiles")]);
+        expect(cogUrlForBoundsFallback(card, "bl", "native")).toBe(card.merged?.url);
+      });
+
+      it("NO gridded sibling and no merged COG: still null", () => {
+        const card = withInput([asset("native", "pmtiles", "https://x/native/bl/fff.pmtiles")]);
+        expect(cogUrlForBoundsFallback({ ...card, merged: null }, "bl", "native")).toBeNull();
+      });
+    });
+
     it("no matching input AND no merged COG resolves to null", () => {
       // v1 residual: merged is null entirely (see CARDS.whelk's own comment)
       expect(cogUrlForBoundsFallback(CARDS.whelk(), "not_a_dataset")).toBeNull();

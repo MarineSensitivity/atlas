@@ -1,3 +1,7 @@
+# Unreleased
+
+- **"Zoom to layer" can now frame an Original range whose extent the release leaves blank.** A range that crosses the dateline has no published extent; the camera now asks the same input's gridded surface where it is, instead of the whole taxon's.
+
 # atlas 0.10.86
 
 - **A species input that its release keys differently from its map tile now draws its original range.** Backfilled v7 inputs carry a legacy number while the tile's features carry the original key; the shard's optional `source_key` now says which, so the range no longer comes up blank.
