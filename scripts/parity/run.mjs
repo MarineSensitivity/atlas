@@ -25,6 +25,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { fetchWithRetry } from "./fetch-retry.mjs";
 import { ensureMirror } from "./mirror.mjs";
 // side effect only, and it MUST come before the app's TypeScript is imported (see the file's own
 // header): a resolve hook that lets Node read this repo's bundler-style extensionless imports
@@ -155,7 +156,8 @@ function sourceOf(base, ver, rel) {
 async function readBoot(base, ver) {
   if (/^https?:/.test(base)) {
     const url = new URL(`${ver}/app/boot.json`, base.endsWith("/") ? base : `${base}/`).href;
-    const resp = await fetch(url);
+    // bounded retry: see fetch-retry.mjs (a stale keep-alive socket after v9's long run, not a verdict)
+    const resp = await fetchWithRetry(url);
     if (!resp.ok) throw new Error(`boot.json ${resp.status} at ${url}`);
     return resp.json();
   }
