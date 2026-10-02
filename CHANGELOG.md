@@ -1,3 +1,8 @@
+# atlas 0.10.87
+
+- **"Zoom to layer" can now frame an Original range whose extent the release leaves blank.** A range that crosses the dateline has no published extent; the camera now asks the same input's gridded surface where it is, instead of the whole taxon's.
+- **A species input with a single layer is captioned for what it is.** The legend of an input that publishes a single layer labelled as delivered (most v7 inputs, which are on the scoring grid) now reads "on the 0.05° scoring grid" instead of "as delivered".
+
 # atlas 0.10.86
 
 - **A species input that its release keys differently from its map tile now draws its original range.** Backfilled v7 inputs carry a legacy number while the tile's features carry the original key; the shard's optional `source_key` now says which, so the range no longer comes up blank.

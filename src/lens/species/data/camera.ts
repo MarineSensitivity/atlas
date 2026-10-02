@@ -429,6 +429,13 @@ export function cogUrlForBoundsFallback(
       const preferred = rep ? input.assets.find((a) => a.rep === rep) : undefined;
       const chosen = preferred ?? input.assets[0];
       if (chosen?.type === "cog") return chosen.url;
+      // R5-1: the picked asset is a PMTiles range (an "Original" whose `bbox` is null -- the bundle
+      // builder nulls a table bbox that spans the globe, i.e. a dateline-crossing range). The same
+      // input's GRIDDED surface (a COG sibling, "Interpolated") describes the same ground, and its
+      // `/cog/info` extent is the camera that surface would get -- better than the merged COG
+      // below, which is every input of the taxon rather than this one.
+      const gridded = input.assets.find((a) => a.type === "cog");
+      if (gridded) return gridded.url;
     }
   }
   if (card.merged?.type === "cog") return card.merged.url;
