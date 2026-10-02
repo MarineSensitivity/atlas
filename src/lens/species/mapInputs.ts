@@ -207,9 +207,10 @@ export function speciesMapInputs(bar: LayerBar, opts: SpeciesMapInputsOptions): 
   return { raster: null, range, legend, notice: null, asset };
 }
 
-/** the caption of a single-representation COG input (R5-2): the one layer an input publishes is its
- * GRIDDED surface (v1-v7 inputs carry exactly one COG on the 0.05 deg scoring grid, labelled
- * `rep: "native"` by the legacy adapter), so "as delivered" misdescribed it -- there is no other
+/** the caption that replaces "as delivered" for a single-representation COG input labelled
+ * `rep: "native"` (R5-2): the one layer such an input publishes is its GRIDDED surface (v1-v7 inputs
+ * carry exactly one COG on the 0.05 deg scoring grid, labelled `rep: "native"` by the legacy
+ * adapter), so "as delivered" misdescribed it -- there is no other
  * layer for it to be "as delivered" against. Names what the layer is, like the Interpolated tooltip
  * ("resampled to the 0.05 deg scoring grid") does. */
 export const SINGLE_LAYER_CAPTION = "on the 0.05° scoring grid";
@@ -227,10 +228,11 @@ function hasSingleRepresentation(pill: LayerPill): boolean {
  * whose picked asset is its own raw, undelivered band (`rep === "native"`, that table's "Delivered"/
  * "Original" row) -- matches the brief's own two examples verbatim ("Merged model · habitat
  * suitability 1–100", "AquaMaps · as delivered"). R5-2: an input with only ONE representation has
- * nothing to be "as delivered" against, so it is captioned for what it is ({@link
- * SINGLE_LAYER_CAPTION}) whichever `rep` label it carries. */
+ * nothing to be "as delivered" against, so a lone `rep: "native"` COG is captioned for what it is
+ * ({@link SINGLE_LAYER_CAPTION}); a lone `rep: "model"` COG keeps "habitat suitability 1-100" (what
+ * the values mean), and a lone PMTiles original never reaches here ("presence"). */
 function rasterValueSemantics(pill: LayerPill, assetRep: string): string {
   if (pill.key === "merged") return "habitat suitability 1-100";
-  if (hasSingleRepresentation(pill)) return SINGLE_LAYER_CAPTION;
-  return assetRep === "native" ? "as delivered" : "habitat suitability 1-100";
+  if (assetRep !== "native") return "habitat suitability 1-100";
+  return hasSingleRepresentation(pill) ? SINGLE_LAYER_CAPTION : "as delivered";
 }

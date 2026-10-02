@@ -233,17 +233,16 @@ describe("speciesMapInputs — the legend caption of a single-representation inp
     expect(subtitleOf(both, "model")).toBe("AquaMaps SDM · habitat suitability 1-100");
   });
 
-  it("gridded only (v7: one COG labelled native): 'on the 0.05° scoring grid', NOT 'as delivered'", () => {
+  it("lone COG labelled native (v7): 'on the 0.05° scoring grid', NOT 'as delivered'", () => {
     const only = [cogAsset("native", "https://x/v7/native/am/a.tif")];
-    expect(subtitleOf(only, "native")).toBe(`AquaMaps SDM · ${SINGLE_LAYER_CAPTION}`);
     expect(subtitleOf(only, "native")).toBe("AquaMaps SDM · on the 0.05° scoring grid");
-    expect(subtitleOf(only, "native")).not.toContain("as delivered");
+    expect(SINGLE_LAYER_CAPTION).toBe("on the 0.05° scoring grid");
   });
 
-  it("gridded only, labelled model (the backfilled v7 'model-only' inputs): the same caption", () => {
-    expect(subtitleOf([cogAsset("model", "https://x/cog/global05/b.tif")], "native")).toBe(
-      "AquaMaps SDM · on the 0.05° scoring grid",
-    );
+  it("lone COG labelled model (backfilled v7 'model-only'): keeps the OLD 'habitat suitability 1-100' caption", () => {
+    const only = [cogAsset("model", "https://x/cog/global05/b.tif")];
+    expect(subtitleOf(only, "native")).toBe("AquaMaps SDM · habitat suitability 1-100");
+    expect(subtitleOf(only, "model")).toBe("AquaMaps SDM · habitat suitability 1-100");
   });
 
   it("original only (a PMTiles range): presence, never the grid caption", () => {
