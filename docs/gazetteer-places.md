@@ -1,0 +1,87 @@
+# Gazetteer places in the atlas (the `p.` place_id token)
+
+The atlas can hold a place from the Ocean Metrics places gazetteer **by reference**: the link carries
+the gazetteer `place_id`, not the geometry. This note is the contract the `msens` R package mirrors
+(the g1 codec is implemented in both; this repo does not touch msens).
+
+## Token grammar (new kind; everything else in `g1` is unchanged)
+
+```
+place  = ... | "p." id "." name
+id     = percent-encoded UTF-8 of the gazetteer place_id      1..120 encoded chars
+name   = percent-encoded UTF-8 display name                   0..60 encoded chars (EMPTY is valid)
+```
+
+- `percent-encoded` is exactly the `g1` `name` encoding: unreserved set `A-Za-z0-9_-`, every other UTF-8
+  byte as `%XX` with **uppercase** hex. So `:`, space, `.`, `~` are always escaped and the existing
+  split rules hold: places split on `~`, a token splits on `.` into **exactly 3** parts.
+- `p` is the scheme (like `z`, `g1`, `u`); the middle part is the id and the last is the name. An empty
+  name leaves an empty last part (`p.BOEM%3AOCS-P%200562.`).
+- Old decoders drop a `p.` token (unknown scheme), which is `decodePlaces`' existing rule for any
+  unreadable token, so old readers never fail on a new link; they just lose that place.
+- Examples (from `tests/fixtures/place_codec_place_id.json`, hand-written, both directions tested):
+
+  | place_id          | name                 | token                                          |
+  | ----------------- | -------------------- | ---------------------------------------------- |
+  | `BOEM:OCS-P 0562` | `OCS-P 0562`         | `p.BOEM%3AOCS-P%200562.OCS-P%200562`           |
+  | `NMS:CINMS`       | `Channel Islands`    | `p.NMS%3ACINMS.Channel%20Islands`              |
+  | `MPAINV:CA-123`   | (empty)              | `p.MPAINV%3ACA-123.`                           |
+  | `A.B~C:D`         | `St. George ~ Basin` | `p.A%2EB%7EC%3AD.St%2E%20George%20%7E%20Basin` |
+
+  A hash mixes kinds freely: `z.pa.GAA~p.NMS%3ACINMS.Channel%20Islands~u.My%20area.0123abcd`.
+
+- Invalid (rejected by `decodePlace`, dropped by `decodePlaces`): two parts; empty id; a raw `:` or
+  other unescaped character; a truncated `%XX`; id over 120 or name over 60 encoded chars.
+- The shared `tests/fixtures/place_codec.json` is **unchanged**; the new kind has its own fixture,
+  `tests/fixtures/place_codec_place_id.json`. msens copies it to `inst/fixtures/` when it adds the kind.
+
+## Resolution (what a reader does with the id)
+
+The geometry is fetched at load from the gazetteer tree
+(`https://storage.oceanmetrics.io/gazetteer/<collection>/places.parquet`, a `place_id`-filtered read):
+
+1. find the collection: `NMS:`, `MRGID:`, `PSGID:` ids are in `places/`; any other authority is found
+   through `index/layers.json` (403 until published);
+2. **unwrap** the antimeridian split. The gazetteer cuts places at +/-180; every MultiPolygon part
+   whose longitude centre is west of 0 is shifted by +360 when the place has a part touching +180 and a
+   part touching -180, so longitudes run contiguously past 180 (`NMS:PMNM` spans 177.8 .. 199.0). This
+   is the atlas's (and g1's) unwrapped convention: g1 stores no wrapped ring;
+3. analyse `decode(encode(geometry))` like any other place (`analysisGeometry()`).
+
+R: read the same parquet with DuckDB (`bbox` struct pushdown, `WHERE place_id = ?`), apply
+`unwrap_polygon()` per part as above, then the existing `place.R` path. The `@oceanmetrics/places`
+README has the SQL.
+
+A failed fetch never removes the token: the place stays in the link and the list (a row reading
+"couldn't load" with a Retry), a toast says why, and `report.html` leaves that place out and says so.
+
+## What was added in the atlas
+
+- `src/lib/geo/placeCodec.ts`: `GazPlace {kind:"gaz", id, name}`, `p.` encode/decode, `MAX_ID_CHARS`.
+- `src/lib/gazetteer/`: `config.ts` (bases, built-in credits; static-safe), `resolve.ts` (lazy: fetch,
+  unwrap, manifest, credits), `vendor/` (see below).
+- Pick from gazetteer: a Places-panel toggle that shows a gazetteer PMTiles collection (composeStyle
+  `gazetteer` input, `src/lib/map/layers/gazetteer.ts`, role group "Selection") and adds the clicked
+  polygon's `place_id` (`src/places/gazPick.ts`, `model.ts#addGazPlace`). The `places` collection is
+  always offered; others appear when `index/layers.json` is published.
+- Credits: the gazetteer's `attribution` joins the map credit line (`Shell.svelte`) while its layer or a
+  gazetteer place is on the map. Source order: the index (`places_index.parquet`) per place, then
+  `layers.json`, then a built-in line for the `places` collection.
+- Report: `src/report/gazPlaces.ts` resolves `p.` places before the report expands them.
+
+## Decisions to know about
+
+- **Vendored client, not a dependency.** `@oceanmetrics/places` is private and unpublished, and a
+  `file:../../oceanmetrics/places/client` dependency would break `npm ci` everywhere but one machine. The
+  files needed are copied to `src/lib/gazetteer/vendor/` (provenance header in each: v0.1.0, commit
+  `3ff9fbf`); `client.ts` is trimmed (no `addLayer`/`search`: the atlas builds map layers through
+  `composeStyle`). When the package is published, replace the folder with the dependency. It brings
+  `hyparquet@1.31.3` and `hyparquet-compressors@1.1.2` (exact pins, lazy only).
+- **Reads go to the bucket URL, not `storage.oceanmetrics.io`.** That host 302s every object request,
+  including the CORS preflight a `Range` read triggers, and browsers reject a redirected preflight
+  (`OPTIONS .../places.parquet` -> 302, checked 2026-10-08). The same tree on
+  `https://s3.us-east-1.amazonaws.com/oceanmetrics.io-public/gazetteer/` answers CORS for `Range`. This
+  mirrors how `marine-atlas/` data is read (`src/lib/release/dataBase.ts`). Override with
+  `VITE_GAZETTEER_BASE`. URLs inside `layers.json` under the canonical root are re-based the same way.
+- **Layer group.** The gazetteer tile layer rides in the Layers panel's "Selection" group (it is a
+  picking aid shown beside the selection highlight), under the pink outline.
