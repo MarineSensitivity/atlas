@@ -127,7 +127,31 @@
       placeInputs = [];
       return;
     }
-    const expanded = expandPlaces(places, boot);
+    // gazetteer-places: a `p.` place_id token is fetched here and analysed as a geometry place
+    // (report/gazPlaces.ts); a place that cannot be loaded is left out and said so, never guessed.
+    let reportPlaces: Place[] = places;
+    let tokenOverride: Map<Place, string> | undefined;
+    if (places.some((p) => p.kind === "gaz")) {
+      progressLabel = "Loading places from the gazetteer…";
+      const [{ resolveGazForReport }, { resolveGazPlace }] = await Promise.all([
+        import("./gazPlaces"),
+        import("../lib/gazetteer/resolve"),
+      ]);
+      const r = await resolveGazForReport(places, (id) => resolveGazPlace(id));
+      reportPlaces = r.places;
+      tokenOverride = r.tokens;
+      if (r.failed.length) {
+        announce(
+          `Left out ${r.failed.length} gazetteer place${r.failed.length === 1 ? "" : "s"} that could not be loaded: ${r.failed.map((f) => f.id).join(", ")}.`,
+        );
+      }
+      if (reportPlaces.length === 0) {
+        progressLabel = "The gazetteer places in this link could not be loaded.";
+        placeInputs = [];
+        return;
+      }
+    }
+    const expanded = expandPlaces(reportPlaces, boot, tokenOverride);
     stubs = expanded;
     let inputs: ReportPlaceInput[] = expanded.map((s) => ({
       place: s.place,

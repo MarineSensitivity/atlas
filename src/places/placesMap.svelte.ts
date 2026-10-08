@@ -65,6 +65,17 @@ import type { SelStore } from "../lib/state/sel.svelte";
 // the baseline is `null` and the outline is just the interaction override -- a link with places in
 // the hash paints its outlines one tick after the chunk arrives, never missing.
 import type { allGeomPlacesOutline as AllGeomFn, composeOutline as ComposeFn } from "./model";
+import type { GazetteerLayerSpec } from "../lib/map/types";
+import { joinCredits } from "../lib/gazetteer/config";
+import { notify } from "../lib/ui/announcer";
+import { createGazResolver, type GazEntry } from "./gazResolver";
+import type { GazResolved } from "../lib/gazetteer/resolve";
+
+// gazetteer-places (the `p.` place_id token, docs/gazetteer-places.md): the geometry of a place
+// carried BY REFERENCE is fetched here, once per id, for the whole session -- not in Places.svelte,
+// for the same reason the outline baseline lives in this store: a deep link with the Places tool
+// closed must still draw the outline and credit the source. `../lib/gazetteer/resolve` (hyparquet)
+// is a dynamic import(); config.ts above is dependency-free and safe in the static graph.
 
 export interface PlacesMapStore {
   /** every `kind: "geom"` place in the list, PLUS (layered on top) an interaction override when
@@ -85,6 +96,19 @@ export interface PlacesMapStore {
    * click to any lens' `handleMapClick`. */
   readonly interactionOwned: boolean;
   /** sets the INTERACTION override (item m3) -- `null` releases it back to the baseline. */
+  /** the gazetteer collection shown for "Pick from gazetteer" (a composeStyle `gazetteer` input);
+   * `null` = off. Chrome, never the URL. */
+  readonly gazetteer: GazetteerLayerSpec | null;
+  /** the credit line for what gazetteer data is on the map right now (the picker's collection
+   * while it is on, plus every resolved gazetteer place in the list); "" when there is none. */
+  readonly credits: string;
+  /** state of a `p.` place's geometry fetch (reactive); `undefined` = not asked for yet. */
+  gazEntry(id: string): GazEntry | undefined;
+  /** the resolved analysis geometry of a `p.` place (reactive), `undefined` until it loads. */
+  gazGeometry(id: string): GazResolved["geometry"] | undefined;
+  /** fetch a failed `p.` place again. */
+  retryGaz(id: string): void;
+  setGazetteer(spec: GazetteerLayerSpec | null): void;
   setOutline(fc: FeatureCollection | null): void;
   setCells(fc: FeatureCollection | null): void;
   setShowCells(value: boolean): void;
@@ -100,9 +124,53 @@ export function createPlacesMapStore(deps: PlacesMapDeps): PlacesMapStore {
   let cells = $state<FeatureCollection | null>(null);
   let showCells = $state(false);
   let interactionOwned = $state(false);
-  let model = $state<{ all: typeof AllGeomFn; compose: typeof ComposeFn } | null>(null);
+  let gazetteer = $state<GazetteerLayerSpec | null>(null);
+  let placeCredit = $state("");
+  // bumped by the resolver on every state change: reading `gazVersion` is what makes `gazEntry`/
+  // `gazGeometry` (and the baseline derived below) reactive over a plain Map.
+  let gazVersion = $state(0);
+  let model = $state<{
+    all: typeof AllGeomFn;
+    compose: typeof ComposeFn;
+    ids: (pl: string | undefined) => string[];
+  } | null>(null);
   void import("./model").then((m) => {
-    model = { all: m.allGeomPlacesOutline, compose: m.composeOutline };
+    model = {
+      all: m.allGeomPlacesOutline,
+      compose: m.composeOutline,
+      ids: (pl) => m.gazIdsOf(m.placesFromHash(pl)),
+    };
+  });
+  const resolver = createGazResolver({
+    resolve: async (id) => (await import("../lib/gazetteer/resolve")).resolveGazPlace(id),
+    onChange: () => gazVersion++,
+    onError: (_id, message) =>
+      notify(`${message} The place stays in your link; reload to try again.`, { tone: "error" }),
+  });
+  // fetch every `p.` place in the list as soon as the list names it (any tool, any panel state)
+  $effect(() => {
+    if (!model) return;
+    void resolver.ensure(model.ids(deps.selStore.sel.pl));
+  });
+  // the credit for those places, once they are on the map (index/layers where published, else the
+  // built-in per-authority credit -- resolve.ts#creditsForPlaces never throws)
+  $effect(() => {
+    void gazVersion;
+    if (!model) return;
+    const ids = model.ids(deps.selStore.sel.pl).filter((id) => resolver.get(id)?.status === "ok");
+    if (!ids.length) {
+      placeCredit = "";
+      return;
+    }
+    let live = true;
+    void import("../lib/gazetteer/resolve")
+      .then((m) => m.creditsForPlaces(ids))
+      .then((c) => {
+        if (live) placeCredit = c;
+      });
+    return () => {
+      live = false;
+    };
   });
 
   // the baseline (this module's own header comment) -- a pure `$derived`, never an effect: it has
@@ -113,7 +181,11 @@ export function createPlacesMapStore(deps: PlacesMapDeps): PlacesMapStore {
   // not just the selected row -- `model.ts#allGeomPlacesOutline`'s own header has the root cause.
   // Depends on `sel.pl` alone (never `sel.sel`): which place is selected no longer decides what is
   // drawn, only which places EXIST decides that.
-  const baseline = $derived.by(() => (model ? model.all(deps.selStore.sel.pl) : null));
+  const baseline = $derived.by(() => {
+    void gazVersion; // a `p.` place's geometry arriving redraws the outline
+    return model ? model.all(deps.selStore.sel.pl, (id) => resolver.geometry(id)) : null;
+  });
+  const credits = $derived(joinCredits([gazetteer?.attribution, placeCredit]));
 
   // a place/pl selection change drops any interaction override left over from a PREVIOUS
   // selection (this module header's own rule, unchanged by the P7 fix) -- `Places.svelte`'s
@@ -140,6 +212,26 @@ export function createPlacesMapStore(deps: PlacesMapDeps): PlacesMapStore {
     },
     get interactionOwned() {
       return interactionOwned;
+    },
+    get gazetteer() {
+      return gazetteer;
+    },
+    get credits() {
+      return credits;
+    },
+    gazEntry(id: string) {
+      void gazVersion;
+      return resolver.get(id);
+    },
+    gazGeometry(id: string) {
+      void gazVersion;
+      return resolver.geometry(id);
+    },
+    retryGaz(id: string) {
+      void resolver.retry(id);
+    },
+    setGazetteer(spec: GazetteerLayerSpec | null) {
+      gazetteer = spec;
     },
     setOutline(fc: FeatureCollection | null) {
       interaction = fc;

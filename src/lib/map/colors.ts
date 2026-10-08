@@ -77,3 +77,8 @@ export const QUERY_FILL_COLOR = "#000000";
  * `src/lib/brand/tokens.css`. Also the categorical legend swatch and the click-popup swatch for a
  * "presence only" click (`map/layers/ranges.ts`, `src/lens/species/popup.ts`). */
 export const RANGE_FILL_COLOR = "#3388ff";
+
+/** the gazetteer picker's polygons (`layers/gazetteer.ts`): the colour erddap-places paints its own
+ * gazetteer layer with (#3388ff, its published style `places-fill`), here a fainter fill under a
+ * solid outline so the basemap stays readable while a person hunts for a polygon to click. */
+export const GAZETTEER_COLOR = "#3388ff";

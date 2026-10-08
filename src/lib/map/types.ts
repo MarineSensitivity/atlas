@@ -83,6 +83,24 @@ export interface RasterLayerSpec {
   bounds?: [number, number, number, number];
 }
 
+/**
+ * A gazetteer collection's PMTiles polygons, shown while "Pick from gazetteer" is on (places/
+ * gazPick.ts) so a click can read a feature's `place_id`. Distinct from `ZoneUnitSpec` (a release's
+ * drawable unit) and `RangeLayerSpec` (a per-species filter): this is the Ocean Metrics gazetteer's
+ * own tile source, absolute-URL and release-independent.
+ */
+export interface GazetteerLayerSpec {
+  /** collection slug, e.g. `places`, `boem_wind_leases` -- also the source id suffix. */
+  slug: string;
+  /** absolute https PMTiles URL (the map module registers `pmtiles://` -- map.ts). */
+  pmtiles: string;
+  /** the vector layer inside the archive. */
+  sourceLayer: string;
+  /** the credit shown in the map attribution while this source is on the map (MapLibre's own
+   * `attribution` source field, so it also reaches any control that reads it). */
+  attribution: string;
+}
+
 /** the selection highlight (atlas-4 §6.6 / §7: a cell ring or a zone outline, in
  * `colors.ts`'s `SELECTION_COLOR`). */
 export interface SelectionSpec {

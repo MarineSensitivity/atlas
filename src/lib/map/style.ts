@@ -21,6 +21,12 @@ import { SELECTION_COLOR } from "./colors";
 import { rasterLayer, rasterSource } from "./layers/raster";
 import { rangeLayer, rangeSource } from "./layers/ranges";
 import {
+  GAZETTEER_SOURCE_ID,
+  gazetteerFillLayer,
+  gazetteerLineLayer,
+  gazetteerSource,
+} from "./layers/gazetteer";
+import {
   zoneFillLayer,
   zoneHighlightLayer,
   zoneLabelLayer,
@@ -43,6 +49,7 @@ import {
 } from "./layerStack";
 import type {
   BasemapSpec,
+  GazetteerLayerSpec,
   LayerSpecification,
   Projection,
   RangeLayerSpec,
@@ -168,6 +175,11 @@ export const LAYER_ORDER = [
   "zone-fill",
   "zone-line",
   "zone-label",
+  // gazetteer-places: the "Pick from gazetteer" tile polygons sit just under the selection
+  // highlight, in the same `data-places` group (the Layers panel's "Selection" row), so the picked
+  // place's pink outline always draws over them.
+  "gazetteer-fill",
+  "gazetteer-line",
   "selection-fill",
   "selection-line",
 ] as const;
@@ -196,6 +208,8 @@ const ROLE_GROUP: Partial<Record<LayerRole, LayerGroupId>> = {
   "zone-fill": "data-zones",
   "zone-line": "data-zones",
   "zone-label": "data-zones",
+  "gazetteer-fill": "data-places",
+  "gazetteer-line": "data-places",
   "selection-fill": "data-places",
   "selection-line": "data-places",
 };
@@ -211,7 +225,7 @@ const GROUP_ROLES: Record<LayerGroupId, readonly LayerRole[]> = {
   "basemap-labels": ["basemap-labels"],
   "data-raster": ["raster", "range", "overlay", "choropleth"],
   "data-zones": ["zone-fill", "zone-line", "zone-label"],
-  "data-places": ["selection-fill", "selection-line"],
+  "data-places": ["gazetteer-fill", "gazetteer-line", "selection-fill", "selection-line"],
 };
 
 /**
@@ -279,6 +293,8 @@ export interface ComposeStyleInput {
   /** extra rasters above the main one, e.g. "cells outside Program Areas". */
   overlays?: readonly RasterLayerSpec[];
   selection?: SelectionSpec | null;
+  /** the gazetteer collection shown for "Pick from gazetteer" -- `null`/absent for none. */
+  gazetteer?: GazetteerLayerSpec | null;
   /** override only in a test: the glyph endpoint used when a label layer exists. */
   glyphs?: string;
   /** override only in a test: skips `loadBasemapStyle()`'s network fetch entirely and merges this
@@ -451,6 +467,12 @@ export function composeStyle(input: ComposeStyleInput): StyleSpecification {
   for (const u of zones) {
     const highlight = zoneHighlightLayer(u);
     if (highlight) roled.push({ role: "selection-line", layer: highlight });
+  }
+
+  if (input.gazetteer) {
+    sources[GAZETTEER_SOURCE_ID] = gazetteerSource(input.gazetteer);
+    roled.push({ role: "gazetteer-fill", layer: gazetteerFillLayer(input.gazetteer) });
+    roled.push({ role: "gazetteer-line", layer: gazetteerLineLayer(input.gazetteer) });
   }
 
   if (input.selection) {

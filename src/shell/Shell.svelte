@@ -1380,6 +1380,8 @@
     overlays: sel.lens === "scores" ? (scoresLens?.mapExtra.overlays ?? []) : [],
     selection:
       placesSelection ?? (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
+    // gazetteer-places: the "Pick from gazetteer" tile polygons, only while that picker is on
+    gazetteer: placesMap.gazetteer,
     layerStack,
   });
 
@@ -2116,6 +2118,13 @@
     <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre</a>
     <span aria-hidden="true">|</span>
     {BASEMAP_ATTRIBUTION}
+    <!-- gazetteer-places, per-source credits: the Ocean Metrics gazetteer's own attribution, present
+         exactly while gazetteer polygons are on the map (the picker's collection, or a `p.` place
+         in the list that has loaded) -- placesMap.credits is empty otherwise. -->
+    {#if placesMap.credits}
+      <span aria-hidden="true">|</span>
+      <span data-testid="map-attribution-gazetteer">{placesMap.credits}</span>
+    {/if}
   </div>
 
   <!-- fix list #6 (SC 2.4.1), FIREFOX: `tabindex="-1"` on the skip targets -- without it,

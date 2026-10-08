@@ -125,10 +125,18 @@ export function selectedGeomPlaceGeometry(
  * "what is displayed is what is analyzed") so the globe projection cannot bow a straight analysed
  * edge into a visibly different shape.
  */
-export function allGeomPlacesOutline(pl: string | undefined): FeatureCollection | null {
+export function allGeomPlacesOutline(
+  pl: string | undefined,
+  /** gazetteer-places: a `p.` place's resolved geometry (`gazResolver.ts`); `undefined` while it
+   * loads or if it failed, in which case that place simply draws nothing yet. */
+  gazGeometry?: (id: string) => AreaGeometry | undefined,
+): FeatureCollection | null {
   const geometries = placesFromHash(pl)
-    .filter((p): p is GeomPlace => p.kind === "geom")
-    .map((p) => densifyGeometry(p.geometry));
+    .map((p) =>
+      p.kind === "geom" ? p.geometry : p.kind === "gaz" ? gazGeometry?.(p.id) : undefined,
+    )
+    .filter((g): g is AreaGeometry => g !== undefined)
+    .map((g) => densifyGeometry(g));
   if (!geometries.length) return null;
   return {
     type: "FeatureCollection",
@@ -200,6 +208,7 @@ export function duplicatePlaceAt(places: readonly Place[], index: number): Mutat
   const p = places[index];
   if (!p) return refused(places, "no such place");
   if (p.kind === "zone") return refused(places, "duplicate a zone selection by picking it again");
+  if (p.kind === "gaz") return refused(places, "that gazetteer place is already in your places");
   const copy: Place = { ...p, name: clampName(`${p.name} copy`) } as Place;
   return addPlace(places, copy);
 }
@@ -218,6 +227,21 @@ export function addZonePlace(
 
 export function isGeomOrUpload(p: Place): p is GeomPlace | UploadPlace {
   return p.kind === "geom" || p.kind === "upload";
+}
+
+/** the place_ids of every gazetteer (`p.`) place in a list, in order, de-duplicated. */
+export function gazIdsOf(places: readonly Place[]): string[] {
+  return [...new Set(places.flatMap((p) => (p.kind === "gaz" ? [p.id] : [])))];
+}
+
+/** "Pick from gazetteer": one NEW gazetteer place by reference, enforcing the cap; adding an id
+ * already in the list is refused rather than silently doubled. */
+export function addGazPlace(places: readonly Place[], id: string, name: string): MutationResult {
+  if (!id) return refused(places, "that feature has no place_id");
+  if (places.some((p) => p.kind === "gaz" && p.id === id)) {
+    return refused(places, `${name || id} is already in your places.`);
+  }
+  return addPlace(places, { kind: "gaz", id, name: clampName(name.trim()) });
 }
 
 /** the ", "-joined key list -- the fallback display name for a zone place when no boot lookup
