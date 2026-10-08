@@ -390,7 +390,13 @@ export interface PlaceStub {
  * a later release retired still gets a row, with its key as its name, rather than being silently
  * dropped).
  */
-export function expandPlaces(places: readonly Place[], boot: unknown): PlaceStub[] {
+export function expandPlaces(
+  places: readonly Place[],
+  boot: unknown,
+  /** a place whose report token is NOT its own encoding: a `p.` gazetteer place resolved to a
+   * `geom` place keeps its original `p.` token (report/gazPlaces.ts). */
+  tokenOverride?: ReadonlyMap<Place, string>,
+): PlaceStub[] {
   const out: PlaceStub[] = [];
   for (const place of places) {
     if (place.kind === "zone") {
@@ -411,7 +417,11 @@ export function expandPlaces(places: readonly Place[], boot: unknown): PlaceStub
       }
       continue;
     }
-    out.push({ place, name: place.name, token: encodePlace(place) });
+    out.push({
+      place,
+      name: place.kind === "gaz" ? place.name || place.id : place.name,
+      token: tokenOverride?.get(place) ?? encodePlace(place),
+    });
   }
   return out;
 }

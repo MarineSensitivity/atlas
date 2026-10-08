@@ -1,0 +1,47 @@
+{
+  "codec": "g1",
+  "note": "The `p.` (gazetteer place_id) token kind. HAND-WRITTEN, not generated: tests/geo/placeCodecGaz.test.ts asserts every row both ways (token -> {id, name} and {id, name} -> token). This is a SEPARATE file from place_codec.json on purpose: place_codec.json is byte-identical to msens inst/fixtures/place_codec.json and is not touched by this change. Copy THIS file to msens (inst/fixtures/place_codec_place_id.json) when the R mirror adds the `p.` kind.",
+  "grammar": {
+    "place": "\"p.\" id \".\" name",
+    "id": "percent-encoded UTF-8 of the gazetteer place_id; 1..120 encoded chars; same escape set as `name`",
+    "name": "percent-encoded UTF-8 display name; 0..60 encoded chars; EMPTY is valid (nothing after the last dot)",
+    "name_encoding": {
+      "unreserved": "A-Za-z0-9_-",
+      "escape": "every other UTF-8 byte as %XX with UPPERCASE hex"
+    },
+    "split": "a token splits on '.' into EXACTLY 3 parts; '.' and '~' inside id/name are always escaped (%2E, %7E), so the split is unambiguous",
+    "resolution": "the geometry is NOT in the link: a reader fetches the place_id from the gazetteer (https://storage.oceanmetrics.io/gazetteer/<collection>/places.parquet, bbox/place_id filtered) with longitudes UNWRAPPED (west parts of an antimeridian-split MultiPolygon shifted +360), then analyses decode(encode(geometry)) as for any other place"
+  },
+  "vectors": [
+    {
+      "id": "BOEM:OCS-P 0562",
+      "name": "OCS-P 0562",
+      "token": "p.BOEM%3AOCS-P%200562.OCS-P%200562"
+    },
+    { "id": "NMS:CINMS", "name": "Channel Islands", "token": "p.NMS%3ACINMS.Channel%20Islands" },
+    { "id": "MPAINV:CA-123", "name": "", "token": "p.MPAINV%3ACA-123." },
+    {
+      "id": "A.B~C:D",
+      "name": "St. George ~ Basin",
+      "token": "p.A%2EB%7EC%3AD.St%2E%20George%20%7E%20Basin"
+    },
+    {
+      "id": "NMS:PMNM",
+      "name": "Papahānaumokuākea",
+      "token": "p.NMS%3APMNM.Papah%C4%81naumoku%C4%81kea"
+    }
+  ],
+  "hash_vectors": [
+    {
+      "why": "a place_id between a zone place and an upload place; '~' separates places",
+      "hash": "z.pa.GAA~p.NMS%3ACINMS.Channel%20Islands~u.My%20area.0123abcd",
+      "kinds": ["zone", "gaz", "upload"]
+    }
+  ],
+  "invalid": [
+    { "token": "p.NMS%3ACINMS", "why": "two parts, not three" },
+    { "token": "p..name", "why": "empty place_id" },
+    { "token": "p.NMS:CINMS.x", "why": "':' must be percent-encoded" },
+    { "token": "p.NMS%3ACINMS.bad%2", "why": "truncated percent escape in name" }
+  ]
+}

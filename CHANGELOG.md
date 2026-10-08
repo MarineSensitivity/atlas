@@ -1,3 +1,21 @@
+# atlas 0.10.88
+
+Gazetteer places.
+
+- **A place can now be a gazetteer place, carried by reference.** The link holds the gazetteer
+  `place_id` (a new `p.` token in the `#pl=` list, e.g. `p.NMS%3ACINMS.Channel%20Islands`) instead of
+  the outline. It is fetched when the link opens, analysed like a drawn place, and drawn on the map.
+  Older links open unchanged. If the gazetteer cannot be reached the place stays in the list with a
+  "couldn't load" note and a Retry, and the link keeps it.
+- **"Pick from gazetteer"** in the Places panel shows the gazetteer's polygons on the map; click one to
+  add it. Other gazetteer collections appear in a selector once the gazetteer publishes its layer list.
+- **The map credits gazetteer data.** While gazetteer polygons or places are shown, their attribution
+  joins the credit line under the map.
+- Reports open links with gazetteer places (fetched and analysed; one that cannot be loaded is left out
+  and announced). Download places includes the `place_id`.
+- Developer notes: the token grammar, the fetch and unwrap rules, and what the msens mirror needs are in
+  `docs/gazetteer-places.md`.
+
 # atlas 0.10.87
 
 - **"Zoom to layer" can now frame an Original range whose extent the release leaves blank.** A range that crosses the dateline has no published extent; the camera now asks the same input's gridded surface where it is, instead of the whole taxon's.

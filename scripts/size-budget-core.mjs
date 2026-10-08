@@ -61,6 +61,7 @@ export const FORBIDDEN_LAZY_MARKERS = [
   "treemap",
   "driver",
   "html-to-image",
+  "hyparquet",
 ];
 
 /**

@@ -4,6 +4,15 @@
 //   place = "z." set "." key ("," key)*      set in pa|pl|er|sr (the vintage comes from the release)
 //         | "g1." name "." b64url(bytes)     name = percent-encoded UTF-8, <= 60 chars
 //         | "u."  name "." sha256_8          an upload too large to carry; prompts a re-upload
+//         | "p."  id "." name                a gazetteer place BY REFERENCE (no geometry in the link)
+//
+//   id    = percent-encoded UTF-8 of the gazetteer place_id (e.g. "BOEM:OCS-P 0562" ->
+//           "BOEM%3AOCS-P%200562"), 1..MAX_ID_CHARS encoded chars; the same `A-Za-z0-9_-` escape set
+//           as `name`, so a "." or "~" inside an id can never be read as a delimiter
+//   name  = percent-encoded display name, 0..60 chars; EMPTY is allowed (the place_id alone names it)
+//           and is what a reader shows until / unless the geometry is fetched from
+//           https://storage.oceanmetrics.io/gazetteer/ (gazetteer places are resolved at load, with
+//           longitudes UNWRAPPED, i.e. contiguous past 180 -- see src/lib/gazetteer/)
 //   bytes = 0x10, precision:u8 (3 by default; 4 when the bbox is < 0.5 deg), npoly:varint,
 //           per polygon nring:varint, per ring npt:varint (the closing vertex is omitted),
 //           per vertex zigzag-varint(dlon), zigzag-varint(dlat), units 10^-precision,
@@ -33,6 +42,8 @@ import { MAX_LON_STEP, wrappedEdge } from "./unwrap";
 export const MAGIC = 0x10;
 export const CODEC = "g1";
 export const MAX_NAME_CHARS = 60;
+/** a `p.` token's place_id, percent-encoded (the longest gazetteer ids are ~40 characters raw) */
+export const MAX_ID_CHARS = 120;
 /** whole-URL budgets: silent up to 2,000 characters, "long link" up to 8,000 (atlas-2) */
 export const URL_SILENT_MAX = 2000;
 export const URL_LONG_MAX = 8000;
@@ -62,7 +73,18 @@ export interface UploadPlace {
   /** the first 8 hex characters of the sha256 of the canonical GeoJSON */
   digest: string;
 }
-export type Place = GeomPlace | ZonePlace | UploadPlace;
+/**
+ * A gazetteer place carried BY REFERENCE (`p.{id}.{name}`): the link holds the place_id, never the
+ * geometry. The geometry is fetched at load (`src/lib/gazetteer/`) and then goes through the same
+ * `analysisGeometry()` as a drawn place. `name` is a display fallback and may be empty.
+ */
+export interface GazPlace {
+  kind: "gaz";
+  /** the gazetteer place_id, e.g. "BOEM:OCS-P 0562" */
+  id: string;
+  name: string;
+}
+export type Place = GeomPlace | ZonePlace | UploadPlace | GazPlace;
 
 export class PlaceCodecError extends Error {
   code: string;
@@ -338,6 +360,12 @@ export function roundTrip(geom: AreaGeometry, precision?: number): AreaGeometry 
 // ---- tokens ----------------------------------------------------------------------------------
 
 export function encodePlace(place: Place): string {
+  if (place.kind === "gaz") {
+    const id = encodeName(place.id);
+    if (!place.id || id.length > MAX_ID_CHARS)
+      fail("id", `a gazetteer place_id is 1..${MAX_ID_CHARS} encoded chars, got ${id.length}`);
+    return `p.${id}.${encodeName(clampName(place.name))}`;
+  }
   if (place.kind === "zone") {
     if (!ZONE_SETS.includes(place.set)) fail("set", `unknown zone set '${place.set}'`);
     if (!place.keys.length) fail("empty", "a zone place needs at least one key");
@@ -357,6 +385,14 @@ export function decodePlace(token: string): Place {
   if (parts.length !== 3)
     fail("shape", `a place token has exactly 3 dot-separated parts, got ${parts.length}`);
   const [scheme, name, payload] = parts;
+  if (scheme === "p") {
+    // `p.{id}.{name}`: here the MIDDLE part is the place_id and the LAST is the display name
+    if (!name || name.length > MAX_ID_CHARS)
+      fail("id", `a gazetteer place_id is 1..${MAX_ID_CHARS} encoded chars, got ${name.length}`);
+    if (payload.length > MAX_NAME_CHARS)
+      fail("name", `name is ${payload.length} > ${MAX_NAME_CHARS} chars`);
+    return { kind: "gaz", id: decodeName(name), name: decodeName(payload) };
+  }
   if (name.length > MAX_NAME_CHARS)
     fail("name", `name is ${name.length} > ${MAX_NAME_CHARS} chars`);
   if (scheme === "z") {

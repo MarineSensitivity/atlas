@@ -29,6 +29,7 @@
   import type { ZoneUnitSpec } from "../lib/map/types";
   import type { PlacesMapStore } from "./placesMap.svelte";
   import {
+    addGazPlace,
     addPlace,
     addZonePlace,
     duplicatePlaceAt,
@@ -58,6 +59,15 @@
   import { approxAreaKm2 } from "./area";
   import { centerZoomForGeometry } from "./camera";
   import { clearPick, type PickState } from "./pick";
+  import { installGazPick, type GazPickHandle, type GazPickMapLike } from "./gazPick";
+  import {
+    PLACES_ATTRIBUTION,
+    PLACES_SLUG,
+    PLACES_SOURCE_LAYER,
+    gazetteerDataBase,
+    placesTilesUrl,
+  } from "../lib/gazetteer/config";
+  import type { GazPickLayer } from "../lib/gazetteer/resolve";
   import { installPickMode, type PickMapLike, type PickModeHandle } from "./pickInstall";
   import { renderedZoneOutline, type RenderedFeatureMap } from "./zoneOutline";
   import { clearRecents, loadRecents, pushRecent, recentPlace } from "./recents";
@@ -212,6 +222,7 @@
       return;
     }
     // pick mode and drawing both use map clicks for different purposes -- never both at once.
+    stopGazPick();
     if (drawMode) {
       drawSession?.stop();
       drawSession = undefined;
@@ -234,6 +245,8 @@
   // this runs unconditionally, not just while `pickOn` was true.
   onDestroy(() => {
     pickHandle?.uninstall();
+    gazHandle?.uninstall();
+    mapStore.setGazetteer(null);
     mapStore.setOutline(null);
   });
 
@@ -255,6 +268,99 @@
     pickState = clearPick();
     mapStore.setOutline(null);
     notify("Added to places.");
+  }
+
+  // --- "Pick from gazetteer" (gazetteer-places, plan P2 item 10) ----------------------------------
+  // Shows a gazetteer PMTiles collection on the map (the composeStyle `gazetteer` input, through
+  // `mapStore.setGazetteer`) and adds the clicked polygon BY REFERENCE: a `p.` token carrying the
+  // place_id, never the geometry (placeCodec.ts). The built-in `places` collection (NMS:*, MRGID:*,
+  // PSGID:*) is always offered; the others come from layers.json, which answers 403 until it is
+  // published -- then the select simply lists only `places`.
+  const PLACES_LAYER: GazPickLayer = {
+    slug: PLACES_SLUG,
+    title: "Sanctuaries and regions",
+    pmtiles: placesTilesUrl(gazetteerDataBase()),
+    sourceLayer: PLACES_SOURCE_LAYER,
+    attribution: PLACES_ATTRIBUTION,
+  };
+  let gazOn = $state(false);
+  let gazLayers = $state<GazPickLayer[]>([PLACES_LAYER]);
+  let gazSlug = $state(PLACES_SLUG);
+  let gazHandle: GazPickHandle | undefined;
+  let gazManifestAsked = false;
+
+  function gazLayer(): GazPickLayer {
+    return gazLayers.find((l) => l.slug === gazSlug) ?? PLACES_LAYER;
+  }
+
+  function showGazLayer() {
+    const l = gazLayer();
+    mapStore.setGazetteer({
+      slug: l.slug,
+      pmtiles: l.pmtiles,
+      sourceLayer: l.sourceLayer,
+      attribution: l.attribution,
+    });
+  }
+
+  function stopGazPick() {
+    gazHandle?.uninstall();
+    gazHandle = undefined;
+    gazOn = false;
+    mapStore.setGazetteer(null);
+  }
+
+  function addGazPicked(pick: { id: string; name: string }) {
+    const result = addGazPlace(places, pick.id, pick.name);
+    if (!result.ok) {
+      notify(result.reason ?? "Couldn't add that place.");
+      return;
+    }
+    remember(result.places[result.places.length - 1]);
+    writePlaces(result.places, result.places.length - 1);
+    notify(`Added ${pick.name || pick.id} to places.`);
+  }
+
+  async function toggleGazPick() {
+    if (gazOn) {
+      stopGazPick();
+      notify("Gazetteer picker off.");
+      return;
+    }
+    const map = rawMap();
+    if (!map) {
+      notify("The map isn't ready yet.");
+      return;
+    }
+    stopPickMode();
+    if (drawMode) {
+      drawSession?.stop();
+      drawSession = undefined;
+      drawMode = null;
+    }
+    gazOn = true;
+    showGazLayer();
+    gazHandle = installGazPick(map as unknown as GazPickMapLike, addGazPicked);
+    notify("Gazetteer picker on. Click a place on the map to add it.");
+    if (!gazManifestAsked) {
+      gazManifestAsked = true;
+      try {
+        const { loadPickLayers } = await import("../lib/gazetteer/resolve");
+        const more = await loadPickLayers();
+        if (more) {
+          gazLayers = [PLACES_LAYER, ...more.filter((l) => l.slug !== PLACES_SLUG)];
+        } else {
+          gazManifestAsked = false; // not published yet: ask again next time it is opened
+        }
+      } catch {
+        gazManifestAsked = false; // lazy chunk failed: the built-in collection still works
+      }
+    }
+  }
+
+  function chooseGazLayer(slug: string) {
+    gazSlug = slug;
+    if (gazOn) showGazLayer();
   }
 
   // --- "Add a Program Area" (orchestrator-directed, 2026-09-24: Places had NO Program Area list
@@ -301,7 +407,7 @@
   // clicks" flag in sync with local pick/draw state, so Shell.svelte's click dispatch can skip the
   // scores lens' own handler while THIS panel has an active pick/draw session claiming clicks.
   $effect(() => {
-    mapStore.setInteractionOwned(pickOn || drawMode !== null);
+    mapStore.setInteractionOwned(pickOn || gazOn || drawMode !== null);
   });
 
   /** Deliverable 7's `place_draw` param -- counts a vertex, never carries a coordinate. */
@@ -378,6 +484,7 @@
   }
 
   async function startDraw(shape: DrawShape) {
+    stopGazPick(); // the picker and a draw session both claim map clicks
     // drawing and pick mode both use map clicks for different purposes -- never both at once.
     if (pickOn) stopPickMode();
     const session = await ensureDrawSession();
@@ -469,14 +576,24 @@
   // (`results.ts#PlaceScoreState`/`placeRowAnalysis`).
   let placeScores = $state<Record<string, PlaceScoreState>>({});
 
+  /** the geometry a place is analysed/zoomed/drawn from: a drawn or uploaded place's own, or a `p.`
+   * place's once fetched (`mapStore.gazGeometry`, reactive); `null` for a zone, an upload that
+   * carries none, or a gazetteer place still loading / failed. */
+  function effectiveGeometry(p: Place): AreaGeometry | null {
+    if (p.kind === "geom") return p.geometry;
+    if (p.kind === "gaz") return mapStore.gazGeometry(p.id) ?? null;
+    return null;
+  }
+
   $effect(() => {
     if (!dataEngineFn) return; // no release resolved yet -- nothing to analyse against
     const engine = dataEngineFn;
     for (const p of places) {
-      if (p.kind !== "geom") continue;
-      const key = JSON.stringify(p.geometry);
+      // a `p.` gazetteer place is analysed once its geometry has been fetched (mapStore resolves it)
+      const geometry = effectiveGeometry(p);
+      if (!geometry) continue;
+      const key = JSON.stringify(geometry);
       if (key in placeScores) continue; // already analysed, loading, or errored -- never re-run
-      const geometry = p.geometry;
       placeScores = { ...placeScores, [key]: "loading" };
       (async () => {
         try {
@@ -532,11 +649,13 @@
       mapStore.setCells(null);
       return;
     }
-    const p = selectedIndex !== null ? places[selectedIndex] : null;
-    if (!p || p.kind !== "geom") {
+    const p0 = selectedIndex !== null ? places[selectedIndex] : null;
+    const pGeometry = p0 ? effectiveGeometry(p0) : null;
+    if (!p0 || !pGeometry) {
       notify("Select a drawn or uploaded place first.");
       return;
     }
+    const p = { geometry: pGeometry };
     const grid = gridOrNull();
     if (!grid) {
       notify("No release grid loaded yet.");
@@ -588,7 +707,10 @@
   // turning the toggle off (or losing the selected place) always clears the painted cells, so a
   // stale "show analysis cells" layer can never survive past the place it described.
   $effect(() => {
-    if (mapStore.showCells && (selectedIndex === null || places[selectedIndex]?.kind !== "geom")) {
+    if (
+      mapStore.showCells &&
+      (selectedIndex === null || !effectiveGeometry(places[selectedIndex]))
+    ) {
       mapStore.setShowCells(false);
       mapStore.setCells(null);
     }
@@ -607,11 +729,15 @@
 
   // --- the list -----------------------------------------------------------------------------------
   function kindIcon(p: Place): "places" | "draw" | "upload" {
-    return p.kind === "zone" ? "places" : p.kind === "geom" ? "draw" : "upload";
+    return p.kind === "zone" || p.kind === "gaz" ? "places" : p.kind === "geom" ? "draw" : "upload";
   }
 
   function rowName(p: Place): string {
     if (p.kind === "geom" || p.kind === "upload") return p.name;
+    if (p.kind === "gaz") {
+      const e = mapStore.gazEntry(p.id);
+      return p.name || (e?.status === "ok" ? e.resolved.name : "") || p.id;
+    }
     const stats = zoneStatsFor(boot, unitForZoneSet(p.set), p.keys);
     const name = zoneDisplayName(stats);
     return name || fallbackZoneLabel(p);
@@ -637,6 +763,26 @@
       const stats = zoneStatsFor(boot, unitForZoneSet(p.set), p.keys);
       return summarizeZoneStats(stats);
     }
+    if (p.kind === "gaz") {
+      // the same path a drawn place takes, once the geometry has been fetched: a fast area
+      // estimate plus `placeRowAnalysis()` over `placeScores`. While it is being fetched, or if
+      // that failed, the row says so (with a retry) instead of "not analysed yet".
+      const entry = mapStore.gazEntry(p.id);
+      const geometry = effectiveGeometry(p);
+      if (geometry) {
+        return {
+          areaKm2: approxAreaKm2(geometry),
+          ...placeRowAnalysis(placeScores[JSON.stringify(geometry)]),
+        };
+      }
+      return {
+        areaKm2: null,
+        coveragePct: null,
+        composite: null,
+        status: entry?.status === "error" ? "error" : "loading",
+        errorMessage: entry?.status === "error" ? entry.message : undefined,
+      };
+    }
     if (p.kind === "geom") {
       // area is a fast client-side estimate (area.ts); coverage/composite/status come from
       // `placeRowAnalysis()` (results.ts) over `placeScores` (above) -- the SAME SQL twins
@@ -658,8 +804,13 @@
 
   function zoomTo(p: Place) {
     if (!mapHandle) return;
-    if (p.kind === "geom") {
-      const cz = centerZoomForGeometry(p.geometry);
+    if (p.kind === "geom" || p.kind === "gaz") {
+      const geometry = effectiveGeometry(p);
+      if (!geometry) {
+        notify("That gazetteer place is still loading — try again in a moment.");
+        return;
+      }
+      const cz = centerZoomForGeometry(geometry);
       mapHandle.flyTo({ key: "place", lon: cz.lon, lat: cz.lat, zoom: cz.zoom });
       return;
     }
@@ -773,7 +924,9 @@
       notify("No places to download yet.");
       return;
     }
-    downloadGeoJson(placesToGeoJson(places, boot, zonePolygonSource()));
+    downloadGeoJson(
+      placesToGeoJson(places, boot, zonePolygonSource(), (id) => mapStore.gazGeometry(id)),
+    );
     notify(`Downloaded ${places.length} place${places.length === 1 ? "" : "s"} as GeoJSON.`);
   }
 
@@ -872,7 +1025,14 @@
             <!-- P7: Chip itself forwards no `title` -- a plain wrapper carries the FULL honest
                  message (results.ts#describeAnalysisError) so hovering/inspecting the row shows
                  exactly what failed, not just that something did. -->
-            <span title={figures.errorMessage}><Chip label="couldn't analyse" /></span>
+            <span title={figures.errorMessage}
+              ><Chip label={place.kind === "gaz" ? "couldn't load" : "couldn't analyse"} /></span
+            >
+            {#if place.kind === "gaz"}
+              <button type="button" class="chip" onclick={() => mapStore.retryGaz(place.id)}>
+                Retry
+              </button>
+            {/if}
           {:else if figures.status === "outside"}
             <Chip label="outside the study area" />
           {:else if figures.status === "unpublished"}
@@ -914,6 +1074,20 @@
          goes through the engine. -->
     {#if selectedPlace?.kind === "geom" || selectedPlace?.kind === "zone"}
       <ResultsPanel place={selectedPlace} {boot} {manifest} {ver} dataEngine={dataEngineFn} />
+    {:else if selectedPlace?.kind === "gaz" && effectiveGeometry(selectedPlace)}
+      <!-- a `p.` place with its fetched geometry is analysed exactly like a drawn one: the panel
+           gets it as a `geom` place (name only, never written back to the link) -->
+      <ResultsPanel
+        place={{
+          kind: "geom",
+          name: rowName(selectedPlace),
+          geometry: effectiveGeometry(selectedPlace)!,
+        }}
+        {boot}
+        {manifest}
+        {ver}
+        dataEngine={dataEngineFn}
+      />
     {/if}
   {/if}
 
@@ -961,6 +1135,24 @@
       <Icon name="places" size={16} />
       Add to places{pickState.keys.length ? ` (${pickState.keys.length})` : ""}
     </button>
+  </section>
+
+  <section class="pick-bar gaz-bar" aria-label="Pick from gazetteer">
+    <Pill
+      label="Pick from gazetteer"
+      pressed={gazOn}
+      disabled={!mapHandle}
+      disabledReason={mapHandle ? undefined : "The map isn't ready yet."}
+      onclick={toggleGazPick}
+    />
+    {#if gazOn && gazLayers.length > 1}
+      <Select
+        label="Gazetteer layer"
+        value={gazSlug}
+        onchange={chooseGazLayer}
+        options={gazLayers.map((l) => ({ value: l.slug, label: l.title }))}
+      />
+    {/if}
   </section>
 
   <section class="draw-bar" aria-label="Draw a place" role="group">
@@ -1011,7 +1203,9 @@
       <Pill
         label={loadingCells ? "Loading analysed cells…" : "Show analysis cells"}
         pressed={mapStore.showCells}
-        disabled={loadingCells || selectedIndex === null || places[selectedIndex]?.kind !== "geom"}
+        disabled={loadingCells ||
+          selectedIndex === null ||
+          !effectiveGeometry(places[selectedIndex])}
         disabledReason="Select a drawn or uploaded place first."
         onclick={toggleAnalysisCells}
       />
@@ -1030,7 +1224,13 @@
           {@const p = recentPlace(token)}
           {#if p}
             <li class="recent-row">
-              <span>{p.kind === "zone" ? fallbackZoneLabel(p) : p.name}</span>
+              <span
+                >{p.kind === "zone"
+                  ? fallbackZoneLabel(p)
+                  : p.kind === "gaz"
+                    ? p.name || p.id
+                    : p.name}</span
+              >
               <button type="button" onclick={() => addBackRecent(token)}>Add back</button>
             </li>
           {/if}

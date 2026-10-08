@@ -17,6 +17,7 @@ import type { Feature, FeatureCollection, Geometry, Polygon } from "geojson";
 import type { MapHandle } from "../lib/map/map";
 import { zoneKeyProperty, zoneSourceId, zoneUnitsFromBoot } from "../lib/map/layers/zones";
 import type { Place, ZonePlace } from "../lib/geo/placeCodec";
+import type { AreaGeometry } from "../lib/geo/types";
 import { unitForZoneSet } from "./model";
 import { ringsFromFeatures, zoneCenterFromBoot, zoneDisplayName, zoneStatsFor } from "./zoneStats";
 
@@ -103,8 +104,18 @@ export function placesToGeoJson(
   places: readonly Place[],
   boot?: unknown,
   polygons?: ZonePolygonSource,
+  /** a gazetteer (`p.`) place's resolved geometry, when the session has fetched it; `null`/absent
+   * leaves `geometry: null` with the place_id, which names it fully for anyone with the gazetteer. */
+  gazGeometry?: (id: string) => AreaGeometry | null | undefined,
 ): FeatureCollection<Geometry | null> {
   const features: NullableFeature[] = places.map((p) => {
+    if (p.kind === "gaz") {
+      return {
+        type: "Feature",
+        geometry: gazGeometry?.(p.id) ?? null,
+        properties: { kind: "gaz", place_id: p.id, name: p.name || p.id },
+      };
+    }
     if (p.kind === "geom") {
       return {
         type: "Feature",
