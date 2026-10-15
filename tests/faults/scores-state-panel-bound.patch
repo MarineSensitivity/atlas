@@ -1,5 +1,5 @@
 diff --git a/src/lens/scores/ScoresLens.svelte b/src/lens/scores/ScoresLens.svelte
-index fac8251..ce20615 100644
+index 0000000..0000000 100644
 --- a/src/lens/scores/ScoresLens.svelte
 +++ b/src/lens/scores/ScoresLens.svelte
 @@ -66,6 +66,10 @@
@@ -13,7 +13,7 @@ index fac8251..ce20615 100644
      /** P3 fix (Opus eyes-on review, 2026-09-24): passed straight through to `FlowerPanel`'s own
       * prop of the same name -- see that component's header for why. */
      compactFlower?: boolean;
-@@ -104,12 +108,20 @@
+@@ -104,11 +108,19 @@
      onAddLastClicked,
      onOpenTable,
      onOpenPlaces,
@@ -23,22 +23,21 @@ index fac8251..ce20615 100644
    const unit = $derived(lens.unit);
    const lyr = $derived(lens.lyr);
    const manifestOverlays = $derived(lens.manifestOverlays);
- 
++
 +  // SEEDED FAULT (tests/faults/scores-state-panel-bound.patch): only runs while this component is
 +  // mounted -- a collapsed desktop panel never mounts it, so `mapExtra` (and therefore the map)
 +  // never sees a value.
 +  $effect(() => {
 +    mapExtra = lens.mapExtra;
 +  });
-+
+ 
    // P round deliverable 1: the Layers panel's own primary control (the shared `LibLayersPanel`'s
    // `unitToggle` prop) -- replaces the old "Spatial units" `<Select>` that used to live in
-   // `ScoresLayersPanel` (`./LayersPanel.svelte`, still rendered below for the Data row's OTHER
 diff --git a/src/shell/Shell.svelte b/src/shell/Shell.svelte
-index 4605697..acc955c 100644
+index 0000000..0000000 100644
 --- a/src/shell/Shell.svelte
 +++ b/src/shell/Shell.svelte
-@@ -726,6 +726,13 @@
+@@ -727,6 +727,13 @@
    // every read of it below is null-safe and falls back to "the shell's own base view", same as
    // the old `{}` default did.
    let scoresLens = $state<ScoresLensState | null>(null);
@@ -52,7 +51,7 @@ index 4605697..acc955c 100644
  
    // 0.10.79 size-budget fix round: the RUNTIME `places/model.ts` module (see the type-only import
    // above), loaded once, right after mount -- same convention as `lastClickedLabelFn` below. `null`
-@@ -821,7 +828,7 @@
+@@ -827,7 +834,7 @@
    // rendered) so BOTH the floating placement and the "full" detent's inline-in-sheet placement can
    // read the SAME value without recomputing it or duplicating the lens/kind branch.
    const phoneLegend = $derived(
@@ -61,7 +60,7 @@ index 4605697..acc955c 100644
    );
  
    // R4-B: the header context (`panelHeaderTitle`, tools.ts). Scores: the layer's short legend title
-@@ -972,7 +979,7 @@
+@@ -978,7 +985,7 @@
    // never mounted on a species view in the first place.
    const zonesForStyle = $derived<ZoneUnitSpec[]>(
      zoneUnitsWithOutline(
@@ -70,7 +69,7 @@ index 4605697..acc955c 100644
        sel.out,
      ),
    );
-@@ -1043,7 +1050,7 @@
+@@ -1059,7 +1066,7 @@
      // V4 fix (owner phone report, 2026-09-24, desktop-18): `phoneLegend` (despite its name) is
      // already lens-agnostic -- "the legend value the current lens would draw", the same one the
      // desktop `.lens-legend-region` branch reads (species -> speciesLens.mapInputs.legend, scores
@@ -79,7 +78,7 @@ index 4605697..acc955c 100644
      // on screen right now" flag with no new derived state.
      return desktopPanelPadding(panelGeom, !!phoneLegend);
    }
-@@ -1278,7 +1285,7 @@
+@@ -1365,7 +1372,7 @@
    // `currentChromePadding()` already computes the SAME `chipShowing` boolean for every LATER
    // (post-load) re-fit (V1 fix, above) -- this is the one remaining caller still calling
    // `phonePaddingFromMeasured` bare. Gated additionally on `scoresLens` (the default lens) having
@@ -88,7 +87,7 @@ index 4605697..acc955c 100644
    // DYNAMIC IMPORT (this file's own "0.10.21 fix 1" comment) -- firing before it resolves would
    // silently compute `chipShowing: false` and reproduce the exact defect this fixes.
    let refitOnceForMeasuredSheet = false;
-@@ -1381,11 +1388,11 @@
+@@ -1486,11 +1493,11 @@
      projection: sel.proj,
      zones: ecoregionUnit ? [...zonesForStyle, ecoregionUnit] : zonesForStyle,
      raster:
@@ -100,10 +99,10 @@ index 4605697..acc955c 100644
      selection:
 -      placesSelection ?? (sel.lens === "scores" ? (scoresLens?.mapExtra.selection ?? null) : null),
 +      placesSelection ?? (sel.lens === "scores" ? (scoresPanelMapExtra?.selection ?? null) : null),
+     // gazetteer-places: the "Pick from gazetteer" tile polygons, only while that picker is on
+     gazetteer: placesMap.gazetteer,
      layerStack,
-   });
- 
-@@ -2289,6 +2296,7 @@
+@@ -2402,6 +2409,7 @@
              lens={scoresLens}
              {layerStack}
              {onLayerStackChange}
@@ -111,7 +110,7 @@ index 4605697..acc955c 100644
              compactFlower={isPhone && sheetGeom.detent === "half"}
              {expandedRow}
              onExpandedRowChange={(id: LayerGroupId | null) => (expandedRow = id)}
-@@ -2362,7 +2370,7 @@
+@@ -2475,7 +2483,7 @@
    {:else if sel.lens === "scores" && ScoresLegendComp}
      {@const Comp = ScoresLegendComp}
      <div class="lens-legend-region">
