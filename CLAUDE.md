@@ -6,6 +6,29 @@ TypeScript, no SvelteKit, no client router. See `../workflows/.claude/plans/2026
 app plan.md` for the full plan and decisions (D1-D12); this file only covers what changes how you
 work in _this_ repo day to day.
 
+## Lean verification (owner, 2026-10-15) — this section overrides every heavier rule below
+
+The test estate is large (242 unit files, 76 e2e specs, 120 seeded faults, a 58-state matrix, three
+engines, DuckDB/OPFS matrices). That is reference material, not a per-change checklist: running it
+for a small change burns tokens and time for nothing. **Be ruthless; do the least that proves the
+change.**
+
+- **Per change, locally:** `npm run format` · `npm run lint` · `npm run check` · `npm test`, plus
+  **at most one or two chromium specs that directly exercise the change** (`npx playwright test
+--project=chromium <spec>`). That is the whole routine. Add a unit test for new logic, as before.
+- **Do NOT, unless the owner asks:** run webkit/firefox, Docker/Linux reproductions, the full
+  `e2e:shell` / `e2e:all` suites, `test:faults` or `faults:check`, `scripts/verify.mjs`, the gallery,
+  the DuckDB/OPFS/parity suites, or `eyes-shots.mjs`. Do not regenerate or re-prove seeded-fault
+  patches, and do not write a new one for a new test (a stale or missing patch is not a defect).
+- **CI is lean too** (`.github/workflows/pages.yml`): every push/PR runs `build & checks` plus a
+  chromium-only `e2e smoke`; `publish` waits only on `build & checks`. The heavy jobs run only from
+  `workflow_dispatch` or the weekly schedule. A red heavy job is looked at when someone runs it,
+  never chased after a normal push.
+- **A red job after a push:** fix it only if it is `build & checks` or `e2e smoke`. If it is a heavy
+  job (weekly/manual), note it and move on unless asked.
+- `npm run e2e` is chromium-only; `npm run e2e:all` is the full three-engine run, for a release
+  candidate.
+
 ## Commands
 
 - Install: `npm ci` (or `npm install` while adding a dependency)
@@ -16,7 +39,7 @@ work in _this_ repo day to day.
 - Build: `npm run build` → `dist/`
 - Preview the build: `npm run preview`
 - Lint / format: `npm run lint`, `npm run format` (`format:check` in CI-style, no writes)
-- e2e smoke (chromium/webkit/firefox): `npm run e2e` (needs `npx playwright install` once)
+- e2e smoke (chromium): `npm run e2e`; all three engines: `npm run e2e:all` (needs `npx playwright install` once)
 - Size budget: `npm run size-budget` (against a real `npm run build`); the red-fixture controls are
   `npm run build:fixture:size-budget` (see `tests/fixtures/size-budget-static-duckdb/`) and
   `npm run build:fixture:size-budget-worker` (see `tests/fixtures/size-budget-worker/`)

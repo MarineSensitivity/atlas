@@ -5,6 +5,11 @@ name: Pages
 # second `vite build` — to the `gh-pages` branch (branch-based Pages, not the artifact-deploy
 # action: the preview host's sidecar pulls this same branch in atlas-9, so both hosts serve one
 # commit).
+# LEAN CI (2026-10-15, owner: "there is a great overabundance of testing ... be ruthless"): every
+# push and PR runs `checks` (unit tests, lint, type-check, build, size budget, dist invariants) and
+# one chromium-only `e2e-smoke`; `publish` waits only on `checks`. The three-engine e2e, seeded-fault
+# suite, gallery, state matrix, DuckDB/OPFS matrices, parity and analytics-privacy jobs are kept,
+# but run only on `workflow_dispatch` or the weekly schedule (the `HEAVY` guard on each).
 on:
   push:
     # the feedback Apps Script (scripts/feedback/Code.gs) commits each report's screenshot to
@@ -14,6 +19,10 @@ on:
     paths-ignore:
       - "feedback/**"
   pull_request:
+  # the heavy suites (below) run only from here: by hand, or weekly
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"
 
 # scoped per ref, not a single global "pages" group: a global group would let any push to a
 # feature branch or PR cancel an in-flight run FROM MAIN, including one that's mid-publish. Each
@@ -140,6 +149,7 @@ jobs:
 
   test-faults:
     name: test:faults (seeded-fault suite)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' # HEAVY: not on push/PR
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -171,6 +181,7 @@ jobs:
 
   e2e:
     name: e2e (chromium, webkit, firefox)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' # HEAVY: not on push/PR
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -264,6 +275,7 @@ jobs:
 
   e2e-gallery:
     name: e2e (gallery)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' # HEAVY: not on push/PR
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -294,6 +306,7 @@ jobs:
 
   verify:
     name: verify (state matrix, 58 states x 3 viewports)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' # HEAVY: not on push/PR
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -362,6 +375,7 @@ jobs:
 
   e2e-engine:
     name: e2e (DuckDB-WASM engine, eh/mvp x chromium/firefox/webkit)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' # HEAVY: not on push/PR
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -383,6 +397,7 @@ jobs:
 
   e2e-opfs:
     name: e2e (OPFS store tier, fallback matrix)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' # HEAVY: not on push/PR
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -402,6 +417,7 @@ jobs:
 
   parity:
     name: parity (v9 vs msens, max|Δ| < 1e-9)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' # HEAVY: not on push/PR
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -455,6 +471,7 @@ jobs:
 
   analytics-privacy:
     name: e2e (analytics privacy — GA4 Enhanced Measurement history-event leak)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' # HEAVY: not on push/PR
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -479,6 +496,35 @@ jobs:
       - run: npx playwright install --with-deps chromium
 
       - run: npm run e2e:analytics-privacy
+
+  e2e-smoke:
+    name: e2e smoke (chromium)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: node scripts/fetch-duckdb-extensions.mjs
+
+      - run: npx playwright install --with-deps chromium
+
+      # the shell + map-camera specs, one browser: does it paint, with the panel/sheet/camera rules
+      - run: npx playwright test --project=chromium --workers=2 e2e/shell.*.spec.ts e2e/scores.studyarea.spec.ts e2e/species.camera.spec.ts
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-test-results
+          path: test-results/
+          retention-days: 7
 
   publish:
     name: publish dist/ to gh-pages
