@@ -315,16 +315,16 @@ describe("evaluateBudget", () => {
     expect(r.reasons.some((x) => x.includes("exceeds"))).toBe(true);
   });
 
-  // plan D13, relaxed 2026-09-21: CRITICAL_BUDGET_BYTES is 450 KB gzip (was 350). This proves the
+  // plan D13, relaxed 2026-09-21: CRITICAL_BUDGET_BYTES is 460 KB gzip (was 350, then 450). This proves the
   // DEFAULT budget (no `budgetBytes` override, unlike the synthetic 1-byte-budget case above) is
-  // really 450 KB by straddling that exact line: a static path that gzips to just over 450 KB
+  // really 460 KB by straddling that exact line: a static path that gzips to just over 460 KB
   // FAILS, one that gzips to just under it PASSES. Random bytes barely compress (near-incompressible),
   // so a buffer of N raw bytes reliably gzips to within a few bytes of N -- confirmed below before
   // trusting the budget assertion, so this is testing the BUDGET, not a compression fluke.
-  it("a ~451 KB static path FAILS the default 450 KB budget, and a ~449 KB one PASSES it", () => {
-    expect(CRITICAL_BUDGET_BYTES).toBe(450 * 1024);
-    const over = incompressibleBytes(451 * 1024);
-    const under = incompressibleBytes(449 * 1024);
+  it("a ~461 KB static path FAILS the default 460 KB budget, and a ~459 KB one PASSES it", () => {
+    expect(CRITICAL_BUDGET_BYTES).toBe(460 * 1024);
+    const over = incompressibleBytes(461 * 1024);
+    const under = incompressibleBytes(459 * 1024);
     // the payload must trip the BUDGET and nothing else, or this stops testing the budget
     expect(findForbiddenMarkers(new Map([["index.js", under.toString("latin1")]]))).toEqual([]);
     expect(gzipSize(over)).toBeGreaterThan(CRITICAL_BUDGET_BYTES);

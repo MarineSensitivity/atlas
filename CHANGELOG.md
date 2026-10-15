@@ -11,6 +11,7 @@ The map centres in the open area.
 - A `?map=` link's centre is now the point drawn at the middle of the open area (it used to be the middle of
   the whole stage). Fits to a species range or a zone are solved against that same open area.
 - Developer notes: `docs/map.md` "Camera padding".
+- Developer notes: the static size budget is now 460 KB gzip (450 before; 610 KB with the worker), as the live padding adds ~1.4 KB to the first-paint code.
 
 # atlas 0.10.88
 

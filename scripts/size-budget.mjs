@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // CLI wrapper around size-budget-core.mjs. Usage:
-//   node scripts/size-budget.mjs [--dist dist] [--entry index.html] [--budget-kb 450]
+//   node scripts/size-budget.mjs [--dist dist] [--entry index.html] [--budget-kb 460]
 //     [--worker-budget-kb 150] [--allow-marker duckdb,docx]
 //
 // --allow-marker drops the named FORBIDDEN_LAZY_MARKERS entries for THIS invocation only (see

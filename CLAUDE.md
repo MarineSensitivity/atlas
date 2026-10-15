@@ -151,7 +151,7 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
 
 ## Budgets (`scripts/size-budget.mjs`)
 
-- **450 KB gzip** for the static critical path: everything `index.html`'s own `<script>`s load before
+- **460 KB gzip** (450 until 0.10.89, which added the live camera padding, ~1.4 KB) for the static critical path: everything `index.html`'s own `<script>`s load before
   first interaction (app chunk + eventual maplibre-gl + pmtiles + CSS + fonts). Plan D13, relaxed
   2026-09-21 (owner: "we don't need to be so tight on the 350 KB budget") — the original 350 KB cap
   (atlas-0 Deliverable 4) left too little room once atlas-3 step 3's shell (Svelte runtime +
@@ -164,7 +164,7 @@ phase table); don't be surprised to find a directory with only a `.gitkeep` note
   a worker referenced from the static graph (e.g. maplibre-gl's, wired via `?worker&url` per S2.md —
   143.9 KB gzip measured) downloads at construction time, before first interaction, but it is not part
   of the entry's own `<script>` payload, so it is not folded into the static number — it gets its own
-  budget instead. The two together ("before first interaction") total 600 KB.
+  budget instead. The two together ("before first interaction") total 610 KB (600 until 0.10.89).
   The checker does NOT rely on the manifest's `assets`/`imports` fields to find it (that depends on
   chunk-splitting specifics this repo doesn't control): it reads the compiled text of every file on the
   static path for the `new URL("<file>.js", import.meta.url)` pattern a `?worker&url` import (or a

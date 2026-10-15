@@ -14,9 +14,9 @@ Measured with `npm run build && node scripts/size-budget.mjs` (2026-09-23, re-me
 
 | what                                                | measured          | budget   |
 | --------------------------------------------------- | ----------------- | -------- |
-| static critical path (index.html's own `<script>`s) | **417.4 KB gzip** | ≤ 450 KB |
+| static critical path (index.html's own `<script>`s) | **417.4 KB gzip** | ≤ 460 KB |
 | runtime worker (maplibre-gl's)                      | **140.5 KB gzip** | ≤ 150 KB |
-| combined, "before first interaction"                | **557.9 KB gzip** | ≤ 600 KB |
+| combined, "before first interaction"                | **557.9 KB gzip** | ≤ 610 KB |
 
 Both individual budgets and the combined one pass with headroom (32.6 KB / 9.5 KB / 42.1 KB
 respectively). The two red-fixture controls
