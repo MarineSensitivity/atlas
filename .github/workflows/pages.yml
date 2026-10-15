@@ -18,6 +18,9 @@ on:
     # in-flight three-engine + seeded-fault jobs of the real push before it (2026-09-24, #1).
     paths-ignore:
       - "feedback/**"
+      - "docs/**"
+      - "**.md"
+      - "tests/faults/**"
   pull_request:
   # the heavy suites (below) run only from here: by hand, or weekly
   workflow_dispatch:
@@ -52,7 +55,8 @@ jobs:
 
       - run: npm ci
 
-      - run: npx tsc --noEmit
+      # (plain `tsc --noEmit` dropped 2026-10-15: `npm run check` below type-checks the same
+      # tsconfig, .ts files included, so it was a duplicate pass)
 
       # atlas-8 phase review M3: `npm run check` (svelte-check) sees inside a `.svelte` <script>
       # block the way a plain `tsc --noEmit` above cannot -- GATES.md long claimed this ran in CI
@@ -512,12 +516,11 @@ jobs:
 
       - run: npm ci
 
-      - run: node scripts/fetch-duckdb-extensions.mjs
-
       - run: npx playwright install --with-deps chromium
 
-      # the shell + map-camera specs, one browser: does it paint, with the panel/sheet/camera rules
-      - run: npx playwright test --project=chromium --workers=2 e2e/shell.*.spec.ts e2e/scores.studyarea.spec.ts e2e/species.camera.spec.ts
+      # ~30 tests, one browser, about a minute: the app boots and paints, the URL state round-trips,
+      # and the panel/sheet/camera rules hold. Everything else is the weekly/manual `e2e` job.
+      - run: npx playwright test --project=chromium --workers=2 e2e/shell.smoke.spec.ts e2e/shell.url-state.spec.ts e2e/shell.firstview.spec.ts e2e/shell.firstview.phone.spec.ts e2e/shell.padding.spec.ts e2e/scores.studyarea.spec.ts
 
       - uses: actions/upload-artifact@v4
         if: failure()
