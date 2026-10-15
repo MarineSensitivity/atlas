@@ -297,8 +297,13 @@ test.describe("P2: the phone first view frames the study area, not empty sky", (
             handle: { map: { project(ll: [number, number]): { x: number; y: number } } };
           };
         };
-        const p = w.__atlasMap.handle.map.project(ll);
-        return { x: p.x, y: p.y };
+        const map = w.__atlasMap.handle.map;
+        const p = map.project(ll);
+        // viewport coordinates, like `boundingBox()` -- the canvas starts BELOW the top bar (WP13)
+        const r = (map as unknown as { getCanvas(): HTMLCanvasElement })
+          .getCanvas()
+          .getBoundingClientRect();
+        return { x: p.x + r.left, y: p.y + r.top };
       },
       [(PHONE_DEFAULT_BOUNDS[0][0] + PHONE_DEFAULT_BOUNDS[1][0]) / 2, south] as [number, number],
     );
@@ -313,14 +318,22 @@ test.describe("P2: the phone first view frames the study area, not empty sky", (
     ).toBeLessThan(chipBox!.y);
     // and the north edge stays below the top bar throughout, unaffected by the chip.
     const northPoint = await page.evaluate(
-      (ll) =>
-        (
+      (ll) => {
+        const map = (
           window as unknown as {
             __atlasMap: {
-              handle: { map: { project(ll: [number, number]): { x: number; y: number } } };
+              handle: {
+                map: {
+                  project(ll: [number, number]): { x: number; y: number };
+                  getCanvas(): HTMLCanvasElement;
+                };
+              };
             };
           }
-        ).__atlasMap.handle.map.project(ll),
+        ).__atlasMap.handle.map;
+        const p = map.project(ll);
+        return { x: p.x, y: p.y + map.getCanvas().getBoundingClientRect().top };
+      },
       [(PHONE_DEFAULT_BOUNDS[0][0] + PHONE_DEFAULT_BOUNDS[1][0]) / 2, north] as [number, number],
     );
     const topbar = await page.locator(".topbar").boundingBox();

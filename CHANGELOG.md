@@ -1,3 +1,17 @@
+# atlas 0.10.89
+
+The map centres in the open area.
+
+- **The map (and the globe) is centred in what the panel leaves open.** With the panel expanded, collapsed
+  to its rail, docked left or right, or the phone sheet at peek or half, the map's centre is now drawn in the
+  middle of the open part of the stage instead of the middle of the whole stage, so collapsing or expanding
+  the panel no longer leaves the globe off to one side. It settles when the panel does (dragging the panel
+  edge does not make the globe chase it) and eases over a quarter second. The first view is placed once
+  rather than shifted by hand.
+- A `?map=` link's centre is now the point drawn at the middle of the open area (it used to be the middle of
+  the whole stage). Fits to a species range or a zone are solved against that same open area.
+- Developer notes: `docs/map.md` "Camera padding".
+
 # atlas 0.10.88
 
 Gazetteer places.

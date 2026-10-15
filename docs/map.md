@@ -169,6 +169,44 @@ lenses — the panel IS the stack, its "Data" row expanding into the lens's own 
    mode hides a REAL choropleth, which is simply correct (nothing else reads through it the way
    pick-mode depends on the query fill).
 
+## Camera padding: the centre sits in the open area (WP13)
+
+The docked panel (and, on a phone, the sheet) covers part of the stage, so the map's centre, and a
+globe at low zoom, is drawn in the middle of what stays open, whether the panel is expanded, collapsed
+to the rail or taking the whole stage (Table). Ported from `oceanmetrics/atlas` (same rule as obis-hex).
+
+- **`livePadding(stageW, stageH, chrome, {maximized})`** (`map/livePadding.ts`, pure, one test per rule in
+  `tests/map/livePadding.test.ts`) turns the shell's chrome reserve (`chromePadding.ts`) into MapLibre
+  padding. Sides: the reserve minus the fit gutter, kept only while the open width stays at or above
+  `MIN_OPEN_SHARE = 0.4` of the stage (the larger side is dropped first). Bottom (the phone sheet and the
+  rail row under it): kept only while it leaves 0.4 of the height. A maximized panel (the Table tool) pads
+  nothing. The legend card and chip are not part of it (a legend appearing must not move the map). The top
+  bar is not either: it is a row above the stage, so `insideStage()` subtracts the part of its 48 px
+  reserve that does not overlap the stage (today, all of it).
+- **`Shell.svelte`** applies it through `handle.setPadding()` in one `$effect` that reads `panelGeom`,
+  `sheetGeom` and the stage size (a `ResizeObserver` on `#map`). While a pointer is held the effect waits, so
+  a panel or sheet drag does not make the globe chase the pane; it re-runs on release with the final
+  geometry. The handle eases over 250 ms, only when the padding differs, marks the move programmatic (the URL
+  never records it), and defers a change made during a fly to that fly's `moveend`.
+- **The first camera is unshifted.** `paddedStudyAreaCenter` used to move the first centre by hand; now the
+  study area's own centre is the camera and the estimated live padding (`initialLivePadding()`, from the
+  same localStorage keys) is set before the first frame with no easing, then re-measured once on the map's
+  first `load`. The first view shifts once, never twice. On the phone the zoom still fits the free area
+  (`symmetricPadding` of the same reserve); the one-time refit shifts the centre by the part of the reserve
+  the live padding leaves out (the floating chip, plus a `FIT_GUTTER_PX`). `paddedStudyAreaCenter` stays
+  exported and tested. Consequence: a `?map=` centre is the point drawn at the middle of the OPEN area (it
+  used to be the middle of the whole stage).
+- **Fits are solved against the padded transform** (`map.ts#solveFit`, behind `flyToBounds`). MapLibre 6.10's
+  `cameraForBounds` adds an option padding on top of `transform.padding`, and its globe branch tests the
+  extent against limits built from the option padding alone, so a standing padding makes a globe fit clip.
+  `solveFit` projects the extent's outline at a candidate camera and corrects centre and zoom until it fills
+  the free region and is centred in it, for either projection. The old `cameraForBounds` +
+  `residualFitPadding()` path is kept only for a zero-size container. Never `fitBounds`.
+
+Known MapLibre 6.10 behaviour with a padding on a globe: a whole-canvas `queryRenderedFeatures()` returns
+nothing; point and small-box queries (all the app makes) are unaffected. Count zone features through
+`queryLayerFeatures()` (see CLAUDE.md, round-4 lessons).
+
 ## Rules with teeth
 
 - **The basemap is CARTO vector** (`dark-matter-gl-style` / `positron-gl-style`), not raster.

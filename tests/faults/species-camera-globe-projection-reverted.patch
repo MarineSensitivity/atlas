@@ -2,12 +2,12 @@ diff --git a/src/lib/map/map.ts b/src/lib/map/map.ts
 index 0000000..0000000 100644
 --- a/src/lib/map/map.ts
 +++ b/src/lib/map/map.ts
-@@ -214,7 +214,7 @@
-         mutableBounds,
-         opts?.padding !== undefined ? { padding: opts.padding } : undefined,
-       );
--      if (native?.center !== undefined && native.zoom !== undefined) {
-+      if (false && native?.center !== undefined && native.zoom !== undefined) {
-         map.flyTo({ center: native.center, zoom: native.zoom }, { ...PROGRAMMATIC_EVENT_DATA });
+@@ -366,7 +366,7 @@
+       // extent's own outline, is exact for both projections and cannot pad twice. It is still not
+       // `fitBounds`, and the bounds stay continuous (east may exceed 180), never wrapped.
+       const solved = solveFit(bounds, opts?.padding);
+-      if (solved) {
++      if (false && solved) {
+         map.flyTo({ center: solved.center, zoom: solved.zoom }, { ...PROGRAMMATIC_EVENT_DATA });
+         flying = true;
          return;
-       }

@@ -105,11 +105,14 @@
     paddedStudyAreaCenter,
     phoneDefaultCamera,
     shouldFlyToArea,
+    symmetricPadding,
     type AreaCameraState,
     type ChromePadding,
     type Viewport,
   } from "../lib/map/camera";
+  import { fitReserve, insideStage, livePadding, residualFitPadding } from "../lib/map/livePadding";
   import {
+    FIT_GUTTER_PX,
     desktopPanelPadding,
     phonePadding,
     phoneLiveChromePadding,
@@ -653,6 +656,15 @@
   // same.
   let mapEl = $state<HTMLDivElement | undefined>(undefined);
   let mapHandle = $state<MapHandle | undefined>(undefined);
+  // WP13: the stage's size (a ResizeObserver on #map) and whether a pointer is held down anywhere --
+  // the live padding settles when a drag ends, never on every pointermove of a panel/sheet resize,
+  // so the globe does not chase the pane (the obis-hex rule). `padEase` is false until the map's
+  // first `load`: the first view is set, not eased.
+  let stageW = $state(0);
+  let stageH = $state(0);
+  let stageTop = $state(0); // px from the viewport top: the top bar is a row ABOVE the stage
+  let pointerHeld = $state(false);
+  let padEase = false;
   // 0.10.21: `selStore` deps the store's own baseline outline-restore effect reads (see
   // placesMap.svelte.ts's header) -- unconditional/eager, same as `createSpeciesLens` above, so a
   // deep-linked selected place's outline restores regardless of which tool is active.
@@ -997,9 +1009,16 @@
   // space, so the point it frames could render partly or wholly BEHIND the chrome. Applied only
   // when there is no explicit `?map=` (a real, user-chosen camera is never second-guessed): reads
   // the SAME localStorage keys Panel.svelte/Sheet.svelte themselves read (chromePadding.ts), so it
-  // works before either component has mounted, and shifts the center via `paddedStudyAreaCenter`
-  // (camera.ts) -- never MapLibre's own persisted `padding` (see that function's own header for
-  // why: it would also reshape every LATER flyTo/flyToBounds on top of their own zoom math).
+  // works before either component has mounted.
+  //
+  // WP13 reversal: this used to shift the centre by hand (`paddedStudyAreaCenter`) and NEVER use
+  // MapLibre's persisted `padding`, for fear that it would reshape every later fit. The map now
+  // carries the live padding (`livePadding.ts`, applied through `handle.setPadding`, so the globe is
+  // centred in the open area as well), and the fits subtract it (`map.ts#flyToBounds`), so the manual
+  // offset would shift the first view twice. The first camera is therefore UNSHIFTED (the study
+  // area's own centre) and the estimated live padding is set, without easing, right after the map
+  // is constructed; once the map has loaded it is re-measured the same way. docs/map.md "Camera
+  // padding" has the numbers.
   function storage(): Storage | null {
     try {
       return window.localStorage;
@@ -1025,6 +1044,9 @@
   // above). The actual padding math is `chromePadding.ts#phoneLiveChromePadding` (a plain,
   // testable function -- see its own header); this just feeds it the live state.
   function currentChromePadding(): ChromePadding {
+    return fitReserve(chromeReserve(), stageTop);
+  }
+  function chromeReserve(): ChromePadding {
     if (isPhone) {
       const chipShowing = !!phoneLegend && legendChipMode(sheetGeom.detent) === "floating";
       return phoneLiveChromePadding(
@@ -1060,11 +1082,34 @@
       // arrives -- see the "study-area camera" effect's own comment below) -- i.e. this IS always
       // the default first view, never a real `?area=` pick caught mid-flight.
       const viewport: Viewport = { width: window.innerWidth, height: window.innerHeight };
-      const fit = phoneDefaultCamera(viewport, initialChromePadding());
+      // WP13: the zoom still fits the free area (same total reserve), but the centre is the box's
+      // own midpoint -- the live padding set below does the shifting
+      const fit = phoneDefaultCamera(viewport, symmetricPadding(initialChromePadding()));
       return { ...area, lon: fit.center[0], lat: fit.center[1], zoom: fit.zoom };
     }
-    const padded = paddedStudyAreaCenter(area, area.zoom, initialChromePadding());
-    return { ...area, ...padded };
+    return area;
+  }
+
+  // WP13: the live camera padding (livePadding.ts) -- keeps the map's centre, and the globe when the
+  // sphere projection is on, in the part of the stage the panel and phone sheet leave open. The
+  // reserve is the SAME chromePadding.ts number the fits use; the legend card/chip are not part of
+  // it (small floating corner boxes, not a column to centre around), so a legend appearing never
+  // moves the map. Before the map exists the estimate from localStorage stands in.
+  function initialLivePadding(): ChromePadding {
+    const r = mapEl?.getBoundingClientRect();
+    const [w, h, top] =
+      r && r.width > 0 ? [r.width, r.height, r.top] : [window.innerWidth, window.innerHeight, 0];
+    return livePadding(w, h, insideStage(initialChromePadding(), top));
+  }
+  function currentLivePadding(stageW: number, stageH: number): ChromePadding {
+    if (isPhone) {
+      const chrome = phoneLiveChromePadding(sheetGeom.height, sheetGeom.detent, stageH, false);
+      return livePadding(stageW, stageH, insideStage(chrome, stageTop));
+    }
+    const chrome = desktopPanelPadding(panelGeom, false);
+    return livePadding(stageW, stageH, insideStage(chrome, stageTop), {
+      maximized: panelGeom.maximized,
+    });
   }
 
   // usability M4's OTHER half: a light loader over the map until the first raster/basemap tile
@@ -1134,12 +1179,41 @@
       // boot arrives -- the merged precedence this round's own CHANGELOG entry documents: an
       // explicit `area=` always wins over this padded default fit).
       area: initialStudyArea(studyAreaFromBoot(null, sel.area)),
+      padding: initialLivePadding(),
       projection: sel.proj,
       // URL-is-the-view: the camera goes back through selStore, i.e. history.replaceState, and
       // only for user-driven moves (src/lib/map/camera.ts).
       onCamera: (map) => selStore.set({ map }),
     });
     mapHandle = handle;
+    // WP13: re-measure once the map has loaded (the estimate above came from localStorage and the
+    // window), without easing so the first view does not shift twice; later settles ease 250 ms.
+    handle.map.once("load", () => {
+      const r = mapEl?.getBoundingClientRect();
+      if (r && r.width > 0) {
+        stageW = Math.round(r.width);
+        stageH = Math.round(r.height);
+        stageTop = Math.round(r.top);
+      }
+      handle.setPadding(
+        currentLivePadding(stageW || window.innerWidth, stageH || window.innerHeight),
+      );
+      padEase = true;
+    });
+    const stageObserver = new ResizeObserver(() => {
+      const r = mapEl?.getBoundingClientRect();
+      if (!r) return;
+      stageW = Math.round(r.width);
+      stageH = Math.round(r.height);
+      stageTop = Math.round(r.top);
+    });
+    stageObserver.observe(mapEl);
+    const holdPointer = () => (pointerHeld = true);
+    const releasePointer = () => (pointerHeld = false);
+    window.addEventListener("pointerdown", holdPointer, true);
+    window.addEventListener("pointerup", releasePointer, true);
+    window.addEventListener("pointercancel", releasePointer, true);
+    window.addEventListener("blur", releasePointer);
     const handleMapIdle = () => onMapIdle(handle.map);
     handle.map.on("idle", handleMapIdle);
     // V3 trigger (b): a raster tile load failure. `health.reportMapError` classifies it itself --
@@ -1206,6 +1280,11 @@
     // layout-driven resize (a panel opening, the phone sheet changing detent) that no window event
     // reports.
     return () => {
+      stageObserver.disconnect();
+      window.removeEventListener("pointerdown", holdPointer, true);
+      window.removeEventListener("pointerup", releasePointer, true);
+      window.removeEventListener("pointercancel", releasePointer, true);
+      window.removeEventListener("blur", releasePointer);
       delete (window as unknown as { __atlasMap?: unknown }).__atlasMap;
       delete (window as unknown as { __atlasSpecies?: unknown }).__atlasSpecies;
       handle.map.off("click", onMapClick);
@@ -1215,6 +1294,20 @@
       handle.destroy();
       mapHandle = undefined;
     };
+  });
+
+  // WP13: apply the live padding whenever the chrome it comes from settles -- the panel's dock, size,
+  // collapse and maximize (`panelGeom`), the sheet's detent and measured height (`sheetGeom`), a
+  // viewport resize (`stageW`/`stageH`) -- and only when it differs from what the map has
+  // (`handle.setPadding` compares). While a pointer is held (a panel or sheet drag) it waits: the
+  // effect re-runs when the pointer is released, with the final geometry. The ease is 250 ms.
+  $effect(() => {
+    const handle = mapHandle;
+    if (!handle || pointerHeld) return;
+    const w = stageW;
+    const h = stageH;
+    if (!(w > 0 && h > 0)) return;
+    handle.setPadding(currentLivePadding(w, h), { animate: padEase });
   });
 
   // --- the study-area camera: `sel.area` drives it on LOAD and on CHANGE, never the panel body ---
@@ -1286,11 +1379,29 @@
     const area = studyAreaFromBoot(boot, sel.area);
     const viewport: Viewport = { width: window.innerWidth, height: window.innerHeight };
     const chipShowing = !!phoneLegend && legendChipMode(sheetGeom.detent) === "floating";
-    const fit = phoneDefaultCamera(
-      viewport,
-      phoneLiveChromePadding(sheetGeom.height, sheetGeom.detent, window.innerHeight, chipShowing),
+    // WP13: symmetric, as in `initialStudyArea` -- the live padding does the shifting. The live
+    // padding leaves the floating chip out on purpose (a legend appearing never moves the map), so
+    // the box would be centred above the sheet and its south edge land under the chip (D5): shift
+    // the centre by the part of the reserve the live padding does not already cover.
+    const reserve = phoneLiveChromePadding(
+      sheetGeom.height,
+      sheetGeom.detent,
+      window.innerHeight,
+      chipShowing,
     );
-    mapHandle.flyTo({ ...area, lon: fit.center[0], lat: fit.center[1], zoom: fit.zoom });
+    const fit = phoneDefaultCamera(viewport, symmetricPadding(reserve));
+    const left = residualFitPadding(
+      insideStage(reserve, stageTop),
+      currentLivePadding(stageW, stageH),
+    ) as ChromePadding;
+    // the shift is flat-Mercator math on a globe (a few px short), so the chip also gets the fit
+    // gutter (`FIT_GUTTER_PX`: nothing lands flush against chrome)
+    const centre = paddedStudyAreaCenter(
+      { lon: fit.center[0], lat: fit.center[1] },
+      fit.zoom,
+      chipShowing ? { ...left, bottom: left.bottom + FIT_GUTTER_PX } : left,
+    );
+    mapHandle.flyTo({ ...area, lon: centre.lon, lat: centre.lat, zoom: fit.zoom });
   });
 
   // one composed style, re-applied with setStyle(diff:true) whenever theme, projection, the
