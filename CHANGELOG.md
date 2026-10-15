@@ -8,6 +8,7 @@ The map centres in the open area.
   the panel no longer leaves the globe off to one side. It settles when the panel does (dragging the panel
   edge does not make the globe chase it) and eases over a quarter second. The first view is placed once
   rather than shifted by hand.
+- On the phone, the first view no longer drifts north a moment after load (the legend chip's room is in the first camera), and a fit made before the page has finished laying out lands where the same fit lands later.
 - A `?map=` link's centre is now the point drawn at the middle of the open area (it used to be the middle of
   the whole stage). Fits to a species range or a zone are solved against that same open area.
 - Developer notes: `docs/map.md` "Camera padding".

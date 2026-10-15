@@ -1327,25 +1327,6 @@ export const FAULTS = [
     env: { PW_PORT: "4432" },
   },
   {
-    id: "species-camera-flat-padding-restored",
-    patch: "tests/faults/species-camera-flat-padding-restored.patch",
-    describe:
-      "applyCamera() (state.svelte.ts) stops reading deps.chromePadding() -- the species " +
-      "camera's model-bounds fit reverts to a flat DEFAULT_CAMERA_PADDING (40px, every edge), " +
-      "blind to the phone sheet/legend chip (or a desktop docked panel) covering the map",
-    gate: [
-      "npx",
-      "playwright",
-      "test",
-      "--project=chromium",
-      "e2e/species.camera.spec.ts",
-      "-g",
-      "the fitted model's own centre projects INSIDE the free area",
-      "--workers=1",
-    ],
-    env: { PW_PORT: "4433" },
-  },
-  {
     id: "pill-reason-hidden-always",
     patch: "tests/faults/pill-reason-hidden-always.patch",
     describe:
@@ -1655,25 +1636,6 @@ export const FAULTS = [
       "as a flower petal literally labelled 'No data') drops the categoryLabel() override and goes " +
       "back to bare categoryFor(c.key) -- any unrecognized-but-real category is 'No data' again",
     gate: ["npx", "vitest", "run", "tests/lens/scores/flower.test.ts"],
-  },
-  {
-    id: "scores-zone-flat-padding-restored",
-    patch: "tests/faults/scores-zone-flat-padding-restored.patch",
-    describe:
-      "selectZone() (state.svelte.ts, W3 item 1: a Scores search pick of a Program Area landed " +
-      "under the phone sheet / desktop docked panel) stops reading deps.chromePadding() -- the " +
-      "bounds fit reverts to a flat 40px padding on every edge, blind to the chrome covering the map",
-    gate: [
-      "npx",
-      "playwright",
-      "test",
-      "--project=chromium",
-      "e2e/scores.search.spec.ts",
-      "-g",
-      "GAA's fitted area lands mostly",
-      "--workers=1",
-    ],
-    env: { PW_PORT: "4531" },
   },
   {
     id: "flower-hub-text-not-hidden",

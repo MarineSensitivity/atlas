@@ -113,6 +113,7 @@
   import { fitReserve, insideStage, livePadding, residualFitPadding } from "../lib/map/livePadding";
   import {
     FIT_GUTTER_PX,
+    LEGEND_CHIP_HEIGHT_PX,
     desktopPanelPadding,
     phonePadding,
     phoneLiveChromePadding,
@@ -1044,7 +1045,14 @@
   // above). The actual padding math is `chromePadding.ts#phoneLiveChromePadding` (a plain,
   // testable function -- see its own header); this just feeds it the live state.
   function currentChromePadding(): ChromePadding {
-    return fitReserve(chromeReserve(), stageTop);
+    return fitReserve(chromeReserve(), measuredStageTop());
+  }
+  // a fit can run before the `ResizeObserver` has populated `stageTop` (it is 0 until then, which
+  // reads as the top bar overlapping the stage: a 48 px reserve instead of the 20 px gutter, so the
+  // same fit landed in a different place a moment later -- caught on linux webkit, R3-A1). Measure.
+  function measuredStageTop(): number {
+    const r = mapEl?.getBoundingClientRect();
+    return r && r.width > 0 ? Math.round(r.top) : stageTop;
   }
   function chromeReserve(): ChromePadding {
     if (isPhone) {
@@ -1081,13 +1089,42 @@
       // (`studyAreaFromBoot(null, sel.area)` cannot see a release's real rows before `boot`
       // arrives -- see the "study-area camera" effect's own comment below) -- i.e. this IS always
       // the default first view, never a real `?area=` pick caught mid-flight.
-      const viewport: Viewport = { width: window.innerWidth, height: window.innerHeight };
-      // WP13: the zoom still fits the free area (same total reserve), but the centre is the box's
-      // own midpoint -- the live padding set below does the shifting
-      const fit = phoneDefaultCamera(viewport, symmetricPadding(initialChromePadding()));
-      return { ...area, lon: fit.center[0], lat: fit.center[1], zoom: fit.zoom };
+      // the legend chip is not known yet (the scores lens has not loaded), but it floats over the
+      // map at every detent but `full` on practically every phone view, so it is assumed here: a
+      // first view that ignores it drifts ~3.5 degrees north when the one-time refit below corrects
+      // it (measured: 1.8 s on linux webkit, a visible nudge on every phone load)
+      const base = initialChromePadding();
+      const chip = legendChipMode(loadSheetDetent(storage(), "shell")) === "floating";
+      const reserve = chip ? { ...base, bottom: base.bottom + LEGEND_CHIP_HEIGHT_PX } : base;
+      const top = mapEl?.getBoundingClientRect().top ?? 0;
+      return phoneFirstView(area, reserve, initialLivePadding(), top, chip);
     }
     return area;
+  }
+
+  // WP13: the phone's default first view. The ZOOM fits the free area (`symmetricPadding` of the
+  // whole reserve, chip included); the CENTRE is the box's midpoint, shifted by the part of the
+  // reserve the live padding does not already cover -- the floating chip (a legend appearing never
+  // moves the live padding), plus a `FIT_GUTTER_PX` because that shift is flat-Mercator math on a
+  // globe (a few px short) and nothing may land flush against chrome. Used for the estimate at map
+  // construction and again, once, with the measured sheet height (the refit effect below), so the
+  // two agree to a few px and the refit is not a visible move.
+  function phoneFirstView(
+    area: StudyArea,
+    reserve: ChromePadding,
+    live: ChromePadding,
+    stageTopPx: number,
+    chip: boolean,
+  ): StudyArea {
+    const viewport: Viewport = { width: window.innerWidth, height: window.innerHeight };
+    const fit = phoneDefaultCamera(viewport, symmetricPadding(reserve));
+    const rest = residualFitPadding(insideStage(reserve, stageTopPx), live) as ChromePadding;
+    const centre = paddedStudyAreaCenter(
+      { lon: fit.center[0], lat: fit.center[1] },
+      fit.zoom,
+      chip ? { ...rest, bottom: rest.bottom + FIT_GUTTER_PX } : rest,
+    );
+    return { ...area, lon: centre.lon, lat: centre.lat, zoom: fit.zoom };
   }
 
   // WP13: the live camera padding (livePadding.ts) -- keeps the map's centre, and the globe when the
@@ -1377,31 +1414,17 @@
     if (sel.map || sel.area !== DEFAULT_SEL.area) return; // not the default padded first view
     refitOnceForMeasuredSheet = true;
     const area = studyAreaFromBoot(boot, sel.area);
-    const viewport: Viewport = { width: window.innerWidth, height: window.innerHeight };
     const chipShowing = !!phoneLegend && legendChipMode(sheetGeom.detent) === "floating";
-    // WP13: symmetric, as in `initialStudyArea` -- the live padding does the shifting. The live
-    // padding leaves the floating chip out on purpose (a legend appearing never moves the map), so
-    // the box would be centred above the sheet and its south edge land under the chip (D5): shift
-    // the centre by the part of the reserve the live padding does not already cover.
     const reserve = phoneLiveChromePadding(
       sheetGeom.height,
       sheetGeom.detent,
       window.innerHeight,
       chipShowing,
     );
-    const fit = phoneDefaultCamera(viewport, symmetricPadding(reserve));
-    const left = residualFitPadding(
-      insideStage(reserve, stageTop),
-      currentLivePadding(stageW, stageH),
-    ) as ChromePadding;
-    // the shift is flat-Mercator math on a globe (a few px short), so the chip also gets the fit
-    // gutter (`FIT_GUTTER_PX`: nothing lands flush against chrome)
-    const centre = paddedStudyAreaCenter(
-      { lon: fit.center[0], lat: fit.center[1] },
-      fit.zoom,
-      chipShowing ? { ...left, bottom: left.bottom + FIT_GUTTER_PX } : left,
+    // the live padding is what the map actually carries (the stage may not be measured yet)
+    mapHandle.flyTo(
+      phoneFirstView(area, reserve, mapHandle.padding(), measuredStageTop(), chipShowing),
     );
-    mapHandle.flyTo({ ...area, lon: centre.lon, lat: centre.lat, zoom: fit.zoom });
   });
 
   // one composed style, re-applied with setStyle(diff:true) whenever theme, projection, the

@@ -271,8 +271,9 @@ export function createMap(container: HTMLElement, opts: CreateMapOptions): MapHa
     let zoom = start.zoom;
     const maxZoom = map.getMaxZoom();
     solving = true;
+    let stable = 0;
     try {
-      for (let i = 0; i < 14; i++) {
+      for (let i = 0; i < 16; i++) {
         map.jumpTo({ center, zoom }, { ...PROGRAMMATIC_EVENT_DATA });
         let x0 = Infinity;
         let x1 = -Infinity;
@@ -294,7 +295,12 @@ export function createMap(container: HTMLElement, opts: CreateMapOptions): MapHa
         );
         const settled =
           Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && Math.abs(Math.log2(scale)) < 0.002;
-        if (settled) break;
+        // settled TWICE at the same camera: the globe/mercator blend is not always refreshed between
+        // synchronous `jumpTo`s, so a first reading can be taken against the previous camera's state
+        // (linux webkit: a fit landed 1.4 degrees away from the same fit made from another start)
+        if (settled && ++stable >= 2) break;
+        if (settled) continue;
+        stable = 0;
         if (!Number.isFinite(scale) || scale <= 0) return undefined;
         // move the box by (dx, dy): the camera's centre is the point now drawn at (dx, dy) away
         const cp = map.project(map.getCenter());

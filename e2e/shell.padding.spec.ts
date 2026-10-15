@@ -104,6 +104,36 @@ test.describe("WP13: the map's centre follows the open area of the stage", () =>
     expect(Math.abs(c.x - (PANEL_OPEN + VIEWPORT.width) / 2)).toBeLessThan(2);
   });
 
+  test("the padding at first paint is the padding after the map settles (no estimate-vs-measured drift)", async ({
+    page,
+  }) => {
+    await seedPanel(page, { collapsed: false, maximized: false, dock: "left", size: 380 });
+    // sample the padding the moment the map exists, before `load` re-measures the stage: a fit made
+    // in that window (species / zone / a deep link) is solved against THIS padding, so it must
+    // already be the settled one or the same fit lands somewhere else a moment later
+    await page.addInitScript(() => {
+      const w = window as unknown as {
+        __firstPad?: unknown;
+        __atlasMap?: { handle: { map: { getPadding(): unknown } } };
+      };
+      let v: unknown;
+      Object.defineProperty(w, "__atlasMap", {
+        configurable: true,
+        get: () => v,
+        set: (x) => {
+          v = x;
+          w.__firstPad = {
+            ...((x as NonNullable<typeof w.__atlasMap>).handle.map.getPadding() as object),
+          };
+        },
+      });
+    });
+    await gotoMap(page, "/");
+    const settled = await settledPadding(page, (p) => p.left === PANEL_OPEN);
+    const first = await page.evaluate(() => (window as unknown as { __firstPad?: Pad }).__firstPad);
+    expect(first, "padding at first paint").toEqual(settled);
+  });
+
   test("panel collapsed: only the rail is reserved, so the centre moves back toward the stage middle", async ({
     page,
   }) => {

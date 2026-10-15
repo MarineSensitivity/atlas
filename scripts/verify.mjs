@@ -44,8 +44,7 @@ const { SPECIES_RASTER_OPACITY } = await import("../src/lens/species/mapInputs.t
 const { gotoSpecies, LEATHERBACK_SP, WALRUS_AM_MDL_KEY, WRYBILL_SP } =
   await import("../e2e/species-hermetic.ts");
 const { paddedStudyAreaCenter } = await import("../src/lib/map/camera.ts");
-const { desktopPanelPadding, phonePadding } = await import("../src/lib/map/chromePadding.ts");
-const { DEFAULT_PANEL_GEOMETRY } = await import("../src/lib/ui/panelGeometry.ts");
+const { phonePadding } = await import("../src/lib/map/chromePadding.ts");
 const { DEFAULT_SHEET_DETENT } = await import("../src/lib/ui/sheetGeometry.ts");
 const { DEFAULT_SEL } = await import("../src/lib/state/types.ts");
 
@@ -615,10 +614,15 @@ function cameraNearAreaProbe(areaKey, tolDeg = 1) {
     if (areaKey === DEFAULT_SEL.area) {
       const viewport = page.viewportSize();
       const isPhone = !viewport || viewport.width <= 899;
-      const padding = isPhone
-        ? phonePadding(DEFAULT_SHEET_DETENT, viewport?.height ?? 800)
-        : desktopPanelPadding(DEFAULT_PANEL_GEOMETRY);
-      expected = paddedStudyAreaCenter(area, area.zoom, padding);
+      // WP13 (0.10.89): desktop's first camera is the raw point (the live padding moves where it is
+      // DRAWN, not where the camera is); the phone's is still the shifted default fit
+      if (isPhone) {
+        expected = paddedStudyAreaCenter(
+          area,
+          area.zoom,
+          phonePadding(DEFAULT_SHEET_DETENT, viewport?.height ?? 800),
+        );
+      }
     }
     let center = null;
     for (let i = 0; i < 20; i++) {
