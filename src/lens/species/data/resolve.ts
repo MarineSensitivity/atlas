@@ -63,8 +63,10 @@ export type DeepLinkResult =
       /** `ds_key` of the input to show, or `"merged"`. */
       in: string;
       resolution: "merged_model" | "input_model";
-      /** the target is not US-valid: the picker's "US only" box must be unticked (§4). */
-      clearUs: boolean;
+      /** the target is not US-valid: the picker's "US only" box must be unticked (§4). `null` = not
+       * decided yet (the taxa index is not loaded, so validity is unknown): the caller loads the
+       * index and settles it with `settleUs()` -- it must NOT be read as "clear". */
+      clearUs: boolean | null;
       /** null when nothing legacy was in the URL (a modern `?sp=` link logs no deep-link event). */
       event: DeepLinkEvent | null;
     }
@@ -90,11 +92,21 @@ export function deepLinkKey(params: URLSearchParams): { key: string; legacy: boo
   return null;
 }
 
-/** does this taxon need the "US only" box unticked to be visible? (`coalesce(is_valid_usa, FALSE)`:
- * an unknown taxon is treated as NOT US-valid, so the box is cleared rather than hiding the target.) */
-function isNonUsTarget(index: TaxaIndex | null, mergedKey: string): boolean {
-  const row = index?.byKey.get(mergedKey);
+/** does this taxon need the "US only" box unticked to be visible? `null` when the index is not
+ * loaded yet: validity is UNKNOWN and nothing may be decided (it used to answer `true`, which
+ * switched US-only off -- `us=0` in the rewritten URL -- for a species with US waters). With the
+ * index loaded, a taxon it does not list is treated as NOT US-valid (`coalesce(is_valid_usa,
+ * FALSE)`), so the box is cleared rather than hiding the target. */
+export function isNonUsTarget(index: TaxaIndex | null, mergedKey: string): boolean | null {
+  if (!index) return null;
+  const row = index.byKey.get(mergedKey);
   return row ? !row.validUsa : true;
+}
+
+/** settle a `clearUs: null` result once the index is available; any other result is returned as is. */
+export function settleUs(result: DeepLinkResult, index: TaxaIndex | null): DeepLinkResult {
+  if (result.kind !== "species" || result.clearUs !== null) return result;
+  return { ...result, clearUs: isNonUsTarget(index, result.sp) };
 }
 
 /**
@@ -184,7 +196,8 @@ export interface SpeciesTarget {
 
 export function targetOf(result: DeepLinkResult, current: Sel): SpeciesTarget | null {
   if (result.kind !== "species") return null;
-  return { sp: result.sp, in: result.in, us: result.clearUs ? false : current.us };
+  // `clearUs: null` (undecided) keeps whatever the URL said, exactly as a searched species does
+  return { sp: result.sp, in: result.in, us: result.clearUs === true ? false : current.us };
 }
 
 /**

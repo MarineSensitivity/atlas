@@ -16,6 +16,9 @@ export interface TourActions {
   setLens(lens: Lens): void;
   /** opens a rail tool's panel (Shell.svelte's own `selectTool`, reused verbatim). */
   selectTool(name: ToolName): void;
+  /** opens a specific tab of the Table tool (the panel opens on Species; the tour's "Table" step
+   * describes the ranked Program Areas, which is the Zones tab). */
+  selectTableTab(tab: "species" | "zones" | "composition"): void;
   /** captures the CURRENT lens/tool before the tour starts, so `restore()` can put them back --
    * the tour must leave the view exactly as it found it (CalCOFI's `src/tour.ts` pattern). */
   snapshot(): void;
@@ -104,7 +107,11 @@ export const SCORES_TOUR_STEPS: TourStep[] = [
     side: "right",
     title: "Table",
     description: "Every Program Area ranked; tick some and report on them.",
-    before: (a) => a.selectTool("table"),
+    // the Table tool opens on its Species tab; the ranked, tickable Program Areas are the Zones tab
+    before: (a) => {
+      a.selectTableTab("zones");
+      a.selectTool("table");
+    },
   },
   {
     // R4-D: the Report tool is one flow with no sub-tabs; this step opens it and points at its

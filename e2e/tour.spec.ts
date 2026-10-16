@@ -32,10 +32,10 @@ async function seriousOrCritical(page: Page) {
   return violations.filter((v) => v.impact === "serious" || v.impact === "critical");
 }
 
-async function gotoScores(page: Page, path: string): Promise<void> {
+async function gotoScores(page: Page, path: string, boot: object = BOOT): Promise<void> {
   const ctx = page.context() as unknown as Page;
   await blockWasm(ctx);
-  await routeBucket(ctx, VER, BOOT);
+  await routeBucket(ctx, VER, boot);
   await routeSession(ctx, null);
   await routeSealFixture(ctx);
   await routeBasemapStyle(ctx);
@@ -113,6 +113,34 @@ test.describe("every step's anchor actually exists on the lens it belongs to", (
   test("scores: all 9 steps", async ({ page }) => {
     await gotoScores(page, "/?tour=on");
     await walkAndAssertAnchors(page, SCORES_TOUR_STEPS);
+  });
+
+  test("scores: the Table step opens the ZONES tab (its copy: every Program Area ranked, tick some)", async ({
+    page,
+  }) => {
+    // the Table tool renders only for a release that publishes a score layer (as in
+    // e2e/scores.table.spec.ts), so this one case carries a layer
+    await gotoScores(page, "/?tour=on", {
+      ...BOOT,
+      layers: [
+        { metric_key: "score_overall", label: "Overall score", category: "composite", order: 1 },
+      ],
+    });
+    const idx = SCORES_TOUR_STEPS.findIndex((s) => s.id === "table");
+    for (let i = 0; i < idx; i++) {
+      // wait for each step to land before pressing Next: a faster click races the 250 ms
+      // `before()` settle in tourRuntime.ts and skips the intermediate tool changes
+      await expect(page.locator(".driver-popover-title")).toHaveText(SCORES_TOUR_STEPS[i].title, {
+        timeout: 10_000,
+      });
+      await page.locator(".driver-popover-next-btn").click();
+    }
+    await expect(page.locator(".driver-popover-title")).toHaveText("Table", { timeout: 10_000 });
+    await expect(page.getByRole("tab", { name: "Zones" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "Species" })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
   });
 
   test("species: all 5 steps (the legend step needs a REAL resolved species)", async ({ page }) => {

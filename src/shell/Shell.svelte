@@ -190,6 +190,7 @@
   // TOUR RUNTIME (tourRuntime.ts, which imports driver.js) is a dynamic import() -- see
   // `beginTour()` below and that file's own header.
   import { tourStepsForLens, type TourActions } from "./tour";
+  import { requestTableTab } from "./tableTab.svelte";
   import type { Lens } from "../lib/state/types";
 
   const selStore = createSelStore(location);
@@ -522,6 +523,7 @@
       getLens: () => sel.lens,
       setLens: (lens) => onLensChange(lens),
       selectTool: (name) => selectTool(name),
+      selectTableTab: (tab) => requestTableTab(tab),
       snapshot: () => {
         tourSnapshot = { lens: sel.lens, activeTool };
       },

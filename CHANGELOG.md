@@ -1,3 +1,23 @@
+# atlas 0.10.91
+
+Old Shiny links land cleanly in the Atlas, and the tour's Table step shows what it says.
+
+- **A legacy `?mdl_seq=` / `?mdl_key=` link no longer rewrites itself to `rep=undefined&us=0`.** On v7,
+  `?ver=v7&lens=species&mdl_seq=54247` now lands on the humpback and the address bar settles to
+  `?ver=v7&sp=54247` (plus `in=` when the old id was an input). Two causes: the resolved target passed
+  `rep: undefined` into the selection, which overwrote the field and was written out as the text
+  `rep=undefined` (the URL writer now treats an undefined field as its default, and the resolver omits it);
+  and, before the species index had loaded, the resolver guessed "not a US species" and switched US-only off
+  (`us=0`) even for a species with US waters. Validity is now left undecided until the index is in, then
+  decided from it, so the US-first framing is exactly what searching the species gives.
+- **`?tool=report` (and `layers`, `details`, `table`, and the old `flower`/`places`) counts as a deep link**,
+  so the first-visit Welcome modal no longer covers the tool the link opened. A malformed `tool=` value still
+  shows the modal. `splash=false` on an old link is rewritten to `tour=off` (the visitor asked for no welcome)
+  and the `splash` key itself is dropped; `tour=off` stays in the address bar on purpose, so a shared link
+  keeps suppressing the welcome.
+- **The tour's "Table" step opens the Zones tab**, the ranked list of Program Areas with tick boxes that its
+  text ("Every Program Area ranked; tick some and report on them") describes, instead of the Species tab.
+
 # atlas 0.10.90
 
 A screenshot generator for the docs "Atlas user guide".

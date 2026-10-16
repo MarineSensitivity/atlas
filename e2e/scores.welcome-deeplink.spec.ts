@@ -52,6 +52,16 @@ test.describe("M5: welcome modal suppression", () => {
     await expect(page.getByRole("dialog", { name: WELCOME_DIALOG_NAME })).toHaveCount(0);
   });
 
+  test("?tool=report alone (a rail-tool link) never shows the welcome modal", async ({ page }) => {
+    await gotoUnsuppressed(page, "/?tool=report");
+    await expect(page.getByRole("dialog", { name: WELCOME_DIALOG_NAME })).toHaveCount(0);
+  });
+
+  test("a malformed ?tool= is not a deep link: the modal still shows", async ({ page }) => {
+    await gotoUnsuppressed(page, "/?tool=nope");
+    await expect(page.getByRole("dialog", { name: WELCOME_DIALOG_NAME })).toBeVisible();
+  });
+
   test("a places deep link (#pl=…) never shows the welcome modal", async ({ page }) => {
     await gotoUnsuppressed(page, "/#pl=z.pa.GAA");
     await expect(page.getByRole("dialog", { name: WELCOME_DIALOG_NAME })).toHaveCount(0);

@@ -9,7 +9,12 @@ import { isVersionLabel } from "../release/version";
 // (`../map/layerStack.ts`), not duplicated here — this module just calls them, exactly like every
 // other field's parser.
 import { formatLayerStack, parseLayerStack } from "../map/layerStack";
-import { NO_ALIAS_LOOKUP, rewriteLegacyParams, type AliasLookup } from "./legacy";
+import {
+  NO_ALIAS_LOOKUP,
+  legacyToolFromParams,
+  rewriteLegacyParams,
+  type AliasLookup,
+} from "./legacy";
 import {
   DEFAULT_SEL,
   LENSES,
@@ -183,12 +188,27 @@ export function parseSel(loc: UrlLike, alias: AliasLookup = NO_ALIAS_LOOKUP): Se
 // --- formatSel -----------------------------------------------------------------------------------
 
 /**
+ * A `Sel` whose required fields (those with a non-undefined default) are `undefined` is a bug at the
+ * caller, but it must never reach the address bar: `undefined !== "native"` is true, so
+ * `rep: undefined` used to be written as the literal `rep=undefined` (a legacy `?mdl_seq=` link
+ * rewrote itself to `...&rep=undefined&us=0`). An undefined field means "the default".
+ */
+function fillUndefinedFromDefaults(sel: Sel): Sel {
+  const out: Record<string, unknown> = { ...sel };
+  for (const [k, def] of Object.entries(DEFAULT_SEL)) {
+    if (out[k] === undefined && def !== undefined) out[k] = def;
+  }
+  return out as unknown as Sel;
+}
+
+/**
  * Serialize `sel` back to a URL, writing ONLY fields that differ from their default (the shipped
  * default view is `""`/`""` — no query, no hash) and using `,`/`:` un-escaped for readability. Query
  * holds every field except `pl`/`t`, which live in the hash (plan: a fragment is never sent to a
  * server or a referrer).
  */
-export function formatSel(sel: Sel): { search: string; hash: string } {
+export function formatSel(input: Sel): { search: string; hash: string } {
+  const sel = fillUndefinedFromDefaults(input);
   const params = new URLSearchParams();
 
   if (sel.ver !== undefined) params.set("ver", sel.ver);
@@ -240,4 +260,20 @@ export function formatSel(sel: Sel): { search: string; hash: string } {
 export function hasViewState(loc: UrlLike): boolean {
   const { search, hash } = formatSel(parseSel(loc));
   return search !== "" || hash !== "";
+}
+
+/**
+ * Whether `loc` is a deep link for the purpose of the first-visit Welcome modal: any `Sel` view
+ * state (`hasViewState`) OR a recognised `?tool=` (the rail tool to open). `tool` is not a `Sel`
+ * key, so `hasViewState` cannot see it, and a bare `?tool=report` used to open Report underneath
+ * the modal (the homepage worked around it with `&tour=off`). A malformed `tool=` value is not a
+ * deep link (`legacyToolFromParams` returns null), like every other malformed value.
+ */
+export function isDeepLink(loc: UrlLike): boolean {
+  if (hasViewState(loc)) return true;
+  try {
+    return legacyToolFromParams(new URLSearchParams(loc.search ?? "")) !== null;
+  } catch {
+    return false;
+  }
 }

@@ -183,6 +183,13 @@ test.describe("species lens, first paint with **/*.wasm blocked", () => {
     // the URL is rewritten to sp= (canonical), mdl_seq dropped
     await expect.poll(() => page.url()).toContain("sp=54383");
     expect(page.url()).not.toContain("mdl_seq");
+    // regression (live v7, cutover): the rewrite wrote `rep=undefined` and, before the taxa index
+    // had loaded, `us=0` -- the canonical URL is exactly the ver + sp the legacy link named
+    const u = new URL(page.url());
+    expect(u.searchParams.get("rep")).toBeNull();
+    expect(u.searchParams.get("us")).toBeNull();
+    expect(u.search).not.toContain("undefined");
+    expect(u.searchParams.get("sp")).toBe("54383");
   });
 
   test("?mdl_key=am|... on v9 lands on the right taxon AND selects that input", async ({

@@ -260,9 +260,11 @@ Program Areas.
   So 3 of 5 rail tools do nothing here.
 
 - **Deep links:**
-  - A legacy `?mdl_seq=54383` resolves to the walrus, but rewrites the URL to
-    **`?sp=54383&rep=undefined&us=0`**. That writes a literal "undefined" and silently turns US-only
-    off (`src/lens/species/state.svelte.ts:225`).
+  - A legacy `?mdl_seq=54383` resolves to the walrus, but used to rewrite the URL to
+    **`?sp=54383&rep=undefined&us=0`**, writing a literal "undefined" and silently turning US-only off
+    (`src/lens/species/state.svelte.ts`, the `asked?.legacy` branch of `bootstrap`; resolver in
+    `src/lens/species/data/resolve.ts`). **Fixed in 0.10.91:** the URL settles to `?sp=54383`; US-only is
+    decided only once the species index is loaded (`settleUs`).
   - A bogus `sp=` shows the welcome modal, with "Couldn't load this species (not-found)." in the panel
     behind it; the raw code sits in parentheses.
   - A bogus `lyr=` or `sel=cell:999999999` is ignored silently.

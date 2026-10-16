@@ -14,6 +14,7 @@ function fakeActions(currentLens: "scores" | "species" = "scores"): TourActions 
   calls: {
     setLens: string[];
     selectTool: string[];
+    selectTableTab: string[];
     snapshot: number;
     restore: number;
   };
@@ -21,6 +22,7 @@ function fakeActions(currentLens: "scores" | "species" = "scores"): TourActions 
   const calls = {
     setLens: [] as string[],
     selectTool: [] as string[],
+    selectTableTab: [] as string[],
     snapshot: 0,
     restore: 0,
   };
@@ -29,6 +31,7 @@ function fakeActions(currentLens: "scores" | "species" = "scores"): TourActions 
     getLens: () => currentLens,
     setLens: (l) => calls.setLens.push(l),
     selectTool: (t) => calls.selectTool.push(t),
+    selectTableTab: (t) => calls.selectTableTab.push(t),
     snapshot: () => calls.snapshot++,
     restore: () => calls.restore++,
   };
@@ -81,6 +84,15 @@ describe("SCORES_TOUR_STEPS: 9 steps, docs/usability.md §5 (R4-B added Details)
       expect(a.calls.selectTool).toEqual([tool]);
       expect(a.calls.setLens).toEqual([]);
     }
+  });
+
+  it("the table step opens the ZONES tab (its copy promises ranked Program Areas to tick)", () => {
+    const step = SCORES_TOUR_STEPS.find((s) => s.id === "table")!;
+    expect(step.description).toMatch(/Program Area ranked/);
+    const a = fakeActions();
+    step.before?.(a);
+    expect(a.calls.selectTableTab).toEqual(["zones"]);
+    expect(a.calls.selectTool).toEqual(["table"]);
   });
 
   // R4-D: the Report tool is one flow (no sub-tabs): the places/report steps both just open it, and
