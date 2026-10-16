@@ -36,9 +36,20 @@
     /** `lastClicked.ts#lastClickedLabel` -- `null` hides the Last-clicked row. */
     lastClickedLabel: string | null;
     onAddLastClicked: () => void;
+    /** #10: the clicked cell encoded as a one-place `#pl=` token (Shell.svelte), so Open report
+     * can report on it; `null` for no cell click or while the place codec is still loading. */
+    lastClickedPl?: string | null;
   }
 
-  let { sel, ver, places, subject, lastClickedLabel, onAddLastClicked }: Props = $props();
+  let {
+    sel,
+    ver,
+    places,
+    subject,
+    lastClickedLabel,
+    onAddLastClicked,
+    lastClickedPl = null,
+  }: Props = $props();
 
   function storage(): Storage | null {
     try {
@@ -50,7 +61,7 @@
 
   let recents = $state<RecentReport[]>(loadRecentReports(storage()));
 
-  const action = $derived(reportAction(sel, ver));
+  const action = $derived(reportAction(sel, ver, lastClickedPl));
   const enabled = $derived(reportOpenEnabled(action));
 
   function openReport() {

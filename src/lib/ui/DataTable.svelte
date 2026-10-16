@@ -310,7 +310,12 @@
     outline-offset: 2px;
   }
 
+  /* #7 (2026-10-16): `isolation: isolate` keeps the sticky header/first-column z-indices (1-2,
+     below) INSIDE this box -- without it they competed with the Report pane's pinned footer
+     (z-index 1, Places.svelte) in the same stacking context, and the "Component" header cell
+     painted over Share / Download places. */
   .scroll-region {
+    isolation: isolate;
     overflow: auto;
     border: 1px solid var(--border-control);
     border-radius: var(--radius-control);

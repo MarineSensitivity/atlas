@@ -74,9 +74,43 @@ describe("reportAction: a single zone selection, no place list", () => {
     expect(action).toEqual({ kind: "chooser" });
   });
 
-  it("a CELL selection (not a zone) is not reportable -- falls through to the chooser", () => {
+  it("a CELL selection whose place token has not resolved yet falls through to the chooser", () => {
     const action = reportAction({ ...DEFAULT_SEL, pl: undefined, sel: "cell:123" }, "v9");
     expect(action).toEqual({ kind: "chooser" });
+  });
+
+  // #10 (2026-10-16): the footer said "Reporting on the last clicked place" while Open report
+  // stayed disabled for a clicked cell.
+  it("a CELL selection with its encoded place reports on that one cell, enabled", () => {
+    const cellPl = hashFromPlaces([{ kind: "geom", name: "Cell 123", geometry: SQUARE_GEOMETRY }])!;
+    const action = reportAction({ ...DEFAULT_SEL, pl: undefined, sel: "cell:123" }, "v7", cellPl);
+    expect(action.kind).toBe("open");
+    if (action.kind !== "open") throw new Error("unreachable");
+    expect(action.href).toBe(
+      `./report.html?ver=v7#pl=${encodeURIComponent(cellPl).replace(/%20/g, "+")}`,
+    );
+    expect(new URLSearchParams(action.href.split("#")[1]).get("pl")).toBe(cellPl);
+    expect(action.label).toBe("the last clicked cell (123)");
+    expect(reportOpenEnabled(action)).toBe(true);
+  });
+
+  it("an explicit place list still wins over a clicked cell's token", () => {
+    const pl = hashFromPlaces([{ kind: "zone", set: "pa", keys: ["GAA"] }]);
+    const cellPl = hashFromPlaces([{ kind: "geom", name: "Cell 123", geometry: SQUARE_GEOMETRY }])!;
+    const action = reportAction({ ...DEFAULT_SEL, pl, sel: "cell:123" }, "v7", cellPl);
+    if (action.kind !== "open") throw new Error("unreachable");
+    expect(action.label).toBe("the current place list");
+  });
+
+  it("a cell token is ignored when the selection is a zone (the zone branch reports)", () => {
+    const cellPl = hashFromPlaces([{ kind: "geom", name: "Cell 123", geometry: SQUARE_GEOMETRY }])!;
+    const action = reportAction(
+      { ...DEFAULT_SEL, pl: undefined, sel: "zone:programarea:GAA" },
+      "v7",
+      cellPl,
+    );
+    if (action.kind !== "open") throw new Error("unreachable");
+    expect(action.label).toBe("the selected Program Area (GAA)");
   });
 });
 

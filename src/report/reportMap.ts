@@ -315,6 +315,22 @@ export interface BuildReportMapStyleOptions {
   zoneGroups?: readonly ReportZoneGroup[];
 }
 
+/** CARTO's city, capital and town label layers (`place_city_r6`, `place_city_dot_z7`,
+ * `place_capital_dot_z7`, `place_town`, ... in both positron and dark-matter) -- short names at a
+ * point, the context a report map needs. Matched after `composeStyle()`'s `basemap-` id prefix. */
+const KEPT_LABEL_LAYER = /(?:^|-)place_(?:city|capital|town)/;
+
+/**
+ * The basemap layers the report map draws: every non-symbol layer, plus only the city/town label
+ * layers ({@link KEPT_LABEL_LAYER}). Country, state, continent, water and road names are dropped
+ * (R3-B11: their long text clipped at the fitted frame's edge).
+ */
+export function reportBasemapLayers<L extends { id: string; type: string }>(
+  layers: readonly L[],
+): L[] {
+  return layers.filter((l) => l.type !== "symbol" || KEPT_LABEL_LAYER.test(l.id));
+}
+
 /**
  * Composes the ONE style this map ever applies: `composeStyle()` (background + positron basemap,
  * theme-driven, `lib/map/style.ts`/`layers/basemap.ts` -- the app's own function, not a copy of
@@ -345,7 +361,10 @@ export async function buildReportMapStyle(opts: BuildReportMapStyleOptions): Pro
   // layer (the vector GL style's text labels; `composeStyle({zones:[]})` contributes no symbol
   // layers of its own here) removes the clipping failure mode entirely rather than padding around
   // it -- fills/lines/water/roads are all untouched, so the basemap still reads as a real map.
-  const baseLayers = base.layers.filter((l) => l.type !== "symbol");
+  // #8 (2026-10-16): dropping EVERY symbol layer also took the city labels, and a report map with
+  // no towns gives no sense of where a Program Area sits; `reportBasemapLayers()` keeps the short
+  // city/town labels and still drops the long toponyms that clipped.
+  const baseLayers = reportBasemapLayers(base.layers);
   const color =
     opts.domain && opts.paletteStops
       ? scoreColorExpression(opts.paletteStops, opts.domain)

@@ -1,3 +1,23 @@
+# atlas 0.10.92
+
+Fixes for the four bugs found during the Atlas cutover (#7–#10).
+
+- **A clicked cell can be reported on directly (#10).** The Report pane said "Reporting on the last clicked
+  place" while Open report stayed disabled for a cell (only a Program Area worked). Open report now opens a
+  one-place report on that cell's square (`Cell <id>`, the same place "Add to places" adds).
+- **Collapsing the Table brings the map legend back (#10).** A collapsed Table panel was still reported as
+  maximized, so the floating legend stayed hidden until another tool was opened.
+- **A cold `?tool=table` link loads the species table (#9)** instead of "Cannot read properties of null
+  (reading 'ver')": the table waited for nothing before building its data engine over a not-yet-loaded
+  release, and the engine no longer caches a build without one.
+- **The Report pane's results table no longer covers Share and Download places (#7).** Its sticky
+  "Component" header stacked above the pinned footer; the table's scroll box now keeps its own stacking.
+- **Report (#8):** the default title is "Marine Sensitivity Report" (it read "BOEM …" beside the Marine
+  Minerals Administration seal; the seal lockup names the agency); the species-counts table fits the page
+  (two-line `USA:EN` / `(100)` headers, tighter cells) instead of being cut at the right edge; and the report
+  map shows city and town labels again (state, country, ocean and road names stay off, they clipped at the
+  map edge).
+
 # atlas 0.10.91
 
 Old Shiny links land cleanly in the Atlas, and the tour's Table step shows what it says.

@@ -71,9 +71,11 @@ import type { SpeciesRow } from "../analysis/queries";
 
 export type { ReportComponent } from "./scores";
 
-/** the old report's own default (`apps/scores/app.R:1557`), kept so a link with no `#t=` reads the
- * same as the report it replaces. */
-export const DEFAULT_TITLE = "BOEM Marine Sensitivity Report";
+/** the title of a report whose link carries no `#t=`. #8 (2026-10-16): it used to be the old
+ * Shiny report's "BOEM Marine Sensitivity Report" (`apps/scores/app.R:1557`), which sat beside the
+ * Marine Minerals Administration seal after the rebrand. The agency is named once, by the header's
+ * lockup (`VITE_AGENCY`, `lib/ui/sealVisibility.ts`), so the default title names none. */
+export const DEFAULT_TITLE = "Marine Sensitivity Report";
 
 // ---- inputs --------------------------------------------------------------------------------
 

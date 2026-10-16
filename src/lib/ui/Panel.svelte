@@ -24,6 +24,7 @@
     PANEL_RESIZE_STEP_FAST,
     PANEL_SIZE_MAX,
     PANEL_SIZE_MIN,
+    reportedPanelGeometry,
     savePanelGeometry,
     viewportBucket,
     type Dock,
@@ -103,7 +104,7 @@
   let mounted = false;
   function report() {
     mounted = true;
-    ongeometry?.({ ...geometry, maximized: fullStage });
+    ongeometry?.(reportedPanelGeometry(geometry, fullStage));
   }
   $effect(() => {
     void fullStage;
