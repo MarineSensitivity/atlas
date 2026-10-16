@@ -1,3 +1,16 @@
+# atlas 0.10.90
+
+A screenshot generator for the docs "Atlas user guide".
+
+- `npm run tour:guide` (`scripts/tour-guide.mjs`) walks the app's own guided tour with driver.js's Next
+  button and shoots every step, so each image shows the real highlight and popover. The step list is read
+  from `src/shell/tour.ts` (titles, texts, anchors cannot drift) and checked against the popover actually on
+  screen. It writes `atlas-{scores|species}-{nn}.png`, a `steps.json` in the shape the docs guide page
+  already reads (`app`, `app_key`, `n`, `title`, `text`, `selector`, `url`, `image`), and the homepage hero
+  images (`hero-scores.png`, `hero-species.png`, 1600x1000). It runs against the live site by default
+  (`--base` for a local preview) and fails loudly, naming the lens and step, if a popover or anchor never
+  appears or the map never settles. No app code changed; developer notes: `docs/tour-guide.md`.
+
 # atlas 0.10.89
 
 The map centres in the open area.
