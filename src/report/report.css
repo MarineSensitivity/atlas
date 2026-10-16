@@ -104,6 +104,25 @@ th.num {
   text-align: right;
 }
 
+/* #8 (2026-10-16): the species counts table carries up to eleven columns (Category, eight
+   extinction-risk categories, Total) and was ~170 px wider than the report column -- cut at the
+   right edge. Two-line headers (`USA:EN` over `(100)`, Report.svelte) plus tighter cells make it
+   fit the 896 px report width, so it neither scrolls on screen nor clips in print. */
+.counts-table th,
+.counts-table td {
+  padding: 0.3rem 0.4rem;
+}
+
+.counts-table thead th {
+  vertical-align: bottom;
+  line-height: 1.2;
+}
+
+.counts-table .er-weight {
+  font-weight: normal;
+  color: var(--text-secondary, #55606f);
+}
+
 /* P4 follow-up (owner report, 0.10.43): a footnote's <sup> marker (Report.svelte's Table of
    Scores cell: `{score} {#each cell.footnotes...}<sup>{id}</sup>{/each}`) sat one whitespace text
    node away from the score, so in a narrow numeric column the browser could break the line right

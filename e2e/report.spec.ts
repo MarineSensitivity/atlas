@@ -38,7 +38,7 @@ test.describe("report.html renders zone places from boot.json", () => {
   }) => {
     await gotoReport(page, { ver: "v9", preview: true });
 
-    await expect(page.locator("h1")).toHaveText("BOEM Marine Sensitivity Report");
+    await expect(page.locator("h1")).toHaveText("Marine Sensitivity Report");
     await expect(page.locator(".report-chip")).toHaveText("v9 · prerelease · restricted");
 
     // the Table of Scores: one row per place, in submission order, Overall = plain mean of the

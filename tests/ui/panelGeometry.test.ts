@@ -6,6 +6,7 @@ import {
   PANEL_SIZE_MAX,
   PANEL_SIZE_MIN,
   panelStorageKey,
+  reportedPanelGeometry,
   savePanelGeometry,
   viewportBucket,
 } from "../../src/lib/ui/panelGeometry";
@@ -177,5 +178,27 @@ describe("panel geometry persistence (chrome only, per viewport size, never the 
     expect(() =>
       savePanelGeometry(throwing, "layers", "desktop", DEFAULT_PANEL_GEOMETRY),
     ).not.toThrow();
+  });
+});
+
+describe("reportedPanelGeometry: maximized is derived from the full-stage tool (R4-B)", () => {
+  it("an open full-stage tool (Table) is maximized", () => {
+    const g = reportedPanelGeometry({ ...DEFAULT_PANEL_GEOMETRY, collapsed: false }, true);
+    expect(g.maximized).toBe(true);
+  });
+
+  // #10 follow-up: collapsing the Table left the floating legend hidden
+  it("a COLLAPSED full-stage tool is not maximized (the legend comes back)", () => {
+    const g = reportedPanelGeometry({ ...DEFAULT_PANEL_GEOMETRY, collapsed: true }, true);
+    expect(g.maximized).toBe(false);
+  });
+
+  it("a docked tool is never maximized, open or collapsed", () => {
+    expect(
+      reportedPanelGeometry({ ...DEFAULT_PANEL_GEOMETRY, collapsed: false }, false).maximized,
+    ).toBe(false);
+    expect(
+      reportedPanelGeometry({ ...DEFAULT_PANEL_GEOMETRY, collapsed: true }, false).maximized,
+    ).toBe(false);
   });
 });

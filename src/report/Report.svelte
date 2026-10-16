@@ -51,6 +51,7 @@
   import WaveHexMark from "../lib/brand/WaveHexMark.svelte";
   import type { DataEngineContext } from "../places/dataEngine";
   import type { PlaceStub } from "../lib/report/model";
+  import { erColumnParts } from "../lib/report/er";
 
   // ---- window.__early (report.html's own copy of index.html's inline early-fetch script) -----
   interface Early {
@@ -849,6 +850,7 @@
             use:scrollAffordance={{ onOverflow: (v) => setCountsOverflow(i, v) }}
           >
             <table
+              class="counts-table"
               aria-labelledby={`species-counts-caption-${i}`}
               aria-describedby={`species-summary-${i}`}
             >
@@ -856,7 +858,12 @@
                 <tr>
                   <th scope="col">Category</th>
                   {#each species.counts.columns as col (col)}
-                    <th scope="col" class="num">{col}</th>
+                    {@const parts = erColumnParts(col)}
+                    <th scope="col" class="num" aria-label={col}
+                      >{parts.code}{#if parts.weight}<br /><span class="er-weight"
+                          >{parts.weight}</span
+                        >{/if}</th
+                    >
                   {/each}
                   <th scope="col" class="num">Total</th>
                 </tr>

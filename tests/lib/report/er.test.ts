@@ -2,7 +2,12 @@
 // ARM of the R `case_when`, so a typo shows up as exactly the arm that changed rather than as a
 // broad diff in the big R-fixture gate (CLAUDE.md: "many small fixtures, one per rule/branch").
 import { describe, expect, it } from "vitest";
-import { ER_CAT_ORDER, erConsolidate, speciesCounts } from "../../../src/lib/report/er";
+import {
+  ER_CAT_ORDER,
+  erColumnParts,
+  erConsolidate,
+  speciesCounts,
+} from "../../../src/lib/report/er";
 
 describe("erConsolidate -- one case per arm of report_area_child.qmd:47-56", () => {
   it.each([
@@ -90,5 +95,21 @@ describe("speciesCounts", () => {
     expect(c.rows).toEqual([]);
     expect(c.totalRow).toEqual({ counts: [], total: 0 });
     expect(c.nSpecies).toBe(0);
+  });
+});
+
+describe("erColumnParts: the counts table's two-line header (#8)", () => {
+  it("splits every ER_CAT_ORDER label into its code and its (weight)", () => {
+    expect(erColumnParts("USA:EN(100)")).toEqual({ code: "USA:EN", weight: "(100)" });
+    expect(erColumnParts("IUCN:NT(2)")).toEqual({ code: "IUCN:NT", weight: "(2)" });
+    expect(erColumnParts("other(1)")).toEqual({ code: "other", weight: "(1)" });
+    for (const col of ER_CAT_ORDER) {
+      const { code, weight } = erColumnParts(col);
+      expect(`${code}${weight}`).toBe(col);
+    }
+  });
+
+  it("a label without a trailing (n) is left whole", () => {
+    expect(erColumnParts("Total")).toEqual({ code: "Total", weight: null });
   });
 });

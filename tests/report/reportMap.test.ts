@@ -300,6 +300,23 @@ describe("buildReportMapStyle: the basemap's own place-name labels are dropped",
       layers: [
         { id: "water", type: "fill", source: "carto", "source-layer": "water", paint: {} },
         { id: "roads", type: "line", source: "carto", "source-layer": "roads", paint: {} },
+        // #8: CARTO's own city/town label layers are KEPT (a report map needs towns for context)
+        {
+          id: "place_city_r6",
+          type: "symbol",
+          source: "carto",
+          "source-layer": "place",
+          paint: {},
+        },
+        { id: "place_town", type: "symbol", source: "carto", "source-layer": "place", paint: {} },
+        { id: "place_state", type: "symbol", source: "carto", "source-layer": "place", paint: {} },
+        {
+          id: "watername_ocean",
+          type: "symbol",
+          source: "carto",
+          "source-layer": "water_name",
+          paint: {},
+        },
         {
           id: "place-label",
           type: "symbol",
@@ -312,7 +329,7 @@ describe("buildReportMapStyle: the basemap's own place-name labels are dropped",
     };
   }
 
-  it("keeps every non-symbol basemap layer, drops every basemap symbol layer, and still draws the report's OWN place-labels layer", async () => {
+  it("keeps every non-symbol basemap layer and the city/town labels, drops every other basemap symbol layer, and still draws the report's OWN place-labels layer", async () => {
     await loadBasemapStyle("paper", () =>
       Promise.resolve({
         ok: true,
@@ -332,7 +349,12 @@ describe("buildReportMapStyle: the basemap's own place-name labels are dropped",
     expect(ids).toContain("basemap-roads");
     expect(ids).not.toContain("basemap-place-label"); // the basemap's own symbol layer
     const symbolLayers = style.layers.filter((l) => l.type === "symbol");
-    // the ONLY symbol layer left is the report's own place labels, never a basemap one.
-    expect(symbolLayers.map((l) => l.id)).toEqual(["place-labels"]);
+    // the symbol layers left: CARTO's city + town labels (#8) and the report's own place labels;
+    // never a state, ocean or country name (R3-B11's clipping failure).
+    expect(symbolLayers.map((l) => l.id)).toEqual([
+      "basemap-place_city_r6",
+      "basemap-place_town",
+      "place-labels",
+    ]);
   });
 });

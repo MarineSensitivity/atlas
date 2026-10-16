@@ -103,7 +103,9 @@ function build(overrides: Partial<Parameters<typeof buildReport>[0]> = {}) {
 describe("header", () => {
   it("defaults to the old report's own title", () => {
     expect(build().header.title).toBe(DEFAULT_TITLE);
-    expect(DEFAULT_TITLE).toBe("BOEM Marine Sensitivity Report");
+    // #8: agency-neutral -- the seal lockup names the agency, never the default title
+    expect(DEFAULT_TITLE).toBe("Marine Sensitivity Report");
+    expect(DEFAULT_TITLE).not.toMatch(/BOEM|MMA/);
   });
 
   it("the release chip is ver · status · access", () => {
@@ -114,9 +116,7 @@ describe("header", () => {
     const h = build().header;
     expect(h.previewBanner).toBe("PREVIEW — not for citation or distribution");
     expect(h.filePrefix).toBe("PREVIEW_");
-    expect(h.fileStem).toBe(
-      "PREVIEW_MarineSensitivity_boem-marine-sensitivity-report_v9_2026-09-22",
-    );
+    expect(h.fileStem).toBe("PREVIEW_MarineSensitivity_marine-sensitivity-report_v9_2026-09-22");
   });
 
   it("a public release carries neither", () => {

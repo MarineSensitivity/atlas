@@ -120,3 +120,11 @@ export function savePanelGeometry(
     // chrome, not correctness -- see above
   }
 }
+
+/** What `Panel.svelte` reports to the shell: the stored geometry, with `maximized` DERIVED (R4-B) --
+ * true while a full-stage tool (Table) is OPEN. #10 follow-up (2026-10-16): a collapsed Table panel
+ * is only its pill, so it is not maximized; reporting it as maximized kept the floating legend
+ * hidden (`ScoresLegend.svelte` hides under a maximized panel) after the Table was collapsed. */
+export function reportedPanelGeometry(geometry: PanelGeometry, fullStage: boolean): PanelGeometry {
+  return { ...geometry, maximized: fullStage && !geometry.collapsed };
+}

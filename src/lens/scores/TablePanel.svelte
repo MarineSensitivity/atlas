@@ -174,6 +174,15 @@
 
   async function reload() {
     speciesError = null;
+    // #9 (2026-10-16): a cold `?tool=table` mounts this panel before the release's boot.json has
+    // resolved; loading then built the analysis engine over a `null` boot ("Cannot read properties
+    // of null (reading 'ver')"). Stay in the loading state -- the effect below re-runs when `boot`
+    // arrives.
+    if (!boot) {
+      speciesRows = undefined;
+      compositionRows = undefined;
+      return;
+    }
     if (!ver || unavailable || noSpeciesPublished) {
       speciesRows = null;
       compositionRows = null;

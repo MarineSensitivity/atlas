@@ -61,6 +61,9 @@ export function getAnalysisSources(
   ver: string,
   boot: Record<string, unknown>,
 ): Promise<AnalysisSourcesType> {
+  // #9: never build (and so never memoise) sources over a missing boot -- a promise cached for
+  // `ver` with `boot = null` would fail every later call for that release, even once boot arrived.
+  if (!boot) return Promise.reject(new Error("the release's boot.json has not loaded yet"));
   if (sourcesPromise && sourcesPromiseVer === ver) return sourcesPromise;
   // the boot this call supersedes (a real version switch, or `null` on the very first call) —
   // captured now, before `sourcesPromise` is overwritten below, and disposed only once the NEW

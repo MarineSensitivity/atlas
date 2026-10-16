@@ -802,6 +802,31 @@
     return () => document.removeEventListener("click", onDocClick);
   });
 
+  // #10 (2026-10-16): a clicked CELL encoded as a one-place `#pl=` token -- the same `Cell <id>`
+  // square "Add to places" appends -- so the Report pane's Open report can report on it without
+  // the user adding it first. Built here (not in the pure `reportAction()`) because the place
+  // codec is a lazy chunk; `null` until it resolves, or when the last click is not a cell.
+  let lastClickedCellPl = $state<string | null>(null);
+  $effect(() => {
+    const selection = lastClickedSelection;
+    const bootNow = boot;
+    if (selection?.kind !== "cell" || !bootNow) {
+      lastClickedCellPl = null;
+      return;
+    }
+    let stale = false;
+    void Promise.all([import("../lens/scores/lastClickedPlace"), loadPlacesModel()]).then(
+      ([{ placeFromLastClicked }, model]) => {
+        if (stale) return;
+        const place = placeFromLastClicked(selection, bootNow);
+        lastClickedCellPl = place ? (model.hashFromPlaces([place]) ?? null) : null;
+      },
+    );
+    return () => {
+      stale = true;
+    };
+  });
+
   async function onAddLastClicked() {
     const selection = lastClickedSelection;
     if (!selection) return;
@@ -2368,6 +2393,7 @@
             subject={reportSubject}
             lastClickedLabel={reportLastClickedLabel}
             {onAddLastClicked}
+            lastClickedPl={lastClickedCellPl}
           />
         {/if}
       {:else if sel.lens === "species" && (activeTool === "layers" || activeTool === "details")}

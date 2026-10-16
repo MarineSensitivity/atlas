@@ -39,6 +39,15 @@ export const ER_CAT_ORDER = [
 
 export type ErCategory = (typeof ER_CAT_ORDER)[number];
 
+/** #8 (2026-10-16): a counts column label split for its two-line header -- `"USA:EN(100)"` ->
+ * `{code: "USA:EN", weight: "(100)"}` -- so the table's eleven columns fit the report width
+ * instead of scrolling (on screen) or being cut (in print). The label itself is unchanged (the
+ * CSV and the R twin keep `"USA:EN(100)"`); a label without a trailing `(n)` is `weight: null`. */
+export function erColumnParts(col: string): { code: string; weight: string | null } {
+  const m = /^(.*?)(\(\d+\))$/.exec(col);
+  return m ? { code: m[1]!, weight: m[2]! } : { code: col, weight: null };
+}
+
 const USA_AUTHORITIES = new Set(["FWS", "NMFS"]);
 
 /**

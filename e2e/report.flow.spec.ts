@@ -92,7 +92,7 @@ test.describe("Report: a zone selected on the map", () => {
     expect(reportPage.url()).toContain(
       `#pl=${hashFromPlaces([{ kind: "zone", set: "pa", keys: ["GAA"] } satisfies ZonePlace])}`,
     );
-    await expect(reportPage.locator("h1")).toHaveText("BOEM Marine Sensitivity Report");
+    await expect(reportPage.locator("h1")).toHaveText("Marine Sensitivity Report");
     await expect(reportPage.locator(".progress-line").first()).toContainText("Done", {
       timeout: 15_000,
     });

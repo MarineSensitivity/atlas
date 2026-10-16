@@ -713,7 +713,7 @@ test.describe("step 3: open the report and export it", () => {
 
     expect(reportPage.url()).toMatch(/report\.html/);
     expect(reportPage.url()).toContain("#pl=");
-    await expect(reportPage.locator("h1")).toHaveText("BOEM Marine Sensitivity Report");
+    await expect(reportPage.locator("h1")).toHaveText("Marine Sensitivity Report");
     // a ZONE place needs no engine at all -- its scores are `boot.zones[*].metrics`, read verbatim
     // (the same reason e2e/report.spec.ts's first fixture tier runs under `blockWasm()`), so the
     // document completes here even though this walk blocks DuckDB throughout.
@@ -797,7 +797,7 @@ test.describe("step 3: open the report and export it", () => {
 
     await page.waitForURL(/report\.html/);
     expect(page.url()).toContain("pl=");
-    await expect(page.locator("h1")).toHaveText("BOEM Marine Sensitivity Report");
+    await expect(page.locator("h1")).toHaveText("Marine Sensitivity Report");
   });
 
   // FIX LIST #4, FIXED: the report's progress/status line USED TO be

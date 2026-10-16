@@ -42,10 +42,20 @@ function zoneReportHash(unit: string, key: string): string | null {
  *    button opens for `sel.pl`).
  * 2. Otherwise, a single Program Area is selected on the map/table (`sel=zone:<unit>:<key>`) --
  *    report on that one zone, encoded the SAME `z.<set>.<key>` way "Report on selected" does.
- * 3. Otherwise, nothing to report on: the caller shows the chooser (pick a Program Area, or draw/
+ * 3. Otherwise, a single cell is selected (`sel=cell:<id>`) and the caller has already encoded it
+ *    as a place (`lastClickedPl`, the `g1` token of `placeFromLastClicked()`'s `Cell <id>` square --
+ *    the SAME place "Add to places" appends): report on that one cell. #10 (2026-10-16): the footer
+ *    said "Reporting on the last clicked place" while Open report stayed disabled for a cell. The
+ *    token is passed in because building it needs the place codec, which loads lazily; until it
+ *    resolves the cell falls through to the chooser.
+ * 4. Otherwise, nothing to report on: the caller shows the chooser (pick a Program Area, or draw/
  *    upload) instead of a dead button (docs/usability.md M1's proposed fix, "Ben's items").
  */
-export function reportAction(sel: Pick<Sel, "pl" | "t" | "sel">, ver: string | null): ReportAction {
+export function reportAction(
+  sel: Pick<Sel, "pl" | "t" | "sel">,
+  ver: string | null,
+  lastClickedPl: string | null = null,
+): ReportAction {
   if (sel.pl) {
     return {
       kind: "open",
@@ -64,11 +74,18 @@ export function reportAction(sel: Pick<Sel, "pl" | "t" | "sel">, ver: string | n
       };
     }
   }
+  if (selection?.kind === "cell" && lastClickedPl) {
+    return {
+      kind: "open",
+      href: reportHref(reportHash(lastClickedPl, sel.t), ver),
+      label: `the last clicked cell (${selection.cellId})`,
+    };
+  }
   return { kind: "chooser" };
 }
 
 /** R4-D: the pinned "Open report" button is enabled exactly when `reportAction()` has somewhere to
- * go -- a place list, or a selected Program Area. With nothing selected it stays disabled (the
+ * go -- a place list, a selected Program Area, or (#10) a clicked cell. With nothing selected it stays disabled (the
  * footer sentence says "Add a place to open a report."), never a live button that does nothing. */
 export function reportOpenEnabled(action: ReportAction): boolean {
   return action.kind === "open";
