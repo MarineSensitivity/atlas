@@ -170,6 +170,7 @@
     placesFromHash as PlacesFromHashFn,
   } from "../places/model";
   import { lastClickedInPlaces, reportSubjects } from "../lib/state/subjects";
+  import { parseScoresSelection } from "../lens/scores/selection";
   // `lastClicked.ts`/`lastClickedPlace.ts` are BOTH reached only through a dynamic `import()`
   // (`lastClickedLabelFn`, below, and `onAddLastClicked()`'s own `import()`) -- `lastClicked.ts`
   // looks cheap on its own, but its transitive imports (`places/zoneStats.ts#paLabel` pulls in
@@ -806,9 +807,12 @@
   // square "Add to places" appends -- so the Report pane's Open report can report on it without
   // the user adding it first. Built here (not in the pure `reportAction()`) because the place
   // codec is a lazy chunk; `null` until it resolves, or when the last click is not a cell.
+  // Read from `sel.sel` itself, NOT the Scores-only `lastClickedSelection`: the footer sentence
+  // (`reportSubjects()`) reads `sel.sel` in either lens, and a selected Program Area already opens
+  // from the Species lens, so a clicked cell carried into the Species lens must open too (0.10.93).
   let lastClickedCellPl = $state<string | null>(null);
   $effect(() => {
-    const selection = lastClickedSelection;
+    const selection = parseScoresSelection(sel.sel);
     const bootNow = boot;
     if (selection?.kind !== "cell" || !bootNow) {
       lastClickedCellPl = null;
