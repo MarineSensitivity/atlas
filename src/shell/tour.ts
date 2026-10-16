@@ -16,6 +16,9 @@ export interface TourActions {
   setLens(lens: Lens): void;
   /** opens a rail tool's panel (Shell.svelte's own `selectTool`, reused verbatim). */
   selectTool(name: ToolName): void;
+  /** opens a specific tab of the Table tool (the panel opens on Species; the tour's "Table" step
+   * describes the ranked Program Areas, which is the Zones tab). */
+  selectTableTab(tab: "species" | "zones" | "composition"): void;
   /** captures the CURRENT lens/tool before the tour starts, so `restore()` can put them back --
    * the tour must leave the view exactly as it found it (CalCOFI's `src/tour.ts` pattern). */
   snapshot(): void;
@@ -39,7 +42,7 @@ export interface TourStep {
   before?: (a: TourActions) => void;
 }
 
-// --- Scores (8 steps, docs/usability.md §5 "Take a tour", Scores) --------------------------------
+// --- Scores (9 steps, docs/usability.md §5 "Take a tour", Scores) --------------------------------
 export const SCORES_TOUR_STEPS: TourStep[] = [
   {
     id: "map",
@@ -104,7 +107,11 @@ export const SCORES_TOUR_STEPS: TourStep[] = [
     side: "right",
     title: "Table",
     description: "Every Program Area ranked; tick some and report on them.",
-    before: (a) => a.selectTool("table"),
+    // the Table tool opens on its Species tab; the ranked, tickable Program Areas are the Zones tab
+    before: (a) => {
+      a.selectTableTab("zones");
+      a.selectTool("table");
+    },
   },
   {
     // R4-D: the Report tool is one flow with no sub-tabs; this step opens it and points at its
@@ -180,6 +187,39 @@ export const SPECIES_TOUR_STEPS: TourStep[] = [
     description: "Switch to Scores to see how this species contributes.",
   },
 ];
+
+/**
+ * Resolve once a step's anchor exists, after at least `settleMs`: a fixed 250 ms beat is enough for
+ * a rail tool that is already loaded, but not for one whose pane is a lazy chunk (the Report pane
+ * behind the "Places" step): driver.js resolves a step's element synchronously when it advances, and
+ * an anchor that has not mounted yet gives a popover floating with NO highlight. Polls every
+ * `pollMs` up to `maxMs`, then resolves anyway (a missing anchor must not freeze the tour; the
+ * e2e walk and tour-guide script assert the anchor separately). Pure: `exists` and `sleep` are
+ * injected, so it is testable without a DOM or timers.
+ */
+export async function waitForAnchor(
+  exists: () => boolean,
+  opts: {
+    settleMs?: number;
+    pollMs?: number;
+    maxMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<boolean> {
+  const { settleMs = 0, pollMs = 50, maxMs = 4000 } = opts;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let waited = 0;
+  if (settleMs > 0) {
+    await sleep(settleMs);
+    waited += settleMs;
+  }
+  while (!exists()) {
+    if (waited >= maxMs) return false;
+    await sleep(pollMs);
+    waited += pollMs;
+  }
+  return true;
+}
 
 export function tourStepsForLens(lens: Lens): TourStep[] {
   return lens === "species" ? SPECIES_TOUR_STEPS : SCORES_TOUR_STEPS;

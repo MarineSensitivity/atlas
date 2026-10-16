@@ -34,6 +34,7 @@
   import { hashFromPlaces, placesFromHash, zoneSetForUnit } from "../../places/model";
   import { paLabel } from "../../places/zoneStats";
   import { reportSubjects } from "../../lib/state/subjects";
+  import { tableTabRequest, takeTableTabRequest } from "../../shell/tableTab.svelte";
 
   // `Composition.svelte` is loaded via a DYNAMIC `import()`, never a static one, even though it
   // contains no forbidden-marker text itself: it is what dynamically imports `Treemap.svelte`, and
@@ -87,6 +88,14 @@
   }: Props = $props();
 
   let subTab = $state<"species" | "zones" | "composition">("species");
+  // the guided tour's "Table" step asks for the Zones tab (the ranked Program Areas it describes);
+  // a request made before this panel mounted is applied on mount, one made while it is open, when
+  // it arrives. Consumed, so it never steers a later open.
+  $effect(() => {
+    if (tableTabRequest.tab === null) return;
+    const tab = takeTableTabRequest();
+    if (tab) subTab = tab;
+  });
   let glossaryOpen = $state(false);
 
   const allKey = $derived(zoneAllKey(boot));

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatSel, hasViewState, parseSel, type UrlLike } from "../../src/lib/state/codec";
+import {
+  formatSel,
+  hasViewState,
+  isDeepLink,
+  parseSel,
+  type UrlLike,
+} from "../../src/lib/state/codec";
 import {
   DEFAULT_OUT_BY_LENS,
   DEFAULT_SEL,
@@ -32,6 +38,23 @@ describe("formatSel: emits ONLY non-default fields (the seeded fault: a default 
     const sel: Sel = { ...DEFAULT_SEL, pal: "viridis" };
     sel.pal = DEFAULT_SEL.pal;
     expect(formatSel(sel).search).toBe("");
+  });
+});
+
+describe("formatSel never writes the literal 'undefined' (regression: legacy mdl_seq link -> rep=undefined)", () => {
+  it("an undefined field that has a default is the default, so it is omitted", () => {
+    const sel = {
+      ...parseSel({ search: "?sp=ms_merge%7CWORMS:137209", hash: "" }),
+      rep: undefined,
+      in: undefined,
+      us: undefined,
+      pal: undefined,
+      theme: undefined,
+    } as unknown as Sel;
+    const { search, hash } = formatSel(sel);
+    expect(search).not.toContain("undefined");
+    expect(hash).not.toContain("undefined");
+    expect(search).toBe("?sp=ms_merge%7CWORMS:137209");
   });
 });
 
@@ -631,5 +654,33 @@ describe("hasViewState — WelcomeModal.svelte's 'is this a deep link' check (M5
   it("an unrecognized/malformed query string still resolves to false, never throws", () => {
     expect(() => hasViewState({ search: "?bogus=xyz&also=nope", hash: "" })).not.toThrow();
     expect(hasViewState({ search: "?bogus=xyz&also=nope", hash: "" })).toBe(false);
+  });
+});
+
+describe("isDeepLink — a recognised ?tool= suppresses the Welcome modal (regression: ?tool=report was covered by it)", () => {
+  it.each(["layers", "details", "table", "report", "flower", "places"])(
+    "?tool=%s alone is a deep link",
+    (tool) => {
+      expect(hasViewState({ search: `?tool=${tool}`, hash: "" })).toBe(false); // not a Sel field
+      expect(isDeepLink({ search: `?tool=${tool}`, hash: "" })).toBe(true);
+    },
+  );
+
+  it("a malformed tool= and the bare default URL are not deep links", () => {
+    expect(isDeepLink({ search: "?tool=nope", hash: "" })).toBe(false);
+    expect(isDeepLink(EMPTY)).toBe(false);
+  });
+
+  it("everything hasViewState counts still counts", () => {
+    expect(isDeepLink({ search: "?sel=cell:123", hash: "" })).toBe(true);
+    expect(isDeepLink({ search: "", hash: "#pl=z.pa.GAA" })).toBe(true);
+  });
+});
+
+describe("legacy splash=false: rewritten to tour=off, never kept as splash", () => {
+  it("the canonical URL drops splash and keeps tour=off (the visitor asked for no welcome)", () => {
+    const { search } = formatSel(parseSel({ search: "?lens=species&splash=false", hash: "" }));
+    expect(search).not.toContain("splash");
+    expect(search).toContain("tour=off");
   });
 });

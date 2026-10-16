@@ -8,6 +8,7 @@ import {
   notFoundReasons,
   resolveDeepLink,
   resolveFromAlias,
+  settleUs,
   targetOf,
   type DeepLinkEvent,
 } from "../../../src/lens/species/data/resolve";
@@ -122,10 +123,49 @@ describe("a non-US target turns the US-only box off", () => {
     expect([r.sp, r.in, r.clearUs]).toEqual([WRYBILL, "bl", true]);
   });
 
-  it("without the index loaded yet, an unknown validity clears the box rather than hiding the taxon", () => {
+  it("without the index loaded yet, validity is UNDECIDED (null), never 'clear US-only' (regression: legacy link wrote us=0)", () => {
     const r = resolveFromAlias("k", { mergedKey: "m", dsKey: "am" }, null);
     if (r.kind !== "species") throw new Error(r.kind);
-    expect(r.clearUs).toBe(true);
+    expect(r.clearUs).toBeNull();
+    const cur = parseSel({ search: "", hash: "" });
+    // undecided keeps the URL's own `us` (default true), exactly as a searched species does
+    expect(targetOf(r, cur)?.us).toBe(true);
+    expect(targetOf(r, { ...cur, us: false })?.us).toBe(false);
+  });
+
+  it("settleUs decides once the index is in: US-valid keeps the box, non-US clears it, unknown-to-index clears it", () => {
+    const un = resolveFromAlias("k", { mergedKey: LEATHERBACK, dsKey: "ms_merge" }, null);
+    const us = settleUs(un, taxaIndexFor("v9"));
+    if (us.kind !== "species") throw new Error(us.kind);
+    expect(us.clearUs).toBe(false);
+    const non = settleUs(
+      resolveFromAlias("k", { mergedKey: WRYBILL, dsKey: "ms_merge" }, null),
+      taxaIndexFor("v9"),
+    );
+    if (non.kind !== "species") throw new Error(non.kind);
+    expect(non.clearUs).toBe(true);
+    const gone = settleUs(
+      resolveFromAlias("k", { mergedKey: "ms_merge|nope", dsKey: "ms_merge" }, null),
+      taxaIndexFor("v9"),
+    );
+    if (gone.kind !== "species") throw new Error(gone.kind);
+    expect(gone.clearUs).toBe(true);
+    // index still unavailable (load failed): stays undecided
+    expect(settleUs(un, null)).toMatchObject({ clearUs: null });
+  });
+
+  it("a legacy mdl_seq link's canonical URL never contains 'undefined' and never us=0 for a US species", async () => {
+    const r = await resolveDeepLink("v9", new URLSearchParams(`mdl_key=${LEATHERBACK}`), {
+      ...opts(),
+      index: null,
+    });
+    if (r.kind !== "species") throw new Error(r.kind);
+    const loc = { search: "?ver=v9&lens=species&mdl_seq=54247&splash=false", hash: "" };
+    const t = targetOf(settleUs(r, taxaIndexFor("v9")), parseSel(loc))!;
+    const { search } = canonicalUrl(loc, t);
+    expect(search).not.toContain("undefined");
+    expect(search).not.toContain("us=0");
+    expect(search).not.toContain("rep=");
   });
 });
 
