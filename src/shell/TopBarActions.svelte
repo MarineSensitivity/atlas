@@ -280,7 +280,7 @@
   class="tool topbar-phone-only"
   data-tour="more"
   data-control="more-menu"
-  aria-label="More: Share, Download, Report, Feedback, About, Take a tour, Docs, Theme"
+  aria-label="More: Share, Download, Feedback, About, Take a tour, Docs, Theme"
   aria-haspopup="menu"
   aria-expanded={moreOpen}
   bind:this={moreTriggerEl}

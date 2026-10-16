@@ -16,7 +16,7 @@
 // click (`onDestroyed`).
 import { driver, type Driver } from "driver.js";
 import "driver.js/dist/driver.css";
-import type { TourActions, TourStep } from "./tour";
+import { waitForAnchor, type TourActions, type TourStep } from "./tour";
 
 /** ms to wait after a `before()` hook runs, for Svelte's reactive DOM update to land before
  * driver.js resolves the next step's `element` selector -- the same number CalCOFI's tour uses. */
@@ -34,6 +34,14 @@ export interface TourCallbacks {
 /** starts the tour over `steps`, driving `actions` for each step's `before()` hook. Returns the
  * live `Driver` (also stashed on `window.__tourDriver` by the caller, the same automation seam
  * CalCOFI's `verify.mjs` uses) so a caller/e2e test can step it directly if it ever needs to. */
+/** run `go` once `step`'s anchor is in the DOM (after the settle beat when the step has a
+ * `before()`); see `waitForAnchor` for why a fixed delay alone is not enough. */
+function anchorThen(step: TourStep, go: () => void): Promise<void> {
+  return waitForAnchor(() => !!document.querySelector(step.element), {
+    settleMs: step.before ? BEFORE_SETTLE_MS : 0,
+  }).then(go);
+}
+
 export function startTour(
   steps: TourStep[],
   actions: TourActions,
@@ -66,14 +74,14 @@ export function startTour(
         return;
       }
       next.before?.(actions);
-      setTimeout(() => opts.driver.moveNext(), next.before ? BEFORE_SETTLE_MS : 0);
+      void anchorThen(next, () => opts.driver.moveNext());
     },
     onPrevClick: (_el, _step, opts) => {
       const i = opts.driver.getActiveIndex() ?? 0;
       const prev = steps[i - 1];
       if (!prev) return;
       prev.before?.(actions);
-      setTimeout(() => opts.driver.movePrevious(), prev.before ? BEFORE_SETTLE_MS : 0);
+      void anchorThen(prev, () => opts.driver.movePrevious());
     },
     onDestroyed: (_el, _step, opts) => {
       const i = opts.driver.getActiveIndex() ?? 0;
@@ -85,6 +93,7 @@ export function startTour(
 
   const first = steps[0];
   first?.before?.(actions);
-  setTimeout(() => d.drive(), first?.before ? BEFORE_SETTLE_MS : 0);
+  if (first) void anchorThen(first, () => d.drive());
+  else d.drive();
   return d;
 }

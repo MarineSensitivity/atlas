@@ -100,7 +100,21 @@ test.describe("every step's anchor actually exists on the lens it belongs to", (
       expect(exists, `step "${step.id}"'s anchor (${step.element}) must exist in the DOM`).toBe(
         true,
       );
+      // the highlight must be the step's own anchor, not driver.js's floating dummy element (what it
+      // falls back to when the anchor had not mounted as it advanced -- the Places step once did)
+      await page.waitForFunction(
+        (sel) => {
+          const hit = document.querySelector(".driver-active-element");
+          return !!hit && hit === document.querySelector(sel);
+        },
+        step.element,
+        { timeout: 15_000 },
+      );
       if (i < steps.length - 1) {
+        // a beat, as a person takes: a Next click while driver.js is still finishing this step's
+        // highlight leaves the NEXT step's popover up with no highlight (measured, scripts/tour-guide.mjs
+        // waits the same 500 ms before advancing)
+        await page.waitForTimeout(500);
         await page.locator(".driver-popover-next-btn").click();
       }
     }

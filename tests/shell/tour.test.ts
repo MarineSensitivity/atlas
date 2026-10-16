@@ -7,6 +7,7 @@ import {
   SCORES_TOUR_STEPS,
   SPECIES_TOUR_STEPS,
   tourStepsForLens,
+  waitForAnchor,
   type TourActions,
 } from "../../src/shell/tour";
 
@@ -184,5 +185,63 @@ describe("anchors are attribute selectors, not bare tags or classes", () => {
     for (const step of [...SCORES_TOUR_STEPS, ...SPECIES_TOUR_STEPS]) {
       expect(step.element, step.id).toMatch(/\[data-(tour|testid)="[a-z0-9-]+"\]/);
     }
+  });
+});
+
+describe("waitForAnchor: a step advances only once its anchor has mounted (the Places step floated with no highlight)", () => {
+  const fakeSleep = () => {
+    const slept: number[] = [];
+    return { slept, sleep: async (ms: number) => void slept.push(ms) };
+  };
+
+  it("resolves true after the settle beat when the anchor is already there", async () => {
+    const f = fakeSleep();
+    expect(await waitForAnchor(() => true, { settleMs: 250, sleep: f.sleep })).toBe(true);
+    expect(f.slept).toEqual([250]);
+  });
+
+  it("keeps polling until a lazily mounted anchor appears", async () => {
+    const f = fakeSleep();
+    let calls = 0;
+    const ok = await waitForAnchor(() => ++calls > 3, {
+      settleMs: 250,
+      pollMs: 50,
+      sleep: f.sleep,
+    });
+    expect(ok).toBe(true);
+    expect(f.slept).toEqual([250, 50, 50, 50]);
+  });
+
+  it("gives up after maxMs and reports false (never freezes the tour)", async () => {
+    const f = fakeSleep();
+    expect(await waitForAnchor(() => false, { maxMs: 200, pollMs: 50, sleep: f.sleep })).toBe(
+      false,
+    );
+    expect(f.slept.reduce((a, b) => a + b, 0)).toBe(200);
+  });
+});
+
+describe("TopBarActions: the phone ⋯ button's aria-label names exactly the menu's items", () => {
+  it("lists no Report entry (the menu has none) and every item label's leading word", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(
+      new URL("../../src/shell/TopBarActions.svelte", import.meta.url),
+      "utf8",
+    );
+    const label = /aria-label="More: ([^"]+)"/.exec(src)?.[1] ?? "";
+    const listed = label.split(", ");
+    expect(listed).not.toContain("Report");
+    const menu = [...src.matchAll(/\{ label: "([^"]+)", icon:/g)].map((m) => m[1].replace("…", ""));
+    // Share, Download, Feedback, About this release, Take a tour, Docs (+ the theme toggle)
+    for (const l of menu) expect(listed.some((x) => l.startsWith(x))).toBe(true);
+    expect(listed).toEqual([
+      "Share",
+      "Download",
+      "Feedback",
+      "About",
+      "Take a tour",
+      "Docs",
+      "Theme",
+    ]);
   });
 });

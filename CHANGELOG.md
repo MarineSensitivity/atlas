@@ -15,6 +15,10 @@ Old Shiny links land cleanly in the Atlas, and the tour's Table step shows what 
   shows the modal. `splash=false` on an old link is rewritten to `tour=off` (the visitor asked for no welcome)
   and the `splash` key itself is dropped; `tour=off` stays in the address bar on purpose, so a shared link
   keeps suppressing the welcome.
+- **The tour no longer shows a popover floating with no highlight.** A step now waits until its anchor is in
+  the page before it appears (the "Places" step's Report pane is a lazy chunk and could miss the old fixed
+  250 ms beat on a slow connection).
+- The phone ⋯ button's accessible name no longer lists a Report item the menu does not have.
 - **The tour's "Table" step opens the Zones tab**, the ranked list of Program Areas with tick boxes that its
   text ("Every Program Area ranked; tick some and report on them") describes, instead of the Species tab.
 

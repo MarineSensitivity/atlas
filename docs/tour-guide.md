@@ -16,7 +16,7 @@ npm run tour:guide -- --out /path/to/docs/figures/atlas-guide
   step ids come from `src/shell/tour.ts`; add or reword a step there and re-run, nothing else to edit. The
   species tour needs a species on screen, `--species` (default `54247`, the v7 Humpback Whale).
 - **Outputs** in `--out`: `atlas-scores-01.png` ... `atlas-species-05.png`, `steps.json`
-  (`image` = `/figures/atlas-guide/<file>`; `url` = a deep link that reproduces the step, with `ui=` for a
+  (`image` = `/figures/atlas-guide/<file>`; `atlas_version` / `release` / `captured` = the build the page reported, the release it showed and the date, read from the page itself; `url` = a deep link that reproduces the step, with `ui=` for a
   rail tool), `hero-scores.png` (panel collapsed), `hero-scores-default.png`, `hero-species.png`
   (1600x1000).
 - **Failure is loud**: the run exits non-zero naming the lens and step if the popover never shows the step's

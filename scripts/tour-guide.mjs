@@ -10,7 +10,8 @@
 // highlight + popover exactly as a user sees it. For each step it writes
 //   {out}/atlas-{scores|species}-{nn}.png
 // and one {out}/steps.json -- the manifest shape the docs repo's guide page already reads
-// (docs/figures/apps-guide/steps.json): [{app, app_key, n, title, text, selector, url, image}].
+// (docs/figures/apps-guide/steps.json): [{app, app_key, n, title, text, selector, url, image}] plus provenance
+// (atlas_version, release, captured) on every entry.
 // Unless --no-hero it also writes {out}/hero-scores.png and {out}/hero-species.png (1600x1000) for
 // the homepage, and hero-scores-default.png (the same view with the panel left open).
 //
@@ -175,6 +176,47 @@ async function newPage(browser, o, vp) {
   return { ctx, page };
 }
 
+// --- provenance --------------------------------------------------------------------------------------
+/** the build and release the page actually is, read from the page itself (never from this checkout):
+ * the version chip's text must name `--ver`, and the app version comes from the Feedback link's own
+ * prefilled body ("App version: 0.10.90 (01bc07a)"), which the shell builds from `__APP_VERSION__`. */
+async function readProvenance(page, o, lens) {
+  const chip = page.locator('[data-tour="version-chip"]').first();
+  try {
+    await chip.waitFor({ state: "visible", timeout: 45_000 });
+  } catch {
+    fail(`${lens}: the version chip never appeared (cannot record provenance)`);
+  }
+  // the chip's version text lands a moment after the chip itself (species lens: not yet on first
+  // paint), so wait for it rather than read once
+  try {
+    await page.waitForFunction(
+      ([ver]) => {
+        const t = document.querySelector('[data-tour="version-chip"]')?.textContent ?? "";
+        return new RegExp(`\\b${ver}\\b`).test(t);
+      },
+      [o.ver],
+      { timeout: 20_000 },
+    );
+  } catch {
+    const seen = (await chip.innerText().catch(() => "")).trim();
+    fail(`${lens}: the page shows release "${seen}", not ${o.ver}`);
+  }
+  const href = await page
+    .locator('a[href*="issues/new"]')
+    .first()
+    .getAttribute("href", { timeout: 20_000 })
+    .catch(() => null);
+  const body = href ? (new URL(href).searchParams.get("body") ?? "") : "";
+  const m = /App version:\s*([^\n]+)/.exec(body);
+  if (!m) fail(`${lens}: could not read the app version from the Feedback link`);
+  return {
+    atlas_version: m[1].trim(),
+    release: o.ver,
+    captured: new Date().toISOString().slice(0, 10),
+  };
+}
+
 // --- the tour walk -----------------------------------------------------------------------------------
 async function shootLens(browser, o, lens, steps, manifest) {
   const label = lens === "scores" ? "Atlas — Scores lens" : "Atlas — Species lens";
@@ -188,6 +230,7 @@ async function shootLens(browser, o, lens, steps, manifest) {
   log(`${lens}: ${url}`);
   await page.goto(url, { waitUntil: "load", timeout: 90_000 });
 
+  const prov = await readProvenance(page, o, lens);
   const popover = page.locator(".driver-popover");
   try {
     await popover.waitFor({ state: "visible", timeout: 45_000 });
@@ -241,8 +284,31 @@ async function shootLens(browser, o, lens, steps, manifest) {
     const box = await anchor.boundingBox();
     if (!box || box.width < 4 || box.height < 4)
       fail(`${where}: anchor ${s.element} has no size (${JSON.stringify(box)})`);
-    if ((await page.locator(".driver-active-element").count()) === 0)
-      fail(`${where}: driver.js highlights nothing (no .driver-active-element)`);
+    // driver.js falls back to a floating dummy element when a step's anchor was not in the DOM at the
+    // moment it advanced (the "Places" step, whose Report pane is a lazy chunk): the popover is
+    // up but NOTHING is highlighted, and `.driver-active-element` still exists (on the dummy). So
+    // the highlighted element must BE the step's anchor, not merely exist.
+    try {
+      await page.waitForFunction(
+        (sel) => {
+          const hit = document.querySelector(".driver-active-element");
+          const want = document.querySelector(sel);
+          return !!hit && !!want && hit === want && hit.id !== "driver-dummy-element";
+        },
+        s.element,
+        { timeout: 10_000 },
+      );
+    } catch {
+      const hl = await page
+        .evaluate(() => {
+          const h = document.querySelector(".driver-active-element");
+          return h ? `${h.tagName.toLowerCase()}#${h.id}.${h.className}` : "(none)";
+        })
+        .catch(() => "(unreadable)");
+      fail(
+        `${where}: driver.js is not highlighting the anchor ${s.element} (highlighted: ${hl}) -- the popover would be floating with no highlight`,
+      );
+    }
 
     // 3. the map behind the popover is drawn and still, the popover not mid-animation
     await waitSettled(page, where);
@@ -261,6 +327,10 @@ async function shootLens(browser, o, lens, steps, manifest) {
       selector: s.element,
       url: deepLink(o, lens, s.id),
       image: `/figures/atlas-guide/${file}`,
+      // provenance: which build and release the picture shows, and when it was taken
+      atlas_version: prov.atlas_version,
+      release: prov.release,
+      captured: prov.captured,
     });
 
     // 4. advance with the tour's own button (its last step's button is "Done")
