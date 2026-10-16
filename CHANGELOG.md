@@ -1,3 +1,10 @@
+# atlas 0.10.93
+
+- **A clicked cell stays reportable after switching to the Species lens.** In 0.10.92 the Report footer
+  kept saying "Reporting on the last clicked place" there while Open report was disabled for a cell (a
+  selected Program Area already opened). The cell's report link is now built from the selection itself, in
+  either lens.
+
 # atlas 0.10.92
 
 Fixes for the four bugs found during the Atlas cutover (#7–#10).
