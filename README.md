@@ -1,83 +1,71 @@
 # atlas
 
-MarineSensitivity Atlas — one static web app for scores, species, places and reports over U.S.
-marine areas. Svelte 5 + Vite + TypeScript, no server component: the same build is meant to run
-under `https://marinesensitivity.org/atlas/` (public releases) and
-`https://preview.marinesensitivity.org/{ver}/atlas/` (a reviewer preview host, behind Cloudflare
-Access) with no code change between the two — see
-[`2026-09-20 atlas app plan.md`](../workflows/.claude/plans_todo/2026-09-20%20atlas%20app%20plan.md)
-for the full architecture and decisions, and [`CLAUDE.md`](./CLAUDE.md) for the rules that don't
-change phase to phase (relative URLs, URL-is-the-view, the size budget, the testing pyramid).
+The MarineSensitivity Atlas at https://marinesensitivity.org/atlas/ (reviewer previews at
+https://preview.marinesensitivity.org/{ver}/atlas/).
 
-**Status:** built and live at <https://marinesensitivity.org/atlas/> (GitHub Pages, published by CI
-after the fast checks job) and at `https://preview.marinesensitivity.org/{ver}/atlas/` for restricted
-releases. Round 2 (usability, 0.10.21 → 0.10.67, 2026-09-21..25) is complete: scores and species
-lenses, places (pick, draw, coordinates, upload incl. GeoPackage, share, GeoJSON download), the
-Program Area results panel, Scores search, a layer stack with a spatial-unit toggle, the flower plot
-with a reference ring, the client-side report with places painted by score and HTML/ZIP/DOCX
-exports, Send feedback (Sheet + email + GitHub issue), a usage beacon, and a service-health banner.
-`docs/status.md` is the board (live version, what landed, open items), `CHANGELOG.md` the per-version
-changes, `docs/parity.html` the parity page against the Shiny apps, and
-`../workflows/.claude/plans_todo/2026-09-25 atlas app plan, round 3.md` everything still open with
-evidence screenshots.
+Its code lives in [oceanmetrics/atlas](https://github.com/oceanmetrics/atlas) as the
+`marinesensitivity` instance (`instances/marinesensitivity/`); this repository only publishes it.
+`.github/workflows/pages.yml` builds oceanmetrics/atlas at the tag in `PIN` with that repository's
+reusable `build-instance.yml` and publishes the result to `gh-pages` (branch-based Pages, the same
+branch the preview host's sidecar pulls).
 
-**How a change lands** (see `CLAUDE.md` "Round-2 lessons"): a worktree branch with a reserved
-version; unit + build-invariant + Playwright gates and a seeded fault proving the new test can fail;
-eyes-on screenshots of the real build (`scripts/eyes-shots.mjs`) reviewed before the push; CI runs
-the three-engine suite, the gallery baselines and the whole seeded-fault suite on every push.
+## What is here
 
-## Getting started
+| file                          | what it is                                                              |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| `PIN`                         | the oceanmetrics/atlas tag the site is built from (`v0.5.0`)            |
+| `.github/workflows/pages.yml` | the one workflow: a pin check, then the reusable build and the publish  |
+| `feedback/`                   | the screenshots the in-app "Send feedback" commits (linked from issues) |
+| `CHANGELOG.md`                | this repository's versions (0.11.0 on is the thin repo)                 |
+| `LICENSE`                     | MIT                                                                     |
 
-```sh
-npm ci
-npm run dev        # http://localhost:5173
-```
+## How it builds
 
-| command                           | what it does                                                             |
-| --------------------------------- | ------------------------------------------------------------------------ |
-| `npm run dev`                     | Vite dev server                                                          |
-| `npm run build`                   | production build → `dist/`                                               |
-| `npm run preview`                 | serve `dist/` locally                                                    |
-| `npm run check`                   | svelte-check (type-checks inside `.svelte` files too)                    |
-| `npm test`                        | unit tests (vitest)                                                      |
-| `npm run e2e`                     | Playwright smoke spec, chromium + webkit + firefox                       |
-| `npm run lint` / `npm run format` | eslint / prettier                                                        |
-| `npm run size-budget`             | critical-path gzip budget + lazy-chunk check against a real build        |
-| `npm run tour:guide`              | screenshots of the guided tour for the docs guide (`docs/tour-guide.md`) |
+- **On a push to `main`** (or Actions -> Pages -> Run workflow on `main`) the `pin` job checks that
+  `PIN`, the `uses: ...@<tag>` line and the `ref: <tag>` input in `pages.yml` name one tag and that
+  the `VITE_GA_ID` variable is set, then `build-instance.yml` checks out oceanmetrics/atlas at that
+  tag, runs the instance's unit tests, builds with `VITE_INSTANCE=marinesensitivity`, holds the dist
+  to the instance's size budget and dist checks, and publishes it to `gh-pages` with this
+  repository's own `GITHUB_TOKEN` (no cross-org secret). The `gh-pages` commit message names the
+  oceanmetrics/atlas commit built.
+- **On a pull request** the same build runs without publishing.
+- Commits that touch only `feedback/` or Markdown do not build.
 
-See `CLAUDE.md` for what each of these actually enforces and why.
+## Repository variables
 
-## Runtime health detection
+Settings -> Secrets and variables -> Actions -> Variables. All public (they ship in the bundle).
 
-The app depends on two external services it does not control: the titiler-v8 tile server (every
-score/species raster) and the S3 data origin each release's own files are fetched from. `src/lib/
-health/` probes both and `src/lib/ui/HealthBanner.svelte` shows a dismissible top banner naming the
-failing host, what it breaks and what still works, with a Retry — added 2026-09-24 after titiler-v8
-was down for an hour and the live map kept rendering normally with no raster and no word to anyone.
+| variable                   | what it is                                                       |
+| -------------------------- | ---------------------------------------------------------------- |
+| `VITE_FEEDBACK_URL`        | the feedback Apps Script `/exec` URL                             |
+| `VITE_LOG_URL`             | the Sheet-log beacon URL                                         |
+| `VITE_PREVIEW_ATLAS_ROUTE` | `1` once the preview host serves `/{ver}/atlas/`                 |
+| `VITE_GA_ID`               | the GA4 measurement id, `G-9HW6L751XG`; the run fails when unset |
 
-**What it detects:** the tiler and data origin going unreachable or slow (checked once at boot, and
-again whenever a map tile actually fails to load with a real error — a 5xx, a network error, or a
-timeout; a 403/404 tile is a normal "this release has no data here" gap and is never reported). A
-manual Retry always re-checks immediately. It does not poll continuously while everything is fine.
+`VITE_SEAL: "1"` (the MMA seal) is set in `pages.yml` itself.
 
-**What it does NOT detect:** a partial outage (some tiles/objects failing, others not — a further
-real request may still surface it), degraded-but-200 responses (a tile that loads but paints wrong
-data), or a preview session's own restricted data prefix (the probe always checks the public bucket
-origin, not a signed-in `session.data` override — see `src/lib/health/services.ts`'s own note). It
-also cannot detect a failure in anything it does not probe — DuckDB-WASM's own parquet fetches,
-PMTiles zone archives, and the basemap are outside this module's scope.
+## Moving the pin
 
-## Repo layout
+A new oceanmetrics/atlas release (`vX.Y.Z`, tagged there after its gate) reaches marinesensitivity.org
+only when this repository moves to it: change the tag in `PIN`, in the `uses: ...@vX.Y.Z` line and in
+`ref: vX.Y.Z`, in one commit (a pull request builds it first). The `pin` job refuses a run where the
+three disagree. Going back is the same edit to the older tag.
 
-`index.html` (map) and `report.html` (print-first report) are the two build entries; `gallery.html`
-is reserved but not wired in. App code lives under `src/lib/` (by concern: `release`, `state`,
-`grid`, `geo`, `engine`, `raster`, `map`, `report`, `ui`, `brand`, `analytics`) and `src/lens/`
-(`scores`, `species`) and `src/places/`. `sql/` holds the DuckDB-WASM query twins of the `msens` R
-functions. `tests/` is unit tests + fixtures; `e2e/` is Playwright; `scripts/` is build/verification
-tooling; `docs/` and `spikes/` hold the design and de-risking-spike write-ups. Most of these are
-still empty placeholders (a lone `.gitkeep` note) — later plan phases (`atlas-1` through `atlas-9`)
-fill them in; see the plan's phase table for the order.
+## Feedback
 
-## License
+The in-app "Send feedback" files issues in this repository and commits each screenshot to `main`
+under `feedback/`; the issues link those files on `main`, so `feedback/` stays.
 
-[MIT](./LICENSE)
+## History and rollback
+
+The standalone atlas (Svelte source, tests, docs and CI, to 0.10.93) is the tag `v0.10.93` and the
+branch `archive/0.10.93` (`57d53be`).
+
+To go back to it:
+
+- **Revert the thin-repo merge** on `main` (`git revert -m 1 <merge>`): the old `pages.yml` returns
+  and its push rebuilds and republishes the 0.10.93 site; or
+- **Restore the tree** from the archive: `git checkout archive/0.10.93 -- .` on a branch from
+  `main`, commit, merge; or
+- **Republish the last 0.10.93 build** without a rebuild: reset `gh-pages` to its commit
+  `edf16b2` ("deploy: 57d53be...") and force-push it (Pages serves whatever `gh-pages` holds).

@@ -1,45 +1,7 @@
+# this repository holds no app source (it builds oceanmetrics/atlas, see README.md); these keep a
+# local checkout of the old 0.10.93 tree, or a stray build, out of a commit
 node_modules
 dist
-dist-fixture
-*.local
-.tmp
-
-# local overrides of .env.example (VITE_SEAL / VITE_AGENCY / VITE_SEAL_URL, atlas-3 plan D10) --
-# never committed; CI sets these directly in .github/workflows/pages.yml's build step instead.
 .env
 .env.local
-
-# vite / vitest / svelte-check
-.vite
-*.tsbuildinfo
-coverage
-
-# playwright
-/playwright-report/
-/test-results/
-/blob-report/
-/playwright/.cache/
-
-# editors, os
 .DS_Store
-.vscode/*
-!.vscode/extensions.json
-
-# parallel spike-agent worktrees (S1-S4), each a full checkout with its own node_modules — never
-# tracked, linted, formatted or type-checked from root
-.claude/worktrees/
-
-# DuckDB-WASM extension mirror (scripts/fetch-duckdb-extensions.mjs, atlas-2 Step 3): re-fetched from
-# extensions.duckdb.org, not committed — a real build must run the script before `vite build` (see
-# docs/engine.md)
-/public/duckdb-ext/
-
-# the parity harness's local stand-in for the release bucket (scripts/parity/mirror.mjs, atlas-2
-# Step 3b): symlinks into the atlas-contract dry-run bundles and ~/_big, plus one fetched
-# tables/model.parquet — rebuilt on demand, never committed
-/.parity-mirror/
-
-# quarto/editor render output of docs/*.md (never committed; the markdown is the source)
-docs/status.html
-docs/status_files/
-docs/*_files/

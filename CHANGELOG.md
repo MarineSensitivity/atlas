@@ -1,3 +1,15 @@
+# atlas 0.11.0
+
+- **Builds from oceanmetrics/atlas v0.5.0.** This repository no longer holds the app: the
+  MarineSensitivity Atlas is the `marinesensitivity` instance of
+  [oceanmetrics/atlas](https://github.com/oceanmetrics/atlas), and `.github/workflows/pages.yml` builds
+  it at the tag in `PIN` (`v0.5.0`) with that repository's reusable `build-instance.yml` and publishes
+  it to `gh-pages`, as before. `main` keeps `PIN`, the workflow, `README.md`, `LICENSE`, this file and
+  `feedback/`. The 0.10.93 source, tests and docs are the tag `v0.10.93` and the branch
+  `archive/0.10.93`.
+- The GA4 id is now the repository variable `VITE_GA_ID` (0.10.93 hard-coded it); `VITE_AGENCY` and
+  `VITE_SEAL_URL` are gone (the instance's `seal` block carries the agency and the image).
+
 # atlas 0.10.93
 
 - **A clicked cell stays reportable after switching to the Species lens.** In 0.10.92 the Report footer
