@@ -1,0 +1,1 @@
+import{s as e,u as t}from"./unwrap-uQM04uQy.js";var n=Math.PI/180*6371.0088;function r(e){let n=0,r=0;for(let i of t(e))for(let e of i)for(let[,t]of e)n+=t,r++;return r?n/r:0}function i(t){let i=e(t),a=n*Math.cos(r(t)*Math.PI/180);return i*n*Math.abs(a)}export{i as t};

@@ -1,0 +1,1 @@
+var e={MMA:`Marine Minerals Administration`,BOEM:`Bureau of Ocean Energy Management`};function t(t){return t?e[t]??null:null}function n(e,n){return e===`1`&&t(n)!==null}export{n,t};
