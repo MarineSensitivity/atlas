@@ -13,7 +13,7 @@ branch the preview host's sidecar pulls).
 
 | file                          | what it is                                                              |
 | ----------------------------- | ----------------------------------------------------------------------- |
-| `PIN`                         | the oceanmetrics/atlas tag the site is built from (`v0.5.0`)            |
+| `PIN`                         | the oceanmetrics/atlas tag the site is built from (`v0.6.0`)            |
 | `.github/workflows/pages.yml` | the one workflow: a pin check, then the reusable build and the publish  |
 | `feedback/`                   | the screenshots the in-app "Send feedback" commits (linked from issues) |
 | `CHANGELOG.md`                | this repository's versions (0.11.0 on is the thin repo)                 |

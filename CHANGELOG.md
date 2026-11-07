@@ -1,3 +1,9 @@
+# atlas 0.11.1
+
+- **Builds from oceanmetrics/atlas v0.6.0** (`PIN`): the Scores lens' national mode (`cmp=region|nation`)
+  draws the v10 and v11 across-the-nation score family from the bundle's `scope: "nation"` layers, with
+  the OBIS layer reads, the one publisher and `@oceanmetrics/map` 0.3.5 of that release.
+
 # atlas 0.11.0
 
 - **Builds from oceanmetrics/atlas v0.5.0.** This repository no longer holds the app: the
