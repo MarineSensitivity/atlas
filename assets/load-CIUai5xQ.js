@@ -1,0 +1,1 @@
+import"./categories-CPxFAoQ5.js";import{l as e}from"./instance-D10nBBbK.js";var t=[`oceanmetrics`,`obis`,`mst-v7`,`mst-v8`,`external`,`unlisted`],n=e=>t.includes(e),r=e.catalog.groups.filter(e=>n(e.id));Object.fromEntries(t.map(e=>[e,r.find(t=>t.id===e)?.label??e])),[...r.map(e=>e.id),...t.filter(e=>!r.some(t=>t.id===e))];

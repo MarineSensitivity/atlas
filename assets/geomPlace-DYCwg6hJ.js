@@ -1,0 +1,1 @@
+import{r as e}from"./placeCodec-Cisxq6P4.js";import{t}from"./analysisGeometry-DmADt-zn.js";function n(n,r){return{kind:`geom`,name:e(r.trim())||`Place`,geometry:t(n)}}export{n as t};
