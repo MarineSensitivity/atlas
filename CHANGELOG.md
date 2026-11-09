@@ -1,3 +1,10 @@
+# atlas 0.11.3
+
+- **Builds from oceanmetrics/atlas v0.6.0 again** (2026-11-09): the storage host now serves the gzip-encoded
+  bundle objects once-encoded with their header (R2 metadata re-copied; Worker `encodeBody: "manual"`,
+  om-places `e99ceea`), verified in Chromium for v7 and v11. Acceptance for this and every later pin: the
+  live Scores picker lists its layer groups.
+
 # atlas 0.11.2
 
 - **Rolled back to oceanmetrics/atlas v0.5.0** (2026-11-09): the v0.6.0 build reads the bundles through
