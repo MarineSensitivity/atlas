@@ -1,3 +1,10 @@
+# atlas 0.11.2
+
+- **Rolled back to oceanmetrics/atlas v0.5.0** (2026-11-09): the v0.6.0 build reads the bundles through
+  storage.oceanmetrics.io, whose Caddy re-encoded the gzip-encoded `boot.json`/`taxa.json` as zstd, so
+  the Scores and Species lenses showed no layers for any version. The pin returns to the direct-S3 build
+  until the storage host is fixed.
+
 # atlas 0.11.1
 
 - **Builds from oceanmetrics/atlas v0.6.0** (`PIN`): the Scores lens' national mode (`cmp=region|nation`)
