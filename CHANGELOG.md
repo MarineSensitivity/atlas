@@ -1,3 +1,12 @@
+# atlas 0.11.4
+
+- **Builds from oceanmetrics/atlas v0.6.2** (2026-11-12; v0.6.1 plus the instance size budget 472 -> 474 KB, which v0.6.1 overran by 59 B): the Scores flower keeps Flora (primary
+  producers) and Productivity apart, so every v8+ within-ecoregion flower draws all 8 components and its
+  centre equals the published composite (v11 All US waters 19.18, not 21 over 7); components are named in
+  the release's own words (v11: Flora, Productivity once its manifest says so); national-mode names drop
+  ": across the nation (global range)". Acceptance: the live Scores picker lists its layer groups, and the
+  v11 All US waters flower shows 8 petals.
+
 # atlas 0.11.3
 
 - **Builds from oceanmetrics/atlas v0.6.0 again** (2026-11-09): the storage host now serves the gzip-encoded

@@ -69,10 +69,10 @@ jobs:
     needs: [pin]
     permissions:
       contents: write # the called workflow's deploy job pushes gh-pages with this repo's GITHUB_TOKEN
-    uses: oceanmetrics/atlas/.github/workflows/build-instance.yml@v0.6.0
+    uses: oceanmetrics/atlas/.github/workflows/build-instance.yml@v0.6.2
     with:
       instance: marinesensitivity
-      ref: v0.6.0
+      ref: v0.6.2
       # publish only from main (a push or a dispatch); a pull request or another branch builds and
       # checks only
       deploy: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
