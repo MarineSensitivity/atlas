@@ -1,0 +1,1 @@
+import{lt as e}from"./scope-DKwshgPc.js";import{a as t,i as n,t as r}from"./tiles-CMtUhFS2.js";var i=`{z}`,a=`{x}`,o=`{y}`;function s(e,n=r){return t(n,i,a,o,e)}function c(e,t=r){return n(t,i,a,o,e)}var l={1:e};export{c as n,s as r,l as t};

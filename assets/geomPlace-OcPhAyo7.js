@@ -1,0 +1,1 @@
+import{r as e}from"./placeCodec-BRkpVNt5.js";import{t}from"./analysisGeometry-Cov1KhV4.js";function n(n,r){return{kind:`geom`,name:e(r.trim())||`Place`,geometry:t(n)}}export{n as t};
